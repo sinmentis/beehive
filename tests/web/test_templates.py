@@ -33,18 +33,36 @@ def test_base_template_uses_shared_design_system_and_brand_mark():
     assert "🐝" not in content
 
 
-def test_shared_stylesheet_defines_responsive_editorial_layout():
+def test_shared_stylesheet_defines_responsive_dense_dashboard():
     content = (_STATIC_DIR / "beehive.css").read_text()
     assert "--accent:" in content
     assert "font-variant-numeric:tabular-nums" in content
-    assert ".channel-grid" in content
+    assert "--dashboard-row-height:1.625rem" in content
+    assert ".signal-table" in content
+    assert ".channel-strip" in content
     assert "@media (max-width:720px)" in content
     assert "grid-template-columns:1fr" in content
     assert ":focus-visible" in content
     assert ":lang(zh)" in content
-    assert ".channel-grid:has(>.channel-card:nth-child(3):last-child)" in content
     assert ".type-option:has(input:focus-visible)" in content
     assert "--muted-2:#838979" in content
+    non_link_cells = re.search(
+        r"\.signal-source,\.signal-engagement,\.signal-age\{([^}]*)\}",
+        content,
+    )
+    assert non_link_cells is not None
+    assert "display:" not in non_link_cells.group(1)
+    compact_search = re.search(
+        r'\.dashboard-search input\[type="search"\]\{([^}]*)\}',
+        content,
+    )
+    assert compact_search is not None
+    assert "min-height:0" in compact_search.group(1)
+    for selector in (r"\.channel-strip-teaser", r"\.signal-comment summary"):
+        target = re.search(rf"{selector}\{{([^}}]*)\}}", content)
+        assert target is not None
+        assert "width:1.5rem" in target.group(1)
+        assert "height:1.5rem" in target.group(1)
 
 
 def test_english_editorial_labels_declare_their_language():

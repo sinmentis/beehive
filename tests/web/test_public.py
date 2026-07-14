@@ -48,7 +48,7 @@ def authed_client(db_path, conn):
     return client
 
 
-def test_dashboard_shows_channel_card_with_teaser(conn, client):
+def test_dashboard_channel_strip_keeps_secondary_teaser_link(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
@@ -60,6 +60,12 @@ def test_dashboard_shows_channel_card_with_teaser(conn, client):
     assert resp.status_code == 200
     assert "NZ Finance" in resp.text
     assert "RBNZ 降息" in resp.text
+    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+    assert (
+        f'class="channel-strip-teaser" href="/items/{item_id}/open" '
+        'target="_blank" rel="noopener noreferrer"'
+    ) in resp.text
+    assert 'aria-label="打开 NZ Finance 最新信号：RBNZ 降息（在新窗口打开）"' in resp.text
 
 
 def test_dashboard_shows_unread_count(conn, client):
@@ -750,7 +756,7 @@ def test_interaction_helper_is_served(client):
     assert resp.headers["content-type"].startswith("text/javascript")
 
 
-def test_dashboard_shows_cross_channel_highlights(conn, client):
+def test_dashboard_shows_ranked_signal_table(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
@@ -760,27 +766,53 @@ def test_dashboard_shows_cross_channel_highlights(conn, client):
 
     resp = client.get("/")
     assert resp.status_code == 200
-    # Assert the highlights section's OWN structure specifically -- a single-channel,
-    # single-item setup makes this item ALSO the per-Channel teaser (sub-project B), which
-    # renders the same URL/summary text elsewhere on the page. Checking only for that text
-    # would pass even if the highlights feature didn't exist at all, since the pre-existing
-    # teaser already prints it. The highlight-list/-channel/-text classes are unique to this
-    # feature's own markup, so only THEY prove the highlights section itself rendered.
-    assert '<div class="highlight-list">' in resp.text
-    assert '<span class="highlight-channel">NZ Finance</span>' in resp.text
+    assert '<table class="signal-table">' in resp.text
+    assert '<th scope="col">分数</th>' in resp.text
+    assert '<th scope="col">Channel</th>' in resp.text
+    assert '<th scope="col" class="signal-source-heading">来源</th>' in resp.text
+    assert '<th scope="col">AI 摘要</th>' in resp.text
+    assert 'class="signal-row is-unread"' in resp.text
+    assert f'class="signal-channel" href="/channels/{channel_id}"' in resp.text
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    assert f'class="highlight-text" href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
+    assert f'class="signal-summary" href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
     assert "RBNZ 大幅降息" in resp.text
 
 
-def test_dashboard_hides_highlights_section_when_nothing_qualifies(client):
+def test_dashboard_hides_signal_table_when_nothing_qualifies(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    # Checking the bare class name "highlight-list" would always match: it's also the CSS
-    # selector name (".highlight-list{...}"), which renders unconditionally in every page's
-    # <style> block regardless of whether any highlights exist. Checking for the actual opening
-    # HTML tag distinguishes "the section's CSS is defined" from "the section itself rendered".
-    assert '<div class="highlight-list">' not in resp.text
+    assert '<table class="signal-table">' not in resp.text
+    assert "当前没有待处理信号" in resp.text
+
+
+def test_dashboard_requests_twenty_four_ranked_signals(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for index in range(25):
+        external_id = f"signal-{index}"
+        insert_new(c, source_id, RawItem(
+            external_id=external_id,
+            title=f"Signal {index}",
+            url=f"https://example.com/{index}",
+        ))
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=float(index),
+            summary=f"摘要 {index}",
+            rationale="r",
+        )
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert len(resp.context["highlights"]) == 24
+    assert resp.context["has_more_signals"] is True
+    assert "24+ 条待处理" in resp.text
+    assert "摘要 24" in resp.text
+    assert "摘要 0" not in resp.text
 
 
 def test_archive_treats_empty_channel_query_param_as_no_filter(conn, client):
@@ -1026,7 +1058,7 @@ def test_channel_drilldown_shows_nothing_extra_when_best_comment_summary_is_abse
     assert 'class="comment-mark"' not in resp.text
 
 
-def test_dashboard_highlight_shows_best_comment_summary_when_present(conn, client):
+def test_dashboard_signal_shows_best_comment_summary_when_present(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -1038,11 +1070,12 @@ def test_dashboard_highlight_shows_best_comment_summary_when_present(conn, clien
     c.commit()
 
     resp = client.get("/")
-    assert 'class="comment-mark"' in resp.text
+    assert '<details class="signal-comment">' in resp.text
+    assert '<summary aria-label="查看最佳评论摘要">“</summary>' in resp.text
     assert "有人指出实际数字不同" in resp.text
 
 
-def test_dashboard_highlight_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
+def test_dashboard_signal_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -1050,7 +1083,7 @@ def test_dashboard_highlight_shows_nothing_extra_when_best_comment_summary_is_ab
     update_ai_ranking(c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r")
 
     resp = client.get("/")
-    assert 'class="comment-mark"' not in resp.text
+    assert 'class="signal-comment"' not in resp.text
 
 
 def test_archive_shows_best_comment_summary_when_present(conn, client):

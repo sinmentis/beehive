@@ -3,78 +3,107 @@
 {% block body_class %}page-dashboard{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell dashboard-shell">
-  <header class="page-heading dashboard-heading">
-    <div>
-      <p class="eyebrow" lang="en">Personal signal desk</p>
-      <h1>今天值得知道什么</h1>
-      <p class="page-lede">从你关心的来源中，只留下需要注意的变化。</p>
+  <header class="dashboard-toolbar">
+    <div class="dashboard-title">
+      <h1>今日信号</h1>
+      <span>{{ channels|length }} 个 Channel · {{ highlights|length }}{% if has_more_signals %}+{% endif %} 条待处理 · {{ total_unread }} 条未读</span>
     </div>
-    <div class="channel-count" aria-label="{{ channels|length }} 个 Channel">
-      <strong>{{ channels|length }}</strong>
-      <span>个 Channel</span>
-    </div>
+    <nav class="dashboard-tabs" aria-label="首页视图">
+      <span aria-current="page">待处理 {{ highlights|length }}{% if has_more_signals %}+{% endif %}</span>
+      <a href="/archive?read_state=unread">全部未读 {{ total_unread }}</a>
+      <a href="/archive">全部归档</a>
+    </nav>
+    <form class="dashboard-search" action="/archive" method="get" role="search">
+      <label class="sr-only" for="dashboard-search">搜索标题、摘要或正文</label>
+      <input id="dashboard-search" type="search" name="q" placeholder="搜索信号">
+      <button type="submit">搜索</button>
+    </form>
   </header>
 
-  {% if highlights %}
-  <section class="signal-section" aria-labelledby="highlights-title">
-    <header class="section-heading">
-      <div>
-        <p class="section-kicker" lang="en">Cross-channel brief</p>
-        <h2 id="highlights-title">精选信号</h2>
-      </div>
-      <span class="section-count">{{ highlights|length }} 条</span>
-    </header>
-    <div class="highlight-list">
-      {% for item in highlights %}
-      <article class="highlight-row">
-        <span class="highlight-index" aria-hidden="true">{{ loop.index }}</span>
-        <div class="highlight-content">
-          <span class="highlight-channel">{{ item.channel_name }}</span>
-          <a class="highlight-text" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary }}<span class="sr-only">（在新窗口打开）</span></a>
-          {% if item.best_comment_summary %}
-          <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
-          {% endif %}
-        </div>
-      </article>
-      {% endfor %}
+  {% if channels %}
+  <nav class="channel-strip" aria-label="Channel">
+    {% for channel in channels %}
+    <div class="channel-strip-item">
+      <a class="channel-strip-main" href="/channels/{{ channel.id }}">
+        <span class="channel-strip-top">
+          <b>{{ channel.name }}</b>
+          <strong class="{{ 'is-zero' if channel.unread_count == 0 else '' }}">{{ channel.unread_count }} 条新</strong>
+        </span>
+        <small><span title="{{ channel.freshness_exact }}">{{ channel.freshness }}</span>{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}</small>
+      </a>
+      {% if channel.teaser %}
+      <a class="channel-strip-teaser" href="{{ channel.teaser.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ channel.teaser.exact_time }}" aria-label="打开 {{ channel.name }} 最新信号：{{ channel.teaser.ai_summary }}（在新窗口打开）">↗</a>
+      {% endif %}
     </div>
-  </section>
-  {% endif %}
-
-  <section class="channel-section" aria-labelledby="channels-title">
-    <header class="section-heading channel-section-heading">
-      <div>
-        <p class="section-kicker" lang="en">Your streams</p>
-        <h2 id="channels-title">你的 Channels</h2>
-      </div>
-      <span class="section-count">{{ channels|length }} 个 Channel</span>
-    </header>
-    {% if channels %}
-    <div class="channel-grid">
-      {% for channel in channels %}
-      <article class="channel-card">
-        <a class="channel-card-main" href="/channels/{{ channel.id }}">
-          <div class="channel-card-top">
-            <h3>{{ channel.name }}</h3>
-            <span class="unread-count{{ ' is-zero' if channel.unread_count == 0 else '' }}">{{ channel.unread_count }} 条新</span>
-          </div>
-          <p class="channel-freshness"><span title="{{ channel.freshness_exact }}">{{ channel.freshness }}</span>{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}</p>
-        </a>
-        {% if channel.teaser %}
-        <a class="channel-teaser" href="{{ channel.teaser.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ channel.teaser.exact_time }}">
-          <span>最新信号</span>
-          {{ channel.teaser.ai_summary }}<span class="sr-only">（在新窗口打开）</span>
-        </a>
-        {% endif %}
-      </article>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state dashboard-empty">
+    {% endfor %}
+  </nav>
+  {% else %}
+    <div class="empty-state dashboard-empty dashboard-channel-empty">
       <span class="empty-mark" aria-hidden="true"></span>
       <h3>从第一个 Channel 开始</h3>
       <p>定义一个关注主题，再添加 Reddit、Google News 或 Hacker News 等信源。</p>
       <a class="btn primary" href="/admin/channels/new">新建 Channel</a>
+    </div>
+  {% endif %}
+
+  <section class="signal-workspace" aria-labelledby="signals-title">
+    <h2 id="signals-title" class="sr-only">按 AI 分数排序的待处理信号</h2>
+    {% if highlights %}
+    <div class="signal-table-scroll" role="region" aria-labelledby="signals-title" tabindex="0">
+      <table class="signal-table">
+        <caption class="sr-only">按 AI 分数从高到低排列，打开原文后会从待处理列表移除</caption>
+        <colgroup>
+          <col class="signal-state-col">
+          <col class="signal-score-col">
+          <col class="signal-channel-col">
+          <col class="signal-source-col">
+          <col class="signal-summary-col">
+          <col class="signal-engagement-col">
+          <col class="signal-age-col">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr-only">阅读状态</span></th>
+            <th scope="col">分数</th>
+            <th scope="col">Channel</th>
+            <th scope="col" class="signal-source-heading">来源</th>
+            <th scope="col">AI 摘要</th>
+            <th scope="col" class="signal-engagement-heading">详情</th>
+            <th scope="col">时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in highlights %}
+          <tr class="signal-row{{ ' is-unread' if not item.is_read else '' }}">
+            <td class="signal-state"><span class="signal-unread-dot" aria-hidden="true"></span><span class="sr-only">{{ '未读' if not item.is_read else '已读' }}</span></td>
+            <td class="signal-score">{{ item.ai_score|round|int }}</td>
+            <td><a class="signal-channel" href="/channels/{{ item.item_channel_id }}">{{ item.channel_name }}</a></td>
+            <td class="signal-source" title="{{ item.source_label }}">{{ item.source_label }}</td>
+            <td class="signal-summary-cell">
+              <a class="signal-summary" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary }}<span class="sr-only">（在新窗口打开）</span></a>
+              {% if item.best_comment_summary %}
+              <details class="signal-comment">
+                <summary aria-label="查看最佳评论摘要">“</summary>
+                <span class="signal-comment-content">{{ item.best_comment_summary }}</span>
+              </details>
+              {% endif %}
+            </td>
+            <td class="signal-engagement">{{ item.engagement_label or "—" }}</td>
+            <td class="signal-age" title="{{ item.exact_time }}">{{ item.age or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <footer class="signal-statusbar">
+      <span>按 AI 分数排序</span>
+      <span>打开原文后自动移除</span>
+      <b>显示 {{ highlights|length }} 条{% if has_more_signals %} · 还有更多{% endif %}</b>
+    </footer>
+    {% else %}
+    <div class="dashboard-signals-empty">
+      <strong>当前没有待处理信号</strong>
+      <span>新内容完成 AI 排序后会出现在这里。历史内容仍可在归档中查看。</span>
     </div>
     {% endif %}
   </section>

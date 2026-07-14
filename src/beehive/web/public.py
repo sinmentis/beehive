@@ -29,6 +29,7 @@ def _safe_href(url: str) -> str:
 router = APIRouter()
 
 HIGHLIGHT_COUNT = 8
+DASHBOARD_SIGNAL_COUNT = 24
 
 
 def _source_label(item: dict) -> str:
@@ -99,14 +100,21 @@ def _time_label(iso_str: str) -> str:
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, conn: sqlite3.Connection = Depends(get_db)):
-    highlights = list_dashboard_highlights(conn)
+    dashboard_signals = list_dashboard_highlights(
+        conn,
+        limit=DASHBOARD_SIGNAL_COUNT + 1,
+    )
+    has_more_signals = len(dashboard_signals) > DASHBOARD_SIGNAL_COUNT
+    highlights = dashboard_signals[:DASHBOARD_SIGNAL_COUNT]
     for item in highlights:
         _decorate_item(item)
     now = datetime.now(timezone.utc)
     channels = []
+    total_unread = 0
     for channel in list_channels(conn):
         items = list_by_channel(conn, channel["id"])
         unread_count = sum(1 for i in items if not i["is_read"])
+        total_unread += unread_count
         teaser = next((i for i in items if i["ai_summary"]), None)
         if teaser is not None:
             _decorate_item(teaser)
@@ -127,6 +135,8 @@ def dashboard(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return templates.TemplateResponse(request, "dashboard.html", {
         "channels": channels,
         "highlights": highlights,
+        "has_more_signals": has_more_signals,
+        "total_unread": total_unread,
     })
 
 
