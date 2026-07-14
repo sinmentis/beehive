@@ -855,6 +855,39 @@ def test_dashboard_counts_all_pending_high_priority_signals(conn, client):
     assert "<b>24+ / 25</b>" in resp.text
 
 
+def test_dashboard_high_priority_tab_filters_signals(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, score, summary in (
+        ("low", 89, "低分摘要"),
+        ("high", 90, "高分摘要"),
+    ):
+        insert_new(c, source_id, RawItem(
+            external_id=external_id,
+            title=external_id,
+            url=f"https://example.com/{external_id}",
+        ))
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=score,
+            summary=summary,
+            rationale="r",
+        )
+
+    default_resp = client.get("/")
+    filtered_resp = client.get("/?minimum_score=90")
+
+    assert '<a href="/?minimum_score=90">≥90 1</a>' in default_resp.text
+    assert '<strong aria-current="page">≥90 1</strong>' in filtered_resp.text
+    assert '<a href="/">全部</a>' in filtered_resp.text
+    assert "高分摘要" in filtered_resp.text
+    assert "低分摘要" not in filtered_resp.text
+    assert filtered_resp.context["pending_signal_count"] == 1
+
+
 def test_archive_treats_empty_channel_query_param_as_no_filter(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")

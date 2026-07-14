@@ -357,6 +357,17 @@ def test_list_dashboard_highlights_orders_by_score_across_channels(conn, source_
     assert highlights[1]["channel_name"] == "NZ Finance"
 
 
+def test_list_dashboard_highlights_filters_by_minimum_score(conn, source_id):
+    insert_new(conn, source_id, _raw_item("low", title="Low score"))
+    insert_new(conn, source_id, _raw_item("high", title="High score"))
+    update_ai_ranking(conn, source_id, "low", score=89, summary="低分摘要", rationale="r")
+    update_ai_ranking(conn, source_id, "high", score=90, summary="高分摘要", rationale="r")
+
+    highlights = list_dashboard_highlights(conn, minimum_score=90)
+
+    assert [highlight["external_id"] for highlight in highlights] == ["high"]
+
+
 def test_list_dashboard_highlights_excludes_items_without_a_summary(conn, source_id):
     insert_new(conn, source_id, _raw_item("t1"))  # never ranked, ai_summary is NULL
 

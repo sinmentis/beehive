@@ -10,9 +10,17 @@
       <span>{{ highlights|length }}{% if has_more_signals %}+{% endif %}</span>
     </div>
     <nav class="dashboard-tabs" aria-label="首页视图">
+      {% if minimum_score is none %}
       <strong aria-current="page">全部</strong>
+      {% else %}
+      <a href="/">全部</a>
+      {% endif %}
       <a href="/archive?read_state=unread">未读 {{ total_unread }}</a>
-      <span>≥90 {{ high_priority_count }}</span>
+      {% if minimum_score is not none %}
+      <strong aria-current="page">≥{{ minimum_score }} {{ pending_signal_count }}</strong>
+      {% else %}
+      <a href="/?minimum_score=90">≥90 {{ high_priority_count }}</a>
+      {% endif %}
       {% for channel in channels %}
       <span class="dashboard-channel-tab">
         <a class="dashboard-channel-link" href="/channels/{{ channel.id }}" title="{% if channel.freshness_exact %}{{ channel.freshness_exact }} · {% endif %}{{ channel.freshness }}{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}" aria-label="{{ channel.name }}，{{ channel.unread_count }} 条新内容">{{ channel.name }}</a>

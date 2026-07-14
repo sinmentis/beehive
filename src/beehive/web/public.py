@@ -99,9 +99,17 @@ def _time_label(iso_str: str) -> str:
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, conn: sqlite3.Connection = Depends(get_db)):
-    pending_signal_count = count_dashboard_signals(conn)
-    highlights = list_dashboard_highlights(conn, limit=DASHBOARD_SIGNAL_COUNT)
+def dashboard(
+    request: Request,
+    minimum_score: int | None = Query(default=None, ge=0, le=100),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    pending_signal_count = count_dashboard_signals(conn, minimum_score=minimum_score)
+    highlights = list_dashboard_highlights(
+        conn,
+        limit=DASHBOARD_SIGNAL_COUNT,
+        minimum_score=minimum_score,
+    )
     has_more_signals = pending_signal_count > DASHBOARD_SIGNAL_COUNT
     for item in highlights:
         _decorate_item(item)
@@ -136,6 +144,7 @@ def dashboard(request: Request, conn: sqlite3.Connection = Depends(get_db)):
         "high_priority_count": count_dashboard_signals(conn, minimum_score=90),
         "pending_signal_count": pending_signal_count,
         "dashboard_time": host_local_time_label(now.isoformat())[-5:],
+        "minimum_score": minimum_score,
         "total_unread": total_unread,
     })
 
