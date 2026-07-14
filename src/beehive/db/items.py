@@ -165,3 +165,19 @@ def list_dashboard_highlights(conn: sqlite3.Connection, limit: int = 5) -> list[
         "ORDER BY items.ai_score DESC LIMIT ?",
         (limit,)).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def count_dashboard_signals(
+    conn: sqlite3.Connection,
+    minimum_score: float | None = None,
+) -> int:
+    score_filter = "" if minimum_score is None else "AND items.ai_score >= ? "
+    params = () if minimum_score is None else (minimum_score,)
+    return conn.execute(
+        "SELECT COUNT(*) FROM items "
+        "LEFT JOIN votes ON votes.item_id = items.id "
+        "WHERE items.opened_at IS NULL AND items.ai_summary IS NOT NULL "
+        "AND (votes.value IS NULL OR votes.value != -1) "
+        f"{score_filter}",
+        params,
+    ).fetchone()[0]

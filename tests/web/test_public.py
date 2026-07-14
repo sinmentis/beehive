@@ -1,4 +1,5 @@
 import html
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -48,7 +49,7 @@ def authed_client(db_path, conn):
     return client
 
 
-def test_dashboard_channel_strip_keeps_secondary_teaser_link(conn, client):
+def test_dashboard_channel_tab_keeps_secondary_teaser_link(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
@@ -62,10 +63,18 @@ def test_dashboard_channel_strip_keeps_secondary_teaser_link(conn, client):
     assert "RBNZ 降息" in resp.text
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
     assert (
-        f'class="channel-strip-teaser" href="/items/{item_id}/open" '
+        f'class="dashboard-channel-teaser" href="/items/{item_id}/open" '
         'target="_blank" rel="noopener noreferrer"'
     ) in resp.text
     assert 'aria-label="打开 NZ Finance 最新信号：RBNZ 降息（在新窗口打开）"' in resp.text
+
+
+def test_dashboard_renders_fingerprinted_static_assets(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    match = re.search(r'href="/static/beehive\.css\?v=([0-9a-f]{12})"', resp.text)
+    assert match is not None
+    assert f'src="/static/beehive.js?v={match.group(1)}"' in resp.text
 
 
 def test_dashboard_shows_unread_count(conn, client):
@@ -76,13 +85,14 @@ def test_dashboard_shows_unread_count(conn, client):
     insert_new(c, source_id, RawItem(external_id="t2", title="B", url="https://y"))
 
     resp = client.get("/")
-    assert ">2 条新<" in resp.text
+    assert " · 2 新</span>" in resp.text
 
 
 def test_dashboard_renders_with_no_channels(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "0 个 Channel" in resp.text
+    assert "从第一个 Channel 开始" in resp.text
+    assert " · 0 新</span>" in resp.text
 
 
 def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
@@ -94,7 +104,8 @@ def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
     fresh_client = TestClient(create_app(fresh_path))
     resp = fresh_client.get("/")
     assert resp.status_code == 200
-    assert "0 个 Channel" in resp.text
+    assert "从第一个 Channel 开始" in resp.text
+    assert " · 0 新</span>" in resp.text
 
 
 def test_channel_drilldown_shows_item_with_source_badge_and_link(conn, client):
@@ -444,7 +455,7 @@ def test_vote_controls_restore_focus_and_announce_status(conn, authed_client):
     assert 'class="votes" role="group" aria-label="内容反馈"' in resp.text
     assert 'id="feedback-status"' in resp.text
     assert 'role="status" aria-live="polite"' in resp.text
-    assert '<script src="/static/beehive.js" defer></script>' in resp.text
+    assert '<script src="/static/beehive.js?v=' in resp.text
 
 
 def test_drilldown_hides_vote_reason_when_anonymous(conn, client):
@@ -810,9 +821,38 @@ def test_dashboard_requests_twenty_four_ranked_signals(conn, client):
     assert resp.status_code == 200
     assert len(resp.context["highlights"]) == 24
     assert resp.context["has_more_signals"] is True
-    assert "24+ 条待处理" in resp.text
+    assert "<span>24+</span>" in resp.text
+    assert "<b>24+ / 25</b>" in resp.text
     assert "摘要 24" in resp.text
     assert "摘要 0" not in resp.text
+
+
+def test_dashboard_counts_all_pending_high_priority_signals(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for index in range(25):
+        external_id = f"signal-{index}"
+        insert_new(c, source_id, RawItem(
+            external_id=external_id,
+            title=f"Signal {index}",
+            url=f"https://example.com/{index}",
+        ))
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=90 + index,
+            summary=f"摘要 {index}",
+            rationale="r",
+        )
+
+    resp = client.get("/")
+
+    assert resp.context["high_priority_count"] == 25
+    assert resp.context["pending_signal_count"] == 25
+    assert "≥90 25" in resp.text
+    assert "<b>24+ / 25</b>" in resp.text
 
 
 def test_archive_treats_empty_channel_query_param_as_no_filter(conn, client):
@@ -932,7 +972,7 @@ def test_dashboard_freshness_has_exact_time_tooltip(conn, client):
     record_fetch_success(c, source_id, "2026-07-09T03:00:00")
 
     resp = client.get("/")
-    assert 'title="2026-07-09 15:00"' in resp.text  # NZST = UTC+12 in July
+    assert 'title="2026-07-09 15:00 ·' in resp.text  # NZST = UTC+12 in July
 
 
 def test_channel_drilldown_freshness_has_exact_time_tooltip(conn, client):

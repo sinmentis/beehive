@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#10110f">
 <meta name="description" content="蜂巢将分散的信息源整理成少量值得关注的信号。">
-<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/beehive.css">
+<link rel="icon" href="/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
+<link rel="stylesheet" href="/static/beehive.css?v={{ asset_version }}">
 <title>{% block title %}蜂巢{% endblock %}</title>
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -23,6 +23,7 @@
       <a href="/archive"{% if request.url.path == "/archive" %} aria-current="page"{% endif %}>归档</a>
       <a href="/admin/login"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>管理</a>
     </nav>
+    {% block header_status %}{% endblock %}
   </div>
 </header>
 {% block content %}{% endblock %}

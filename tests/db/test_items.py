@@ -5,9 +5,9 @@ import pytest
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
-from beehive.db.items import (get_item, insert_new, list_archive, list_by_channel,
-                                  list_dashboard_highlights, list_new_since, mark_channel_read,
-                                  mark_item_opened, mark_read, update_ai_ranking,
+from beehive.db.items import (count_dashboard_signals, get_item, insert_new, list_archive,
+                                  list_by_channel, list_dashboard_highlights, list_new_since,
+                                  mark_channel_read, mark_item_opened, mark_read, update_ai_ranking,
                                   update_ai_ranking_by_id, update_best_comment)
 from beehive.db.sources import create_source
 
@@ -392,6 +392,27 @@ def test_list_dashboard_highlights_respects_limit(conn, source_id):
 
     assert len(list_dashboard_highlights(conn)) == 5
     assert len(list_dashboard_highlights(conn, limit=3)) == 3
+
+
+def test_count_dashboard_signals_uses_the_same_pending_filters(conn, source_id):
+    from beehive.db.votes import upsert_vote
+
+    for external_id, score in (("high", 95), ("low", 70), ("down", 99), ("open", 98)):
+        insert_new(conn, source_id, _raw_item(external_id))
+        update_ai_ranking(conn, source_id, external_id, score=score, summary="s", rationale="r")
+
+    down_id = conn.execute(
+        "SELECT id FROM items WHERE external_id = 'down'"
+    ).fetchone()[0]
+    open_id = conn.execute(
+        "SELECT id FROM items WHERE external_id = 'open'"
+    ).fetchone()[0]
+    upsert_vote(conn, down_id, -1, "not relevant")
+    mark_item_opened(conn, open_id)
+    insert_new(conn, source_id, _raw_item("unranked"))
+
+    assert count_dashboard_signals(conn) == 2
+    assert count_dashboard_signals(conn, minimum_score=90) == 1
 
 
 def test_mark_item_opened_sets_opened_at(conn, source_id):

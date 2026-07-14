@@ -1,43 +1,35 @@
 {% extends "base.html" %}
 {% block title %}蜂巢 — 今日信号{% endblock %}
 {% block body_class %}page-dashboard{% endblock %}
+{% block header_status %}<span class="dashboard-clock">{{ dashboard_time }} · {{ total_unread }} 新</span>{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell dashboard-shell">
   <header class="dashboard-toolbar">
     <div class="dashboard-title">
       <h1>今日信号</h1>
-      <span>{{ channels|length }} 个 Channel · {{ highlights|length }}{% if has_more_signals %}+{% endif %} 条待处理 · {{ total_unread }} 条未读</span>
+      <span>{{ highlights|length }}{% if has_more_signals %}+{% endif %}</span>
     </div>
     <nav class="dashboard-tabs" aria-label="首页视图">
-      <span aria-current="page">待处理 {{ highlights|length }}{% if has_more_signals %}+{% endif %}</span>
-      <a href="/archive?read_state=unread">全部未读 {{ total_unread }}</a>
-      <a href="/archive">全部归档</a>
+      <strong aria-current="page">全部</strong>
+      <a href="/archive?read_state=unread">未读 {{ total_unread }}</a>
+      <span>≥90 {{ high_priority_count }}</span>
+      {% for channel in channels %}
+      <span class="dashboard-channel-tab">
+        <a class="dashboard-channel-link" href="/channels/{{ channel.id }}" title="{% if channel.freshness_exact %}{{ channel.freshness_exact }} · {% endif %}{{ channel.freshness }}{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}" aria-label="{{ channel.name }}，{{ channel.unread_count }} 条新内容">{{ channel.name }}</a>
+        {% if channel.teaser %}
+        <a class="dashboard-channel-teaser" href="{{ channel.teaser.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ channel.teaser.exact_time }}" aria-label="打开 {{ channel.name }} 最新信号：{{ channel.teaser.ai_summary }}（在新窗口打开）">↗</a>
+        {% endif %}
+      </span>
+      {% endfor %}
     </nav>
     <form class="dashboard-search" action="/archive" method="get" role="search">
       <label class="sr-only" for="dashboard-search">搜索标题、摘要或正文</label>
-      <input id="dashboard-search" type="search" name="q" placeholder="搜索信号">
-      <button type="submit">搜索</button>
+      <input id="dashboard-search" type="search" name="q" placeholder="过滤…">
+      <kbd class="dashboard-search-shortcut" aria-hidden="true">/</kbd>
     </form>
   </header>
 
-  {% if channels %}
-  <nav class="channel-strip" aria-label="Channel">
-    {% for channel in channels %}
-    <div class="channel-strip-item">
-      <a class="channel-strip-main" href="/channels/{{ channel.id }}">
-        <span class="channel-strip-top">
-          <b>{{ channel.name }}</b>
-          <strong class="{{ 'is-zero' if channel.unread_count == 0 else '' }}">{{ channel.unread_count }} 条新</strong>
-        </span>
-        <small><span title="{{ channel.freshness_exact }}">{{ channel.freshness }}</span>{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}</small>
-      </a>
-      {% if channel.teaser %}
-      <a class="channel-strip-teaser" href="{{ channel.teaser.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ channel.teaser.exact_time }}" aria-label="打开 {{ channel.name }} 最新信号：{{ channel.teaser.ai_summary }}（在新窗口打开）">↗</a>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </nav>
-  {% else %}
+  {% if not channels %}
     <div class="empty-state dashboard-empty dashboard-channel-empty">
       <span class="empty-mark" aria-hidden="true"></span>
       <h3>从第一个 Channel 开始</h3>
@@ -46,7 +38,7 @@
     </div>
   {% endif %}
 
-  <section class="signal-workspace" aria-labelledby="signals-title">
+  <section class="signal-workspace">
     <h2 id="signals-title" class="sr-only">按 AI 分数排序的待处理信号</h2>
     {% if highlights %}
     <div class="signal-table-scroll" role="region" aria-labelledby="signals-title" tabindex="0">
@@ -74,10 +66,10 @@
         </thead>
         <tbody>
           {% for item in highlights %}
-          <tr class="signal-row{{ ' is-unread' if not item.is_read else '' }}">
+          <tr class="signal-row{{ ' is-unread' if not item.is_read else '' }}{{ ' is-dim' if item.ai_score < 60 else '' }}" tabindex="-1">
             <td class="signal-state"><span class="signal-unread-dot" aria-hidden="true"></span><span class="sr-only">{{ '未读' if not item.is_read else '已读' }}</span></td>
             <td class="signal-score">{{ item.ai_score|round|int }}</td>
-            <td><a class="signal-channel" href="/channels/{{ item.item_channel_id }}">{{ item.channel_name }}</a></td>
+            <td><a class="signal-channel" href="/channels/{{ item.item_channel_id }}" title="{{ item.channel_name }}">{{ item.channel_name }}</a></td>
             <td class="signal-source" title="{{ item.source_label }}">{{ item.source_label }}</td>
             <td class="signal-summary-cell">
               <a class="signal-summary" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary }}<span class="sr-only">（在新窗口打开）</span></a>
@@ -96,10 +88,12 @@
       </table>
     </div>
     <footer class="signal-statusbar">
-      <span>按 AI 分数排序</span>
-      <span>打开原文后自动移除</span>
-      <b>显示 {{ highlights|length }} 条{% if has_more_signals %} · 还有更多{% endif %}</b>
+      <span><kbd>j/k</kbd> 移动</span>
+      <span><kbd>o</kbd> 打开</span>
+      <span><kbd>f</kbd> 筛选</span>
+      <b>{{ highlights|length }}{% if has_more_signals %}+{% endif %} / {{ pending_signal_count }}</b>
     </footer>
+    <p id="dashboard-selection-status" class="sr-only" aria-live="polite" aria-atomic="true"></p>
     {% else %}
     <div class="dashboard-signals-empty">
       <strong>当前没有待处理信号</strong>
@@ -108,4 +102,7 @@
     {% endif %}
   </section>
 </main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
 {% endblock %}

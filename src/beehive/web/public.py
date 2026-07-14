@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from beehive.db.channels import get_channel, list_channels
-from beehive.db.items import (get_item, list_archive, list_by_channel,
-                               list_dashboard_highlights, mark_channel_read, mark_item_opened)
+from beehive.db.items import (count_dashboard_signals, get_item, list_archive, list_by_channel,
+                              list_dashboard_highlights, mark_channel_read, mark_item_opened)
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.web.deps import get_db, get_optional_session, require_admin_session, verify_csrf
@@ -100,12 +100,9 @@ def _time_label(iso_str: str) -> str:
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, conn: sqlite3.Connection = Depends(get_db)):
-    dashboard_signals = list_dashboard_highlights(
-        conn,
-        limit=DASHBOARD_SIGNAL_COUNT + 1,
-    )
-    has_more_signals = len(dashboard_signals) > DASHBOARD_SIGNAL_COUNT
-    highlights = dashboard_signals[:DASHBOARD_SIGNAL_COUNT]
+    pending_signal_count = count_dashboard_signals(conn)
+    highlights = list_dashboard_highlights(conn, limit=DASHBOARD_SIGNAL_COUNT)
+    has_more_signals = pending_signal_count > DASHBOARD_SIGNAL_COUNT
     for item in highlights:
         _decorate_item(item)
     now = datetime.now(timezone.utc)
@@ -136,6 +133,9 @@ def dashboard(request: Request, conn: sqlite3.Connection = Depends(get_db)):
         "channels": channels,
         "highlights": highlights,
         "has_more_signals": has_more_signals,
+        "high_priority_count": count_dashboard_signals(conn, minimum_score=90),
+        "pending_signal_count": pending_signal_count,
+        "dashboard_time": host_local_time_label(now.isoformat())[-5:],
         "total_unread": total_unread,
     })
 

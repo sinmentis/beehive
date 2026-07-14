@@ -32,7 +32,7 @@ Beehive collects updates from the sources you care about, ranks each item agains
 
 Each channel ranks new items against your interests, then reduces them to concise summaries.
 
-<img src="docs/assets/dashboard-product.png" alt="Beehive dashboard with featured summaries and three synthetic channels" width="100%">
+<img src="docs/assets/dashboard-product.png" alt="Beehive dashboard with ranked synthetic signals" width="100%">
 
 > The previews use an English documentation overlay. The current dashboard chrome and email templates are Chinese-first; interface localization is not configurable yet.
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -18,6 +19,15 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 _CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
         "script-src 'self'; frame-ancestors 'none'")
+
+
+def _static_asset_version() -> str:
+    digest = hashlib.sha256()
+    for path in sorted(_STATIC_DIR.iterdir()):
+        if path.is_file():
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
 
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -46,6 +56,7 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     app.state.session_secret = (session_secret if session_secret is not None
                                  else os.environ.get("SESSION_SECRET", ""))
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    app.state.templates.env.globals["asset_version"] = _static_asset_version()
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     @app.exception_handler(404)

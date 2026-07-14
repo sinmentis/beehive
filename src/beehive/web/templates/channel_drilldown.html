@@ -64,6 +64,6 @@
 </main>
 {% endblock %}
 {% block scripts %}
-<script src="/static/htmx.min.js" defer></script>
-<script src="/static/beehive.js" defer></script>
+<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
 {% endblock %}
