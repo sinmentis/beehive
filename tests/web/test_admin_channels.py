@@ -80,8 +80,7 @@ def test_new_channel_form_links_back_to_admin_home(authed_client):
     response = authed_client.get("/admin/channels/new")
 
     assert '<p class="crumb"><a href="/admin/">← Channel 列表</a></p>' in response.text
-    assert '<a href="/admin/"><button class="btn ghost" type="button">取消</button></a>' \
-        in response.text
+    assert '<a class="btn ghost" href="/admin/">取消</a>' in response.text
 
 
 def test_edit_channel_form_links_back_to_admin_home(
@@ -94,6 +93,20 @@ def test_edit_channel_form_links_back_to_admin_home(
     response = authed_client.get(f"/admin/channels/{channel_id}/edit")
 
     assert '<p class="crumb"><a href="/admin/">← Channel 列表</a></p>' in response.text
+
+
+def test_delete_channel_confirmation_uses_keyboard_accessible_details(
+    authed_client, db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    conn.close()
+
+    response = authed_client.get(f"/admin/channels/{channel_id}/edit")
+
+    assert '<details class="delete-confirm">' in response.text
+    assert '<summary class="btn danger">' in response.text
+    assert 'class="confirm-toggle"' not in response.text
 
 
 def test_create_channel_succeeds_with_valid_csrf(authed_client, db_path):
@@ -320,7 +333,9 @@ def test_channels_list_no_flash_message_without_triggered_param(authed_client, d
 
 def test_admin_channels_logo_links_to_dashboard(authed_client, db_path):
     resp = authed_client.get("/admin/")
-    assert '<a href="/">🐝 蜂巢</a>' in resp.text
+    assert 'class="brand"' in resp.text
+    assert 'href="/"' in resp.text
+    assert 'class="brand-mark"' in resp.text
 
 
 def test_channels_list_freshness_has_exact_time_tooltip(authed_client, db_path):

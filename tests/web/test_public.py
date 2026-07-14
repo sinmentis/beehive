@@ -328,6 +328,14 @@ def test_channel_drilldown_shows_unread_count_and_source_summary(conn, client):
 def test_channel_drilldown_404_for_missing_channel(client):
     resp = client.get("/channels/999")
     assert resp.status_code == 404
+    assert resp.json() == {"detail": "Channel not found"}
+
+
+def test_unknown_route_uses_branded_not_found_page(client):
+    resp = client.get("/this-route-does-not-exist")
+    assert resp.status_code == 404
+    assert "页面不存在" in resp.text
+    assert 'href="/"' in resp.text
 
 
 def test_create_app_reads_session_secret_from_env(tmp_path, monkeypatch):
@@ -410,7 +418,27 @@ def test_drilldown_shows_static_vote_state_when_anonymous(conn, client):
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "hx-post=" not in resp.text
-    assert "👍" in resp.text
+    assert 'class="vote-state up"' in resp.text
+
+
+def test_vote_controls_restore_focus_and_announce_status(conn, authed_client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
+    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+
+    resp = authed_client.get(f"/channels/{channel_id}")
+
+    assert f'data-focus-key="item-{item_id}-up"' in resp.text
+    assert f'data-focus-key="item-{item_id}-down"' in resp.text
+    assert f'data-focus-key="item-{item_id}-reason"' not in resp.text
+    assert 'aria-pressed="false"' in resp.text
+    assert 'class="votes" role="group" aria-label="内容反馈"' in resp.text
+    assert 'id="feedback-status"' in resp.text
+    assert 'role="status" aria-live="polite"' in resp.text
+    assert '<script src="/static/beehive.js" defer></script>' in resp.text
 
 
 def test_drilldown_hides_vote_reason_when_anonymous(conn, client):
@@ -449,6 +477,7 @@ def test_vote_route_casts_upvote_and_returns_fragment(conn, authed_client, db_pa
                                data={"value": "1", "csrf_token": "csrf1"})
     assert resp.status_code == 200
     assert 'class="up"' in resp.text
+    assert 'aria-pressed="true"' in resp.text
 
     conn2 = connect(db_path)
     vote = conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone()
@@ -697,7 +726,28 @@ def test_archive_filters_by_search_query_param(conn, client):
 
 def test_dashboard_logo_links_to_home(client):
     resp = client.get("/")
-    assert '<div class="logo"><a href="/">🐝 蜂巢</a></div>' in resp.text
+    assert 'class="brand"' in resp.text
+    assert 'class="brand-mark"' in resp.text
+    assert 'href="/" aria-current="page"' in resp.text
+
+
+def test_dashboard_exposes_accessible_navigation_and_skip_link(client):
+    resp = client.get("/")
+    assert '<a class="skip-link" href="#main-content">' in resp.text
+    assert '<nav class="site-nav" aria-label="主导航">' in resp.text
+    assert '<main id="main-content"' in resp.text
+
+
+def test_favicon_is_served(client):
+    resp = client.get("/static/favicon.svg")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("image/svg+xml")
+
+
+def test_interaction_helper_is_served(client):
+    resp = client.get("/static/beehive.js")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/javascript")
 
 
 def test_dashboard_shows_cross_channel_highlights(conn, client):
@@ -961,7 +1011,8 @@ def test_channel_drilldown_shows_best_comment_summary_when_present(conn, client)
     c.commit()
 
     resp = client.get(f"/channels/{channel_id}")
-    assert "💬 有人指出实际数字不同" in resp.text
+    assert 'class="comment-mark"' in resp.text
+    assert "有人指出实际数字不同" in resp.text
 
 
 def test_channel_drilldown_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
@@ -972,7 +1023,7 @@ def test_channel_drilldown_shows_nothing_extra_when_best_comment_summary_is_abse
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
-    assert "💬" not in resp.text
+    assert 'class="comment-mark"' not in resp.text
 
 
 def test_dashboard_highlight_shows_best_comment_summary_when_present(conn, client):
@@ -987,7 +1038,8 @@ def test_dashboard_highlight_shows_best_comment_summary_when_present(conn, clien
     c.commit()
 
     resp = client.get("/")
-    assert "💬 有人指出实际数字不同" in resp.text
+    assert 'class="comment-mark"' in resp.text
+    assert "有人指出实际数字不同" in resp.text
 
 
 def test_dashboard_highlight_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
@@ -998,7 +1050,7 @@ def test_dashboard_highlight_shows_nothing_extra_when_best_comment_summary_is_ab
     update_ai_ranking(c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r")
 
     resp = client.get("/")
-    assert "💬" not in resp.text
+    assert 'class="comment-mark"' not in resp.text
 
 
 def test_archive_shows_best_comment_summary_when_present(conn, client):
@@ -1013,7 +1065,8 @@ def test_archive_shows_best_comment_summary_when_present(conn, client):
     c.commit()
 
     resp = client.get("/archive")
-    assert "💬 有人指出实际数字不同" in resp.text
+    assert 'class="comment-mark"' in resp.text
+    assert "有人指出实际数字不同" in resp.text
 
 
 def test_archive_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
@@ -1024,7 +1077,7 @@ def test_archive_shows_nothing_extra_when_best_comment_summary_is_absent(conn, c
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get("/archive")
-    assert "💬" not in resp.text
+    assert 'class="comment-mark"' not in resp.text
 
 
 def test_official_source_label_uses_fixed_public_label():

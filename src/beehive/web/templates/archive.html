@@ -1,48 +1,29 @@
 {% extends "base.html" %}
 {% block title %}蜂巢 — 归档{% endblock %}
-{% block extra_style %}
-main{max-width:760px;margin:0 auto;padding:24px}
-.crumb{font-size:13px;color:var(--text-muted);margin-bottom:6px}
-h1{font-size:20px;font-weight:600;margin:0 0 2px}
-.page-sub{color:var(--text-muted);font-size:12px;margin:0 0 18px}
-.filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px}
-.filters .field{display:flex;flex-direction:column;gap:4px}
-.filters label{font-size:11px;color:var(--text-muted)}
-.filters select,.filters input[type=date],.filters input[type=text]{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-size:13px;font-family:inherit}
-.filters button{background:var(--green);border:none;border-radius:6px;padding:8px 16px;color:#fff;font-size:13px;cursor:pointer}
-.filters .clear{font-size:12px;color:var(--text-muted);margin-left:2px}
-.result-count{font-size:12px;color:var(--text-muted);margin:0 0 10px}
-.day-group{margin-bottom:16px}
-.day-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin:0 0 8px}
-.row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
-.row:last-child{border-bottom:none}
-.row.read{opacity:.5}
-.row .main{flex:1;min-width:0}
-.row .chan{color:var(--text-muted);font-size:11px}
-.row .title{margin:2px 0 0;line-height:1.4}
-.row .title a{text-decoration:none}
-.row .title a:hover{text-decoration:underline}
-.row .best-comment{margin:2px 0 0;font-size:12px;color:var(--text-muted);line-height:1.4}
-.row .side{flex-shrink:0;font-size:11px;color:var(--text-muted);text-align:right;white-space:nowrap}
-.row .vote-mark{margin-left:6px}
-.pager{display:flex;justify-content:space-between;align-items:center;margin-top:20px;font-size:13px}
-.pager .disabled{color:var(--text-muted);pointer-events:none}
-.empty{color:var(--text-muted);font-size:13px;padding:30px 0;text-align:center}
-{% endblock %}
+{% block body_class %}page-archive{% endblock %}
 {% block content %}
-<main>
-  <p class="crumb"><a href="/">← Dashboard</a></p>
-  <h1>归档</h1>
-  <p class="page-sub">按 Channel、日期、已读状态查找历史内容 · 内容永久保留，不会因为已读而消失</p>
+<main id="main-content" class="page-shell archive-shell">
+  <p class="crumb"><a href="/">← 返回首页</a></p>
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow" lang="en">Long-term memory</p>
+      <h1>归档</h1>
+      <p class="page-lede">按 Channel、日期和已读状态查找历史内容。</p>
+    </div>
+    <div class="result-stat">
+      <strong>{{ total }}</strong>
+      <span>条结果</span>
+    </div>
+  </header>
 
-  <form class="filters" method="get">
-    <div class="field">
-      <label>关键词</label>
-      <input type="text" name="q" value="{{ selected_search }}" placeholder="标题、摘要或正文">
+  <form class="filters" method="get" aria-label="归档筛选">
+    <div class="field search-field">
+      <label for="archive-query">关键词</label>
+      <input id="archive-query" type="search" name="q" value="{{ selected_search }}" placeholder="标题、摘要或正文">
     </div>
     <div class="field">
-      <label>Channel</label>
-      <select name="channel">
+      <label for="archive-channel">Channel</label>
+      <select id="archive-channel" name="channel">
         <option value="">全部</option>
         {% for c in channels %}
         <option value="{{ c.id }}" {{ "selected" if selected_channel == c.id else "" }}>{{ c.name }}</option>
@@ -50,52 +31,61 @@ h1{font-size:20px;font-weight:600;margin:0 0 2px}
       </select>
     </div>
     <div class="field">
-      <label>开始日期</label>
-      <input type="date" name="from" value="{{ selected_from }}">
+      <label for="archive-from">开始日期</label>
+      <input id="archive-from" type="date" name="from" value="{{ selected_from }}">
     </div>
     <div class="field">
-      <label>结束日期</label>
-      <input type="date" name="to" value="{{ selected_to }}">
+      <label for="archive-to">结束日期</label>
+      <input id="archive-to" type="date" name="to" value="{{ selected_to }}">
     </div>
     <div class="field">
-      <label>已读状态</label>
-      <select name="read_state">
+      <label for="archive-state">已读状态</label>
+      <select id="archive-state" name="read_state">
         <option value="" {{ "selected" if selected_read_state == "" else "" }}>全部</option>
         <option value="unread" {{ "selected" if selected_read_state == "unread" else "" }}>未读</option>
         <option value="read" {{ "selected" if selected_read_state == "read" else "" }}>已读</option>
       </select>
     </div>
-    <button type="submit">筛选</button>
-    <a class="clear" href="/archive">清除筛选</a>
+    <div class="filter-actions">
+      <button class="btn primary" type="submit">应用筛选</button>
+      <a class="text-action" href="/archive">清除</a>
+    </div>
   </form>
 
-  <p class="result-count">共 {{ total }} 条结果</p>
-
   {% if groups %}
-  {% for day, day_items in groups %}
-  <div class="day-group">
-    <p class="day-label">{{ day }}</p>
-    {% for item in day_items %}
-    <div class="row{{ ' read' if item.is_read else '' }}">
-      <div class="main">
-        <p class="chan">📍 {{ item.channel_name }} · {{ item.source_label }}</p>
-        <p class="title"><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}</a></p>
-        {% if item.best_comment_summary %}
-        <p class="best-comment">💬 {{ item.best_comment_summary }}</p>
-        {% endif %}
+  <div class="archive-groups">
+    {% for day, day_items in groups %}
+    <section class="day-group" aria-labelledby="day-{{ loop.index }}">
+      <h2 class="day-label" id="day-{{ loop.index }}">{{ day }}</h2>
+      <div class="archive-list">
+        {% for item in day_items %}
+        <article class="archive-row{{ ' read' if item.is_read else '' }}">
+          <div class="archive-main">
+            <p class="archive-source"><span class="source-marker" aria-hidden="true"></span>{{ item.channel_name }} · {{ item.source_label }}</p>
+            <h3><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">（在新窗口打开）</span></a></h3>
+            {% if item.best_comment_summary %}
+            <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
+            {% endif %}
+          </div>
+          <div class="archive-side">{{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark" aria-label="已标记为有用">↑</span>{% elif item.vote_value == -1 %}<span class="vote-mark" aria-label="已标记为不相关">↓</span>{% endif %}</div>
+        </article>
+        {% endfor %}
       </div>
-      <div class="side">{{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark">👍</span>{% elif item.vote_value == -1 %}<span class="vote-mark">👎</span>{% endif %}</div>
-    </div>
+    </section>
     {% endfor %}
   </div>
-  {% endfor %}
   {% else %}
-  <p class="empty">没有符合条件的内容</p>
+  <div class="empty-state">
+    <span class="empty-mark" aria-hidden="true"></span>
+    <h3>没有符合条件的内容</h3>
+    <p>调整关键词、日期范围或已读状态后再试。</p>
+  </div>
   {% endif %}
 
-  <div class="pager">
-    {% if has_prev %}<a href="/archive?page={{ page - 1 }}">← 更新</a>{% else %}<a class="disabled" href="#">← 更新</a>{% endif %}
-    {% if has_next %}<a href="/archive?page={{ page + 1 }}">更早 →</a>{% else %}<a class="disabled" href="#">更早 →</a>{% endif %}
-  </div>
+  <nav class="pager" aria-label="归档分页">
+    {% if has_prev %}<a href="/archive?page={{ page - 1 }}">← 更新</a>{% else %}<span class="disabled">← 更新</span>{% endif %}
+    <span>第 {{ page }} 页</span>
+    {% if has_next %}<a href="/archive?page={{ page + 1 }}">更早 →</a>{% else %}<span class="disabled">更早 →</span>{% endif %}
+  </nav>
 </main>
 {% endblock %}

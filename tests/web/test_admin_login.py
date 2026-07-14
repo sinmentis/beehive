@@ -27,6 +27,7 @@ def test_login_form_renders(client):
     resp = client.get("/admin/login")
     assert resp.status_code == 200
     assert "密码" in resp.text
+    assert "autofocus" not in resp.text
 
 
 def test_login_form_redirects_to_admin_home_when_already_authenticated(client):
@@ -109,7 +110,9 @@ def test_logout_deletes_session_and_redirects(client):
 
 def test_login_form_logo_links_to_dashboard(client):
     resp = client.get("/admin/login")
-    assert '<a href="/">🐝 蜂巢</a>' in resp.text
+    assert 'class="brand"' in resp.text
+    assert 'href="/"' in resp.text
+    assert 'class="brand-mark"' in resp.text
 
 
 def test_last_login_time_uses_shared_host_local_formatting(client, db_path):

@@ -1,87 +1,102 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — 编辑 Channel{% endblock %}
-{% block header %}<div class="logo"><a href="/">🐝 蜂巢</a><span class="tag">管理后台</span></div><a href="/">← 退出到前台</a>{% endblock %}
-{% block extra_style %}
-main{max-width:560px;margin:0 auto;padding:28px 24px}
-h1{font-size:18px;margin:0 0 22px}
-.source-row{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;margin-top:8px}
-.source-row form{margin:0}
-.confirm-toggle{display:none}
-.confirm{display:none;margin-top:12px;padding:12px;background:#2a1b1b;border:1px solid var(--red-bright);border-radius:8px}
-.confirm-toggle:checked ~ .confirm{display:block}
-.confirm p{margin:0 0 10px;font-size:13px}
-.confirm-actions{display:flex;gap:8px;align-items:center}
-.error{color:#ff8f8f;font-size:12px;margin:6px 0 0}
-.page-banner{background:#2a1b1b;border:1px solid var(--red-bright);border-radius:8px;padding:10px 14px;margin:0 0 18px;font-size:13px;color:#ffb3b3}
-{% endblock %}
+{% block title %}蜂巢 — 编辑 {{ channel.name }}{% endblock %}
+{% block body_class %}page-admin page-editor{% endblock %}
 {% block content %}
-<main>
+<main id="main-content" class="page-shell editor-shell">
   <p class="crumb"><a href="/admin/">← Channel 列表</a></p>
-  <h1>编辑 Channel — {{ channel.name }}</h1>
-  {% if default_error %}<div class="page-banner">全局默认收件地址有误：{{ default_error }}</div>{% endif %}
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow" lang="en">Channel configuration</p>
+      <h1>编辑 {{ channel.name }}</h1>
+      <p class="page-lede">定义 AI 排序标准、抓取节奏和投递方式。</p>
+    </div>
+  </header>
+  {% if default_error %}<div class="page-banner" role="alert">全局默认收件地址有误：{{ default_error }}</div>{% endif %}
 
-  <form method="post" action="/admin/channels/{{ channel.id }}/edit">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="field">
-      <label>名字</label>
-      <input type="text" name="name" value="{{ channel.name }}">
-    </div>
-    <div class="field">
-      <label>关注什么（自然语言描述，驱动 AI 排序）</label>
-      <textarea name="profile">{{ channel.profile }}</textarea>
-      <p class="hint">↑ 这是示例填法，直接照着改就行</p>
-    </div>
-    <div class="field">
-      <label>抓取频率</label>
-      <select name="fetch_interval_hours">
-        <option value="3" {{ "selected" if channel.fetch_interval_hours == 3 else "" }}>每 3 小时</option>
-        <option value="6" {{ "selected" if channel.fetch_interval_hours == 6 else "" }}>每 6 小时</option>
-        <option value="24" {{ "selected" if channel.fetch_interval_hours == 24 else "" }}>每天一次</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>邮件收件地址（可选）</label>
-      <input type="text" name="digest_email"
-             value="{{ channel.digest_email or '' }}"
-             placeholder="{{ effective_email or 'owner@example.com' }}">
-      <p class="hint">
-        留空使用全局默认地址。当前生效：{{ effective_email or "未配置" }}
-      </p>
-      {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    </div>
-    <div class="actions">
-      <button class="btn save" type="submit">保存修改</button>
-    </div>
-  </form>
-
-  <div class="field">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <label style="margin:0">信源（Source）</label>
-      <a href="/admin/channels/{{ channel.id }}/sources/new"><button class="btn ghost small" type="button">+ 添加信源</button></a>
-    </div>
-    {% for source in sources %}
-    <div class="source-row">
-      <span>{{ source.icon }} {{ source.label }}</span>
-      <form method="post" action="/admin/sources/{{ source.id }}/delete">
+  <div class="editor-grid">
+    <section class="admin-panel">
+      <form method="post" action="/admin/channels/{{ channel.id }}/edit">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn ghost small" type="submit">移除</button>
+        <div class="field">
+          <label for="channel-name">名字</label>
+          <input id="channel-name" type="text" name="name" value="{{ channel.name }}" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="channel-profile">关注什么</label>
+          <textarea id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
+          <p class="hint">用自然语言描述真正重要的内容，AI 会据此排序。</p>
+        </div>
+        <div class="field">
+          <label for="fetch-interval">抓取频率</label>
+          <select id="fetch-interval" name="fetch_interval_hours">
+            <option value="3" {{ "selected" if channel.fetch_interval_hours == 3 else "" }}>每 3 小时</option>
+            <option value="6" {{ "selected" if channel.fetch_interval_hours == 6 else "" }}>每 6 小时</option>
+            <option value="24" {{ "selected" if channel.fetch_interval_hours == 24 else "" }}>每天一次</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="digest-email">邮件收件地址（可选）</label>
+          <input id="digest-email" type="text" inputmode="email" name="digest_email"
+                 value="{{ channel.digest_email or '' }}"
+                 placeholder="{{ effective_email or 'owner@example.com' }}"
+                 autocomplete="email">
+          <p class="hint">留空使用全局默认地址。当前生效：{{ effective_email or "未配置" }}</p>
+          {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+        </div>
+        <div class="actions">
+          <button class="btn primary" type="submit">保存修改</button>
+        </div>
       </form>
-    </div>
-    {% endfor %}
+    </section>
+
+    <aside class="admin-panel source-panel" aria-labelledby="sources-title">
+      <header class="panel-heading split-heading">
+        <div>
+          <p class="section-kicker" lang="en">Inputs</p>
+          <h2 id="sources-title">信源</h2>
+        </div>
+        <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/sources/new">添加信源</a>
+      </header>
+      <div class="source-list">
+        {% for source in sources %}
+        <article class="source-row">
+          <span class="source-name">{{ source.icon }} {{ source.label }}</span>
+          <form method="post" action="/admin/sources/{{ source.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="text-action danger-text" type="submit">移除</button>
+          </form>
+        </article>
+        {% else %}
+        <div class="empty-state compact-empty">
+          <h3>还没有信源</h3>
+          <p>添加至少一个来源后，Channel 才能开始抓取。</p>
+        </div>
+        {% endfor %}
+      </div>
+    </aside>
   </div>
 
-  <input type="checkbox" id="confirm-toggle" class="confirm-toggle">
-  <label for="confirm-toggle" class="btn danger">删除这个 Channel</label>
-
-  <div class="confirm" id="confirm">
-    <p>确定删除？{{ channel.name }} 下面已经抓到的所有内容也会一起删掉，无法恢复。</p>
-    <div class="confirm-actions">
-      <form method="post" action="/admin/channels/{{ channel.id }}/delete">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="btn danger" type="submit">确定删除</button>
-      </form>
-      <label for="confirm-toggle" class="btn ghost">取消</label>
+  <section class="danger-zone" aria-labelledby="danger-title">
+    <div>
+      <p class="section-kicker" lang="en">Danger zone</p>
+      <h2 id="danger-title">删除 Channel</h2>
+      <p>{{ channel.name }} 下已经抓取的所有内容也会一起删除，无法恢复。</p>
     </div>
-  </div>
+    <details class="delete-confirm">
+      <summary class="btn danger">
+        <span class="closed-label">删除这个 Channel</span>
+        <span class="open-label">取消</span>
+      </summary>
+      <div class="confirm">
+        <p>确定删除 {{ channel.name }}？</p>
+        <div class="confirm-actions">
+          <form method="post" action="/admin/channels/{{ channel.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn danger" type="submit">确定删除</button>
+          </form>
+        </div>
+      </div>
+    </details>
+  </section>
 </main>
 {% endblock %}

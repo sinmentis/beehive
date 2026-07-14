@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -177,7 +179,11 @@ def test_channel_empty_state_uses_explicit_styled_class(authed_client):
     assert response.status_code == 200
     assert 'class="empty-state"' in response.text
     assert "还没有 Channel。" in response.text
-    assert ".empty-state{" in response.text
+    stylesheet = (
+        Path(__file__).parent.parent.parent
+        / "src" / "beehive" / "web" / "static" / "beehive.css"
+    ).read_text()
+    assert ".empty-state" in stylesheet
 
 
 def test_channel_rows_wrap_on_narrow_screens(authed_client, db_path):
@@ -188,8 +194,12 @@ def test_channel_rows_wrap_on_narrow_screens(authed_client, db_path):
     conn.close()
     response = authed_client.get("/admin/")
     assert response.status_code == 200
-    assert "@media" in response.text
-    assert "flex-wrap:wrap" in response.text
+    stylesheet = (
+        Path(__file__).parent.parent.parent
+        / "src" / "beehive" / "web" / "static" / "beehive.css"
+    ).read_text()
+    assert "@media (max-width:720px)" in stylesheet
+    assert "flex-wrap:wrap" in stylesheet
 
 
 def test_clear_without_env_uses_english_exception_with_chinese_translation():

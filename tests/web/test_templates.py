@@ -1,9 +1,9 @@
-"""Regression guard for the News Center -> 蜂巢 rename: reads every template FILE directly
-(not rendered HTML) and confirms none still contain the old product name or logo emoji. A
-file-content check catches templates that are never exercised by a page-render test too."""
+"""Template-level design and branding regression guards."""
 from pathlib import Path
+import re
 
 _TEMPLATES_DIR = Path(__file__).parent.parent.parent / "src" / "beehive" / "web" / "templates"
+_STATIC_DIR = Path(__file__).parent.parent.parent / "src" / "beehive" / "web" / "static"
 
 
 def test_no_template_references_the_old_product_name():
@@ -23,7 +23,59 @@ def test_no_template_uses_the_old_logo_emoji():
         )
 
 
-def test_base_template_shows_new_product_name_and_logo():
+def test_base_template_uses_shared_design_system_and_brand_mark():
     content = (_TEMPLATES_DIR / "base.html").read_text()
     assert "蜂巢" in content
-    assert "🐝" in content
+    assert 'href="/static/beehive.css"' in content
+    assert 'href="/static/favicon.svg"' in content
+    assert 'class="skip-link"' in content
+    assert 'class="brand-mark"' in content
+    assert "🐝" not in content
+
+
+def test_shared_stylesheet_defines_responsive_editorial_layout():
+    content = (_STATIC_DIR / "beehive.css").read_text()
+    assert "--accent:" in content
+    assert "font-variant-numeric:tabular-nums" in content
+    assert ".channel-grid" in content
+    assert "@media (max-width:720px)" in content
+    assert "grid-template-columns:1fr" in content
+    assert ":focus-visible" in content
+    assert ":lang(zh)" in content
+    assert ".channel-grid:has(>.channel-card:nth-child(3):last-child)" in content
+    assert ".type-option:has(input:focus-visible)" in content
+    assert "--muted-2:#838979" in content
+
+
+def test_english_editorial_labels_declare_their_language():
+    for template_path in _TEMPLATES_DIR.glob("*.html"):
+        content = template_path.read_text()
+        labels = re.findall(r'<p class="(?:eyebrow|section-kicker)"[^>]*>', content)
+        assert all('lang="en"' in label for label in labels), (
+            f"{template_path.name} has English micro-copy without lang=en"
+        )
+
+
+def test_htmx_helpers_restore_focus_and_announce_feedback():
+    content = (_STATIC_DIR / "beehive.js").read_text()
+    assert "htmx:beforeRequest" in content
+    assert "htmx:afterSwap" in content
+    assert ".focus()" in content
+    assert "feedback-status" in content
+    assert "const message = feedbackMessage" in content
+
+
+def test_channel_template_marks_english_count_and_reason_focus_target():
+    content = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+    item_content = (_TEMPLATES_DIR / "_item_card.html").read_text()
+    assert '<span lang="en">Top</span>' in content
+    assert 'data-focus-key="item-{{ item.id }}-reason"' in item_content
+
+
+def test_templates_avoid_inline_styles_and_nested_interactive_controls():
+    for template_path in _TEMPLATES_DIR.glob("*.html"):
+        content = template_path.read_text()
+        assert 'style="' not in content, f"{template_path.name} contains inline styles"
+        assert not re.search(r"<a\b[^>]*>\s*<button\b", content), (
+            f"{template_path.name} nests a button inside a link"
+        )

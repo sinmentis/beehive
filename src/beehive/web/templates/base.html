@@ -1,47 +1,30 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#10110f">
+<meta name="description" content="蜂巢将分散的信息源整理成少量值得关注的信号。">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/beehive.css">
 <title>{% block title %}蜂巢{% endblock %}</title>
-<style>
-  :root{--bg:#14161a;--surface:#1c1f24;--surface-2:#262a2f;--border:#33373d;--text:#e8e8e8;--text-muted:#98a0a8;--link:#4dabf7;--green:#2d6a4f;--red:#8b2e2e;--red-bright:#c0392b;--amber:#e6a94d;}
-  *{box-sizing:border-box}
-  body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:0}
-  header{display:flex;justify-content:space-between;align-items:center;padding:14px 24px;border-bottom:1px solid var(--border)}
-  .logo{font-size:18px;font-weight:600}
-  .logo a{color:inherit;text-decoration:none}
-  .header-links{display:flex;gap:16px;align-items:center}
-  .logo .tag{font-size:12px;font-weight:400;color:var(--text-muted);margin-left:6px}
-  a{color:var(--link);text-decoration:none}
-  a:hover{text-decoration:underline}
-  .crumb{font-size:13px;color:var(--text-muted);margin-bottom:10px}
-  .field{margin-bottom:20px}
-  .field label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:6px}
-  .field .hint{font-size:11px;color:var(--text-muted);margin:4px 0 0}
-  input[type=text], input[type=password], textarea, select{
-    width:100%; background:var(--surface-2); border:1px solid var(--border);
-    border-radius:6px; padding:9px 10px; color:var(--text); font-size:14px;
-    font-family:inherit;
-  }
-  textarea{height:96px;resize:vertical;line-height:1.5}
-  input::placeholder, textarea::placeholder{color:var(--text-muted)}
-  select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%2398a0a8'/></svg>");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;width:auto;min-width:180px}
-  select option{background:var(--surface-2);color:var(--text)}
-  .btn{border:none;border-radius:6px;padding:9px 16px;font-size:13px;color:#fff;cursor:pointer}
-  .btn.save{background:var(--green)}
-  .btn.danger{background:var(--red-bright)}
-  .btn.ghost{background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
-  .btn.small{padding:5px 10px;font-size:12px}
-  .actions{display:flex;justify-content:space-between;margin-top:26px}
-  {% block extra_style %}{% endblock %}
-</style>
 </head>
-<body>
-<header>{% block header %}<div class="logo"><a href="/">🐝 蜂巢</a></div>
-<div class="header-links"><a href="/archive">🗂 归档</a><a href="/admin/login">⚙ 管理后台</a></div>
-{% endblock %}</header>
+<body class="{% block body_class %}{% endblock %}">
+<a class="skip-link" href="#main-content">跳到主要内容</a>
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="/" aria-label="蜂巢首页">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">蜂巢</span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="/"{% if request.url.path == "/" or request.url.path.startswith("/channels/") %} aria-current="page"{% endif %}>首页</a>
+      <a href="/archive"{% if request.url.path == "/archive" %} aria-current="page"{% endif %}>归档</a>
+      <a href="/admin/login"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>管理</a>
+    </nav>
+  </div>
+</header>
 {% block content %}{% endblock %}
 {% block scripts %}{% endblock %}
 </body>

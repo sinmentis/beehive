@@ -1,41 +1,24 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="UTF-8">
-<title>蜂巢 — 登录后台</title>
-<style>
-  :root{--bg:#14161a;--surface:#1c1f24;--surface-2:#262a2f;--border:#33373d;--text:#e8e8e8;--text-muted:#98a0a8;--link:#4dabf7;--green:#2d6a4f;--red-bright:#c0392b;}
-  *{box-sizing:border-box}
-  body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:0}
-  a{color:var(--link);text-decoration:none}
-  .wrap{max-width:340px;margin:14vh auto 0;padding:0 20px}
-  .admin-logo{font-size:20px;font-weight:600;text-align:center;margin-bottom:28px}
-  .admin-logo a{color:inherit;text-decoration:none}
-  .panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px}
-  label{font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px}
-  input{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:9px 10px;color:var(--text);font-size:14px;margin-bottom:14px}
-  input::placeholder{color:var(--text-muted)}
-  button{width:100%;background:var(--green);border:none;border-radius:6px;padding:10px;color:#fff;font-size:14px;cursor:pointer}
-  .error{color:var(--red-bright);font-size:13px;margin:-6px 0 14px}
-  .last-login{font-size:11px;color:var(--text-muted);text-align:center;margin-top:14px}
-  .back{display:block;text-align:center;margin-top:20px;font-size:13px}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="admin-logo"><a href="/">🐝 蜂巢</a> 管理后台</div>
-  <div class="panel">
+{% extends "base.html" %}
+{% block title %}蜂巢 — 登录管理后台{% endblock %}
+{% block body_class %}page-login{% endblock %}
+{% block content %}
+<main id="main-content" class="login-shell">
+  <section class="login-panel" aria-labelledby="login-title">
+    <p class="eyebrow" lang="en">Private control room</p>
+    <h1 id="login-title">进入管理后台</h1>
+    <p class="page-lede">管理 Channel、信源和邮件投递设置。</p>
     <form method="post" action="/admin/login">
-      <label>密码</label>
-      <input type="password" name="password" placeholder="输入密码" autofocus>
-      {% if error %}<p class="error">{{ error }}</p>{% endif %}
-      <button type="submit">登录</button>
+      <div class="field">
+        <label for="admin-password">密码</label>
+        <input id="admin-password" type="password" name="password" placeholder="输入密码" required autocomplete="current-password">
+        {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+      </div>
+      <button class="btn primary full-width" type="submit">登录</button>
     </form>
-  </div>
-  {% if last_login %}
-  <p class="last-login">上次登录：{{ last_login.time }} · {{ last_login.ip }} · {{ last_login.country }} · {{ "成功" if last_login.success else "失败" }}</p>
-  {% endif %}
-  <a class="back" href="/">← 返回 Dashboard</a>
-</div>
-</body>
-</html>
+    {% if last_login %}
+    <p class="last-login">上次登录：{{ last_login.time }} · {{ last_login.ip }} · {{ last_login.country }} · {{ "成功" if last_login.success else "失败" }}</p>
+    {% endif %}
+    <a class="back-link" href="/">← 返回首页</a>
+  </section>
+</main>
+{% endblock %}

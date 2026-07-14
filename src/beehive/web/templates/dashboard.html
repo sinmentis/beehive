@@ -1,63 +1,82 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — Dashboard{% endblock %}
-{% block extra_style %}
-main{max-width:960px;margin:0 auto;padding:28px 24px}
-h1{font-size:20px;font-weight:600;margin:0 0 4px}
-.page-sub{color:var(--text-muted);font-size:13px;margin:0 0 22px}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;transition:border-color .15s}
-.card:hover{border-color:var(--link)}
-.card-link{display:block;text-decoration:none}
-.card-top{display:flex;justify-content:space-between;align-items:center}
-.card h3{margin:0;font-size:15px;color:var(--text)}
-.badge{background:var(--green);color:#fff;border-radius:10px;padding:2px 8px;font-size:11px}
-.badge.zero{background:#3a3d42;color:var(--text-muted)}
-.fresh{font-size:11px;color:var(--text-muted);margin:6px 0 10px}
-.teaser{display:block;font-size:13px;color:var(--text);margin:0;text-decoration:none}
-.teaser:hover{text-decoration:underline}
-.highlights{margin-bottom:24px}
-.highlights h2{font-size:15px;font-weight:600;margin:0 0 10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em}
-.highlight-list{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px 16px}
-.highlight-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
-.highlight-row:last-child{border-bottom:none}
-.highlight-channel{flex-shrink:0;font-size:11px;color:var(--text-muted);background:var(--surface-2);border-radius:10px;padding:2px 8px}
-.highlight-text{font-size:13px;color:var(--text);text-decoration:none;line-height:1.4}
-.highlight-text:hover{text-decoration:underline}
-.best-comment{flex-basis:100%;margin:4px 0 0;font-size:12px;color:var(--text-muted);line-height:1.4}
-{% endblock %}
+{% block title %}蜂巢 — 今日信号{% endblock %}
+{% block body_class %}page-dashboard{% endblock %}
 {% block content %}
-<main>
-  <h1>Dashboard</h1>
+<main id="main-content" class="page-shell dashboard-shell">
+  <header class="page-heading dashboard-heading">
+    <div>
+      <p class="eyebrow" lang="en">Personal signal desk</p>
+      <h1>今天值得知道什么</h1>
+      <p class="page-lede">从你关心的来源中，只留下需要注意的变化。</p>
+    </div>
+    <div class="channel-count" aria-label="{{ channels|length }} 个 Channel">
+      <strong>{{ channels|length }}</strong>
+      <span>个 Channel</span>
+    </div>
+  </header>
+
   {% if highlights %}
-  <section class="highlights">
-    <h2>精选</h2>
+  <section class="signal-section" aria-labelledby="highlights-title">
+    <header class="section-heading">
+      <div>
+        <p class="section-kicker" lang="en">Cross-channel brief</p>
+        <h2 id="highlights-title">精选信号</h2>
+      </div>
+      <span class="section-count">{{ highlights|length }} 条</span>
+    </header>
     <div class="highlight-list">
       {% for item in highlights %}
-      <div class="highlight-row">
-        <span class="highlight-channel">{{ item.channel_name }}</span>
-        <a class="highlight-text" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary }}</a>
-        {% if item.best_comment_summary %}
-        <p class="best-comment">💬 {{ item.best_comment_summary }}</p>
-        {% endif %}
-      </div>
+      <article class="highlight-row">
+        <span class="highlight-index" aria-hidden="true">{{ loop.index }}</span>
+        <div class="highlight-content">
+          <span class="highlight-channel">{{ item.channel_name }}</span>
+          <a class="highlight-text" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary }}<span class="sr-only">（在新窗口打开）</span></a>
+          {% if item.best_comment_summary %}
+          <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
+          {% endif %}
+        </div>
+      </article>
       {% endfor %}
     </div>
   </section>
   {% endif %}
-  <p class="page-sub">{{ channels|length }} 个 Channel</p>
-  <div class="grid">
-    {% for channel in channels %}
-    <div class="card">
-      <a class="card-link" href="/channels/{{ channel.id }}">
-        <div class="card-top">
-          <h3>{{ channel.name }}</h3>
-          <span class="badge{{ ' zero' if channel.unread_count == 0 else '' }}">{{ channel.unread_count }} 条新</span>
-        </div>
-        <p class="fresh"><span title="{{ channel.freshness_exact }}">{{ channel.freshness }}</span>{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}</p>
-      </a>
-      {% if channel.teaser %}<a class="teaser" href="{{ channel.teaser.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ channel.teaser.exact_time }}">{{ channel.teaser.ai_summary }}</a>{% endif %}
+
+  <section class="channel-section" aria-labelledby="channels-title">
+    <header class="section-heading channel-section-heading">
+      <div>
+        <p class="section-kicker" lang="en">Your streams</p>
+        <h2 id="channels-title">你的 Channels</h2>
+      </div>
+      <span class="section-count">{{ channels|length }} 个 Channel</span>
+    </header>
+    {% if channels %}
+    <div class="channel-grid">
+      {% for channel in channels %}
+      <article class="channel-card">
+        <a class="channel-card-main" href="/channels/{{ channel.id }}">
+          <div class="channel-card-top">
+            <h3>{{ channel.name }}</h3>
+            <span class="unread-count{{ ' is-zero' if channel.unread_count == 0 else '' }}">{{ channel.unread_count }} 条新</span>
+          </div>
+          <p class="channel-freshness"><span title="{{ channel.freshness_exact }}">{{ channel.freshness }}</span>{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}</p>
+        </a>
+        {% if channel.teaser %}
+        <a class="channel-teaser" href="{{ channel.teaser.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ channel.teaser.exact_time }}">
+          <span>最新信号</span>
+          {{ channel.teaser.ai_summary }}<span class="sr-only">（在新窗口打开）</span>
+        </a>
+        {% endif %}
+      </article>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
+    {% else %}
+    <div class="empty-state dashboard-empty">
+      <span class="empty-mark" aria-hidden="true"></span>
+      <h3>从第一个 Channel 开始</h3>
+      <p>定义一个关注主题，再添加 Reddit、Google News 或 Hacker News 等信源。</p>
+      <a class="btn primary" href="/admin/channels/new">新建 Channel</a>
+    </div>
+    {% endif %}
+  </section>
 </main>
 {% endblock %}

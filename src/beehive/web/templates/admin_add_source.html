@@ -1,104 +1,86 @@
 {% extends "base.html" %}
 {% block title %}蜂巢 — 添加信源{% endblock %}
-{% block header %}<div class="logo"><a href="/">🐝 蜂巢</a><span class="tag">管理后台</span></div><a href="/">← 退出到前台</a>{% endblock %}
-{% block extra_style %}
-main{max-width:520px;margin:0 auto;padding:28px 24px}
-h1{font-size:18px;margin:0 0 22px}
-.error{color:var(--red-bright);font-size:13px;margin:0 0 16px}
-.type-options{display:flex;flex-direction:column;gap:8px}
-.type-option{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--surface);cursor:pointer}
-.type-option:has(input:checked){border-color:var(--link);background:var(--surface-2)}
-.type-option.disabled{opacity:.45;cursor:default}
-.type-option input{margin:0}
-.type-option .name{font-size:14px}
-.type-option .soon{font-size:11px;color:var(--text-muted);margin-left:auto}
-.prefix{color:var(--text-muted);font-size:13px;white-space:nowrap}
-.input-with-prefix{display:flex;align-items:center;gap:6px}
-.config-google_news_query,.config-hackernews_stories,.config-hackernews_query{display:none}
-.source-form:has(#type-google:checked) .config-reddit_subreddit,
-.source-form:has(#type-hn-stories:checked) .config-reddit_subreddit,
-.source-form:has(#type-hn-query:checked) .config-reddit_subreddit,
-.source-form:has(#type-rbnz:checked) .config-reddit_subreddit,
-.source-form:has(#type-nz-gov:checked) .config-reddit_subreddit,
-.source-form:has(#type-fed:checked) .config-reddit_subreddit{display:none}
-.source-form:has(#type-google:checked) .config-google_news_query{display:block}
-.source-form:has(#type-hn-stories:checked) .config-hackernews_stories{display:block}
-.source-form:has(#type-hn-query:checked) .config-hackernews_query{display:block}
-{% endblock %}
+{% block body_class %}page-admin page-editor{% endblock %}
 {% block content %}
-<main>
+<main id="main-content" class="page-shell source-form-shell">
   <p class="crumb"><a href="/admin/channels/{{ channel.id }}/edit">← {{ channel.name }}</a></p>
-  <h1>给 {{ channel.name }} 添加信源</h1>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow" lang="en">New input</p>
+      <h1>添加信源</h1>
+      <p class="page-lede">为 {{ channel.name }} 选择一个可定期抓取的信息入口。</p>
+    </div>
+  </header>
+  {% if error %}<p class="page-banner" role="alert">{{ error }}</p>{% endif %}
 
-  <form method="post" action="/admin/channels/{{ channel.id }}/sources/new" class="source-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="field">
-      <label>信源类型</label>
-      <div class="type-options">
-        {% for option in source_type_options %}
-        <label class="type-option">
-          <input type="radio" name="type" value="{{ option.type_key }}"
-                 id="{{ option.input_id }}"
-                 {{ "checked" if selected_type == option.type_key else "" }}>
-          <span>{{ option.icon }}</span>
-          <span class="name">{{ option.label }}</span>
-        </label>
-        {% endfor %}
-        <div class="type-option disabled">
-          <span>🐦</span>
-          <span class="name">Twitter / X — 账号</span>
-          <span class="soon">Phase 3 支持</span>
+  <section class="admin-panel">
+    <form method="post" action="/admin/channels/{{ channel.id }}/sources/new" class="source-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <fieldset class="field source-types">
+        <legend>信源类型</legend>
+        <div class="type-options">
+          {% for option in source_type_options %}
+          <label class="type-option">
+            <input type="radio" name="type" value="{{ option.type_key }}"
+                   id="{{ option.input_id }}"
+                   {{ "checked" if selected_type == option.type_key else "" }}>
+            <span class="source-icon">{{ option.icon }}</span>
+            <span class="name">{{ option.label }}</span>
+            <span class="option-check" aria-hidden="true"></span>
+          </label>
+          {% endfor %}
+          <div class="type-option disabled">
+            <span class="source-icon">X</span>
+            <span class="name">Twitter / X — 账号</span>
+            <span class="soon">Phase 3</span>
+          </div>
         </div>
+      </fieldset>
+      <div class="field config-reddit_subreddit">
+        <label for="subreddit">子版块名称</label>
+        <div class="input-with-prefix">
+          <span class="prefix">r/</span>
+          <input id="subreddit" type="text" name="subreddit" value="{{ subreddit }}" placeholder="PersonalFinanceNZ">
+        </div>
+        <p class="hint">只填名字，不用带 r/ 前缀。</p>
       </div>
-    </div>
-    <div class="field config-reddit_subreddit">
-      <label>子版块名称</label>
-      <div class="input-with-prefix">
-        <span class="prefix">r/</span>
-        <input type="text" name="subreddit" value="{{ subreddit }}"
-               placeholder="PersonalFinanceNZ">
+      <div class="field config-google_news_query">
+        <label for="google-query">搜索关键词</label>
+        <input id="google-query" type="text" name="query" value="{{ query }}" placeholder="New Zealand economy">
+        <p class="hint">支持引号词组、-排除词和 site: 域名限制。</p>
       </div>
-      <p class="hint">只填名字，不用带 r/ 前缀</p>
-    </div>
-    <div class="field config-google_news_query">
-      <label>搜索关键词</label>
-      <input type="text" name="query" value="{{ query }}"
-             placeholder="New Zealand economy">
-      <p class="hint">支持 Google 搜索语法：引号包裹词组、-排除词、site: 限定域名</p>
-    </div>
-    <div class="field config-hackernews_stories">
-      <label>榜单</label>
-      <div class="input-with-prefix">
-        <span class="prefix">HN</span>
-        <select name="hn_feed">
-          <option value="top" {{ "selected" if hn_feed == "top" else "" }}>热门</option>
-          <option value="best" {{ "selected" if hn_feed == "best" else "" }}>最佳</option>
-          <option value="new" {{ "selected" if hn_feed == "new" else "" }}>最新</option>
-          <option value="ask" {{ "selected" if hn_feed == "ask" else "" }}>问答</option>
-          <option value="show" {{ "selected" if hn_feed == "show" else "" }}>展示</option>
-          <option value="job" {{ "selected" if hn_feed == "job" else "" }}>招聘</option>
+      <div class="field config-hackernews_stories">
+        <label for="hn-feed">榜单</label>
+        <div class="input-with-prefix">
+          <span class="prefix">HN</span>
+          <select id="hn-feed" name="hn_feed">
+            <option value="top" {{ "selected" if hn_feed == "top" else "" }}>热门</option>
+            <option value="best" {{ "selected" if hn_feed == "best" else "" }}>最佳</option>
+            <option value="new" {{ "selected" if hn_feed == "new" else "" }}>最新</option>
+            <option value="ask" {{ "selected" if hn_feed == "ask" else "" }}>问答</option>
+            <option value="show" {{ "selected" if hn_feed == "show" else "" }}>展示</option>
+            <option value="job" {{ "selected" if hn_feed == "job" else "" }}>招聘</option>
+          </select>
+        </div>
+        <p class="hint">每次读取榜单前 30 条内容。</p>
+      </div>
+      <div class="field config-hackernews_query">
+        <label for="hn-query">搜索关键词</label>
+        <div class="input-with-prefix">
+          <span class="prefix">HN</span>
+          <input id="hn-query" type="text" name="hn_query" value="{{ hn_query }}" placeholder="local-first">
+        </div>
+        <label for="hn-sort">排序方式</label>
+        <select id="hn-sort" name="hn_sort">
+          <option value="relevance" {{ "selected" if hn_sort == "relevance" else "" }}>相关度</option>
+          <option value="recent" {{ "selected" if hn_sort == "recent" else "" }}>最新发布</option>
         </select>
       </div>
-      <p class="hint">每次读取榜单前 30 条内容</p>
-    </div>
-    <div class="field config-hackernews_query">
-      <label>搜索关键词</label>
-      <div class="input-with-prefix">
-        <span class="prefix">HN</span>
-        <input type="text" name="hn_query" value="{{ hn_query }}"
-               placeholder="local-first">
+      <div class="actions">
+        <button class="btn primary" type="submit">保存并返回</button>
+        <a class="btn ghost" href="/admin/channels/{{ channel.id }}/edit">取消</a>
       </div>
-      <label>排序方式</label>
-      <select name="hn_sort">
-        <option value="relevance" {{ "selected" if hn_sort == "relevance" else "" }}>相关度</option>
-        <option value="recent" {{ "selected" if hn_sort == "recent" else "" }}>最新发布</option>
-      </select>
-    </div>
-    <div class="actions">
-      <button class="btn save" type="submit">保存并返回</button>
-      <a href="/admin/channels/{{ channel.id }}/edit"><button class="btn ghost" type="button">取消</button></a>
-    </div>
-  </form>
+    </form>
+  </section>
 </main>
 {% endblock %}

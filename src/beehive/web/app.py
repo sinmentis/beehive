@@ -6,8 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from beehive.db.connection import connect, init_schema
 from beehive.web import admin, public
@@ -46,6 +47,21 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
                                  else os.environ.get("SESSION_SECRET", ""))
     app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    @app.exception_handler(404)
+    async def not_found(request: Request, exc: Exception) -> Response:
+        if isinstance(exc, StarletteHTTPException) and exc.detail != "Not Found":
+            return JSONResponse(
+                {"detail": exc.detail},
+                status_code=exc.status_code,
+                headers=exc.headers,
+            )
+        return app.state.templates.TemplateResponse(
+            request,
+            "not_found.html",
+            status_code=404,
+        )
+
     app.include_router(public.router)
     app.include_router(admin.router)
     return app

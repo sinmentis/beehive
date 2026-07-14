@@ -1,35 +1,48 @@
-<div class="item{{ ' read' if item.is_read else '' }}" id="item-{{ item.id }}">
+<article class="item{{ ' read' if item.is_read else '' }}" id="item-{{ item.id }}">
   <div class="meta-row">
-    <p class="meta">📍 {{ item.source_label }} ·
-      <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{% if item.engagement_label %}{{ item.engagement_label }} {% endif %}↗</a>
-      · {{ item.ai_rationale }} · <span title="{{ item.exact_time }}">{{ item.age }}</span></p>
-    <div class="votes">
+    <p class="meta">
+      <span class="source-indicator" aria-hidden="true"></span>
+      {{ item.source_label }} ·
+      <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{% if item.engagement_label %}{{ item.engagement_label }} {% endif %}↗<span class="sr-only">（在新窗口打开）</span></a>
+      · {{ item.ai_rationale }} · <span title="{{ item.exact_time }}">{{ item.age }}</span>
+    </p>
+    <div class="votes" role="group" aria-label="内容反馈">
       {% if is_admin %}
-      <button type="button" {% if item.vote_value == 1 %}class="up"{% endif %}
+      <button type="button" aria-label="这条推荐有用"
+              aria-pressed="{{ 'true' if item.vote_value == 1 else 'false' }}"
+              {% if item.vote_value == 1 %}class="up"{% endif %}
+              data-focus-key="item-{{ item.id }}-up"
+              data-feedback-message="已将这条内容标记为有用"
               hx-post="/items/{{ item.id }}/vote"
               hx-vals='{{ {"value": 1, "csrf_token": csrf_token} | tojson }}'
-              hx-target="#item-{{ item.id }}" hx-swap="outerHTML">👍</button>
-      <button type="button" {% if item.vote_value == -1 %}class="down active"{% endif %}
+              hx-target="#item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↑</span></button>
+      <button type="button" aria-label="这条推荐不相关"
+              aria-pressed="{{ 'true' if item.vote_value == -1 else 'false' }}"
+              {% if item.vote_value == -1 %}class="down active"{% endif %}
+              data-focus-key="item-{{ item.id }}-down"
+              data-feedback-message="已将这条内容标记为不相关"
               hx-post="/items/{{ item.id }}/vote"
               hx-vals='{{ {"value": -1, "csrf_token": csrf_token} | tojson }}'
-              hx-target="#item-{{ item.id }}" hx-swap="outerHTML">👎{% if item.vote_value == -1 %} ▾{% endif %}</button>
+              hx-target="#item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↓{% if item.vote_value == -1 %} ·{% endif %}</span></button>
       {% else %}
-      {% if item.vote_value == 1 %}👍{% elif item.vote_value == -1 %}👎{% endif %}
+      {% if item.vote_value == 1 %}<span class="vote-state up" aria-label="已标记为有用">↑</span>{% elif item.vote_value == -1 %}<span class="vote-state down" aria-label="已标记为不相关">↓</span>{% endif %}
       {% endif %}
     </div>
   </div>
-  <p class="title"><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer"><b>{{ item.ai_summary or item.title }}</b></a></p>
+  <h3 class="item-title"><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">（在新窗口打开）</span></a></h3>
   {% if item.best_comment_summary %}
-  <p class="best-comment">💬 {{ item.best_comment_summary }}</p>
+  <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
   {% endif %}
   {% if is_admin and item.vote_value == -1 %}
   <div class="reason-box">
-    <label>AI 这条排序哪里判断错了？（可选）</label>
-    <input type="text" name="reason" value="{{ item.vote_reason or '' }}"
+    <label for="reason-{{ item.id }}">AI 这条排序哪里判断错了？（可选）</label>
+    <input id="reason-{{ item.id }}" type="text" name="reason" value="{{ item.vote_reason or '' }}"
            placeholder="例如：我早就知道这条了，不算新消息"
+           data-focus-key="item-{{ item.id }}-reason"
+           data-feedback-message="反馈说明已保存"
            hx-post="/items/{{ item.id }}/vote" hx-trigger="blur"
            hx-vals='{{ {"value": -1, "csrf_token": csrf_token} | tojson }}'
            hx-target="#item-{{ item.id }}" hx-swap="outerHTML">
   </div>
   {% endif %}
-</div>
+</article>

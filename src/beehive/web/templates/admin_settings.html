@@ -1,86 +1,87 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — 管理后台{% endblock %}
-{% block header %}
-<div class="logo"><a href="/">🐝 蜂巢</a><span class="tag">管理后台</span></div>
-<div class="header-links"><a href="/">← 退出到前台</a></div>
-{% endblock %}
-{% block extra_style %}
-main{max-width:680px;margin:0 auto;padding:28px 24px}
-h1{font-size:20px;margin:0 0 22px}
-h2{font-size:15px;margin:0}
-.section{margin-bottom:30px}
-.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.status{padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:14px}
-.status p{margin:0;font-size:13px}
-.status .source{margin-top:4px;color:var(--text-muted);font-size:11px}
-.settings-form .field{margin-bottom:12px}
-.error{color:#ff8f8f;font-size:12px;margin:6px 0 0}
-.flash{color:#8bd3a8;font-size:12px;margin:0 0 12px}
-.page-banner{background:#2a1b1b;border:1px solid var(--red-bright);border-radius:8px;padding:10px 14px;margin:0 0 18px;font-size:13px;color:#ffb3b3}
-.row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.row h3{margin:0;font-size:15px}
-.row p{margin:2px 0 0;font-size:12px;color:var(--text-muted)}
-.row-actions{display:flex;gap:8px;align-items:center}
-.row-actions form{margin:0}
-.row .trigger-flash{font-size:11px;color:var(--green);margin:4px 0 0}
-.empty-state{font-size:12px;color:var(--text-muted);margin:0}
-@media (max-width:480px){.row{flex-wrap:wrap;gap:8px}}
-{% endblock %}
+{% block title %}蜂巢 — 管理{% endblock %}
+{% block body_class %}page-admin{% endblock %}
 {% block content %}
-<main>
-  <h1>管理后台</h1>
-  {% if default_error %}<div class="page-banner">全局默认收件地址有误：{{ default_error }}</div>{% endif %}
+<main id="main-content" class="page-shell admin-shell">
+  <header class="page-heading admin-heading">
+    <div>
+      <p class="eyebrow" lang="en">Control room</p>
+      <h1>管理后台</h1>
+      <p class="page-lede">管理投递地址、抓取节奏和每个 Channel 的信源。</p>
+    </div>
+    <a class="btn ghost" href="/">查看前台</a>
+  </header>
+  {% if default_error %}<div class="page-banner" role="alert">全局默认收件地址有误：{{ default_error }}</div>{% endif %}
 
-  <section class="section">
-    <div class="section-head"><h2>默认邮件收件地址</h2></div>
-    {% if saved %}<p class="flash">默认收件地址已保存</p>{% endif %}
-    <div class="status">
-      <p>当前生效地址：{{ effective_email or "未配置" }}</p>
-      <p class="source">
-        来源：
-        {% if effective_source == "database" %}数据库
-        {% elif effective_source == "environment" %}环境变量 DIGEST_EMAIL_TO
-        {% else %}未配置{% endif %}
-      </p>
-    </div>
-    <form class="settings-form" method="post" action="/admin/">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="field">
-        <label>默认邮件收件地址</label>
-        <input type="text" name="default_digest_email"
-               value="{{ submitted_email }}"
-               placeholder="{{ environment_email or 'owner@example.com' }}">
-        <p class="hint">Channel 未单独配置时使用此地址。留空保存可恢复环境变量默认值。</p>
-        {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <div class="admin-grid">
+    <section class="admin-panel settings-panel" aria-labelledby="email-title">
+      <header class="panel-heading">
+        <p class="section-kicker" lang="en">Delivery</p>
+        <h2 id="email-title">默认邮件地址</h2>
+      </header>
+      {% if saved %}<p class="flash" role="status">默认收件地址已保存</p>{% endif %}
+      <div class="status">
+        <span>当前生效</span>
+        <strong>{{ effective_email or "未配置" }}</strong>
+        <small>
+          {% if effective_source == "database" %}来自数据库
+          {% elif effective_source == "environment" %}来自环境变量 DIGEST_EMAIL_TO
+          {% else %}尚无可用地址{% endif %}
+        </small>
       </div>
-      <button class="btn save" type="submit">保存设置</button>
-    </form>
-  </section>
+      <form class="settings-form" method="post" action="/admin/">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field">
+          <label for="default-digest-email">默认邮件收件地址</label>
+          <input id="default-digest-email" type="text" inputmode="email" name="default_digest_email"
+                 value="{{ submitted_email }}"
+                 placeholder="{{ environment_email or 'owner@example.com' }}"
+                 autocomplete="email">
+          <p class="hint">Channel 未单独配置时使用此地址。留空保存可恢复环境变量默认值。</p>
+          {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+        </div>
+        <button class="btn primary" type="submit">保存设置</button>
+      </form>
+    </section>
 
-  <section class="section">
-    <div class="section-head">
-      <h2>Channels</h2>
-      <a class="btn ghost small" href="/admin/channels/new">+ 新建 Channel</a>
-    </div>
-    {% for channel in channels %}
-    <div class="row">
-      <div>
-        <h3>{{ channel.name }}</h3>
-        <p>{{ channel.source_count }} 个信源 · {{ channel.fetch_interval_label }} · <span title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>{% if channel.fetch_stats_label %} · {{ channel.fetch_stats_label }}{% endif %} · 邮件：{{ channel.effective_email or "未配置" }}</p>
-        {% if triggered == channel.id %}
-        <p class="trigger-flash">已提交抓取请求，稍后刷新查看</p>
-        {% endif %}
+    <section class="admin-panel channels-panel" aria-labelledby="admin-channels-title">
+      <header class="panel-heading split-heading">
+        <div>
+          <p class="section-kicker" lang="en">Streams</p>
+          <h2 id="admin-channels-title">Channels</h2>
+        </div>
+        <a class="btn ghost small" href="/admin/channels/new">+ 新建 Channel</a>
+      </header>
+      <div class="channel-admin-list">
+        {% for channel in channels %}
+        <article class="channel-admin-row">
+          <div class="channel-admin-copy">
+            <h3>{{ channel.name }}</h3>
+            <p>{{ channel.source_count }} 个信源 · {{ channel.fetch_interval_label }}</p>
+            <p><span title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>{% if channel.fetch_stats_label %} · {{ channel.fetch_stats_label }}{% endif %}</p>
+            <p class="recipient">邮件：{{ channel.effective_email or "未配置" }}</p>
+            {% if triggered == channel.id %}
+            <p class="trigger-flash" role="status">已提交抓取请求，稍后刷新查看</p>
+            {% endif %}
+          </div>
+          <div class="row-actions">
+            <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn ghost small" type="submit">立即抓取</button>
+            </form>
+            <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/edit">编辑</a>
+          </div>
+        </article>
+        {% endfor %}
       </div>
-      <div class="row-actions">
-        <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="btn ghost small" type="submit">立即抓取</button>
-        </form>
-        <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/edit">编辑</a>
+      {% if not channels %}
+      <div class="empty-state">
+        <h3>还没有 Channel。</h3>
+        <p>创建一个关注主题，然后添加需要定期抓取的信源。</p>
+        <a class="btn primary" href="/admin/channels/new">新建 Channel</a>
       </div>
-    </div>
-    {% endfor %}
-    {% if not channels %}<p class="empty-state">还没有 Channel。</p>{% endif %}
-  </section>
+      {% endif %}
+    </section>
+  </div>
 </main>
 {% endblock %}
