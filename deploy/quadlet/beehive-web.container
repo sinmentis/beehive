@@ -1,0 +1,22 @@
+[Unit]
+Description=Beehive public web app (Dashboard + Channel drill-down)
+
+[Container]
+Image=localhost/beehive:latest
+ContainerName=beehive-web
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+Environment=DIGEST_EMAIL_TO=you@example.com
+Secret=beehive-session-secret,type=env,target=SESSION_SECRET
+PublishPort=127.0.0.1:8095:8000
+Exec=-m scripts.run_web
+
+[Service]
+Restart=always
+CPUQuota=100%
+CPUWeight=30
+MemoryHigh=256M
+MemoryMax=512M
+
+[Install]
+WantedBy=default.target

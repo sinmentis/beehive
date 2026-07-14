@@ -1,0 +1,11 @@
+# deploy/quadlet/beehive-fetch.timer
+[Unit]
+Description=Run the Beehive fetch/AI-rank cycle every 3 hours
+
+[Timer]
+OnCalendar=*-*-* 01,04,07,10,13,16,19,22:00:00
+Persistent=true
+Unit=beehive-fetch.service
+
+[Install]
+WantedBy=timers.target

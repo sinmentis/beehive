@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for a manual per-Channel fetch request from the admin UI's "Fetch now" button
+
+[Path]
+PathExists=%h/.local/share/containers/storage/volumes/beehive-data/_data/fetch_trigger_channel_id
+Unit=beehive-fetch-manual.service
+
+[Install]
+WantedBy=paths.target

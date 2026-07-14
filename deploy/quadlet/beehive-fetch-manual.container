@@ -1,0 +1,29 @@
+[Unit]
+Description=Beehive manual per-Channel fetch/AI-rank cycle, started only by beehive-fetch-manual.path
+
+[Container]
+Image=localhost/beehive:latest
+ContainerName=beehive-fetch-manual
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+# GitHub token for the Copilot-backed AI ranking call. Create it as a rootless Podman secret
+# on the host (see deploy/README.md); it is never baked into the image or committed.
+Secret=beehive-copilot-github-token,type=env,target=COPILOT_GITHUB_TOKEN
+Exec=-m scripts.run_collector --mode fetch-channel
+
+[Service]
+Type=oneshot
+# Consume the trigger marker on the HOST before the container even attempts to start, so a
+# container-boot failure (missing image, misconfigured secret, import error) can't leave the
+# marker in place: systemd's PathExists= would otherwise re-fire beehive-fetch-manual.path the
+# instant this unit exits, looping until the start-rate-limit trips. Renaming (not deleting)
+# also preserves the requested Channel id for the script to read.
+ExecStartPre=/bin/sh -c 'mv -f %h/.local/share/containers/storage/volumes/beehive-data/_data/fetch_trigger_channel_id %h/.local/share/containers/storage/volumes/beehive-data/_data/fetch_trigger_channel_id.inflight 2>/dev/null || true'
+CPUQuota=100%
+CPUWeight=20
+MemoryHigh=384M
+MemoryMax=512M
+TimeoutStartSec=600
+
+# No [Install]: this is started only by beehive-fetch-manual.path, never at boot and never on
+# a timer.

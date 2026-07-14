@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>蜂巢每日摘要 · {{ today_iso }}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+<tr><td style="padding:20px 24px;border-bottom:1px solid #e5e7eb;">
+  <span style="font-size:18px;font-weight:600;color:#18181b;">🐝 蜂巢每日摘要</span>
+  <div style="font-size:13px;color:#71717a;margin-top:2px;">{{ today_iso }}</div>
+</td></tr>
+{% for cd in channel_digests %}
+<tr><td style="padding:16px 24px 4px;">
+  <div style="font-size:15px;font-weight:600;color:#18181b;border-left:3px solid #4f46e5;padding-left:8px;">{{ cd.channel_name }}</div>
+</td></tr>
+{% for warning in cd.source_warnings %}
+<tr><td style="padding:0 24px 8px;">
+  <div style="background-color:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;font-size:13px;color:#92400e;">⚠ {{ warning }}</div>
+</td></tr>
+{% endfor %}
+{% if not cd.highlighted %}
+<tr><td style="padding:0 24px 16px;">
+  <div style="font-size:13px;color:#a1a1aa;">今天没有新内容，已确认检查过。</div>
+</td></tr>
+{% else %}
+{% for item in cd.highlighted %}
+<tr><td style="padding:8px 24px;border-bottom:1px solid #f4f4f5;">
+  <a href="{{ item.url | safe_href }}" style="font-size:14px;color:#4f46e5;text-decoration:none;line-height:1.5;">{{ item.ai_summary }}</a>
+</td></tr>
+{% endfor %}
+{% endif %}
+{% endfor %}
+</table>
+</td></tr>
+</table>
+</body>
+</html>

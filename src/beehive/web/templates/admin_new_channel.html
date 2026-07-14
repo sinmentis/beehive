@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}蜂巢 — 新建 Channel{% endblock %}
+{% block header %}<div class="logo"><a href="/">🐝 蜂巢</a><span class="tag">管理后台</span></div><a href="/">← 退出到前台</a>{% endblock %}
+{% block extra_style %}
+main{max-width:560px;margin:0 auto;padding:28px 24px}
+h1{font-size:18px;margin:0 0 22px}
+{% endblock %}
+{% block content %}
+<main>
+  <p class="crumb"><a href="/admin/">← Channel 列表</a></p>
+  <h1>新建 Channel</h1>
+  <form method="post" action="/admin/channels/new">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="field">
+      <label>名字</label>
+      <input type="text" name="name" placeholder="例如：NZ Finance">
+    </div>
+    <div class="field">
+      <label>关注什么（自然语言描述，驱动 AI 排序）</label>
+      <textarea name="profile" placeholder="经济新闻、利率变化、房产市场动态、KiwiSaver 和省钱投资技巧。"></textarea>
+      <p class="hint">保存后可以在编辑页面继续调整；创建后再到这里添加信源</p>
+    </div>
+    <div class="field">
+      <label>抓取频率</label>
+      <select name="fetch_interval_hours">
+        <option value="3">每 3 小时</option>
+        <option value="6">每 6 小时</option>
+        <option value="24">每天一次</option>
+      </select>
+    </div>
+    <div class="actions">
+      <button class="btn save" type="submit">创建</button>
+      <a href="/admin/"><button class="btn ghost" type="button">取消</button></a>
+    </div>
+  </form>
+</main>
+{% endblock %}

@@ -1,0 +1,43 @@
+[project]
+name = "beehive"
+version = "0.1.0"
+description = "A self-hosted AI news aggregator that ranks, summarizes, and digests feeds against your interests."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+keywords = ["ai", "news-aggregator", "rss", "self-hosted", "fastapi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content :: News/Diary",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "pydantic>=2.7",
+    "argon2-cffi>=23.1",
+    "python-multipart>=0.0.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/sinmentis/beehive"
+Repository = "https://github.com/sinmentis/beehive"
+Issues = "https://github.com/sinmentis/beehive/issues"
+
+[project.optional-dependencies]
+ai = ["github-copilot-sdk>=1.0.5"]
+email = ["azure-communication-email>=1.0"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "httpx>=0.27"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/beehive"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src", "."]

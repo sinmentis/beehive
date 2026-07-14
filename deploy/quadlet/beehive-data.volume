@@ -1,0 +1,8 @@
+[Unit]
+Description=Beehive SQLite data volume
+
+[Volume]
+VolumeName=beehive-data
+
+[Install]
+WantedBy=default.target

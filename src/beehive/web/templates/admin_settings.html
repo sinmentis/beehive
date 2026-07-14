@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}蜂巢 — 管理后台{% endblock %}
+{% block header %}
+<div class="logo"><a href="/">🐝 蜂巢</a><span class="tag">管理后台</span></div>
+<div class="header-links"><a href="/">← 退出到前台</a></div>
+{% endblock %}
+{% block extra_style %}
+main{max-width:680px;margin:0 auto;padding:28px 24px}
+h1{font-size:20px;margin:0 0 22px}
+h2{font-size:15px;margin:0}
+.section{margin-bottom:30px}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.status{padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:14px}
+.status p{margin:0;font-size:13px}
+.status .source{margin-top:4px;color:var(--text-muted);font-size:11px}
+.settings-form .field{margin-bottom:12px}
+.error{color:#ff8f8f;font-size:12px;margin:6px 0 0}
+.flash{color:#8bd3a8;font-size:12px;margin:0 0 12px}
+.page-banner{background:#2a1b1b;border:1px solid var(--red-bright);border-radius:8px;padding:10px 14px;margin:0 0 18px;font-size:13px;color:#ffb3b3}
+.row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.row h3{margin:0;font-size:15px}
+.row p{margin:2px 0 0;font-size:12px;color:var(--text-muted)}
+.row-actions{display:flex;gap:8px;align-items:center}
+.row-actions form{margin:0}
+.row .trigger-flash{font-size:11px;color:var(--green);margin:4px 0 0}
+.empty-state{font-size:12px;color:var(--text-muted);margin:0}
+@media (max-width:480px){.row{flex-wrap:wrap;gap:8px}}
+{% endblock %}
+{% block content %}
+<main>
+  <h1>管理后台</h1>
+  {% if default_error %}<div class="page-banner">全局默认收件地址有误：{{ default_error }}</div>{% endif %}
+
+  <section class="section">
+    <div class="section-head"><h2>默认邮件收件地址</h2></div>
+    {% if saved %}<p class="flash">默认收件地址已保存</p>{% endif %}
+    <div class="status">
+      <p>当前生效地址：{{ effective_email or "未配置" }}</p>
+      <p class="source">
+        来源：
+        {% if effective_source == "database" %}数据库
+        {% elif effective_source == "environment" %}环境变量 DIGEST_EMAIL_TO
+        {% else %}未配置{% endif %}
+      </p>
+    </div>
+    <form class="settings-form" method="post" action="/admin/">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field">
+        <label>默认邮件收件地址</label>
+        <input type="text" name="default_digest_email"
+               value="{{ submitted_email }}"
+               placeholder="{{ environment_email or 'owner@example.com' }}">
+        <p class="hint">Channel 未单独配置时使用此地址。留空保存可恢复环境变量默认值。</p>
+        {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      </div>
+      <button class="btn save" type="submit">保存设置</button>
+    </form>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Channels</h2>
+      <a class="btn ghost small" href="/admin/channels/new">+ 新建 Channel</a>
+    </div>
+    {% for channel in channels %}
+    <div class="row">
+      <div>
+        <h3>{{ channel.name }}</h3>
+        <p>{{ channel.source_count }} 个信源 · {{ channel.fetch_interval_label }} · <span title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>{% if channel.fetch_stats_label %} · {{ channel.fetch_stats_label }}{% endif %} · 邮件：{{ channel.effective_email or "未配置" }}</p>
+        {% if triggered == channel.id %}
+        <p class="trigger-flash">已提交抓取请求，稍后刷新查看</p>
+        {% endif %}
+      </div>
+      <div class="row-actions">
+        <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn ghost small" type="submit">立即抓取</button>
+        </form>
+        <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/edit">编辑</a>
+      </div>
+    </div>
+    {% endfor %}
+    {% if not channels %}<p class="empty-state">还没有 Channel。</p>{% endif %}
+  </section>
+</main>
+{% endblock %}

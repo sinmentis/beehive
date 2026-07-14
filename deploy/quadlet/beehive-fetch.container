@@ -1,0 +1,22 @@
+[Unit]
+Description=Beehive fetch/AI-rank cycle (timer-triggered)
+
+[Container]
+Image=localhost/beehive:latest
+ContainerName=beehive-fetch
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+# No Reddit credentials needed -- the connector fetches Reddit's public, unauthenticated
+# Atom RSS feed (see src/beehive/connectors/reddit.py's module docstring for details).
+# GitHub token for the Copilot-backed AI ranking call. Create it as a rootless Podman secret
+# on the host (see deploy/README.md); it is never baked into the image or committed.
+Secret=beehive-copilot-github-token,type=env,target=COPILOT_GITHUB_TOKEN
+Exec=-m scripts.run_collector --mode fetch
+
+[Service]
+Type=oneshot
+CPUQuota=100%
+CPUWeight=20
+MemoryHigh=384M
+MemoryMax=512M
+TimeoutStartSec=600

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}蜂巢 — {{ channel.name }}{% endblock %}
+{% block extra_style %}
+main{max-width:720px;margin:0 auto;padding:24px}
+.crumb{font-size:13px;color:var(--text-muted);margin-bottom:6px}
+h1{font-size:20px;font-weight:600;margin:0 0 2px}
+.page-sub{color:var(--text-muted);font-size:12px;margin:0 0 20px}
+.section-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin:18px 0 8px;display:flex;justify-content:space-between;align-items:center}
+.link-btn{background:none;border:none;color:var(--link);cursor:pointer;font-size:11px;padding:0;font-family:inherit}
+.link-btn:hover{text-decoration:underline}
+.item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.item.read{opacity:.55}
+.meta-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.meta{font-size:11px;color:var(--text-muted);margin:0}
+.meta a{color:var(--link)}
+.votes{display:flex;gap:6px;flex-shrink:0}
+.votes button{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:3px 9px;color:var(--text);cursor:pointer;font-size:14px}
+.votes button.up{background:var(--green);border-color:var(--green)}
+.votes button.down.active{background:var(--red-bright);border-color:var(--red-bright)}
+.title{margin:6px 0 0;font-size:16px;line-height:1.4}
+.best-comment{margin:6px 0 0;font-size:13px;color:var(--text-muted);line-height:1.4}
+.reason-box{margin-top:8px;padding:8px;background:var(--surface-2);border-radius:6px}
+.reason-box label{font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px}
+.reason-box input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 8px;color:var(--text);font-size:13px}
+.reason-box input::placeholder{color:var(--text-muted)}
+.folded{font-size:13px;line-height:2;color:var(--text)}
+.folded .n{color:var(--text-muted)}
+{% endblock %}
+{% block content %}
+<main>
+  <p class="crumb"><a href="/">← Dashboard</a></p>
+  <h1>{{ channel.name }}</h1>
+  <p class="page-sub">{{ unread_count }} 条新内容 · <span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %} · 来源：{{ source_summary }}</p>
+
+  {% if read_count and not show_read %}
+  <p class="page-sub"><a href="/channels/{{ channel.id }}?show_read=1">还有 {{ read_count }} 条已读内容，点击展开</a></p>
+  {% endif %}
+
+  <div class="section-label">重点展示（AI 排序 Top {{ highlighted|length }}）</div>
+  {% for item in highlighted %}
+  {% include "_item_card.html" %}
+  {% endfor %}
+
+  {% if folded %}
+  <div class="section-label">
+    <span>其余内容（已摘要，已折叠）</span>
+    {% if is_admin %}
+    <form method="post" action="/channels/{{ channel.id }}/mark-all-read" style="margin:0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="link-btn">标记全部已读</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="folded">
+    {% for item in folded %}
+    📍 {{ item.source_label }} ▸ <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary or item.title }}</a>{% if item.engagement_label %} <span class="n">({{ item.engagement_label }})</span>{% endif %}<br>
+    {% endfor %}
+  </div>
+  {% endif %}
+</main>
+{% endblock %}
+{% block scripts %}<script src="/static/htmx.min.js" defer></script>{% endblock %}

@@ -1,0 +1,11 @@
+# deploy/quadlet/beehive-digest.timer
+[Unit]
+Description=Send the Beehive daily digest at 08:00 (Pacific/Auckland, host tz)
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+Unit=beehive-digest.service
+
+[Install]
+WantedBy=timers.target
