@@ -89,7 +89,7 @@ def test_dashboard_matches_selected_a2_pixel_contract():
 
     age_column = re.search(r"\.signal-age-col\{([^}]*)\}", css)
     assert age_column is not None
-    assert "width:3.3125rem" in age_column.group(1)
+    assert "width:4.5rem" in age_column.group(1)
 
     assert ".channel-strip{" not in css
     assert ".signal-row.is-dim{opacity:" not in css
@@ -99,6 +99,23 @@ def test_dashboard_matches_selected_a2_pixel_contract():
     assert 'class="dashboard-search-shortcut"' in template
     assert 'id="dashboard-selection-status"' in template
     assert 'aria-live="polite"' in template
+
+
+def test_dashboard_typography_is_readable_at_default_zoom():
+    css = (_STATIC_DIR / "beehive.css").read_text()
+    expected_sizes = {
+        r"\.dashboard-tabs>a,\s*\.dashboard-tabs>span:not\(\.dashboard-channel-tab\),"
+        r"\s*\.dashboard-tabs>strong,\s*\.dashboard-channel-link": ".6875rem",
+        r'\.dashboard-search input\[type="search"\]': ".6875rem",
+        r"\.signal-table th": ".625rem",
+        r"\.signal-table td": ".8125rem",
+        r"(?m)^\.signal-summary": ".8125rem",
+        r"\.signal-statusbar": ".625rem",
+    }
+    for selector, font_size in expected_sizes.items():
+        declaration = re.search(rf"{selector}\{{([^}}]*)\}}", css)
+        assert declaration is not None
+        assert f"font-size:{font_size}" in declaration.group(1)
 
 
 def test_channel_scripts_use_the_static_asset_fingerprint():

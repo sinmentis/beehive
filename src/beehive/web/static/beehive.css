@@ -271,21 +271,21 @@ h1{
   justify-content:flex-start;
   gap:.4375rem;
 }
-.page-dashboard .brand{gap:.4375rem;font-size:.5625rem}
+.page-dashboard .brand{gap:.4375rem;font-size:.6875rem}
 .page-dashboard .brand-mark{width:.75rem}
 .page-dashboard .brand-mark::after{display:none}
-.page-dashboard .brand-name{font-size:.5625rem}
+.page-dashboard .brand-name{font-size:.6875rem}
 .page-dashboard .site-nav{margin-left:1.0625rem;gap:.75rem}
 .page-dashboard .site-nav a{
   padding:0;
-  font-size:.5625rem;
+  font-size:.6875rem;
   font-weight:600;
 }
 .page-dashboard .site-nav a::after{display:none}
 .dashboard-clock{
   margin-left:auto;
   color:var(--muted);
-  font-size:.5625rem;
+  font-size:.6875rem;
   font-variant-numeric:tabular-nums;
 }
 .dashboard-shell{
@@ -313,12 +313,12 @@ h1{
   max-width:none;
   margin:0;
   font-family:var(--font-sans);
-  font-size:.8125rem;
+  font-size:.875rem;
   font-weight:680;
   letter-spacing:0;
   line-height:1;
 }
-.dashboard-title span{color:var(--muted);font-size:.5rem;font-variant-numeric:tabular-nums}
+.dashboard-title span{color:var(--muted);font-size:.625rem;font-variant-numeric:tabular-nums}
 .dashboard-tabs{
   display:flex;
   min-width:0;
@@ -336,7 +336,7 @@ h1{
   padding:.25rem .375rem;
   border-radius:.1875rem;
   color:var(--muted);
-  font-size:.5rem;
+  font-size:.6875rem;
   font-weight:680;
   line-height:1;
 }
@@ -357,7 +357,7 @@ h1{
   place-items:center;
   background:var(--surface-raised);
   color:var(--accent);
-  font-size:.5625rem;
+  font-size:.75rem;
   opacity:0;
   pointer-events:none;
   transform:translateY(-50%);
@@ -370,7 +370,7 @@ h1{
 .dashboard-search{
   position:relative;
   flex:none;
-  width:5.9375rem;
+  width:8rem;
   height:1.375rem;
   margin-left:auto;
 }
@@ -384,7 +384,7 @@ h1{
   border-radius:.1875rem;
   background:var(--bg-soft);
   color:var(--text);
-  font-size:.5rem;
+  font-size:.6875rem;
 }
 .dashboard-search-shortcut{
   position:absolute;
@@ -392,7 +392,7 @@ h1{
   right:.375rem;
   color:var(--muted);
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
-  font-size:.5rem;
+  font-size:.625rem;
   pointer-events:none;
   transform:translateY(-50%);
 }
@@ -407,28 +407,29 @@ h1{
 }
 .signal-state-col{width:.6875rem}
 .signal-score-col{width:2.125rem}
-.signal-channel-col{width:3.9375rem}
-.signal-source-col{width:4.625rem}
-.signal-engagement-col{width:4.125rem}
-.signal-age-col{width:3.3125rem}
+.signal-channel-col{width:5rem}
+.signal-source-col{width:5.5rem}
+.signal-engagement-col{width:5.5rem}
+.signal-age-col{width:4.5rem}
 .signal-table th{
   height:1.1875rem;
   padding:0 .5rem;
   border-bottom:1px solid var(--border-strong);
   color:var(--muted-2);
-  font-size:.4375rem;
+  font-size:.625rem;
   font-weight:680;
   letter-spacing:.04em;
   line-height:1;
   text-align:left;
   text-transform:uppercase;
+  white-space:nowrap;
 }
 .signal-table td{
   height:var(--dashboard-row-height);
   padding:0 .5rem;
   border-bottom:1px solid var(--border);
   color:var(--muted);
-  font-size:.46875rem;
+  font-size:.8125rem;
   line-height:1;
   vertical-align:middle;
 }
@@ -474,7 +475,7 @@ h1{
   display:inline-block;
   max-width:calc(100% - 1.7rem);
   color:var(--text-soft);
-  font-size:.5rem;
+  font-size:.8125rem;
   font-weight:520;
   vertical-align:middle;
 }
@@ -515,7 +516,7 @@ h1{
   background:var(--surface);
   color:var(--muted);
   font-family:var(--font-sans);
-  font-size:.64rem;
+  font-size:.75rem;
   line-height:1.45;
   white-space:normal;
 }
@@ -528,7 +529,7 @@ h1{
   gap:.75rem;
   background:#151915;
   color:var(--muted-2);
-  font-size:.4375rem;
+  font-size:.625rem;
 }
 .signal-statusbar kbd{color:#a1aaa2;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 .signal-statusbar b{margin-left:auto;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
@@ -1047,19 +1048,19 @@ select{
   }
   .dashboard-title{width:100%;justify-content:space-between}
   .dashboard-tabs{order:2;flex:1 1 0}
-  .dashboard-search{width:6rem;margin:0;order:3}
+  .dashboard-search{width:8rem;margin:0;order:3}
   .signal-source-col,.signal-engagement-col,
   .signal-source-heading,.signal-engagement-heading,
   .signal-source,.signal-engagement{display:none}
   .signal-score-col{width:2.55rem}
   .signal-channel-col{width:6.25rem}
-  .signal-age-col{width:3rem}
+  .signal-age-col{width:4.5rem}
   .signal-table th{height:1.45rem;padding-inline:.3rem}
-  .signal-table td{height:3rem;padding:.3rem;font-size:.64rem}
+  .signal-table td{height:3rem;padding:.3rem;font-size:.8125rem}
   .signal-summary{
     display:-webkit-box;
     overflow:hidden;
-    font-size:.68rem;
+    font-size:.8125rem;
     line-height:1.35;
     white-space:normal;
     -webkit-box-orient:vertical;
