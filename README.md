@@ -1,14 +1,59 @@
-# Beehive
+<p align="center">
+  <img src="docs/assets/github-social-preview.png" alt="Beehive turns noisy feeds into a personal AI briefing" width="100%">
+</p>
 
-Beehive is a self-hosted, single-user AI news aggregator. It collects posts from multiple sources, ranks them against per-channel interests, produces concise summaries, and sends configurable email digests.
+<p align="center">
+  A self-hosted AI briefing system for people who follow more sources than they have time to read.
+</p>
 
-![Beehive dashboard showing AI-ranked summaries across multiple channels](docs/assets/dashboard.png)
+<div align="center">
 
-> The preview uses an English documentation overlay. The current dashboard chrome and email templates are Chinese-first; interface localization is not configurable yet.
+[Product tour](#product-tour) |
+[How it works](#how-it-works) |
+[Quick start](#quick-start) |
+[Deployment](#deployment)
 
-## Why Beehive
+</div>
 
-Information overload creates two conflicting problems: reading everything takes too long, while ignoring feeds creates fear of missing important updates. Beehive moves collection, filtering, summarization, and recurring delivery onto infrastructure you control.
+<table>
+  <tr>
+    <td><strong>6 source families</strong><br><sub>News, communities, and institutions</sub></td>
+    <td><strong>Self-hosted</strong><br><sub>Your data and schedule</sub></td>
+    <td><strong>SQLite</strong><br><sub>Simple operations</sub></td>
+    <td><strong>MIT</strong><br><sub>Open source</sub></td>
+  </tr>
+</table>
+
+Beehive collects updates from the sources you care about, ranks each item against a channel-specific interest profile, and delivers concise summaries through a personal dashboard and email.
+
+## Product tour
+
+### See what matters first
+
+Each channel ranks new items against your interests, then reduces them to concise summaries.
+
+<img src="docs/assets/dashboard-product.png" alt="Beehive dashboard with featured summaries and three synthetic channels" width="100%">
+
+> The previews use an English documentation overlay. The current dashboard chrome and email templates are Chinese-first; interface localization is not configurable yet.
+
+### Control every signal
+
+Choose sources, cadence, summary language, and the email destination for each channel.
+
+<img src="docs/assets/channel-configuration.png" alt="Beehive channel configuration with synthetic sources and email routing" width="100%">
+
+## How it works
+
+```mermaid
+flowchart LR
+    Sources --> Collector
+    Collector --> SQLite
+    SQLite --> Ranker["AI ranker"]
+    Ranker --> Dashboard
+    Ranker --> Email["Alerts and digests"]
+```
+
+Every source adapter returns a common `RawItem` model. The collector deduplicates items in SQLite, ranks new content against the channel profile, and stores the generated summary and rationale. The web application and scheduled email jobs read from the same database.
 
 ## Supported sources
 
@@ -20,25 +65,6 @@ Information overload creates two conflicting problems: reading everything takes 
 | Reserve Bank of New Zealand | Official RSS |
 | New Zealand Government | Official RSS |
 | Federal Reserve | Official RSS |
-
-## Features
-
-- Per-channel interests, fetch intervals, and email recipients
-- AI ranking, concise summaries, and optional comment summaries
-- Read/unread state and owner-only feedback controls
-- Scheduled and manual collection
-- Daily email digests
-- SQLite storage and rootless Podman deployment
-
-## Architecture
-
-```text
-Sources -> Collector -> SQLite -> AI ranker -> Dashboard
-                                      |
-                                      +----------> Email alerts and digests
-```
-
-Each source adapter returns a common `RawItem` model. The collector deduplicates items in SQLite, ranks new content against the channel profile, and stores the generated summary and rationale. The FastAPI application and scheduled email jobs read from the same database.
 
 ## Quick start
 
@@ -100,10 +126,12 @@ Beehive is designed for a personal dashboard. It sends `X-Robots-Tag: noindex, n
 
 Before publishing a deployment, review the generated content, channel names, source configuration, and reverse-proxy policy.
 
-## Status
+## Project status
 
 `0.1.0` is an alpha release used in production by its maintainer. Database migrations and upgrade compatibility are not yet guaranteed.
 
-## License
-
-[MIT](LICENSE)
+[Architecture decisions](docs/adr/) |
+[Changelog](CHANGELOG.md) |
+[Contributing](CONTRIBUTING.md) |
+[Security](SECURITY.md) |
+[MIT license](LICENSE)
