@@ -2,51 +2,44 @@
 {% block title %}蜂巢 — {{ channel.name }}{% endblock %}
 {% block body_class %}page-channel{% endblock %}
 {% block content %}
-<main id="main-content" class="page-shell feed-shell">
-  <p class="crumb"><a href="/">← 返回首页</a></p>
-  <header class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow" lang="en">Channel brief</p>
-      <h1>{{ channel.name }}</h1>
-      <p class="page-lede">{{ unread_count }} 条新内容 · <span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
+<main id="main-content" class="page-shell channel-shell">
+  <header class="channel-toolbar">
+    <a class="channel-back" href="/">← 首页</a>
+    <div class="channel-heading">
+      <h1 class="channel-title">{{ channel.name }}</h1>
+      <p class="channel-statline">{{ unread_count }} 条新内容 · <span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
     </div>
-    <p class="source-summary">来源：{{ source_summary }}</p>
+    <p class="channel-sources">来源：{{ source_summary }}</p>
+  {% if read_count and not show_read %}
+    <a class="channel-read-link" href="/channels/{{ channel.id }}?show_read=1">展开 {{ read_count }} 条已读内容</a>
+  {% endif %}
+    <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
   </header>
 
-  {% if read_count and not show_read %}
-  <a class="read-history-link" href="/channels/{{ channel.id }}?show_read=1">展开 {{ read_count }} 条已读内容</a>
-  {% endif %}
-  <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
-
-  <section class="feed-section" aria-labelledby="priority-title">
-    <header class="section-heading">
-      <div>
-        <p class="section-kicker" lang="en">AI-ranked</p>
-        <h2 id="priority-title">重点展示</h2>
-      </div>
+  <section class="channel-section" aria-labelledby="priority-title">
+    <header class="channel-section-heading">
+      <h2 id="priority-title">重点展示</h2>
       <span class="section-count"><span lang="en">Top</span> {{ highlighted|length }}</span>
     </header>
     {% for item in highlighted %}
     {% include "_item_card.html" %}
     {% else %}
-    <div class="empty-state compact-empty">
-      <h3>暂无重点内容</h3>
+    <div class="channel-empty">
+      <strong>暂无重点内容</strong>
       <p>下次抓取并完成 AI 排序后，最重要的内容会出现在这里。</p>
     </div>
     {% endfor %}
   </section>
 
   {% if folded %}
-  <section class="feed-section folded-section" aria-labelledby="folded-title">
-    <header class="section-heading">
-      <div>
-        <p class="section-kicker" lang="en">Condensed</p>
-        <h2 id="folded-title">其余内容</h2>
-      </div>
+  <section class="channel-section" aria-labelledby="folded-title">
+    <header class="channel-section-heading">
+      <h2 id="folded-title">其余内容</h2>
+      <span class="section-count">{{ folded|length }} 条</span>
       {% if is_admin %}
       <form class="inline-form" method="post" action="/channels/{{ channel.id }}/mark-all-read">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="text-action">标记全部已读</button>
+        <button type="submit" class="mark-read-button">全部标为已读</button>
       </form>
       {% endif %}
     </header>
@@ -54,7 +47,7 @@
       {% for item in folded %}
       <article class="folded-item">
         <span class="folded-source">{{ item.source_label }}</span>
-        <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary or item.title }}<span class="sr-only">（在新窗口打开）</span></a>
+        <a class="folded-title" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary or item.title }}<span class="sr-only">（在新窗口打开）</span></a>
         {% if item.engagement_label %}<span class="folded-engagement">{{ item.engagement_label }}</span>{% endif %}
       </article>
       {% endfor %}

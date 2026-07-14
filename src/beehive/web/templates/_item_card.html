@@ -1,6 +1,9 @@
 <article class="item{{ ' read' if item.is_read else '' }}" id="item-{{ item.id }}">
   <div class="meta-row">
     <p class="meta">
+      {% if item.ai_score is not none %}
+      <span class="item-score" aria-label="AI 分数 {{ item.ai_score | round | int }}">{{ item.ai_score | round | int }}</span>
+      {% endif %}
       <span class="source-indicator" aria-hidden="true"></span>
       {{ item.source_label }} ·
       <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{% if item.engagement_label %}{{ item.engagement_label }} {% endif %}↗<span class="sr-only">（在新窗口打开）</span></a>

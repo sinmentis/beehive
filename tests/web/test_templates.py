@@ -118,6 +118,48 @@ def test_dashboard_typography_is_readable_at_default_zoom():
         assert f"font-size:{font_size}" in declaration.group(1)
 
 
+def test_channel_matches_dashboard_dense_visual_contract():
+    css = (_STATIC_DIR / "beehive.css").read_text()
+    template = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+
+    channel_page = re.search(r"\.page-channel\{([^}]*)\}", css)
+    assert channel_page is not None
+    assert "--header-height:2rem" in channel_page.group(1)
+    assert "--muted:#8b948b" in channel_page.group(1)
+    assert "--muted-2:#838979" in channel_page.group(1)
+
+    header = re.search(r"\.page-channel \.site-header\{([^}]*)\}", css)
+    assert header is not None
+    assert "height:var(--header-height)" in header.group(1)
+
+    shell = re.search(r"\.channel-shell\{([^}]*)\}", css)
+    assert shell is not None
+    assert "width:100%" in shell.group(1)
+    assert "padding:0" in shell.group(1)
+
+    toolbar = re.search(r"\.channel-toolbar\{([^}]*)\}", css)
+    assert toolbar is not None
+    assert "min-height:3rem" in toolbar.group(1)
+    assert "padding:.375rem .6875rem" in toolbar.group(1)
+
+    expected_sizes = {
+        r"\.channel-title": "1rem",
+        r"\.channel-statline": ".6875rem",
+        r"\.channel-section-heading h2": ".8125rem",
+        r"\.page-channel \.item-title": ".8125rem",
+        r"\.page-channel \.best-comment": ".8125rem",
+        r"\.page-channel \.folded-title": ".8125rem",
+    }
+    for selector, font_size in expected_sizes.items():
+        declaration = re.search(rf"{selector}\{{([^}}]*)\}}", css)
+        assert declaration is not None
+        assert f"font-size:{font_size}" in declaration.group(1)
+
+    assert '{% block body_class %}page-channel{% endblock %}' in template
+    assert 'class="channel-toolbar"' in template
+    assert 'class="channel-section-heading"' in template
+
+
 def test_channel_scripts_use_the_static_asset_fingerprint():
     content = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
     assert 'src="/static/htmx.min.js?v={{ asset_version }}"' in content
