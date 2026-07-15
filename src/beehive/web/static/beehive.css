@@ -730,6 +730,7 @@ h1{
 
 .admin-grid{display:grid;grid-template-columns:minmax(18rem,.75fr) minmax(0,1.55fr);align-items:start;gap:1.2rem}
 .editor-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(17rem,.8fr);align-items:start;gap:1.2rem}
+.admin-settings-rail{display:grid;position:sticky;top:calc(var(--header-height) + 1.25rem);align-content:start;gap:1.2rem}
 .admin-panel{
   padding:clamp(1.3rem,3vw,2rem);
   border:1px solid var(--border);
@@ -737,7 +738,6 @@ h1{
   background:rgba(25,28,23,.8);
   box-shadow:inset 0 1px rgba(255,255,255,.025);
 }
-.settings-panel{position:sticky;top:calc(var(--header-height) + 1.25rem)}
 .status{
   display:flex;
   margin-bottom:1.75rem;
@@ -1029,7 +1029,7 @@ select{
   .dashboard-toolbar{gap:.5rem}
   .dashboard-title{min-width:auto}
   .admin-grid,.editor-grid{grid-template-columns:1fr}
-  .settings-panel{position:static}
+  .admin-settings-rail{position:static}
   .filters{grid-template-columns:repeat(2,minmax(0,1fr))}
   .search-field{grid-column:1/-1}
   .not-found-shell{grid-template-columns:1fr;gap:2rem}

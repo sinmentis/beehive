@@ -82,6 +82,25 @@ def test_admin_home_combines_settings_and_channel_management(
     assert "+ New channel" in response.text
 
 
+def test_channel_management_occupies_the_primary_admin_column():
+    template = (
+        Path(__file__).parent.parent.parent
+        / "src" / "beehive" / "web" / "templates" / "admin_settings.html"
+    ).read_text()
+    stylesheet = (
+        Path(__file__).parent.parent.parent
+        / "src" / "beehive" / "web" / "static" / "beehive.css"
+    ).read_text()
+
+    rail_start = template.index('<aside class="admin-settings-rail">')
+    rail_end = template.index("</aside>", rail_start)
+    channels_start = template.index('class="admin-panel channels-panel"')
+
+    assert rail_start < rail_end < channels_start
+    assert ".admin-settings-rail{" in stylesheet
+    assert ".admin-settings-rail{position:static}" in stylesheet
+
+
 def test_settings_validation_error_preserves_channel_list(
     authed_client, db_path,
 ):

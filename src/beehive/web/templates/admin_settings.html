@@ -14,6 +14,7 @@
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
 
   <div class="admin-grid">
+    <aside class="admin-settings-rail">
     <section class="admin-panel settings-panel" aria-labelledby="email-title">
       <header class="panel-heading">
         <p class="section-kicker" lang="en">Delivery</p>
@@ -65,6 +66,7 @@
         <button class="btn primary" type="submit">{{ t('web.admin.language.save') }}</button>
       </form>
     </section>
+    </aside>
 
     <section class="admin-panel channels-panel" aria-labelledby="admin-channels-title">
       <header class="panel-heading split-heading">
