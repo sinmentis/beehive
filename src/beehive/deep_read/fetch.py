@@ -93,6 +93,7 @@ class FetchFailureReason(str, Enum):
 class FetchFailure:
     reason: FetchFailureReason
     detail: str
+    status_code: int | None = None
 
 
 @dataclass(frozen=True)
@@ -434,7 +435,11 @@ class ArticleFetcher:
                     continue
 
                 if status_code != 200:
-                    return FetchFailure(FetchFailureReason.HTTP_ERROR, f"unexpected status code {status_code}")
+                    return FetchFailure(
+                        FetchFailureReason.HTTP_ERROR,
+                        f"unexpected status code {status_code}",
+                        status_code=status_code,
+                    )
 
                 content_type, charset = _content_type_and_charset(headers)
                 if content_type not in _ALLOWED_CONTENT_TYPES:

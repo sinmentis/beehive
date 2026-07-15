@@ -7,6 +7,7 @@ import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
+from urllib.parse import urlsplit
 
 from beehive.collector.deep_read_trigger import (
     consume_deep_read_wakeup,
@@ -23,7 +24,7 @@ from beehive.db.deep_reads import (
 )
 from beehive.db.items import get_item
 from beehive.deep_read.extract import ExtractionQuality, ExtractionResult, extract_article_text
-from beehive.deep_read.fetch import ArticleFetcher, FetchFailure
+from beehive.deep_read.fetch import ArticleFetcher, FetchFailure, FetchFailureReason
 from beehive.deep_read.summarize import (
     DeepReadResult,
     ItemContext,
@@ -62,6 +63,22 @@ def _result_json(result: DeepReadResult) -> str:
 def _source_name(item: dict) -> str:
     raw_metadata = item.get("raw_metadata") or {}
     return str(raw_metadata.get("source_name") or item["source_type"])
+
+
+def _fetch_error_code(failure: FetchFailure) -> str:
+    if failure.reason is FetchFailureReason.HTTP_ERROR:
+        if failure.status_code == 404:
+            return "fetch_not_found"
+        return "fetch_http_error"
+    if failure.reason is FetchFailureReason.TIMEOUT:
+        return "fetch_timeout"
+    return "fetch"
+
+
+def _unusable_extraction_error_code(final_url: str) -> str:
+    if (urlsplit(final_url).hostname or "").lower() == "news.google.com":
+        return "extraction_google_news"
+    return "extraction_no_text"
 
 
 def _fail_claim(
@@ -169,7 +186,7 @@ async def process_deep_read_queue(
                         item_id=item_id,
                         request_version=request_version,
                         claim_token=claim_token,
-                        error_code="fetch",
+                        error_code=_fetch_error_code(fetched),
                         detail=f"{fetched.reason.value}: {fetched.detail}",
                         now_factory=now_factory,
                     )
@@ -203,7 +220,7 @@ async def process_deep_read_queue(
                         item_id=item_id,
                         request_version=request_version,
                         claim_token=claim_token,
-                        error_code="extraction",
+                        error_code=_unusable_extraction_error_code(fetched.url),
                         detail="Article extraction produced no usable text",
                         now_factory=now_factory,
                     )

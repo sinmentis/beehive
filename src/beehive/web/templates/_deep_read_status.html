@@ -34,7 +34,9 @@
 {% elif status == 'failed' %}
 <section id="deep-read-status" class="deep-read-status deep-read-status-failed" role="status" aria-live="polite">
   <p class="deep-read-kicker">{{ t('web.deep_read.eyebrow') }}</p>
-  <p class="deep-read-status-body deep-read-status-body-failed">{{ failure_text }}</p>
+  <h2 class="deep-read-failure-heading">{{ failure.heading }}</h2>
+  <p class="deep-read-status-body deep-read-status-body-failed">{{ failure.explanation }}</p>
+  <p class="deep-read-failure-next">{{ failure.next_step }}</p>
   <p class="sr-only">{{ t('web.deep_read.failed_announcement') }}</p>
   {% if can_regenerate %}
   <form class="deep-read-form" method="post" action="{{ request_url }}">

@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from beehive.collector.deep_read_trigger import MARKER_NAME
@@ -13,7 +14,7 @@ from beehive.db.deep_reads import get_deep_read, request_deep_read
 from beehive.db.items import insert_new, update_ai_ranking_by_id
 from beehive.db.sources import create_source
 from beehive.deep_read.extract import ExtractionQuality, ExtractionResult, PartialReason
-from beehive.deep_read.fetch import FetchedArticle, FetchFailure, FetchFailureReason
+from beehive.deep_read.fetch import ArticleFetcher, FetchedArticle, FetchFailure, FetchFailureReason
 from beehive.deep_read.summarize import DeepReadResult, ImportantFigure
 from beehive.localization import save_language
 
@@ -178,6 +179,34 @@ async def test_worker_persists_fetch_failure_without_calling_llm(queued_db):
 
 
 @pytest.mark.asyncio
+async def test_worker_classifies_publisher_404_without_calling_llm(queued_db):
+    conn, item_id, data_dir = queued_db
+    fetcher = ArticleFetcher(
+        resolve_host=lambda _hostname: ["93.184.216.34"],
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                404,
+                headers={"content-type": "text/html"},
+                content=b"missing",
+            )
+        ),
+    )
+    generator = AsyncMock()
+
+    await process_deep_read_queue(
+        conn,
+        str(data_dir),
+        fetcher_factory=lambda: fetcher,
+        generator=generator,
+        now_factory=lambda: _NOW,
+    )
+
+    stored = get_deep_read(conn, item_id)
+    assert stored.error_code == "fetch_not_found"
+    generator.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_worker_persists_unusable_extraction_failure(queued_db):
     conn, item_id, data_dir = queued_db
     fetcher = _FakeFetcher(FetchedArticle(
@@ -205,7 +234,39 @@ async def test_worker_persists_unusable_extraction_failure(queued_db):
 
     stored = get_deep_read(conn, item_id)
     assert stored.status == "failed"
-    assert stored.error_code == "extraction"
+    assert stored.error_code == "extraction_no_text"
+
+
+@pytest.mark.asyncio
+async def test_worker_classifies_google_news_wrapper_without_calling_llm(queued_db):
+    conn, item_id, data_dir = queued_db
+    fetcher = _FakeFetcher(FetchedArticle(
+        url="https://news.google.com/rss/articles/opaque-id?hl=en",
+        status_code=200,
+        content_type="text/html",
+        html="<html><title>Google News</title></html>",
+        truncated=False,
+    ))
+    unusable = ExtractionResult(
+        quality=ExtractionQuality.UNUSABLE,
+        text="",
+        reasons=(),
+        char_count=0,
+    )
+    generator = AsyncMock()
+
+    await process_deep_read_queue(
+        conn,
+        str(data_dir),
+        fetcher_factory=lambda: fetcher,
+        extractor=lambda *_args, **_kwargs: unusable,
+        generator=generator,
+        now_factory=lambda: _NOW,
+    )
+
+    stored = get_deep_read(conn, item_id)
+    assert stored.error_code == "extraction_google_news"
+    generator.assert_not_awaited()
 
 
 @pytest.mark.asyncio

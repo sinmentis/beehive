@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New ranking summaries state the strongest evidence-supported conclusion in one sentence instead
   of only describing the article topic.
+- Failed article briefs now identify the failing stage, explain whether the LLM ran, and provide a
+  safe next step without exposing internal error details.
 
 ## [0.1.0] - 2026-07-14
 

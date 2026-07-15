@@ -337,6 +337,7 @@ def test_non_2xx_status_is_an_http_error():
     result = fetcher.fetch("http://example.com/missing")
     assert isinstance(result, FetchFailure)
     assert result.reason == FetchFailureReason.HTTP_ERROR
+    assert result.status_code == 404
 
 
 # ---------------------------------------------------------------------------

@@ -1555,7 +1555,9 @@ select{
   letter-spacing:-.02em;
 }
 .deep-read-status-body{max-width:42ch;margin:0;color:var(--muted);font-size:.86rem;line-height:1.75;text-wrap:pretty}
+.deep-read-status-failed .deep-read-failure-heading{margin:.35rem 0 .8rem;font-family:var(--font-display);font-size:1.35rem;letter-spacing:-.025em}
 .deep-read-status-body-failed{color:#e9aaa4}
+.deep-read-failure-next{max-width:48ch;margin:.85rem 0 0;color:var(--muted);font-size:.78rem;line-height:1.65;text-wrap:pretty}
 .deep-read-status-failed .deep-read-form{margin-top:1.3rem}
 .deep-read-status-unavailable .deep-read-status-body{max-width:none}
 

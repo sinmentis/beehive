@@ -401,8 +401,13 @@ def test_brief_page_never_renders_raw_error_detail(conn, client, authed_client):
 
 @pytest.mark.parametrize("error_code,expected_snippet", [
     ("fetch", "couldn&#39;t retrieve the original article"),
-    ("extraction", "couldn&#39;t extract readable article text"),
-    ("llm", "Generating the brief failed"),
+    ("fetch_not_found", "returned HTTP 404"),
+    ("fetch_http_error", "returned an HTTP error"),
+    ("fetch_timeout", "20-second safety limit"),
+    ("extraction", "did not expose readable article text"),
+    ("extraction_no_text", "did not expose readable article text"),
+    ("extraction_google_news", "Google News returned its own wrapper page"),
+    ("llm", "article text was retrieved"),
     ("unavailable", "isn&#39;t available for this item"),
 ])
 def test_brief_page_maps_error_code_to_localized_copy(conn, client, error_code, expected_snippet):
@@ -414,6 +419,43 @@ def test_brief_page_maps_error_code_to_localized_copy(conn, client, error_code, 
     resp = client.get(f"/items/{item_id}/brief")
     assert resp.status_code == 200
     assert expected_snippet in resp.text
+
+
+def test_brief_page_explains_legacy_google_news_extraction_failure(conn, client):
+    _, c = conn
+    _, item_id = _create_ranked_item(c)
+    c.execute(
+        "UPDATE items SET url = ? WHERE id = ?",
+        ("https://news.google.com/rss/articles/opaque-id?oc=5", item_id),
+    )
+    c.commit()
+    request_deep_read(c, item_id, _NOW)
+    _fail(c, item_id, error_code="extraction")
+
+    resp = client.get(f"/items/{item_id}/brief")
+
+    assert resp.status_code == 200
+    assert "Google News returned its own wrapper page" in resp.text
+    assert "the LLM was not called" in resp.text
+    assert "top secret stack trace" not in resp.text
+
+
+def test_brief_page_preserves_new_post_redirect_extraction_classification(conn, client):
+    _, c = conn
+    _, item_id = _create_ranked_item(c)
+    c.execute(
+        "UPDATE items SET url = ? WHERE id = ?",
+        ("https://news.google.com/rss/articles/opaque-id?oc=5", item_id),
+    )
+    c.commit()
+    request_deep_read(c, item_id, _NOW)
+    _fail(c, item_id, error_code="extraction_no_text")
+
+    resp = client.get(f"/items/{item_id}/brief")
+
+    assert resp.status_code == 200
+    assert "did not expose readable article text" in resp.text
+    assert "Google News returned its own wrapper page" not in resp.text
 
 
 def test_brief_page_renders_localized_unavailable_failure_for_malformed_cache(conn, client, db_path):

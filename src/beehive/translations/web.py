@@ -297,11 +297,41 @@ CATALOGS = {
         ),
         "web.deep_read.failure_fetch": (
             "We couldn't retrieve the original article. It may be temporarily unavailable or "
-            'blocking automated access.'
+            "blocking automated access. The LLM was not called because no source text was available."
         ),
-        "web.deep_read.failure_extraction": "We couldn't extract readable article text from this source.",
-        "web.deep_read.failure_llm": 'Generating the brief failed. Please try again.',
+        "web.deep_read.failure_fetch_not_found": (
+            "The publisher returned HTTP 404, so the article was removed or the link is no longer "
+            "valid. The LLM was not called."
+        ),
+        "web.deep_read.failure_fetch_http_error": (
+            "The publisher returned an HTTP error instead of the article. Access may be blocked or "
+            "the source may be temporarily unavailable. The LLM was not called."
+        ),
+        "web.deep_read.failure_fetch_timeout": (
+            "The source did not finish responding within the 20-second safety limit. The LLM was "
+            "not called."
+        ),
+        "web.deep_read.failure_extraction": (
+            "The page downloaded, but it did not expose readable article text. JavaScript-only "
+            "pages, paywalls, and anti-bot protection can cause this. The LLM was not called."
+        ),
+        "web.deep_read.failure_extraction_google_news": (
+            "Google News returned its own wrapper page instead of the publisher's article text. "
+            "There was nothing reliable to summarize, so the LLM was not called."
+        ),
+        "web.deep_read.failure_llm": (
+            "The article text was retrieved, but generating a valid brief failed. No partial brief "
+            "was saved."
+        ),
         "web.deep_read.failure_unavailable": "Deep read isn't available for this item right now.",
+        "web.deep_read.failure_heading": 'Why this failed',
+        "web.deep_read.failure_next_open_source": (
+            "Open the original source above to read it directly. Retrying only helps if the source "
+            "changes what it serves."
+        ),
+        "web.deep_read.failure_next_retry": (
+            "Try again. If it keeps failing, open the original source above."
+        ),
         "web.deep_read.owner_controls_aria": 'Deep read owner controls',
         "web.deep_read.pending_heading": 'Generating deep read…',
         "web.deep_read.pending_body": (
@@ -604,10 +634,34 @@ CATALOGS = {
         "web.deep_read.incomplete_warning": (
             '本简报可能基于不完整的原文内容——原文可能存在付费墙、被截断或部分内容无法获取。'
         ),
-        "web.deep_read.failure_fetch": '无法获取原文。原文可能暂时不可用，或阻止了自动访问。',
-        "web.deep_read.failure_extraction": '无法从该信源提取可读的文章正文。',
-        "web.deep_read.failure_llm": '生成简报失败，请重试。',
+        "web.deep_read.failure_fetch": (
+            '无法获取原文。原文可能暂时不可用，或阻止了自动访问。由于没有可用正文，系统没有调用 LLM。'
+        ),
+        "web.deep_read.failure_fetch_not_found": (
+            '发布商返回了 HTTP 404，说明文章已被删除或链接已经失效，因此系统没有调用 LLM。'
+        ),
+        "web.deep_read.failure_fetch_http_error": (
+            '发布商返回了 HTTP 错误，而不是文章正文。可能是访问受限或信源暂时不可用，因此系统没有调用 LLM。'
+        ),
+        "web.deep_read.failure_fetch_timeout": (
+            '信源未能在 20 秒安全时限内完成响应，因此系统没有调用 LLM。'
+        ),
+        "web.deep_read.failure_extraction": (
+            '页面已成功下载，但没有提供可提取的文章正文。常见原因包括仅靠 JavaScript 渲染、付费墙或反爬限制。'
+            '由于没有可靠正文，系统没有调用 LLM。'
+        ),
+        "web.deep_read.failure_extraction_google_news": (
+            'Google News 返回的是自己的跳转包装页，而不是发布商的文章正文。没有可靠内容可供总结，因此系统没有调用 LLM。'
+        ),
+        "web.deep_read.failure_llm": (
+            '系统已经取得文章正文，但未能生成有效简报。为避免显示不完整结果，系统没有保存部分内容。'
+        ),
         "web.deep_read.failure_unavailable": '此内容暂不支持深度阅读。',
+        "web.deep_read.failure_heading": '为什么失败',
+        "web.deep_read.failure_next_open_source": (
+            '您可以点击上方“阅读原文”直接查看。只有信源改变返回内容后，重试才可能成功。'
+        ),
+        "web.deep_read.failure_next_retry": '请重试；如果持续失败，请点击上方“阅读原文”。',
         "web.deep_read.owner_controls_aria": '深度阅读所有者控制项',
         "web.deep_read.pending_heading": '正在生成深度阅读…',
         "web.deep_read.pending_body": '这可能需要一点时间。您可以离开此页面——简报会自动保存。',
@@ -911,11 +965,37 @@ CATALOGS = {
         ),
         "web.deep_read.failure_fetch": (
             '元記事を取得できませんでした。一時的に利用できないか、'
-            '自動アクセスをブロックしている可能性があります。'
+            '自動アクセスをブロックしている可能性があります。本文がないため、LLMは呼び出されませんでした。'
         ),
-        "web.deep_read.failure_extraction": 'このソースから読み取り可能な記事本文を抽出できませんでした。',
-        "web.deep_read.failure_llm": 'ブリーフの生成に失敗しました。もう一度お試しください。',
+        "web.deep_read.failure_fetch_not_found": (
+            '配信元がHTTP 404を返しました。記事が削除されたか、リンクが無効です。LLMは呼び出されませんでした。'
+        ),
+        "web.deep_read.failure_fetch_http_error": (
+            '配信元が記事ではなくHTTPエラーを返しました。アクセス制限または一時的な障害の可能性があります。'
+            'LLMは呼び出されませんでした。'
+        ),
+        "web.deep_read.failure_fetch_timeout": (
+            '配信元が20秒の安全制限内に応答を完了しませんでした。LLMは呼び出されませんでした。'
+        ),
+        "web.deep_read.failure_extraction": (
+            'ページは取得できましたが、読み取れる記事本文がありませんでした。JavaScriptのみのページ、'
+            '有料記事、ボット対策などが原因です。LLMは呼び出されませんでした。'
+        ),
+        "web.deep_read.failure_extraction_google_news": (
+            'Googleニュースは配信元の記事本文ではなく、独自のラッパーページを返しました。'
+            '信頼できる本文がないため、LLMは呼び出されませんでした。'
+        ),
+        "web.deep_read.failure_llm": (
+            '記事本文は取得できましたが、有効なブリーフを生成できませんでした。不完全な結果は保存されていません。'
+        ),
         "web.deep_read.failure_unavailable": 'このアイテムでは現在ディープリードを利用できません。',
+        "web.deep_read.failure_heading": '失敗した理由',
+        "web.deep_read.failure_next_open_source": (
+            '上の「元記事を読む」から直接確認してください。配信元の応答が変わった場合のみ、再試行で成功する可能性があります。'
+        ),
+        "web.deep_read.failure_next_retry": (
+            'もう一度お試しください。繰り返し失敗する場合は、上の「元記事を読む」から確認してください。'
+        ),
         "web.deep_read.owner_controls_aria": 'ディープリードの管理操作',
         "web.deep_read.pending_heading": 'ディープリードを生成しています…',
         "web.deep_read.pending_body": (
@@ -1221,11 +1301,38 @@ CATALOGS = {
         ),
         "web.deep_read.failure_fetch": (
             '원문을 가져올 수 없습니다. 일시적으로 사용할 수 없거나 '
-            '자동 접근을 차단하고 있을 수 있습니다.'
+            '자동 접근을 차단하고 있을 수 있습니다. 원문이 없어 LLM은 호출되지 않았습니다.'
         ),
-        "web.deep_read.failure_extraction": '이 소스에서 읽을 수 있는 기사 본문을 추출하지 못했습니다.',
-        "web.deep_read.failure_llm": '브리프 생성에 실패했습니다. 다시 시도해 주세요.',
+        "web.deep_read.failure_fetch_not_found": (
+            '게시자가 HTTP 404를 반환했습니다. 기사가 삭제되었거나 링크가 더 이상 유효하지 않습니다. '
+            'LLM은 호출되지 않았습니다.'
+        ),
+        "web.deep_read.failure_fetch_http_error": (
+            '게시자가 기사 대신 HTTP 오류를 반환했습니다. 접근이 차단되었거나 일시적으로 사용할 수 없을 수 있습니다. '
+            'LLM은 호출되지 않았습니다.'
+        ),
+        "web.deep_read.failure_fetch_timeout": (
+            '소스가 20초 안전 제한 안에 응답을 완료하지 못했습니다. LLM은 호출되지 않았습니다.'
+        ),
+        "web.deep_read.failure_extraction": (
+            '페이지는 내려받았지만 읽을 수 있는 기사 본문이 없었습니다. JavaScript 전용 페이지, 유료 장벽, '
+            '봇 차단이 원인일 수 있습니다. LLM은 호출되지 않았습니다.'
+        ),
+        "web.deep_read.failure_extraction_google_news": (
+            'Google 뉴스가 게시자의 기사 본문 대신 자체 래퍼 페이지를 반환했습니다. 신뢰할 수 있는 본문이 없어 '
+            'LLM은 호출되지 않았습니다.'
+        ),
+        "web.deep_read.failure_llm": (
+            '기사 본문은 가져왔지만 유효한 브리프를 생성하지 못했습니다. 불완전한 결과는 저장하지 않았습니다.'
+        ),
         "web.deep_read.failure_unavailable": '이 항목은 현재 딥 리드를 사용할 수 없습니다.',
+        "web.deep_read.failure_heading": '실패한 이유',
+        "web.deep_read.failure_next_open_source": (
+            '위의 원문 링크에서 직접 읽어 보세요. 소스가 제공하는 내용이 바뀐 경우에만 재시도가 도움이 됩니다.'
+        ),
+        "web.deep_read.failure_next_retry": (
+            '다시 시도해 주세요. 계속 실패하면 위의 원문 링크를 여세요.'
+        ),
         "web.deep_read.owner_controls_aria": '딥 리드 소유자 제어',
         "web.deep_read.pending_heading": '딥 리드를 생성하는 중…',
         "web.deep_read.pending_body": '잠시 시간이 걸릴 수 있습니다. 이 페이지를 벗어나도 브리프는 저장됩니다.',
@@ -1529,11 +1636,42 @@ CATALOGS = {
         ),
         "web.deep_read.failure_fetch": (
             'No se pudo obtener el artículo original. Puede estar temporalmente no disponible '
-            'o bloquear el acceso automatizado.'
+            'o bloquear el acceso automatizado. No se llamó al LLM porque no había texto fuente.'
         ),
-        "web.deep_read.failure_extraction": 'No se pudo extraer texto legible del artículo de esta fuente.',
-        "web.deep_read.failure_llm": 'Error al generar el resumen. Inténtalo de nuevo.',
+        "web.deep_read.failure_fetch_not_found": (
+            'El editor devolvió HTTP 404: el artículo fue eliminado o el enlace ya no es válido. '
+            'No se llamó al LLM.'
+        ),
+        "web.deep_read.failure_fetch_http_error": (
+            'El editor devolvió un error HTTP en lugar del artículo. El acceso puede estar bloqueado '
+            'o la fuente puede no estar disponible temporalmente. No se llamó al LLM.'
+        ),
+        "web.deep_read.failure_fetch_timeout": (
+            'La fuente no terminó de responder dentro del límite de seguridad de 20 segundos. '
+            'No se llamó al LLM.'
+        ),
+        "web.deep_read.failure_extraction": (
+            'La página se descargó, pero no expuso texto legible del artículo. Esto puede ocurrir '
+            'con páginas que requieren JavaScript, muros de pago o protección anti-bots. '
+            'No se llamó al LLM.'
+        ),
+        "web.deep_read.failure_extraction_google_news": (
+            'Google News devolvió su propia página contenedora en lugar del texto del editor. '
+            'No había contenido fiable que resumir, por lo que no se llamó al LLM.'
+        ),
+        "web.deep_read.failure_llm": (
+            'Se obtuvo el texto del artículo, pero no se pudo generar un resumen válido. '
+            'No se guardó ningún resultado parcial.'
+        ),
         "web.deep_read.failure_unavailable": 'La lectura profunda no está disponible para este elemento en este momento.',
+        "web.deep_read.failure_heading": 'Por qué falló',
+        "web.deep_read.failure_next_open_source": (
+            'Abre la fuente original de arriba para leerla directamente. Reintentar solo ayudará '
+            'si la fuente cambia el contenido que entrega.'
+        ),
+        "web.deep_read.failure_next_retry": (
+            'Inténtalo de nuevo. Si sigue fallando, abre la fuente original de arriba.'
+        ),
         "web.deep_read.owner_controls_aria": 'Controles de propietario de la lectura profunda',
         "web.deep_read.pending_heading": 'Generando lectura profunda…',
         "web.deep_read.pending_body": (
@@ -1839,11 +1977,42 @@ CATALOGS = {
         ),
         "web.deep_read.failure_fetch": (
             "Impossible de récupérer l'article original. Il est peut-être temporairement "
-            "indisponible ou bloque l'accès automatisé."
+            "indisponible ou bloque l'accès automatisé. Le LLM n'a pas été appelé faute de texte source."
         ),
-        "web.deep_read.failure_extraction": "Impossible d'extraire un texte lisible de cette source.",
-        "web.deep_read.failure_llm": 'Échec de la génération de la synthèse. Veuillez réessayer.',
+        "web.deep_read.failure_fetch_not_found": (
+            "L'éditeur a renvoyé HTTP 404 : l'article a été supprimé ou le lien n'est plus valide. "
+            "Le LLM n'a pas été appelé."
+        ),
+        "web.deep_read.failure_fetch_http_error": (
+            "L'éditeur a renvoyé une erreur HTTP au lieu de l'article. L'accès est peut-être bloqué "
+            "ou la source temporairement indisponible. Le LLM n'a pas été appelé."
+        ),
+        "web.deep_read.failure_fetch_timeout": (
+            "La source n'a pas fini de répondre dans la limite de sécurité de 20 secondes. "
+            "Le LLM n'a pas été appelé."
+        ),
+        "web.deep_read.failure_extraction": (
+            "La page a été téléchargée, mais aucun texte d'article lisible n'était disponible. "
+            "Cela arrive avec les pages JavaScript, les murs payants ou les protections anti-robots. "
+            "Le LLM n'a pas été appelé."
+        ),
+        "web.deep_read.failure_extraction_google_news": (
+            "Google Actualités a renvoyé sa propre page intermédiaire au lieu du texte de l'éditeur. "
+            "Aucun contenu fiable ne pouvait être résumé, donc le LLM n'a pas été appelé."
+        ),
+        "web.deep_read.failure_llm": (
+            "Le texte de l'article a été récupéré, mais aucune synthèse valide n'a pu être générée. "
+            "Aucun résultat partiel n'a été enregistré."
+        ),
         "web.deep_read.failure_unavailable": "La lecture approfondie n'est pas disponible pour cet élément pour le moment.",
+        "web.deep_read.failure_heading": "Pourquoi cela a échoué",
+        "web.deep_read.failure_next_open_source": (
+            "Ouvrez la source originale ci-dessus pour la lire directement. Réessayer ne sera utile "
+            "que si la source change le contenu fourni."
+        ),
+        "web.deep_read.failure_next_retry": (
+            "Réessayez. Si l'échec persiste, ouvrez la source originale ci-dessus."
+        ),
         "web.deep_read.owner_controls_aria": 'Contrôles du propriétaire pour la lecture approfondie',
         "web.deep_read.pending_heading": 'Génération de la lecture approfondie…',
         "web.deep_read.pending_body": (
@@ -2151,11 +2320,42 @@ CATALOGS = {
         ),
         "web.deep_read.failure_fetch": (
             'Der Originalartikel konnte nicht abgerufen werden. Er ist möglicherweise '
-            'vorübergehend nicht verfügbar oder blockiert automatisierten Zugriff.'
+            'vorübergehend nicht verfügbar oder blockiert automatisierten Zugriff. Das LLM wurde '
+            'nicht aufgerufen, weil kein Quelltext verfügbar war.'
         ),
-        "web.deep_read.failure_extraction": 'Aus dieser Quelle konnte kein lesbarer Artikeltext extrahiert werden.',
-        "web.deep_read.failure_llm": 'Die Erstellung des Kurzberichts ist fehlgeschlagen. Bitte versuchen Sie es erneut.',
+        "web.deep_read.failure_fetch_not_found": (
+            'Der Herausgeber gab HTTP 404 zurück. Der Artikel wurde entfernt oder der Link ist '
+            'nicht mehr gültig. Das LLM wurde nicht aufgerufen.'
+        ),
+        "web.deep_read.failure_fetch_http_error": (
+            'Der Herausgeber gab statt des Artikels einen HTTP-Fehler zurück. Der Zugriff kann '
+            'blockiert oder die Quelle vorübergehend nicht verfügbar sein. Das LLM wurde nicht aufgerufen.'
+        ),
+        "web.deep_read.failure_fetch_timeout": (
+            'Die Quelle antwortete nicht innerhalb des 20-Sekunden-Sicherheitslimits. '
+            'Das LLM wurde nicht aufgerufen.'
+        ),
+        "web.deep_read.failure_extraction": (
+            'Die Seite wurde geladen, stellte aber keinen lesbaren Artikeltext bereit. Mögliche '
+            'Ursachen sind JavaScript-Seiten, Bezahlschranken oder Bot-Schutz. Das LLM wurde nicht aufgerufen.'
+        ),
+        "web.deep_read.failure_extraction_google_news": (
+            'Google News lieferte seine eigene Zwischenseite statt des Artikeltexts des Herausgebers. '
+            'Es gab keinen verlässlichen Inhalt zum Zusammenfassen, daher wurde das LLM nicht aufgerufen.'
+        ),
+        "web.deep_read.failure_llm": (
+            'Der Artikeltext wurde abgerufen, aber es konnte kein gültiger Kurzbericht erstellt werden. '
+            'Es wurde kein unvollständiges Ergebnis gespeichert.'
+        ),
         "web.deep_read.failure_unavailable": 'Vertiefte Lektüre ist für diesen Eintrag derzeit nicht verfügbar.',
+        "web.deep_read.failure_heading": 'Warum dies fehlgeschlagen ist',
+        "web.deep_read.failure_next_open_source": (
+            'Öffnen Sie oben die Originalquelle, um sie direkt zu lesen. Ein erneuter Versuch hilft '
+            'nur, wenn die Quelle später andere Inhalte liefert.'
+        ),
+        "web.deep_read.failure_next_retry": (
+            'Versuchen Sie es erneut. Falls es weiter fehlschlägt, öffnen Sie oben die Originalquelle.'
+        ),
         "web.deep_read.owner_controls_aria": 'Eigentümer-Steuerelemente für die vertiefte Lektüre',
         "web.deep_read.pending_heading": 'Vertiefte Lektüre wird erstellt…',
         "web.deep_read.pending_body": (

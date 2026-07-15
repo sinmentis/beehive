@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from beehive.db.deep_reads import DeepRead
 from beehive.localization import SUPPORTED_LANGUAGES, Localizer
@@ -36,18 +36,51 @@ def _language_display_name(language_code: str | None) -> str | None:
     return _LANGUAGE_NATIVE_NAMES.get(language_code, language_code)
 
 _FAILURE_TRANSLATION_KEYS = {
-    "fetch": "web.deep_read.failure_fetch",
-    "extraction": "web.deep_read.failure_extraction",
-    "llm": "web.deep_read.failure_llm",
-    "unavailable": "web.deep_read.failure_unavailable",
+    "fetch": ("web.deep_read.failure_fetch", "web.deep_read.failure_next_retry"),
+    "fetch_not_found": (
+        "web.deep_read.failure_fetch_not_found",
+        "web.deep_read.failure_next_open_source",
+    ),
+    "fetch_http_error": (
+        "web.deep_read.failure_fetch_http_error",
+        "web.deep_read.failure_next_open_source",
+    ),
+    "fetch_timeout": (
+        "web.deep_read.failure_fetch_timeout",
+        "web.deep_read.failure_next_retry",
+    ),
+    "extraction": (
+        "web.deep_read.failure_extraction",
+        "web.deep_read.failure_next_open_source",
+    ),
+    "extraction_no_text": (
+        "web.deep_read.failure_extraction",
+        "web.deep_read.failure_next_open_source",
+    ),
+    "extraction_google_news": (
+        "web.deep_read.failure_extraction_google_news",
+        "web.deep_read.failure_next_open_source",
+    ),
+    "llm": ("web.deep_read.failure_llm", "web.deep_read.failure_next_retry"),
+    "unavailable": (
+        "web.deep_read.failure_unavailable",
+        "web.deep_read.failure_next_open_source",
+    ),
 }
-_FALLBACK_FAILURE_KEY = "web.deep_read.failure_unavailable"
+_FALLBACK_FAILURE_KEYS = _FAILURE_TRANSLATION_KEYS["unavailable"]
 
 
 @dataclass(frozen=True)
 class ImportantFigureView:
     value: str
     label: str
+
+
+@dataclass(frozen=True)
+class DeepReadFailureView:
+    heading: str
+    explanation: str
+    next_step: str
 
 
 @dataclass(frozen=True)
@@ -141,12 +174,27 @@ def parse_deep_read_result(result_json: str, expected_item_id: int) -> DeepReadB
     )
 
 
-def failure_message(t: Localizer, error_code: str | None) -> str:
-    """Maps a typed, worker-assigned error_code to localized, safe copy -- `error_detail` (the
-    only field that might carry raw exception text/attacker-influenced fetch failure detail) is
-    never consulted here or anywhere else in this module."""
-    key = _FAILURE_TRANSLATION_KEYS.get(error_code or "", _FALLBACK_FAILURE_KEY)
-    return t.text(key)
+def failure_explanation(
+    t: Localizer,
+    error_code: str | None,
+    item_url: str,
+) -> DeepReadFailureView:
+    """Build localized safe guidance without consulting the raw stored error detail."""
+    normalized_code = error_code or ""
+    if (
+        normalized_code == "extraction"
+        and (urlsplit(item_url).hostname or "").lower() == "news.google.com"
+    ):
+        normalized_code = "extraction_google_news"
+    explanation_key, next_step_key = _FAILURE_TRANSLATION_KEYS.get(
+        normalized_code,
+        _FALLBACK_FAILURE_KEYS,
+    )
+    return DeepReadFailureView(
+        heading=t.text("web.deep_read.failure_heading"),
+        explanation=t.text(explanation_key),
+        next_step=t.text(next_step_key),
+    )
 
 
 def brief_url(item_id: int, origin: str | None, channel_id: int | None) -> str:
@@ -204,26 +252,26 @@ def build_brief_context(*, item: dict, deep_read: DeepRead | None, is_owner: boo
     status = raw_status
     brief = None
     warning_text = None
-    failure_text = None
+    failure = None
 
     if raw_status == "ready" and deep_read is not None and deep_read.result_json is not None:
         try:
             brief = parse_deep_read_result(deep_read.result_json, item["id"])
         except DeepReadCacheError:
             status = "failed"
-            failure_text = t.text(_FALLBACK_FAILURE_KEY)
+            failure = failure_explanation(t, "unavailable", item["url"])
         else:
             if deep_read.warning_code == "content_incomplete":
                 warning_text = t.text("web.deep_read.incomplete_warning")
     elif raw_status == "failed" and deep_read is not None:
-        failure_text = failure_message(t, deep_read.error_code)
+        failure = failure_explanation(t, deep_read.error_code, item["url"])
 
     return {
         "item": item,
         "status": status,
         "brief": brief,
         "warning_text": warning_text,
-        "failure_text": failure_text,
+        "failure": failure,
         "language_code": deep_read.language_code if deep_read is not None else None,
         "language_display_name": _language_display_name(
             deep_read.language_code if deep_read is not None else None),

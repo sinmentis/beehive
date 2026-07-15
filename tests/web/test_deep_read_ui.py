@@ -335,6 +335,8 @@ def test_brief_page_failed_state_offers_retry_to_owner_only(conn, authed_client,
     assert 'class="deep-read-status deep-read-status-failed"' in owner_resp.text
     assert "raw trace" not in owner_resp.text
     assert "raw trace" not in anon_resp.text
+    assert 'class="deep-read-failure-heading"' in owner_resp.text
+    assert 'class="deep-read-failure-next"' in owner_resp.text
     assert 'name="regenerate" value="true"' in owner_resp.text
     assert 'name="regenerate" value="true"' not in anon_resp.text
 
@@ -386,6 +388,9 @@ def test_css_defines_deep_read_responsive_breakpoints_and_touch_targets():
     assert ".deep-read-owner-controls .deep-read-form" in css
     assert ".deep-read-status-failed .deep-read-form" in css
     assert ".deep-read-status-failed .btn{width:100%;min-height:2.75rem}" in css
+    assert ".deep-read-status-failed .deep-read-failure-heading" in css
+    assert "font-family:var(--font-display)" in css
+    assert "var(--display)" not in css
 
 
 def test_css_avoids_gradients_and_inline_styles_in_deep_read_rules():
