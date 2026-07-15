@@ -34,11 +34,11 @@ Each channel ranks new items against your interests, then reduces them to concis
 
 <img src="docs/assets/dashboard-product.png" alt="Beehive dashboard with ranked synthetic signals" width="100%">
 
-> The previews use an English documentation overlay. The current dashboard chrome and email templates are Chinese-first; interface localization is not configurable yet.
+> The previews use the default English interface. The global language setting also supports Simplified Chinese, Japanese, Korean, Spanish, French, and German.
 
 ### Control every signal
 
-Choose sources, cadence, summary language, and the email destination for each channel.
+Choose sources, cadence, the global interface and AI output language, and the email destination for each channel.
 
 <img src="docs/assets/channel-configuration.png" alt="Beehive channel configuration with synthetic sources and email routing" width="100%">
 
@@ -101,6 +101,10 @@ Open `http://127.0.0.1:8000/`.
 | `DIGEST_EMAIL_FROM` | Only for email | Verified sender address. |
 
 Do not store credentials in the repository. The included Quadlet examples inject them through Podman secrets.
+
+The admin settings page stores one global platform language in SQLite. English is the default;
+the selected language applies to the web interface, email copy, alerts, and future AI summaries,
+rationales, and comment summaries. Existing generated content is not translated retroactively.
 
 ## Collect and digest
 

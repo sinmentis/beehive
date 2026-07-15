@@ -27,18 +27,19 @@ from beehive.db.items import (insert_new, list_by_channel, update_ai_ranking_by_
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.db.sources import record_fetch_error, record_fetch_success
 from beehive.db.votes import get_vote_examples_for_channel
+from beehive.localization import Localizer
 from beehive.notify import Notifier, format_llm_failure
 from beehive.scheduling import source_is_due
 
 _COMMENT_FETCH_COUNT = 3
 _COMMENT_FETCH_DELAY_SECONDS = 2
-# One LLM call must individually reason through every candidate's Chinese summary/rationale,
-# so its generation time scales with batch size (measured: ~40s for 5 items, ~96s for 15 --
-# a 50-item batch reliably exceeded even a 280s timeout). Ranking the backlog in fixed-size
-# chunks keeps each call comfortably inside run_prompt's 120s timeout no matter how large a
-# channel's unscored backlog grows (e.g. from a freshly-added source dumping many items at
-# once), and each chunk's results are persisted immediately so a later chunk's failure never
-# discards work already done.
+# One LLM call must individually reason through every candidate's selected-language summary/
+# rationale, so its generation time scales with batch size (measured: ~40s for 5 items, ~96s
+# for 15 -- a 50-item batch reliably exceeded even a 280s timeout). Ranking the backlog in
+# fixed-size chunks keeps each call comfortably inside run_prompt's 120s timeout no matter how
+# large a channel's unscored backlog grows (e.g. from a freshly-added source dumping many
+# items at once), and each chunk's results are persisted immediately so a later chunk's
+# failure never discards work already done.
 _RANKING_CHUNK_SIZE = 10
 # A chunk can fail its strict id-matching validation (response_parser.py: "the model lost
 # track of the set") as a one-off sampling flake rather than a persistent error. One retry
@@ -55,6 +56,7 @@ async def run_channel_cycle(
     model: str = "claude-haiku-4.5",
     recipient: str | None = None,
     *,
+    localizer: Localizer,
     force_fetch: bool = False,
     now: datetime | None = None,
 ) -> None:
@@ -106,12 +108,13 @@ async def run_channel_cycle(
         for _attempt in range(_CHUNK_ATTEMPTS):
             try:
                 chunk_ranked = await rank_channel(profile=channel["profile"], votes=vote_examples,
-                                                   candidates=chunk, model=model)
+                                                   candidates=chunk, language=localizer.language,
+                                                   model=model)
                 break
             except Exception as exc:
                 last_exc = exc
         if chunk_ranked is None:
-            subject, body = format_llm_failure(channel["name"], str(last_exc))
+            subject, body = format_llm_failure(localizer, channel["name"], str(last_exc))
             notifier.send(subject, body, to_addr=recipient)
             break
         for ranked_item in chunk_ranked:
@@ -158,7 +161,8 @@ async def run_channel_cycle(
         return
 
     try:
-        summaries = await summarize_comments(comment_candidates, model=model)
+        summaries = await summarize_comments(comment_candidates, language=localizer.language,
+                                              model=model)
     except Exception as exc:
         print(f"[best-comment] summarization failed: {exc}")
         return

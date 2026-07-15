@@ -1,50 +1,50 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — 编辑 {{ channel.name }}{% endblock %}
+{% block title %}{{ t('web.title.channel_edit', product=t('common.product_name'), channel=channel.name) }}{% endblock %}
 {% block body_class %}page-admin page-editor{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell editor-shell">
-  <p class="crumb"><a href="/admin/">← Channel 列表</a></p>
+  <p class="crumb"><a href="/admin/">{{ t('web.admin.channel_list_crumb') }}</a></p>
   <header class="page-heading compact-heading">
     <div>
       <p class="eyebrow" lang="en">Channel configuration</p>
-      <h1>编辑 {{ channel.name }}</h1>
-      <p class="page-lede">定义 AI 排序标准、抓取节奏和投递方式。</p>
+      <h1>{{ t('web.admin.channel_edit.heading', channel=channel.name) }}</h1>
+      <p class="page-lede">{{ t('web.admin.channel_edit.lede') }}</p>
     </div>
   </header>
-  {% if default_error %}<div class="page-banner" role="alert">全局默认收件地址有误：{{ default_error }}</div>{% endif %}
+  {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
 
   <div class="editor-grid">
     <section class="admin-panel">
       <form method="post" action="/admin/channels/{{ channel.id }}/edit">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="field">
-          <label for="channel-name">名字</label>
+          <label for="channel-name">{{ t('web.admin.channel_new.name_label') }}</label>
           <input id="channel-name" type="text" name="name" value="{{ channel.name }}" required autocomplete="off">
         </div>
         <div class="field">
-          <label for="channel-profile">关注什么</label>
+          <label for="channel-profile">{{ t('web.admin.channel_new.profile_label') }}</label>
           <textarea id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
-          <p class="hint">用自然语言描述真正重要的内容，AI 会据此排序。</p>
+          <p class="hint">{{ t('web.admin.channel_edit.profile_hint') }}</p>
         </div>
         <div class="field">
-          <label for="fetch-interval">抓取频率</label>
+          <label for="fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
           <select id="fetch-interval" name="fetch_interval_hours">
-            <option value="3" {{ "selected" if channel.fetch_interval_hours == 3 else "" }}>每 3 小时</option>
-            <option value="6" {{ "selected" if channel.fetch_interval_hours == 6 else "" }}>每 6 小时</option>
-            <option value="24" {{ "selected" if channel.fetch_interval_hours == 24 else "" }}>每天一次</option>
+            <option value="3" {{ "selected" if channel.fetch_interval_hours == 3 else "" }}>{{ t('web.fetch_interval.every_n_hours', hours=3) }}</option>
+            <option value="6" {{ "selected" if channel.fetch_interval_hours == 6 else "" }}>{{ t('web.fetch_interval.every_n_hours', hours=6) }}</option>
+            <option value="24" {{ "selected" if channel.fetch_interval_hours == 24 else "" }}>{{ t('web.fetch_interval.daily') }}</option>
           </select>
         </div>
         <div class="field">
-          <label for="digest-email">邮件收件地址（可选）</label>
+          <label for="digest-email">{{ t('web.admin.channel_edit.email_label') }}</label>
           <input id="digest-email" type="text" inputmode="email" name="digest_email"
                  value="{{ channel.digest_email or '' }}"
                  placeholder="{{ effective_email or 'owner@example.com' }}"
                  autocomplete="email">
-          <p class="hint">留空使用全局默认地址。当前生效：{{ effective_email or "未配置" }}</p>
+          <p class="hint">{{ t('web.admin.channel_edit.email_hint', email=(effective_email or t('web.admin.settings.not_configured'))) }}</p>
           {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
         </div>
         <div class="actions">
-          <button class="btn primary" type="submit">保存修改</button>
+          <button class="btn primary" type="submit">{{ t('web.admin.channel_edit.save') }}</button>
         </div>
       </form>
     </section>
@@ -53,9 +53,9 @@
       <header class="panel-heading split-heading">
         <div>
           <p class="section-kicker" lang="en">Inputs</p>
-          <h2 id="sources-title">信源</h2>
+          <h2 id="sources-title">{{ t('web.admin.channel_edit.sources_heading') }}</h2>
         </div>
-        <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/sources/new">添加信源</a>
+        <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>
       </header>
       <div class="source-list">
         {% for source in sources %}
@@ -63,13 +63,13 @@
           <span class="source-name">{{ source.icon }} {{ source.label }}</span>
           <form method="post" action="/admin/sources/{{ source.id }}/delete">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="text-action danger-text" type="submit">移除</button>
+            <button class="text-action danger-text" type="submit">{{ t('web.admin.channel_edit.remove_source') }}</button>
           </form>
         </article>
         {% else %}
         <div class="empty-state compact-empty">
-          <h3>还没有信源</h3>
-          <p>添加至少一个来源后，Channel 才能开始抓取。</p>
+          <h3>{{ t('web.admin.channel_edit.empty_sources_heading') }}</h3>
+          <p>{{ t('web.admin.channel_edit.empty_sources_body') }}</p>
         </div>
         {% endfor %}
       </div>
@@ -79,20 +79,20 @@
   <section class="danger-zone" aria-labelledby="danger-title">
     <div>
       <p class="section-kicker" lang="en">Danger zone</p>
-      <h2 id="danger-title">删除 Channel</h2>
-      <p>{{ channel.name }} 下已经抓取的所有内容也会一起删除，无法恢复。</p>
+      <h2 id="danger-title">{{ t('web.admin.channel_edit.delete_heading') }}</h2>
+      <p>{{ t('web.admin.channel_edit.delete_warning', channel=channel.name) }}</p>
     </div>
     <details class="delete-confirm">
       <summary class="btn danger">
-        <span class="closed-label">删除这个 Channel</span>
-        <span class="open-label">取消</span>
+        <span class="closed-label">{{ t('web.admin.channel_edit.delete_action') }}</span>
+        <span class="open-label">{{ t('web.admin.channel_edit.delete_cancel') }}</span>
       </summary>
       <div class="confirm">
-        <p>确定删除 {{ channel.name }}？</p>
+        <p>{{ t('web.admin.channel_edit.delete_confirm', channel=channel.name) }}</p>
         <div class="confirm-actions">
           <form method="post" action="/admin/channels/{{ channel.id }}/delete">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="btn danger" type="submit">确定删除</button>
+            <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.delete_confirm_action') }}</button>
           </form>
         </div>
       </div>

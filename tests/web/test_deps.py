@@ -1,12 +1,14 @@
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
 from beehive.db.connection import connect, init_schema
 from beehive.db.sessions import create_session
+from beehive.localization import save_language
 from beehive.web.deps import (
     SESSION_COOKIE_NAME,
+    get_localizer,
     get_optional_session,
     require_admin_session,
 )
@@ -145,3 +147,58 @@ def test_optional_session_returns_none_for_expired_session(optional_app, db_path
     resp = client.get("/optional")
     assert resp.status_code == 200
     assert resp.json() == {"is_admin": False}
+
+
+@pytest.fixture
+def localizer_app(db_path):
+    test_app = FastAPI()
+    test_app.state.db_path = db_path
+    test_app.state.session_secret = "test-secret"
+
+    @test_app.get("/localized")
+    def localized(request: Request, localizer=Depends(get_localizer)):
+        return {
+            "code": localizer.code,
+            "state_code": request.state.localizer.code,
+            "state_is_same_object": request.state.localizer is localizer,
+        }
+
+    return test_app
+
+
+def test_get_localizer_defaults_to_english_on_fresh_db(localizer_app):
+    client = TestClient(localizer_app)
+    resp = client.get("/localized")
+    assert resp.status_code == 200
+    assert resp.json()["code"] == "en"
+
+
+def test_get_localizer_reads_saved_language_and_stashes_on_request_state(localizer_app, db_path):
+    conn = connect(db_path)
+    save_language(conn, "zh-CN")
+    conn.close()
+
+    client = TestClient(localizer_app)
+    resp = client.get("/localized")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == "zh-CN"
+    assert body["state_code"] == "zh-CN"
+    assert body["state_is_same_object"] is True
+
+
+def test_get_localizer_loads_a_fresh_localizer_per_request_not_a_shared_global(
+    localizer_app, db_path,
+):
+    client = TestClient(localizer_app)
+    first = client.get("/localized")
+    assert first.json()["code"] == "en"
+
+    conn = connect(db_path)
+    save_language(conn, "ja")
+    conn.close()
+
+    # A brand new request must observe the newly saved language rather than any
+    # process-global cached Localizer from the first request.
+    second = client.get("/localized")
+    assert second.json()["code"] == "ja"

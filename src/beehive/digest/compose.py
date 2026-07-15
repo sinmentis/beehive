@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader
 
+from beehive.localization import Localizer
+
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
 
@@ -36,15 +38,18 @@ def compose_channel_digest(channel_name: str, new_items: list[dict], source_warn
                           source_warnings=source_warnings)
 
 
-def render_digest_email(channel_digests: list[ChannelDigest], today_iso: str) -> tuple[str, str]:
-    subject = f"蜂巢每日摘要 · {today_iso}"
+def render_digest_email(channel_digests: list[ChannelDigest], today_iso: str,
+                        localizer: Localizer) -> tuple[str, str]:
+    product = localizer.text("common.product_name")
+    subject = localizer.text("background.digest_title", product=product, date=today_iso)
+    empty_state = localizer.text("background.digest_empty_state")
     lines = []
     for cd in channel_digests:
         lines.append(f"== {cd.channel_name} ==")
         for warning in cd.source_warnings:
             lines.append(f"⚠ {warning}")
         if not cd.highlighted:
-            lines.append("今天没有新内容，已确认检查过。")
+            lines.append(empty_state)
         else:
             for item in cd.highlighted:
                 lines.append(f"- {item['ai_summary']} ({item['url']})")
@@ -52,6 +57,15 @@ def render_digest_email(channel_digests: list[ChannelDigest], today_iso: str) ->
     return subject, "\n".join(lines).rstrip()
 
 
-def render_digest_email_html(channel_digests: list[ChannelDigest], today_iso: str) -> str:
+def render_digest_email_html(channel_digests: list[ChannelDigest], today_iso: str,
+                             localizer: Localizer) -> str:
     template = _env.get_template("digest_email.html")
-    return template.render(channel_digests=channel_digests, today_iso=today_iso)
+    product = localizer.text("common.product_name")
+    return template.render(
+        channel_digests=channel_digests,
+        today_iso=today_iso,
+        lang=localizer.html_lang,
+        page_title=localizer.text("background.digest_title", product=product, date=today_iso),
+        header_text=localizer.text("background.digest_header", product=product),
+        empty_state_text=localizer.text("background.digest_empty_state"),
+    )

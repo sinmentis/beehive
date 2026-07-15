@@ -1,54 +1,54 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — 归档{% endblock %}
+{% block title %}{{ t('web.title.archive', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-archive{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell archive-shell">
-  <p class="crumb"><a href="/">← 返回首页</a></p>
+  <p class="crumb"><a href="/">{{ t('web.common.back_to_home') }}</a></p>
   <header class="page-heading compact-heading">
     <div>
       <p class="eyebrow" lang="en">Long-term memory</p>
-      <h1>归档</h1>
-      <p class="page-lede">按 Channel、日期和已读状态查找历史内容。</p>
+      <h1>{{ t('web.archive.heading') }}</h1>
+      <p class="page-lede">{{ t('web.archive.lede') }}</p>
     </div>
     <div class="result-stat">
       <strong>{{ total }}</strong>
-      <span>条结果</span>
+      <span>{{ t('web.archive.result_count_label') }}</span>
     </div>
   </header>
 
-  <form class="filters" method="get" aria-label="归档筛选">
+  <form class="filters" method="get" aria-label="{{ t('web.archive.filters_aria') }}">
     <div class="field search-field">
-      <label for="archive-query">关键词</label>
-      <input id="archive-query" type="search" name="q" value="{{ selected_search }}" placeholder="标题、摘要或正文">
+      <label for="archive-query">{{ t('web.archive.query_label') }}</label>
+      <input id="archive-query" type="search" name="q" value="{{ selected_search }}" placeholder="{{ t('web.archive.query_placeholder') }}">
     </div>
     <div class="field">
-      <label for="archive-channel">Channel</label>
+      <label for="archive-channel">{{ t('web.archive.channel_label') }}</label>
       <select id="archive-channel" name="channel">
-        <option value="">全部</option>
+        <option value="">{{ t('web.archive.channel_all') }}</option>
         {% for c in channels %}
         <option value="{{ c.id }}" {{ "selected" if selected_channel == c.id else "" }}>{{ c.name }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="field">
-      <label for="archive-from">开始日期</label>
+      <label for="archive-from">{{ t('web.archive.from_label') }}</label>
       <input id="archive-from" type="date" name="from" value="{{ selected_from }}">
     </div>
     <div class="field">
-      <label for="archive-to">结束日期</label>
+      <label for="archive-to">{{ t('web.archive.to_label') }}</label>
       <input id="archive-to" type="date" name="to" value="{{ selected_to }}">
     </div>
     <div class="field">
-      <label for="archive-state">已读状态</label>
+      <label for="archive-state">{{ t('web.archive.read_state_label') }}</label>
       <select id="archive-state" name="read_state">
-        <option value="" {{ "selected" if selected_read_state == "" else "" }}>全部</option>
-        <option value="unread" {{ "selected" if selected_read_state == "unread" else "" }}>未读</option>
-        <option value="read" {{ "selected" if selected_read_state == "read" else "" }}>已读</option>
+        <option value="" {{ "selected" if selected_read_state == "" else "" }}>{{ t('web.archive.read_state_all') }}</option>
+        <option value="unread" {{ "selected" if selected_read_state == "unread" else "" }}>{{ t('web.archive.read_state_unread') }}</option>
+        <option value="read" {{ "selected" if selected_read_state == "read" else "" }}>{{ t('web.archive.read_state_read') }}</option>
       </select>
     </div>
     <div class="filter-actions">
-      <button class="btn primary" type="submit">应用筛选</button>
-      <a class="text-action" href="/archive">清除</a>
+      <button class="btn primary" type="submit">{{ t('web.archive.apply_filters') }}</button>
+      <a class="text-action" href="/archive">{{ t('web.archive.clear_filters') }}</a>
     </div>
   </form>
 
@@ -62,12 +62,12 @@
         <article class="archive-row{{ ' read' if item.is_read else '' }}">
           <div class="archive-main">
             <p class="archive-source"><span class="source-marker" aria-hidden="true"></span>{{ item.channel_name }} · {{ item.source_label }}</p>
-            <h3><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">（在新窗口打开）</span></a></h3>
+            <h3><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
             {% if item.best_comment_summary %}
             <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
             {% endif %}
           </div>
-          <div class="archive-side">{{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark" aria-label="已标记为有用">↑</span>{% elif item.vote_value == -1 %}<span class="vote-mark" aria-label="已标记为不相关">↓</span>{% endif %}</div>
+          <div class="archive-side">{{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>{% elif item.vote_value == -1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>{% endif %}</div>
         </article>
         {% endfor %}
       </div>
@@ -77,15 +77,15 @@
   {% else %}
   <div class="empty-state">
     <span class="empty-mark" aria-hidden="true"></span>
-    <h3>没有符合条件的内容</h3>
-    <p>调整关键词、日期范围或已读状态后再试。</p>
+    <h3>{{ t('web.archive.empty_heading') }}</h3>
+    <p>{{ t('web.archive.empty_body') }}</p>
   </div>
   {% endif %}
 
-  <nav class="pager" aria-label="归档分页">
-    {% if has_prev %}<a href="/archive?page={{ page - 1 }}">← 更新</a>{% else %}<span class="disabled">← 更新</span>{% endif %}
-    <span>第 {{ page }} 页</span>
-    {% if has_next %}<a href="/archive?page={{ page + 1 }}">更早 →</a>{% else %}<span class="disabled">更早 →</span>{% endif %}
+  <nav class="pager" aria-label="{{ t('web.archive.pager_aria') }}">
+    {% if has_prev %}<a href="/archive?page={{ page - 1 }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
+    <span>{{ t('web.archive.page_label', page=page) }}</span>
+    {% if has_next %}<a href="/archive?page={{ page + 1 }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
   </nav>
 </main>
 {% endblock %}

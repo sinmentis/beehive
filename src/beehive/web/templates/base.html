@@ -1,27 +1,27 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ locale }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#10110f">
-<meta name="description" content="蜂巢将分散的信息源整理成少量值得关注的信号。">
+<meta name="description" content="{{ t('web.meta.description', product=t('common.product_name')) }}">
 <link rel="icon" href="/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
 <link rel="stylesheet" href="/static/beehive.css?v={{ asset_version }}">
-<title>{% block title %}蜂巢{% endblock %}</title>
+<title>{% block title %}{{ t('common.product_name') }}{% endblock %}</title>
 </head>
 <body class="{% block body_class %}{% endblock %}">
-<a class="skip-link" href="#main-content">跳到主要内容</a>
+<a class="skip-link" href="#main-content">{{ t('web.nav.skip_link') }}</a>
 <header class="site-header">
   <div class="header-inner">
-    <a class="brand" href="/" aria-label="蜂巢首页">
+    <a class="brand" href="/" aria-label="{{ t('web.nav.brand_aria', product=t('common.product_name')) }}">
       <span class="brand-mark" aria-hidden="true"></span>
-      <span class="brand-name">蜂巢</span>
+      <span class="brand-name">{{ t('common.product_name') }}</span>
     </a>
-    <nav class="site-nav" aria-label="主导航">
-      <a href="/"{% if request.url.path == "/" or request.url.path.startswith("/channels/") %} aria-current="page"{% endif %}>首页</a>
-      <a href="/archive"{% if request.url.path == "/archive" %} aria-current="page"{% endif %}>归档</a>
-      <a href="/admin/login"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>管理</a>
+    <nav class="site-nav" aria-label="{{ t('web.nav.aria_label') }}">
+      <a href="/"{% if request.url.path == "/" or request.url.path.startswith("/channels/") %} aria-current="page"{% endif %}>{{ t('web.nav.home') }}</a>
+      <a href="/archive"{% if request.url.path == "/archive" %} aria-current="page"{% endif %}>{{ t('web.nav.archive') }}</a>
+      <a href="/admin/login"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>{{ t('web.nav.admin') }}</a>
     </nav>
     {% block header_status %}{% endblock %}
   </div>

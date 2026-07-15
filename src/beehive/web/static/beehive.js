@@ -67,9 +67,19 @@
       const summary = (
         row.querySelector(".signal-summary")?.firstChild?.textContent.trim() || ""
       );
+      const template = selectionStatus.dataset.selectionTemplate || "";
+      const replacements = {
+        __CHANNEL__: channel,
+        __SCORE__: score,
+        __SUMMARY__: summary,
+      };
+      const message = template.replace(
+        /__(CHANNEL|SCORE|SUMMARY)__/g,
+        (token) => replacements[token] ?? token,
+      );
       selectionStatus.textContent = "";
       requestAnimationFrame(() => {
-        selectionStatus.textContent = `已选择 ${channel}，AI 分数 ${score}，${summary}`;
+        selectionStatus.textContent = message;
       });
     }
   };

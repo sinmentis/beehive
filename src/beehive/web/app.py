@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from beehive.db.connection import connect, init_schema
+from beehive.localization import load_localizer
 from beehive.web import admin, public
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -28,6 +29,15 @@ def _static_asset_version() -> str:
             digest.update(path.name.encode())
             digest.update(path.read_bytes())
     return digest.hexdigest()[:12]
+
+
+def _localization_context(request: Request) -> dict:
+    """Exposes t()/localizer/locale to every template via Jinja2Templates' context_processors.
+    Matched routes populate request.state.localizer through the get_localizer dependency (over
+    the same cached get_db connection, see deps.py); the custom 404 handler below never runs
+    normal dependencies, so it loads the Localizer itself before rendering."""
+    localizer = request.state.localizer
+    return {"t": localizer.text, "localizer": localizer, "locale": localizer.code}
 
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -55,7 +65,10 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     app.state.db_path = db_path
     app.state.session_secret = (session_secret if session_secret is not None
                                  else os.environ.get("SESSION_SECRET", ""))
-    app.state.templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+    app.state.templates = Jinja2Templates(
+        directory=str(_TEMPLATES_DIR),
+        context_processors=[_localization_context],
+    )
     app.state.templates.env.globals["asset_version"] = _static_asset_version()
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
@@ -67,6 +80,13 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
                 status_code=exc.status_code,
                 headers=exc.headers,
             )
+        # Unmatched routes never run get_localizer (no route means no dependencies), so the
+        # context processor above would find nothing on request.state -- load it directly here.
+        conn = connect(app.state.db_path)
+        try:
+            request.state.localizer = load_localizer(conn)
+        finally:
+            conn.close()
         return app.state.templates.TemplateResponse(
             request,
             "not_found.html",

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — 添加信源{% endblock %}
+{% block title %}{{ t('web.title.source_new', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-admin page-editor{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell source-form-shell">
@@ -7,8 +7,8 @@
   <header class="page-heading compact-heading">
     <div>
       <p class="eyebrow" lang="en">New input</p>
-      <h1>添加信源</h1>
-      <p class="page-lede">为 {{ channel.name }} 选择一个可定期抓取的信息入口。</p>
+      <h1>{{ t('web.admin.source_new.heading') }}</h1>
+      <p class="page-lede">{{ t('web.admin.source_new.lede', channel=channel.name) }}</p>
     </div>
   </header>
   {% if error %}<p class="page-banner" role="alert">{{ error }}</p>{% endif %}
@@ -17,7 +17,7 @@
     <form method="post" action="/admin/channels/{{ channel.id }}/sources/new" class="source-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <fieldset class="field source-types">
-        <legend>信源类型</legend>
+        <legend>{{ t('web.admin.source_new.type_legend') }}</legend>
         <div class="type-options">
           {% for option in source_type_options %}
           <label class="type-option">
@@ -31,54 +31,54 @@
           {% endfor %}
           <div class="type-option disabled">
             <span class="source-icon">X</span>
-            <span class="name">Twitter / X — 账号</span>
+            <span class="name">{{ t('web.source_type.twitter_x') }}</span>
             <span class="soon">Phase 3</span>
           </div>
         </div>
       </fieldset>
       <div class="field config-reddit_subreddit">
-        <label for="subreddit">子版块名称</label>
+        <label for="subreddit">{{ t('web.admin.source_new.subreddit_label') }}</label>
         <div class="input-with-prefix">
           <span class="prefix">r/</span>
           <input id="subreddit" type="text" name="subreddit" value="{{ subreddit }}" placeholder="PersonalFinanceNZ">
         </div>
-        <p class="hint">只填名字，不用带 r/ 前缀。</p>
+        <p class="hint">{{ t('web.admin.source_new.subreddit_hint') }}</p>
       </div>
       <div class="field config-google_news_query">
-        <label for="google-query">搜索关键词</label>
+        <label for="google-query">{{ t('web.admin.source_new.query_label') }}</label>
         <input id="google-query" type="text" name="query" value="{{ query }}" placeholder="New Zealand economy">
-        <p class="hint">支持引号词组、-排除词和 site: 域名限制。</p>
+        <p class="hint">{{ t('web.admin.source_new.google_query_hint') }}</p>
       </div>
       <div class="field config-hackernews_stories">
-        <label for="hn-feed">榜单</label>
+        <label for="hn-feed">{{ t('web.admin.source_new.feed_label') }}</label>
         <div class="input-with-prefix">
           <span class="prefix">HN</span>
           <select id="hn-feed" name="hn_feed">
-            <option value="top" {{ "selected" if hn_feed == "top" else "" }}>热门</option>
-            <option value="best" {{ "selected" if hn_feed == "best" else "" }}>最佳</option>
-            <option value="new" {{ "selected" if hn_feed == "new" else "" }}>最新</option>
-            <option value="ask" {{ "selected" if hn_feed == "ask" else "" }}>问答</option>
-            <option value="show" {{ "selected" if hn_feed == "show" else "" }}>展示</option>
-            <option value="job" {{ "selected" if hn_feed == "job" else "" }}>招聘</option>
+            <option value="top" {{ "selected" if hn_feed == "top" else "" }}>{{ t('web.hn.feed.top') }}</option>
+            <option value="best" {{ "selected" if hn_feed == "best" else "" }}>{{ t('web.hn.feed.best') }}</option>
+            <option value="new" {{ "selected" if hn_feed == "new" else "" }}>{{ t('web.hn.feed.new') }}</option>
+            <option value="ask" {{ "selected" if hn_feed == "ask" else "" }}>{{ t('web.hn.feed.ask') }}</option>
+            <option value="show" {{ "selected" if hn_feed == "show" else "" }}>{{ t('web.hn.feed.show') }}</option>
+            <option value="job" {{ "selected" if hn_feed == "job" else "" }}>{{ t('web.hn.feed.job') }}</option>
           </select>
         </div>
-        <p class="hint">每次读取榜单前 30 条内容。</p>
+        <p class="hint">{{ t('web.admin.source_new.feed_hint') }}</p>
       </div>
       <div class="field config-hackernews_query">
-        <label for="hn-query">搜索关键词</label>
+        <label for="hn-query">{{ t('web.admin.source_new.query_label') }}</label>
         <div class="input-with-prefix">
           <span class="prefix">HN</span>
           <input id="hn-query" type="text" name="hn_query" value="{{ hn_query }}" placeholder="local-first">
         </div>
-        <label for="hn-sort">排序方式</label>
+        <label for="hn-sort">{{ t('web.admin.source_new.sort_label') }}</label>
         <select id="hn-sort" name="hn_sort">
-          <option value="relevance" {{ "selected" if hn_sort == "relevance" else "" }}>相关度</option>
-          <option value="recent" {{ "selected" if hn_sort == "recent" else "" }}>最新发布</option>
+          <option value="relevance" {{ "selected" if hn_sort == "relevance" else "" }}>{{ t('web.admin.source_new.sort_relevance') }}</option>
+          <option value="recent" {{ "selected" if hn_sort == "recent" else "" }}>{{ t('web.admin.source_new.sort_recent') }}</option>
         </select>
       </div>
       <div class="actions">
-        <button class="btn primary" type="submit">保存并返回</button>
-        <a class="btn ghost" href="/admin/channels/{{ channel.id }}/edit">取消</a>
+        <button class="btn primary" type="submit">{{ t('web.admin.source_new.submit') }}</button>
+        <a class="btn ghost" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.channel_new.cancel') }}</a>
       </div>
     </form>
   </section>

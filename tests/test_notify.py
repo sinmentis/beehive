@@ -3,8 +3,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from beehive.email_routing import EmailConfigurationError
+from beehive.localization import localizer_for
 from beehive.notify import (AcsEmailNotifier, LogNotifier, build_notifier,
                                 format_llm_failure)
+
+_EN = localizer_for("en")
 
 
 def test_log_notifier_prints(capsys):
@@ -41,14 +44,22 @@ def test_acs_email_notifier_send_calls_sdk():
 
 
 def test_format_llm_failure():
-    subject, body = format_llm_failure("NZ Finance", "timeout after 120s")
+    subject, body = format_llm_failure(_EN, "NZ Finance", "timeout after 120s")
     assert "NZ Finance" in subject
     assert "timeout after 120s" in body
 
 
 def test_format_llm_failure_subject_includes_product_name():
-    subject, _ = format_llm_failure("NZ Finance", "timeout after 120s")
+    subject, _ = format_llm_failure(_EN, "NZ Finance", "timeout after 120s")
+    assert "Beehive" in subject
+
+
+def test_format_llm_failure_localizes_for_a_non_english_language():
+    chinese = localizer_for("zh-CN")
+    subject, body = format_llm_failure(chinese, "NZ Finance", "timeout after 120s")
     assert "蜂巢" in subject
+    assert "NZ Finance" in subject
+    assert "timeout after 120s" in body  # raw error detail is preserved untranslated
 
 
 def test_acs_email_notifier_send_includes_html_when_provided():

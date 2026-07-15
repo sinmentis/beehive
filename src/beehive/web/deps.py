@@ -4,7 +4,12 @@ app's traffic scale — no pooling needed for a single-operator tool.
 
 require_admin_session (Slice 3) gates every /admin/* route and, later, Slice 2's vote/read-state
 writes (ADR-0005) — both are owner-only mutations protected by the same session. It short-circuits
-via a 303 redirect (not a bare 401) since this guards a browser-navigated admin UI, not an API."""
+via a 303 redirect (not a bare 401) since this guards a browser-navigated admin UI, not an API.
+
+get_localizer (localization slice) loads the platform's saved language once per request through
+the already-cached get_db connection and stashes it on request.state so the Jinja context
+processor (app.py) and the custom 404 handler -- which never runs normal dependencies -- can both
+read the same per-request Localizer without any process-global mutable cache."""
 from __future__ import annotations
 
 import hmac
@@ -17,6 +22,7 @@ from fastapi import Depends, HTTPException, Request
 from beehive.auth.tokens import verify_signed_session_id
 from beehive.db.connection import connect
 from beehive.db.sessions import get_session
+from beehive.localization import Localizer, load_localizer
 
 SESSION_COOKIE_NAME = "admin_session"
 
@@ -27,6 +33,13 @@ def get_db(request: Request) -> Generator[sqlite3.Connection, None, None]:
         yield conn
     finally:
         conn.close()
+
+
+def get_localizer(request: Request,
+                   conn: sqlite3.Connection = Depends(get_db)) -> Localizer:
+    localizer = load_localizer(conn)
+    request.state.localizer = localizer
+    return localizer
 
 
 def _get_valid_session(request: Request, conn: sqlite3.Connection) -> dict | None:

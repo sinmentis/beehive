@@ -27,7 +27,7 @@ def test_no_template_uses_the_old_logo_emoji():
 
 def test_base_template_uses_shared_design_system_and_brand_mark():
     content = (_TEMPLATES_DIR / "base.html").read_text()
-    assert "蜂巢" in content
+    assert "t('common.product_name')" in content
     assert 'href="/static/beehive.css?v={{ asset_version }}"' in content
     assert 'href="/static/favicon.svg?v={{ asset_version }}"' in content
     assert 'class="skip-link"' in content
@@ -173,6 +173,8 @@ def test_dashboard_script_implements_displayed_keyboard_shortcuts():
     assert 'key === "enter" && selectedRowHasFocus' in content
     assert "selectionStatus.textContent" in content
     assert "scrollIntoView" in content
+    assert "/__(CHANNEL|SCORE|SUMMARY)__/g" in content
+    assert '.replace("__CHANNEL__", channel)' not in content
 
 
 def test_static_asset_version_changes_when_asset_bytes_change(tmp_path, monkeypatch):

@@ -26,7 +26,7 @@ def client(db_path):
 def test_login_form_renders(client):
     resp = client.get("/admin/login")
     assert resp.status_code == 200
-    assert "密码" in resp.text
+    assert "Password" in resp.text
     assert "autofocus" not in resp.text
 
 
@@ -47,14 +47,14 @@ def test_login_form_still_renders_with_an_expired_or_invalid_session_cookie(clie
     client.cookies.set(SESSION_COOKIE_NAME, "not-a-real-session-value")
     resp = client.get("/admin/login")
     assert resp.status_code == 200
-    assert "密码" in resp.text
+    assert "Password" in resp.text
 
 
 def test_login_form_shows_last_login_after_an_attempt(client):
     client.post("/admin/login", data={"password": "wrong"})
     resp = client.get("/admin/login")
-    assert "上次登录" in resp.text
-    assert "失败" in resp.text
+    assert "Last login" in resp.text
+    assert "Failed" in resp.text
 
 
 def test_correct_password_sets_cookie_and_redirects(client, db_path):
@@ -71,7 +71,7 @@ def test_correct_password_sets_cookie_and_redirects(client, db_path):
 def test_wrong_password_shows_error_and_sets_no_cookie(client, db_path):
     resp = client.post("/admin/login", data={"password": "wrong-password"})
     assert resp.status_code == 401
-    assert "密码错误" in resp.text
+    assert "Incorrect password" in resp.text
     assert SESSION_COOKIE_NAME not in resp.cookies
 
     conn = connect(db_path)
@@ -85,7 +85,7 @@ def test_lockout_after_max_failed_attempts(client):
         client.post("/admin/login", data={"password": "wrong-password"})
     resp = client.post("/admin/login", data={"password": "correct-password"})
     assert resp.status_code == 429
-    assert "登录尝试过多" in resp.text
+    assert "Too many login attempts" in resp.text
 
 
 def test_logout_deletes_session_and_redirects(client):
@@ -124,3 +124,19 @@ def test_last_login_time_uses_shared_host_local_formatting(client, db_path):
 
     resp = client.get("/admin/login")
     assert "2026-07-09 12:00" in resp.text
+
+
+def test_login_page_renders_in_chinese_when_platform_language_is_zh_cn(client, db_path):
+    from beehive.localization import save_language
+
+    conn = connect(db_path)
+    save_language(conn, "zh-CN")
+    conn.commit()
+
+    resp = client.get("/admin/login")
+    assert resp.status_code == 200
+    assert '<html lang="zh-CN">' in resp.text
+    assert "密码" in resp.text
+
+    wrong_resp = client.post("/admin/login", data={"password": "wrong-password"})
+    assert "密码错误" in wrong_resp.text

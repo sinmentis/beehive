@@ -18,8 +18,8 @@
   --danger:#cc7067;
   --danger-soft:rgba(204,112,103,.11);
   --shadow:0 24px 80px rgba(3,5,3,.34);
-  --font-sans:"Avenir Next","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
-  --font-display:"Iowan Old Style","Noto Serif SC","Songti SC",Georgia,serif;
+  --font-sans:"Avenir Next","Noto Sans SC","PingFang SC","Microsoft YaHei","Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --font-display:"Iowan Old Style","Noto Serif SC","Songti SC","Noto Serif JP","Hiragino Mincho ProN","Yu Mincho","Noto Serif KR","Batang",Georgia,serif;
   --radius-sm:.45rem;
   --radius-md:.85rem;
   --radius-lg:1.35rem;
@@ -170,7 +170,7 @@ h1{
   text-wrap:balance;
 }
 .compact-heading h1,.admin-heading h1{font-size:clamp(2.6rem,5vw,4.7rem)}
-:lang(zh) h1{
+:lang(zh) h1,:lang(ja) h1,:lang(ko) h1{
   font-weight:500;
   letter-spacing:-.012em;
   line-height:1.08;
@@ -180,7 +180,19 @@ h1{
 :lang(zh) .danger-zone h2,
 :lang(zh) .item-title,
 :lang(zh) .channel-admin-row h3,
-:lang(zh) .empty-state h3{
+:lang(zh) .empty-state h3,
+:lang(ja) .section-heading h2,
+:lang(ja) .panel-heading h2,
+:lang(ja) .danger-zone h2,
+:lang(ja) .item-title,
+:lang(ja) .channel-admin-row h3,
+:lang(ja) .empty-state h3,
+:lang(ko) .section-heading h2,
+:lang(ko) .panel-heading h2,
+:lang(ko) .danger-zone h2,
+:lang(ko) .item-title,
+:lang(ko) .channel-admin-row h3,
+:lang(ko) .empty-state h3{
   font-weight:500;
   letter-spacing:-.008em;
 }

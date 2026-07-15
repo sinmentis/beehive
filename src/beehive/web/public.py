@@ -16,7 +16,8 @@ from beehive.db.items import (count_dashboard_signals, get_item, list_archive, l
                               list_dashboard_highlights, mark_channel_read, mark_item_opened)
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
-from beehive.web.deps import get_db, get_optional_session, require_admin_session, verify_csrf
+from beehive.localization import Localizer
+from beehive.web.deps import get_db, get_localizer, get_optional_session, require_admin_session, verify_csrf
 from beehive.web.formatting import fetch_stats_label, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time
 from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.official_feed_labels import official_feed_label
@@ -32,7 +33,7 @@ HIGHLIGHT_COUNT = 8
 DASHBOARD_SIGNAL_COUNT = 24
 
 
-def _source_label(item: dict) -> str:
+def _source_label(item: dict, t: Localizer) -> str:
     config = json.loads(item["source_config"])
     if item["source_type"] == "reddit_subreddit":
         return f"r/{config['subreddit']}"
@@ -41,34 +42,42 @@ def _source_label(item: dict) -> str:
     official_label = official_feed_label(item["source_type"])
     if official_label is not None:
         return official_label
-    hackernews_label = hackernews_source_label(item["source_type"], config)
+    hackernews_label = hackernews_source_label(item["source_type"], config, t)
     return hackernews_label if hackernews_label is not None else item["source_type"]
 
 
-def _engagement_label(item: dict) -> str:
+def _engagement_label(item: dict, t: Localizer) -> str:
     if item["source_type"] == "reddit_subreddit":
-        return f"{item['raw_metadata'].get('score', 0)}赞 {item['raw_metadata'].get('num_comments', 0)}评论"
+        return t.text(
+            "web.engagement.reddit",
+            score=item["raw_metadata"].get("score", 0),
+            comments=item["raw_metadata"].get("num_comments", 0),
+        )
     if item["source_type"] == "google_news_query":
         return item["raw_metadata"].get("source_name", "")
     if item["source_type"] in {"hackernews_stories", "hackernews_query"}:
-        return f"{item['raw_metadata'].get('score', 0)}分 {item['raw_metadata'].get('num_comments', 0)}评论"
+        return t.text(
+            "web.engagement.hackernews",
+            score=item["raw_metadata"].get("score", 0),
+            comments=item["raw_metadata"].get("num_comments", 0),
+        )
     if item["source_type"] in {"rbnz_news", "nz_government_news", "federal_reserve_news"}:
         return item["raw_metadata"].get("category", "")
     return ""
 
 
-def _decorate_item(item: dict) -> None:
-    item["source_label"] = _source_label(item)
-    item["engagement_label"] = _engagement_label(item)
-    item["age"] = relative_time(item["created_at"]) if item["created_at"] else ""
+def _decorate_item(item: dict, t: Localizer) -> None:
+    item["source_label"] = _source_label(item, t)
+    item["engagement_label"] = _engagement_label(item, t)
+    item["age"] = relative_time(item["created_at"], t) if item["created_at"] else ""
     item["exact_time"] = host_local_time_label(item["created_at"]) if item["created_at"] else ""
     item["safe_url"] = _safe_href(item["url"])
     item["open_url"] = f"/items/{item['id']}/open" if item["safe_url"] != "#" else "#"
 
 
-def _source_summary(sources: list[dict]) -> str:
+def _source_summary(sources: list[dict], t: Localizer) -> str:
     """Channel drill-down's page-sub line lists every Source feeding the Channel, e.g.
-    "来源：r/PersonalFinanceNZ". Mirrors _source_label's reddit_subreddit convention, but over
+    "Sources: r/PersonalFinanceNZ". Mirrors _source_label's reddit_subreddit convention, but over
     raw `sources` rows (type/config), not the source_type/source_config aliases
     list_by_channel's item-join produces."""
     labels = []
@@ -81,9 +90,9 @@ def _source_summary(sources: list[dict]) -> str:
         elif official_feed_label(s["type"]) is not None:
             labels.append(official_feed_label(s["type"]))
         else:
-            hackernews_label = hackernews_source_label(s["type"], config)
+            hackernews_label = hackernews_source_label(s["type"], config, t)
             labels.append(hackernews_label if hackernews_label is not None else s["type"])
-    return "、".join(labels)
+    return t.text("web.channel.source_list_separator").join(labels)
 
 
 def _group_by_day(items: list[dict]) -> list[tuple[str, list[dict]]]:
@@ -103,6 +112,7 @@ def dashboard(
     request: Request,
     minimum_score: int | None = Query(default=None, ge=0, le=100),
     conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
 ):
     pending_signal_count = count_dashboard_signals(conn, minimum_score=minimum_score)
     highlights = list_dashboard_highlights(
@@ -112,7 +122,7 @@ def dashboard(
     )
     has_more_signals = pending_signal_count > DASHBOARD_SIGNAL_COUNT
     for item in highlights:
-        _decorate_item(item)
+        _decorate_item(item, t)
     now = datetime.now(timezone.utc)
     channels = []
     total_unread = 0
@@ -122,19 +132,20 @@ def dashboard(
         total_unread += unread_count
         teaser = next((i for i in items if i["ai_summary"]), None)
         if teaser is not None:
-            _decorate_item(teaser)
+            _decorate_item(teaser, t)
         sources = list_sources(conn, channel["id"])
         channels.append({
             "id": channel["id"], "name": channel["name"],
             "unread_count": unread_count, "teaser": teaser,
-            "freshness": freshness_label(sources),
+            "freshness": freshness_label(sources, t),
             "freshness_exact": freshness_exact_time(sources),
             "next_fetch": next_fetch_countdown(
                 sources,
                 channel["fetch_interval_hours"],
                 now,
+                t,
             ),
-            "fetch_stats": fetch_stats_label(sources),
+            "fetch_stats": fetch_stats_label(sources, t),
         })
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -148,7 +159,6 @@ def dashboard(
         "total_unread": total_unread,
     })
 
-
 @router.get("/items/{item_id}/open")
 def open_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
     item = get_item(conn, item_id)
@@ -161,7 +171,8 @@ def open_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
 @router.get("/channels/{channel_id}", response_class=HTMLResponse)
 def channel_drilldown(channel_id: int, request: Request, show_read: int | None = None,
                        session: dict | None = Depends(get_optional_session),
-                       conn: sqlite3.Connection = Depends(get_db)):
+                       conn: sqlite3.Connection = Depends(get_db),
+                       t: Localizer = Depends(get_localizer)):
     channel = get_channel(conn, channel_id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -169,7 +180,7 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
     is_admin = session is not None
     items = list_by_channel(conn, channel_id)
     for item in items:
-        _decorate_item(item)
+        _decorate_item(item, t)
         if not is_admin:
             item["vote_reason"] = None
 
@@ -186,13 +197,13 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
         "channel": channel,
         "highlighted": visible_items[:HIGHLIGHT_COUNT],
         "folded": visible_items[HIGHLIGHT_COUNT:],
-        "freshness": freshness_label(sources),
+        "freshness": freshness_label(sources, t),
         "freshness_exact": freshness_exact_time(sources),
-        "fetch_stats": fetch_stats_label(sources),
+        "fetch_stats": fetch_stats_label(sources, t),
         "unread_count": unread_count,
         "read_count": read_count,
         "show_read": bool(show_read),
-        "source_summary": _source_summary(sources),
+        "source_summary": _source_summary(sources, t),
         "is_admin": is_admin,
         "csrf_token": session["csrf_token"] if is_admin else None,
     })
@@ -202,7 +213,8 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
 def vote_on_item(item_id: int, request: Request, value: int = Form(...),
                   csrf_token: str = Form(...), reason: str | None = Form(None),
                   session: dict = Depends(require_admin_session),
-                  conn: sqlite3.Connection = Depends(get_db)):
+                  conn: sqlite3.Connection = Depends(get_db),
+                  t: Localizer = Depends(get_localizer)):
     verify_csrf(session, csrf_token)
     if value not in (1, -1):
         raise HTTPException(status_code=422, detail="value must be 1 or -1")
@@ -218,7 +230,7 @@ def vote_on_item(item_id: int, request: Request, value: int = Form(...),
     item = get_item(conn, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    _decorate_item(item)
+    _decorate_item(item, t)
 
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "_item_card.html", {
@@ -242,7 +254,8 @@ _ARCHIVE_PAGE_SIZE = 30
 def archive(request: Request, channel: str | None = None,
             from_: str | None = Query(None, alias="from"), to: str | None = None,
             read_state: str | None = None, q: str | None = None, page: int = 1,
-            conn: sqlite3.Connection = Depends(get_db)):
+            conn: sqlite3.Connection = Depends(get_db),
+            t: Localizer = Depends(get_localizer)):
     # The filter form's <select>/<input type=date> fields submit an EMPTY STRING when left at
     # their default/blank state (e.g. channel="", from="") -- not an omitted query param. FastAPI
     # would reject an empty string for `channel: int` outright (422 "int_parsing"), and an empty
@@ -263,7 +276,7 @@ def archive(request: Request, channel: str | None = None,
                                 read_state=read_state, search=q, page=page,
                                 page_size=_ARCHIVE_PAGE_SIZE)
     for item in items:
-        _decorate_item(item)
+        _decorate_item(item, t)
         item["time_label"] = _time_label(item["fetched_at"])
         item["vote_reason"] = None  # archive is always anonymous: never surface the private reason
 

@@ -22,6 +22,7 @@ from beehive.email_routing import (
     ResolvedRecipient,
     resolve_channel_email,
 )
+from beehive.localization import Localizer
 from beehive.notify import Notifier
 
 _EPOCH = "1970-01-01T00:00:00"
@@ -36,6 +37,7 @@ class RecipientDeliveryError(RuntimeError):
 
 def send_daily_digest(conn: sqlite3.Connection, notifier: Notifier,
                       default_recipient: ResolvedRecipient,
+                      localizer: Localizer,
                       now: datetime | None = None) -> None:
     run_time = now or datetime.now(timezone.utc)
     sent_at = run_time.isoformat()
@@ -63,7 +65,8 @@ def send_daily_digest(conn: sqlite3.Connection, notifier: Notifier,
             if item["ai_score"] is not None
         ]
         warnings = [
-            f'{source["type"]} 信源抓取失败：{source["last_fetch_error"]}'
+            localizer.text("background.source_fetch_warning",
+                            source_type=source["type"], error=source["last_fetch_error"])
             for source in list_sources(conn, channel["id"])
             if source["last_fetch_error"]
         ]
@@ -76,9 +79,9 @@ def send_daily_digest(conn: sqlite3.Connection, notifier: Notifier,
         channel_ids = [channel_id for channel_id, _digest in entries]
         channel_digests = [digest for _channel_id, digest in entries]
         subject, plain_text = render_digest_email(
-            channel_digests, digest_date)
+            channel_digests, digest_date, localizer)
         html = render_digest_email_html(
-            channel_digests, digest_date)
+            channel_digests, digest_date, localizer)
         try:
             notifier.send(
                 subject, plain_text, html, to_addr=recipient)

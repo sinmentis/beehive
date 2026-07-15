@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="{{ lang }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>蜂巢每日摘要 · {{ today_iso }}</title>
+<title>{{ page_title }}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;">
 <tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
 <tr><td style="padding:20px 24px;border-bottom:1px solid #e5e7eb;">
-  <span style="font-size:18px;font-weight:600;color:#18181b;">🐝 蜂巢每日摘要</span>
+  <span style="font-size:18px;font-weight:600;color:#18181b;">🐝 {{ header_text }}</span>
   <div style="font-size:13px;color:#71717a;margin-top:2px;">{{ today_iso }}</div>
 </td></tr>
 {% for cd in channel_digests %}
@@ -24,7 +24,7 @@
 {% endfor %}
 {% if not cd.highlighted %}
 <tr><td style="padding:0 24px 16px;">
-  <div style="font-size:13px;color:#a1a1aa;">今天没有新内容，已确认检查过。</div>
+  <div style="font-size:13px;color:#a1a1aa;">{{ empty_state_text }}</div>
 </td></tr>
 {% else %}
 {% for item in cd.highlighted %}

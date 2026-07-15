@@ -1,39 +1,39 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — 新建 Channel{% endblock %}
+{% block title %}{{ t('web.title.channel_new', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-admin page-editor{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell form-shell">
-  <p class="crumb"><a href="/admin/">← Channel 列表</a></p>
+  <p class="crumb"><a href="/admin/">{{ t('web.admin.channel_list_crumb') }}</a></p>
   <header class="page-heading compact-heading">
     <div>
       <p class="eyebrow" lang="en">New stream</p>
-      <h1>新建 Channel</h1>
-      <p class="page-lede">先定义你真正关心的问题，再决定从哪里获取信号。</p>
+      <h1>{{ t('web.admin.channel_new.heading') }}</h1>
+      <p class="page-lede">{{ t('web.admin.channel_new.lede') }}</p>
     </div>
   </header>
   <section class="admin-panel">
     <form method="post" action="/admin/channels/new">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="field">
-        <label for="new-channel-name">名字</label>
-        <input id="new-channel-name" type="text" name="name" placeholder="例如：NZ Finance" required autocomplete="off">
+        <label for="new-channel-name">{{ t('web.admin.channel_new.name_label') }}</label>
+        <input id="new-channel-name" type="text" name="name" placeholder="{{ t('web.admin.channel_new.name_placeholder') }}" required autocomplete="off">
       </div>
       <div class="field">
-        <label for="new-channel-profile">关注什么</label>
-        <textarea id="new-channel-profile" name="profile" placeholder="经济新闻、利率变化、房产市场动态、KiwiSaver 和省钱投资技巧。" required></textarea>
-        <p class="hint">保存后可以继续调整，并为这个 Channel 添加信源。</p>
+        <label for="new-channel-profile">{{ t('web.admin.channel_new.profile_label') }}</label>
+        <textarea id="new-channel-profile" name="profile" placeholder="{{ t('web.admin.channel_new.profile_placeholder') }}" required></textarea>
+        <p class="hint">{{ t('web.admin.channel_new.profile_hint') }}</p>
       </div>
       <div class="field">
-        <label for="new-fetch-interval">抓取频率</label>
+        <label for="new-fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
         <select id="new-fetch-interval" name="fetch_interval_hours">
-          <option value="3">每 3 小时</option>
-          <option value="6">每 6 小时</option>
-          <option value="24">每天一次</option>
+          <option value="3">{{ t('web.fetch_interval.every_n_hours', hours=3) }}</option>
+          <option value="6">{{ t('web.fetch_interval.every_n_hours', hours=6) }}</option>
+          <option value="24">{{ t('web.fetch_interval.daily') }}</option>
         </select>
       </div>
       <div class="actions">
-        <button class="btn primary" type="submit">创建 Channel</button>
-        <a class="btn ghost" href="/admin/">取消</a>
+        <button class="btn primary" type="submit">{{ t('web.admin.channel_new.submit') }}</button>
+        <a class="btn ghost" href="/admin/">{{ t('web.admin.channel_new.cancel') }}</a>
       </div>
     </form>
   </section>

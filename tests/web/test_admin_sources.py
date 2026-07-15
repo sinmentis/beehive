@@ -200,8 +200,8 @@ def test_new_source_form_shows_both_hackernews_types_with_consistent_icon(
     assert resp.status_code == 200
     assert 'value="hackernews_stories"' in resp.text
     assert 'value="hackernews_query"' in resp.text
-    assert "Hacker News — 榜单" in resp.text
-    assert "Hacker News — 关键词搜索" in resp.text
+    assert "Hacker News — Feed" in resp.text
+    assert "Hacker News — Keyword search" in resp.text
     assert resp.text.count("🟧") >= 2
 
 
@@ -283,15 +283,15 @@ def test_create_hackernews_query_source_persists_query_and_sort(
     [
         (
             {"type": "hackernews_stories", "hn_feed": "front_page"},
-            "请选择有效的 Hacker News 榜单",
+            "Please choose a valid Hacker News feed",
         ),
         (
             {"type": "hackernews_query", "hn_query": "", "hn_sort": "relevance"},
-            "请输入 Hacker News 搜索关键词",
+            "Please enter a Hacker News search keyword",
         ),
         (
             {"type": "hackernews_query", "hn_query": "python", "hn_sort": "popular"},
-            "请选择有效的 Hacker News 排序方式",
+            "Please choose a valid Hacker News sort order",
         ),
     ],
 )
@@ -352,9 +352,9 @@ def test_add_source_page_lists_three_official_options(authed_client, db_path):
     assert 'value="rbnz_news"' in html
     assert 'value="nz_government_news"' in html
     assert 'value="federal_reserve_news"' in html
-    assert "RBNZ — 新闻发布" in html
-    assert "NZ Government — 政府公告" in html
-    assert "Federal Reserve — 新闻发布" in html
+    assert "RBNZ — News releases" in html
+    assert "NZ Government — Announcements" in html
+    assert "Federal Reserve — News releases" in html
     assert "🏦" in html and "🇳🇿" in html and "🏛️" in html
 
 

@@ -28,6 +28,7 @@ from beehive.email_routing import (
     resolve_channel_email,
     resolve_default_email,
 )
+from beehive.localization import load_localizer
 from beehive.notify import Notifier, build_notifier
 
 
@@ -45,6 +46,7 @@ async def run_fetch(db_path: str) -> None:
     conn = connect(db_path)
     init_schema(conn)
     try:
+        localizer = load_localizer(conn)
         notifier, default_recipient = _build_delivery_context(conn)
         alert_delivery_failures: list[EmailConfigurationError] = []
         for channel in list_channels(conn):
@@ -56,7 +58,8 @@ async def run_fetch(db_path: str) -> None:
                 continue
             try:
                 await run_channel_cycle(
-                    conn, channel, notifier, recipient=recipient.address)
+                    conn, channel, notifier, recipient=recipient.address,
+                    localizer=localizer)
             except EmailConfigurationError as exc:
                 print(f"[fetch] Channel \"{channel['name']}\" could not deliver an alert "
                       f"email, continuing with the other Channels: {exc}")
@@ -73,6 +76,7 @@ async def run_fetch_channel(db_path: str) -> None:
     conn = connect(db_path)
     init_schema(conn)
     try:
+        localizer = load_localizer(conn)
         data_dir = os.path.dirname(db_path)
         channel_id = consume_pending_manual_trigger(data_dir)
         if channel_id is None:
@@ -92,7 +96,7 @@ async def run_fetch_channel(db_path: str) -> None:
         try:
             await run_channel_cycle(
                 conn, channel, notifier, recipient=recipient.address,
-                force_fetch=True)
+                localizer=localizer, force_fetch=True)
         except EmailConfigurationError as exc:
             print(f"[fetch-channel] Channel \"{channel['name']}\" could not deliver an "
                   f"alert email: {exc}")
@@ -105,8 +109,9 @@ def run_digest(db_path: str) -> None:
     conn = connect(db_path)
     init_schema(conn)
     try:
+        localizer = load_localizer(conn)
         notifier, default_recipient = _build_delivery_context(conn)
-        send_daily_digest(conn, notifier, default_recipient)
+        send_daily_digest(conn, notifier, default_recipient, localizer)
     finally:
         conn.close()
 

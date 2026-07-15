@@ -66,7 +66,7 @@ def test_dashboard_channel_tab_keeps_secondary_teaser_link(conn, client):
         f'class="dashboard-channel-teaser" href="/items/{item_id}/open" '
         'target="_blank" rel="noopener noreferrer"'
     ) in resp.text
-    assert 'aria-label="打开 NZ Finance 最新信号：RBNZ 降息（在新窗口打开）"' in resp.text
+    assert 'aria-label="Open NZ Finance&#39;s latest signal: RBNZ 降息 (opens in a new window)"' in resp.text
 
 
 def test_dashboard_renders_fingerprinted_static_assets(client):
@@ -85,14 +85,14 @@ def test_dashboard_shows_unread_count(conn, client):
     insert_new(c, source_id, RawItem(external_id="t2", title="B", url="https://y"))
 
     resp = client.get("/")
-    assert " · 2 新</span>" in resp.text
+    assert " · 2 new</span>" in resp.text
 
 
 def test_dashboard_renders_with_no_channels(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "从第一个 Channel 开始" in resp.text
-    assert " · 0 新</span>" in resp.text
+    assert "Start with your first channel" in resp.text
+    assert " · 0 new</span>" in resp.text
 
 
 def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
@@ -104,8 +104,8 @@ def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
     fresh_client = TestClient(create_app(fresh_path))
     resp = fresh_client.get("/")
     assert resp.status_code == 200
-    assert "从第一个 Channel 开始" in resp.text
-    assert " · 0 新</span>" in resp.text
+    assert "Start with your first channel" in resp.text
+    assert " · 0 new</span>" in resp.text
 
 
 def test_channel_drilldown_shows_item_with_source_badge_and_link(conn, client):
@@ -155,7 +155,7 @@ def test_channel_drilldown_shows_google_news_item_with_publisher_engagement_labe
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "Reuters" in resp.text
-    assert "0赞 0评论" not in resp.text
+    assert "0 upvotes · 0 comments" not in resp.text
 
 
 def test_channel_drilldown_google_news_item_with_no_source_name_shows_no_engagement_label(conn, client):
@@ -169,7 +169,7 @@ def test_channel_drilldown_google_news_item_with_no_source_name_shows_no_engagem
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
-    assert "0赞 0评论" not in resp.text
+    assert "0 upvotes · 0 comments" not in resp.text
 
 
 def test_channel_drilldown_splits_highlighted_and_folded(conn, client):
@@ -217,10 +217,10 @@ def test_channel_drilldown_folded_google_news_item_shows_publisher_not_zero_scor
     resp = client.get(f"/channels/{channel_id}")
     # rank 9 (score 91) lands in the folded tier (HIGHLIGHT_COUNT=8 caps the highlighted tier at the
     # top 8). A Google News item has no "score", so the folded tier must render its publisher via
-    # item.engagement_label, never the old hardcoded, meaningless "(0赞)".
+    # item.engagement_label, never the old hardcoded, meaningless "(0 upvotes)".
     assert resp.status_code == 200
     assert "Reuters" in resp.text
-    assert "(0赞)" not in resp.text
+    assert "(0 upvotes)" not in resp.text
 
 
 def test_channel_drilldown_shows_hackernews_feed_label_summary_and_engagement(conn, client):
@@ -242,9 +242,9 @@ def test_channel_drilldown_shows_hackernews_feed_label_summary_and_engagement(co
     resp = client.get(f"/channels/{channel_id}")
 
     assert resp.status_code == 200
-    assert "HN · 热门" in resp.text
-    assert "来源：HN · 热门" in resp.text
-    assert "321分 87评论" in resp.text
+    assert "HN · Top" in resp.text
+    assert "Sources: HN · Top" in resp.text
+    assert "321 points · 87 comments" in resp.text
 
 
 def test_channel_drilldown_shows_unknown_hackernews_feed_after_prefix(conn, client):
@@ -293,8 +293,8 @@ def test_channel_drilldown_shows_hackernews_query_label(conn, client):
 
     resp = client.get(f"/channels/{channel_id}")
 
-    assert "HN 搜索 · local-first" in resp.text
-    assert "55分 12评论" in resp.text
+    assert "HN search · local-first" in resp.text
+    assert "55 points · 12 comments" in resp.text
 
 
 def test_folded_hackernews_item_keeps_point_and_comment_engagement(conn, client):
@@ -327,7 +327,7 @@ def test_folded_hackernews_item_keeps_point_and_comment_engagement(conn, client)
     resp = client.get(f"/channels/{channel_id}")
 
     assert "summary 9" in resp.text
-    assert "55分 12评论" in resp.text
+    assert "55 points · 12 comments" in resp.text
 
 
 def test_channel_drilldown_shows_unread_count_and_source_summary(conn, client):
@@ -338,8 +338,8 @@ def test_channel_drilldown_shows_unread_count_and_source_summary(conn, client):
     update_ai_ranking(c, source_id, "t1", score=91, summary="RBNZ 降息", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
-    assert "1 条新内容" in resp.text
-    assert "来源：r/PersonalFinanceNZ" in resp.text
+    assert "1 new item" in resp.text
+    assert "Sources: r/PersonalFinanceNZ" in resp.text
 
 
 def test_channel_drilldown_404_for_missing_channel(client):
@@ -351,7 +351,7 @@ def test_channel_drilldown_404_for_missing_channel(client):
 def test_unknown_route_uses_branded_not_found_page(client):
     resp = client.get("/this-route-does-not-exist")
     assert resp.status_code == 404
-    assert "页面不存在" in resp.text
+    assert "Page not found" in resp.text
     assert 'href="/"' in resp.text
 
 
@@ -452,7 +452,7 @@ def test_vote_controls_restore_focus_and_announce_status(conn, authed_client):
     assert f'data-focus-key="item-{item_id}-down"' in resp.text
     assert f'data-focus-key="item-{item_id}-reason"' not in resp.text
     assert 'aria-pressed="false"' in resp.text
-    assert 'class="votes" role="group" aria-label="内容反馈"' in resp.text
+    assert 'class="votes" role="group" aria-label="Feedback on this item"' in resp.text
     assert 'id="feedback-status"' in resp.text
     assert 'role="status" aria-live="polite"' in resp.text
     assert '<script src="/static/beehive.js?v=' in resp.text
@@ -557,10 +557,10 @@ def test_viewing_drilldown_as_owner_marks_items_read_for_next_visit(conn, authed
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
 
     first = authed_client.get(f"/channels/{channel_id}")
-    assert "1 条新内容" in first.text  # THIS render still shows the pre-visit unread count
+    assert "1 new item" in first.text  # THIS render still shows the pre-visit unread count
 
     second = authed_client.get(f"/channels/{channel_id}")
-    assert "0 条新内容" in second.text  # the NEXT render reflects last visit's mark-read
+    assert "0 new items" in second.text  # the NEXT render reflects last visit's mark-read
 
 
 def test_viewing_drilldown_anonymously_does_not_mark_items_read(conn, client):
@@ -751,7 +751,7 @@ def test_dashboard_logo_links_to_home(client):
 def test_dashboard_exposes_accessible_navigation_and_skip_link(client):
     resp = client.get("/")
     assert '<a class="skip-link" href="#main-content">' in resp.text
-    assert '<nav class="site-nav" aria-label="主导航">' in resp.text
+    assert '<nav class="site-nav" aria-label="Main navigation">' in resp.text
     assert '<main id="main-content"' in resp.text
 
 
@@ -778,10 +778,10 @@ def test_dashboard_shows_ranked_signal_table(conn, client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert '<table class="signal-table">' in resp.text
-    assert '<th scope="col">分数</th>' in resp.text
+    assert '<th scope="col">Score</th>' in resp.text
     assert '<th scope="col">Channel</th>' in resp.text
-    assert '<th scope="col" class="signal-source-heading">来源</th>' in resp.text
-    assert '<th scope="col">AI 摘要</th>' in resp.text
+    assert '<th scope="col" class="signal-source-heading">Source</th>' in resp.text
+    assert '<th scope="col">AI summary</th>' in resp.text
     assert 'class="signal-row is-unread"' in resp.text
     assert f'class="signal-channel" href="/channels/{channel_id}"' in resp.text
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
@@ -793,7 +793,7 @@ def test_dashboard_hides_signal_table_when_nothing_qualifies(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert '<table class="signal-table">' not in resp.text
-    assert "当前没有待处理信号" in resp.text
+    assert "No pending signals right now" in resp.text
 
 
 def test_dashboard_requests_twenty_four_ranked_signals(conn, client):
@@ -882,7 +882,7 @@ def test_dashboard_high_priority_tab_filters_signals(conn, client):
 
     assert '<a href="/?minimum_score=90">≥90 1</a>' in default_resp.text
     assert '<strong aria-current="page">≥90 1</strong>' in filtered_resp.text
-    assert '<a href="/">全部</a>' in filtered_resp.text
+    assert '<a href="/">All</a>' in filtered_resp.text
     assert "高分摘要" in filtered_resp.text
     assert "低分摘要" not in filtered_resp.text
     assert filtered_resp.context["pending_signal_count"] == 1
@@ -973,8 +973,8 @@ def test_dashboard_shows_each_channels_own_next_fetch_countdown(
     resp = client.get("/")
 
     assert resp.status_code == 200
-    assert resp.text.count("21小时后抓取") == 1
-    assert resp.text.count("1分钟后抓取") == 1
+    assert resp.text.count("Fetching in 21 hours") == 1
+    assert resp.text.count("Fetching in 1 minute") == 1
 
 
 def test_dashboard_hides_next_fetch_for_channel_without_sources(
@@ -995,7 +995,7 @@ def test_dashboard_hides_next_fetch_for_channel_without_sources(
     resp = client.get("/")
 
     assert resp.status_code == 200
-    assert "后抓取" not in resp.text
+    assert "Fetching in" not in resp.text
 
 
 def test_dashboard_freshness_has_exact_time_tooltip(conn, client):
@@ -1075,7 +1075,7 @@ def test_channel_drilldown_hides_read_items_by_default(conn, client):
     resp = client.get(f"/channels/{channel_id}")
     assert "Unread item" in resp.text
     assert "Read item" not in resp.text
-    assert "1 条已读内容" in resp.text
+    assert "Show 1 read item" in resp.text
     assert f'href="/channels/{channel_id}?show_read=1"' in resp.text
 
 
@@ -1101,7 +1101,7 @@ def test_channel_drilldown_no_reveal_line_when_nothing_is_read(conn, client):
     insert_new(c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x"))
 
     resp = client.get(f"/channels/{channel_id}")
-    assert "条已读内容" not in resp.text
+    assert 'class="channel-read-link"' not in resp.text
 
 
 def test_channel_drilldown_shows_best_comment_summary_when_present(conn, client):
@@ -1144,7 +1144,7 @@ def test_dashboard_signal_shows_best_comment_summary_when_present(conn, client):
 
     resp = client.get("/")
     assert '<details class="signal-comment">' in resp.text
-    assert '<summary aria-label="查看最佳评论摘要">“</summary>' in resp.text
+    assert '<summary aria-label="View best comment summary">“</summary>' in resp.text
     assert "有人指出实际数字不同" in resp.text
 
 
@@ -1187,6 +1187,7 @@ def test_archive_shows_nothing_extra_when_best_comment_summary_is_absent(conn, c
 
 
 def test_official_source_label_uses_fixed_public_label():
+    from beehive.localization import localizer_for
     from beehive.web.public import _source_label
 
     item = {
@@ -1194,10 +1195,11 @@ def test_official_source_label_uses_fixed_public_label():
         "source_config": "{}",
         "raw_metadata": {"publisher": "RBNZ News"},
     }
-    assert _source_label(item) == "RBNZ News"
+    assert _source_label(item, localizer_for("en")) == "RBNZ News"
 
 
 def test_federal_reserve_category_is_the_secondary_label():
+    from beehive.localization import localizer_for
     from beehive.web.public import _engagement_label
 
     item = {
@@ -1205,10 +1207,11 @@ def test_federal_reserve_category_is_the_secondary_label():
         "source_config": "{}",
         "raw_metadata": {"publisher": "Federal Reserve", "category": "Monetary Policy"},
     }
-    assert _engagement_label(item) == "Monetary Policy"
+    assert _engagement_label(item, localizer_for("en")) == "Monetary Policy"
 
 
 def test_official_feed_without_category_has_no_secondary_label():
+    from beehive.localization import localizer_for
     from beehive.web.public import _engagement_label
 
     item = {
@@ -1216,11 +1219,12 @@ def test_official_feed_without_category_has_no_secondary_label():
         "source_config": "{}",
         "raw_metadata": {"publisher": "NZ Government"},
     }
-    assert _engagement_label(item) == ""
+    assert _engagement_label(item, localizer_for("en")) == ""
 
 
 def test_official_source_summary_uses_public_label():
+    from beehive.localization import localizer_for
     from beehive.web.public import _source_summary
 
     sources = [{"type": "nz_government_news", "config": "{}"}]
-    assert _source_summary(sources) == "NZ Government"
+    assert _source_summary(sources, localizer_for("en")) == "NZ Government"

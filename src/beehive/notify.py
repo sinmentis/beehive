@@ -6,6 +6,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from beehive.email_routing import EmailConfigurationError
+from beehive.localization import Localizer
 
 
 class Notifier(ABC):
@@ -59,8 +60,10 @@ def build_notifier(env: dict, default_to_addr: str | None = None) -> Notifier:
     )
 
 
-def format_llm_failure(channel_name: str, error: str) -> tuple[str, str]:
-    subject = f"蜂巢：{channel_name} AI 排序失败"
-    body = (f"Channel「{channel_name}」这一轮 AI 排序/摘要调用失败，本轮跳过，"
-             f"其余 Channel 正常。\n\n错误信息：{error}")
+def format_llm_failure(localizer: Localizer, channel_name: str, error: str) -> tuple[str, str]:
+    product = localizer.text("common.product_name")
+    subject = localizer.text(
+        "background.llm_failure_subject", product=product, channel=channel_name)
+    body = localizer.text(
+        "background.llm_failure_body", channel=channel_name, error=error)
     return subject, body

@@ -50,9 +50,9 @@ def test_channels_list_shows_name_source_count_and_interval(authed_client, db_pa
     resp = authed_client.get("/admin/")
     assert resp.status_code == 200
     assert "NZ Finance" in resp.text
-    assert "1 个信源" in resp.text
-    assert "每 3 小时抓取一次" in resp.text
-    assert "管理后台" in resp.text
+    assert "1 source" in resp.text
+    assert "Every 3 hours" in resp.text
+    assert "Admin" in resp.text
 
 
 def test_channels_list_shows_daily_interval_label(authed_client, db_path):
@@ -61,7 +61,7 @@ def test_channels_list_shows_daily_interval_label(authed_client, db_path):
     conn.close()
 
     resp = authed_client.get("/admin/")
-    assert "每天一次" in resp.text
+    assert "Once a day" in resp.text
 
 
 def test_new_channel_form_requires_session(db_path):
@@ -79,8 +79,8 @@ def test_new_channel_form_includes_csrf_token(authed_client):
 def test_new_channel_form_links_back_to_admin_home(authed_client):
     response = authed_client.get("/admin/channels/new")
 
-    assert '<p class="crumb"><a href="/admin/">← Channel 列表</a></p>' in response.text
-    assert '<a class="btn ghost" href="/admin/">取消</a>' in response.text
+    assert '<p class="crumb"><a href="/admin/">← Channel list</a></p>' in response.text
+    assert '<a class="btn ghost" href="/admin/">Cancel</a>' in response.text
 
 
 def test_edit_channel_form_links_back_to_admin_home(
@@ -92,7 +92,7 @@ def test_edit_channel_form_links_back_to_admin_home(
 
     response = authed_client.get(f"/admin/channels/{channel_id}/edit")
 
-    assert '<p class="crumb"><a href="/admin/">← Channel 列表</a></p>' in response.text
+    assert '<p class="crumb"><a href="/admin/">← Channel list</a></p>' in response.text
 
 
 def test_delete_channel_confirmation_uses_keyboard_accessible_details(
@@ -300,7 +300,7 @@ def test_channels_list_shows_freshness_label(authed_client, db_path):
     conn.close()
 
     resp = authed_client.get("/admin/")
-    assert "尚未抓取" in resp.text
+    assert "Not fetched yet" in resp.text
 
 
 def test_channels_list_shows_trigger_fetch_button(authed_client, db_path):
@@ -310,7 +310,7 @@ def test_channels_list_shows_trigger_fetch_button(authed_client, db_path):
 
     resp = authed_client.get("/admin/")
     assert f"/admin/channels/{channel_id}/trigger-fetch" in resp.text
-    assert "立即抓取" in resp.text
+    assert "Fetch now" in resp.text
 
 
 def test_channels_list_shows_flash_message_when_triggered_param_matches(authed_client, db_path):
@@ -319,7 +319,7 @@ def test_channels_list_shows_flash_message_when_triggered_param_matches(authed_c
     conn.close()
 
     resp = authed_client.get(f"/admin/?triggered={channel_id}")
-    assert "已提交抓取请求" in resp.text
+    assert "Fetch request submitted" in resp.text
 
 
 def test_channels_list_no_flash_message_without_triggered_param(authed_client, db_path):
@@ -328,7 +328,7 @@ def test_channels_list_no_flash_message_without_triggered_param(authed_client, d
     conn.close()
 
     resp = authed_client.get("/admin/")
-    assert "已提交抓取请求" not in resp.text
+    assert "Fetch request submitted" not in resp.text
 
 
 def test_admin_channels_logo_links_to_dashboard(authed_client, db_path):
@@ -397,7 +397,7 @@ def test_edit_channel_form_shows_override_and_effective_recipient(
         f"/admin/channels/{channel_id}/edit")
     assert 'name="digest_email"' in response.text
     assert 'value="channel@example.com"' in response.text
-    assert "当前生效：channel@example.com" in response.text
+    assert "Currently in effect: channel@example.com" in response.text
 
 
 def test_update_channel_saves_recipient_override(
@@ -469,7 +469,7 @@ def test_invalid_channel_recipient_rerenders_without_writing(
             "csrf_token": "csrf1",
         })
     assert response.status_code == 400
-    assert "仅支持一个邮箱地址" in response.text
+    assert "Only one email address is supported" in response.text
     conn = connect(db_path)
     channel = conn.execute(
         "SELECT digest_email FROM channels WHERE id = ?",
@@ -498,8 +498,8 @@ def test_invalid_channel_override_rerender_shows_inherited_effective_default(
         })
     assert response.status_code == 400
     assert 'value="one@example.com,two@example.com"' in response.text
-    assert "当前生效：fallback@example.com" in response.text
-    assert "当前生效：未配置" not in response.text
+    assert "Currently in effect: fallback@example.com" in response.text
+    assert "Currently in effect: Not configured" not in response.text
 
 
 def test_edit_channel_shows_page_banner_for_invalid_global_default(
@@ -515,7 +515,7 @@ def test_edit_channel_shows_page_banner_for_invalid_global_default(
     response = authed_client.get(f"/admin/channels/{channel_id}/edit")
     assert response.status_code == 200
     assert 'class="page-banner"' in response.text
-    assert "仅支持一个邮箱地址" in response.text
+    assert "Only one email address is supported" in response.text
 
 
 def test_channels_list_shows_page_banner_for_invalid_global_default(
@@ -530,7 +530,7 @@ def test_channels_list_shows_page_banner_for_invalid_global_default(
     response = authed_client.get("/admin/")
     assert response.status_code == 200
     assert 'class="page-banner"' in response.text
-    assert "仅支持一个邮箱地址" in response.text
+    assert "Only one email address is supported" in response.text
 
 
 def test_edit_channel_shows_hackernews_icons_and_prefixed_labels(authed_client, db_path):
@@ -549,5 +549,5 @@ def test_edit_channel_shows_hackernews_icons_and_prefixed_labels(authed_client, 
 
     assert resp.status_code == 200
     assert resp.text.count("🟧") == 2
-    assert "HN · 热门" in resp.text
-    assert "HN 搜索 · local-first" in resp.text
+    assert "HN · Top" in resp.text
+    assert "HN search · local-first" in resp.text

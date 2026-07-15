@@ -7,10 +7,14 @@ import pytest
 from beehive.connectors.registry import register
 
 
+def _close_coroutine(coroutine):
+    coroutine.close()
+
+
 def test_fetch_mode_invokes_asyncio_run(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv",
                          ["prog", "--mode", "fetch", "--db-path", str(tmp_path / "t.db")])
-    with patch("scripts.run_collector.asyncio.run") as mock_run:
+    with patch("scripts.run_collector.asyncio.run", side_effect=_close_coroutine) as mock_run:
         from scripts.run_collector import main
         main()
     mock_run.assert_called_once()
@@ -44,6 +48,113 @@ def test_run_digest_bootstraps_schema_on_fresh_db(tmp_path, monkeypatch):
     run_digest(str(tmp_path / "brand_new.db"))
 
 
+@pytest.mark.asyncio
+async def test_run_fetch_loads_and_passes_the_stored_platform_language(tmp_path, monkeypatch):
+    """The Localizer is loaded once, right after init_schema, and passed explicitly into
+    run_channel_cycle -- never read from a process-global."""
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from beehive.db.channels import create_channel
+    from beehive.db.connection import connect, init_schema
+    from beehive.localization import save_language
+    from scripts.run_collector import run_fetch
+
+    db_path = str(tmp_path / "t.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    save_language(conn, "ja")
+    create_channel(conn, "Some Channel", "profile")
+    conn.close()
+
+    with patch(
+        "scripts.run_collector.run_channel_cycle",
+        new=AsyncMock(),
+    ) as mock_cycle:
+        await run_fetch(db_path)
+
+    localizer = mock_cycle.await_args.kwargs["localizer"]
+    assert localizer.code == "ja"
+    assert localizer.llm_name == "Japanese"
+
+
+@pytest.mark.asyncio
+async def test_run_fetch_defaults_to_english_when_no_language_is_stored(tmp_path, monkeypatch):
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from beehive.db.channels import create_channel
+    from beehive.db.connection import connect, init_schema
+    from scripts.run_collector import run_fetch
+
+    db_path = str(tmp_path / "t.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    create_channel(conn, "Some Channel", "profile")
+    conn.close()
+
+    with patch(
+        "scripts.run_collector.run_channel_cycle",
+        new=AsyncMock(),
+    ) as mock_cycle:
+        await run_fetch(db_path)
+
+    localizer = mock_cycle.await_args.kwargs["localizer"]
+    assert localizer.code == "en"
+    assert localizer.llm_name == "English"
+
+
+@pytest.mark.asyncio
+async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
+        tmp_path, monkeypatch):
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from beehive.collector.manual_trigger import request_channel_fetch
+    from beehive.db.channels import create_channel
+    from beehive.db.connection import connect, init_schema
+    from beehive.localization import save_language
+    from scripts.run_collector import run_fetch_channel
+
+    db_path = str(tmp_path / "t.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    save_language(conn, "de")
+    channel_id = create_channel(conn, "Manual Channel", "profile")
+    conn.close()
+
+    request_channel_fetch(str(tmp_path), channel_id)
+    os.replace(str(tmp_path / "fetch_trigger_channel_id"),
+               str(tmp_path / "fetch_trigger_channel_id.inflight"))
+
+    with patch(
+        "scripts.run_collector.run_channel_cycle",
+        new=AsyncMock(),
+    ) as mock_cycle:
+        await run_fetch_channel(db_path)
+
+    localizer = mock_cycle.await_args.kwargs["localizer"]
+    assert localizer.code == "de"
+    assert mock_cycle.await_args.kwargs["force_fetch"] is True
+
+
+def test_run_digest_loads_and_passes_the_stored_platform_language(tmp_path, monkeypatch):
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from beehive.db.connection import connect, init_schema
+    from beehive.localization import save_language
+    from scripts.run_collector import run_digest
+
+    db_path = str(tmp_path / "t.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    save_language(conn, "fr")
+    conn.close()
+
+    with patch("scripts.run_collector.send_daily_digest") as mock_send:
+        run_digest(db_path)
+
+    localizer = mock_send.call_args.args[-1]
+    assert localizer.code == "fr"
+
+
 class _ManualTriggerStubConnector:
     type_key = "manual_trigger_stub"
 
@@ -57,7 +168,7 @@ class _ManualTriggerStubConnector:
 def test_fetch_channel_mode_invokes_asyncio_run(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv",
                          ["prog", "--mode", "fetch-channel", "--db-path", str(tmp_path / "t.db")])
-    with patch("scripts.run_collector.asyncio.run") as mock_run:
+    with patch("scripts.run_collector.asyncio.run", side_effect=_close_coroutine) as mock_run:
         from scripts.run_collector import main
         main()
     mock_run.assert_called_once()
@@ -175,6 +286,11 @@ async def test_run_fetch_passes_each_channels_effective_recipient(tmp_path, monk
         call.kwargs.get("force_fetch") is not True
         for call in mock_cycle.await_args_list
     )
+    # the Localizer is loaded once and passed explicitly into every Channel's cycle, never
+    # read again from a process-global.
+    localizers = {call.kwargs["localizer"] for call in mock_cycle.await_args_list}
+    assert len(localizers) == 1
+    assert next(iter(localizers)).code == "en"
 
 
 @pytest.mark.asyncio
@@ -232,7 +348,7 @@ async def test_run_fetch_isolates_alert_delivery_config_error_and_still_raises(
 
     config_error = EmailConfigurationError("No email recipient is configured")
 
-    def cycle(conn, channel, notifier, *, recipient=None):
+    def cycle(conn, channel, notifier, *, recipient=None, localizer=None):
         if channel["name"] == "First Channel":
             raise config_error
 
@@ -280,6 +396,7 @@ async def test_run_fetch_channel_logs_and_reraises_alert_delivery_config_error(
         notifier,
         *,
         recipient=None,
+        localizer=None,
         force_fetch=False,
     ):
         assert force_fetch is True

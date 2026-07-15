@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}蜂巢 — 页面不存在{% endblock %}
+{% block title %}{{ t('web.title.not_found', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-not-found{% endblock %}
 {% block content %}
 <main id="main-content" class="not-found-shell">
   <div class="not-found-code" aria-hidden="true">404</div>
   <section>
     <p class="eyebrow" lang="en">Signal lost</p>
-    <h1>页面不存在</h1>
-    <p class="page-lede">这个地址可能已移动，或者对应的内容已经被删除。</p>
-    <a class="btn primary" href="/">返回蜂巢首页</a>
+    <h1>{{ t('web.not_found.heading') }}</h1>
+    <p class="page-lede">{{ t('web.not_found.body') }}</p>
+    <a class="btn primary" href="/">{{ t('web.not_found.home_link', product=t('common.product_name')) }}</a>
   </section>
 </main>
 {% endblock %}
