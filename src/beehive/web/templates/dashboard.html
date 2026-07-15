@@ -9,6 +9,12 @@
   {% include "_channel_shelf.html" %}
 {% endblock %}
 {% block content %}
+{% macro resize_handle(key, label, min_width) -%}
+<span class="signal-column-resizer" role="separator" tabindex="0"
+      aria-orientation="vertical" aria-label="{{ t('web.dashboard.resize_column_aria', column=label) }}"
+      aria-valuemin="{{ min_width }}" aria-valuemax="1600"
+      data-column-resizer="{{ key }}" data-min-width="{{ min_width }}"></span>
+{%- endmacro %}
 <main id="main-content" class="page-shell dashboard-shell">
   <header class="dashboard-toolbar">
     <div class="dashboard-title">
@@ -60,23 +66,23 @@
       <table class="signal-table">
         <caption class="sr-only">{{ t('web.dashboard.table_caption', days=featured_window_days) }}</caption>
         <colgroup>
-          <col class="signal-state-col">
-          <col class="signal-score-col">
-          <col class="signal-channel-col">
-          <col class="signal-source-col">
-          <col class="signal-summary-col">
-          <col class="signal-engagement-col">
-          <col class="signal-age-col">
+          <col class="signal-state-col" data-column-key="state">
+          <col class="signal-score-col" data-column-key="score">
+          <col class="signal-channel-col" data-column-key="channel">
+          <col class="signal-source-col" data-column-key="source">
+          <col class="signal-summary-col" data-column-key="summary">
+          <col class="signal-engagement-col" data-column-key="engagement">
+          <col class="signal-age-col" data-column-key="time">
         </colgroup>
         <thead>
           <tr>
-            <th scope="col"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span></th>
-            <th scope="col">{{ t('web.dashboard.column_score') }}</th>
-            <th scope="col">{{ t('web.dashboard.column_channel') }}</th>
-            <th scope="col" class="signal-source-heading">{{ t('web.dashboard.column_source') }}</th>
-            <th scope="col">{{ t('web.dashboard.column_summary') }}</th>
-            <th scope="col" class="signal-engagement-heading">{{ t('web.dashboard.column_engagement') }}</th>
-            <th scope="col">{{ t('web.dashboard.column_time') }}</th>
+            <th scope="col" data-column-header="state"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span>{{ resize_handle('state', t('web.dashboard.column_read_state'), 11) }}</th>
+            <th scope="col" data-column-header="score">{{ t('web.dashboard.column_score') }}{{ resize_handle('score', t('web.dashboard.column_score'), 34) }}</th>
+            <th scope="col" data-column-header="channel">{{ t('web.dashboard.column_channel') }}{{ resize_handle('channel', t('web.dashboard.column_channel'), 64) }}</th>
+            <th scope="col" class="signal-source-heading" data-column-header="source">{{ t('web.dashboard.column_source') }}{{ resize_handle('source', t('web.dashboard.column_source'), 64) }}</th>
+            <th scope="col" data-column-header="summary">{{ t('web.dashboard.column_summary') }}{{ resize_handle('summary', t('web.dashboard.column_summary'), 160) }}</th>
+            <th scope="col" class="signal-engagement-heading" data-column-header="engagement">{{ t('web.dashboard.column_engagement') }}{{ resize_handle('engagement', t('web.dashboard.column_engagement'), 64) }}</th>
+            <th scope="col" data-column-header="time">{{ t('web.dashboard.column_time') }}{{ resize_handle('time', t('web.dashboard.column_time'), 64) }}</th>
           </tr>
         </thead>
         <tbody>

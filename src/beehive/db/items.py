@@ -205,14 +205,14 @@ def list_dashboard_highlights(
     conn: sqlite3.Connection,
     limit: int = 5,
     minimum_score: float | None = None,
-    fetched_from: str | None = None,
-    fetched_to: str | None = None,
+    published_from: str | None = None,
+    published_to: str | None = None,
     read_state: str = "all",
 ) -> list[dict]:
     where, params = _dashboard_signal_filters(
         minimum_score=minimum_score,
-        fetched_from=fetched_from,
-        fetched_to=fetched_to,
+        published_from=published_from,
+        published_to=published_to,
         read_state=read_state,
     )
     rows = conn.execute(
@@ -231,14 +231,14 @@ def list_dashboard_highlights(
 def count_dashboard_signals(
     conn: sqlite3.Connection,
     minimum_score: float | None = None,
-    fetched_from: str | None = None,
-    fetched_to: str | None = None,
+    published_from: str | None = None,
+    published_to: str | None = None,
     read_state: str = "all",
 ) -> int:
     where, params = _dashboard_signal_filters(
         minimum_score=minimum_score,
-        fetched_from=fetched_from,
-        fetched_to=fetched_to,
+        published_from=published_from,
+        published_to=published_to,
         read_state=read_state,
     )
     return conn.execute(
@@ -254,8 +254,8 @@ def count_dashboard_signals(
 def _dashboard_signal_filters(
     *,
     minimum_score: float | None,
-    fetched_from: str | None,
-    fetched_to: str | None,
+    published_from: str | None,
+    published_to: str | None,
     read_state: str,
 ) -> tuple[list[str], list]:
     where = [
@@ -267,12 +267,13 @@ def _dashboard_signal_filters(
     if minimum_score is not None:
         where.append("items.ai_score >= ?")
         params.append(minimum_score)
-    if fetched_from is not None:
-        where.append("items.fetched_at >= ?")
-        params.append(fetched_from)
-    if fetched_to is not None:
-        where.append("items.fetched_at < ?")
-        params.append(fetched_to)
+    publication_time = "COALESCE(datetime(items.created_at), datetime(items.fetched_at))"
+    if published_from is not None:
+        where.append(f"{publication_time} >= datetime(?)")
+        params.append(published_from)
+    if published_to is not None:
+        where.append(f"{publication_time} < datetime(?)")
+        params.append(published_to)
     if read_state == "read":
         where.append("items.is_read = 1")
     elif read_state == "unread":

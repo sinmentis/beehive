@@ -136,10 +136,10 @@ def dashboard(
 ):
     now = datetime.now(timezone.utc)
     featured_window_days = load_featured_window_days(conn)
-    fetched_from, fetched_to = featured_utc_bounds(now, featured_window_days)
+    published_from, published_to = featured_utc_bounds(now, featured_window_days)
     day_filters = {
-        "fetched_from": fetched_from,
-        "fetched_to": fetched_to,
+        "published_from": published_from,
+        "published_to": published_to,
     }
     signal_counts = {
         state: count_dashboard_signals(conn, read_state=state, **day_filters)
@@ -155,8 +155,8 @@ def dashboard(
         conn,
         limit=DASHBOARD_SIGNAL_COUNT,
         minimum_score=minimum_score,
-        fetched_from=fetched_from,
-        fetched_to=fetched_to,
+        published_from=published_from,
+        published_to=published_to,
         read_state=view,
     )
     has_more_signals = pending_signal_count > DASHBOARD_SIGNAL_COUNT

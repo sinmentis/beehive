@@ -67,6 +67,144 @@
     syncChannelSelection();
   }
 
+  const signalTable = document.querySelector(".signal-table");
+  if (signalTable instanceof HTMLTableElement) {
+    const handles = [...signalTable.querySelectorAll("[data-column-resizer]")];
+    const columns = new Map(
+      [...signalTable.querySelectorAll("col[data-column-key]")].map((column) => (
+        [column.dataset.columnKey, column]
+      )),
+    );
+    const headers = new Map(
+      [...signalTable.querySelectorAll("th[data-column-header]")].map((header) => (
+        [header.dataset.columnHeader, header]
+      )),
+    );
+    const defaultWidths = new Map();
+    let widths = null;
+    let drag = null;
+
+    headers.forEach((header, key) => {
+      const width = Math.round(header.getBoundingClientRect().width);
+      if (width > 0) {
+        defaultWidths.set(key, width);
+      }
+    });
+
+    const syncTableWidth = () => {
+      if (!widths) {
+        return;
+      }
+      const contentWidth = [...widths.values()].reduce((total, width) => total + width, 0);
+      signalTable.style.width = `${contentWidth}px`;
+    };
+
+    const freezeVisibleWidths = () => {
+      if (widths) {
+        return;
+      }
+      widths = new Map();
+      headers.forEach((header, key) => {
+        const width = Math.round(header.getBoundingClientRect().width);
+        const column = columns.get(key);
+        if (width > 0 && column instanceof HTMLTableColElement) {
+          widths.set(key, width);
+          column.style.width = `${width}px`;
+        }
+      });
+      syncTableWidth();
+    };
+
+    const setColumnWidth = (handle, width) => {
+      const key = handle.dataset.columnResizer;
+      const column = columns.get(key);
+      const minimum = Number(handle.dataset.minWidth) || 40;
+      if (
+        !key
+        || !(column instanceof HTMLTableColElement)
+        || !widths
+        || !Number.isFinite(width)
+      ) {
+        return;
+      }
+      const nextWidth = Math.max(minimum, Math.min(1600, Math.round(width)));
+      widths.set(key, nextWidth);
+      column.style.width = `${nextWidth}px`;
+      handle.setAttribute("aria-valuenow", String(nextWidth));
+      syncTableWidth();
+    };
+
+    const finishDrag = (handle) => {
+      if (!drag) {
+        return;
+      }
+      if (handle.hasPointerCapture(drag.pointerId)) {
+        handle.releasePointerCapture(drag.pointerId);
+      }
+      handle.classList.remove("is-active");
+      document.documentElement.classList.remove("signal-column-resize-active");
+      drag = null;
+    };
+
+    handles.forEach((handle) => {
+      const key = handle.dataset.columnResizer;
+      const initialWidth = defaultWidths.get(key);
+      if (initialWidth) {
+        handle.setAttribute("aria-valuenow", String(initialWidth));
+      }
+
+      handle.addEventListener("pointerdown", (event) => {
+        if (event.pointerType === "mouse" && event.button !== 0) {
+          return;
+        }
+        freezeVisibleWidths();
+        const startWidth = widths?.get(key);
+        if (!startWidth) {
+          return;
+        }
+        drag = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startWidth,
+        };
+        handle.setPointerCapture(event.pointerId);
+        handle.classList.add("is-active");
+        document.documentElement.classList.add("signal-column-resize-active");
+        event.preventDefault();
+      });
+
+      handle.addEventListener("pointermove", (event) => {
+        if (!drag || drag.pointerId !== event.pointerId) {
+          return;
+        }
+        setColumnWidth(handle, drag.startWidth + event.clientX - drag.startX);
+      });
+
+      handle.addEventListener("pointerup", () => finishDrag(handle));
+      handle.addEventListener("pointercancel", () => finishDrag(handle));
+
+      handle.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) {
+          return;
+        }
+        freezeVisibleWidths();
+        if (event.key === "Home") {
+          setColumnWidth(handle, defaultWidths.get(key));
+        } else {
+          const direction = event.key === "ArrowRight" ? 1 : -1;
+          const step = event.shiftKey ? 24 : 8;
+          setColumnWidth(handle, (widths?.get(key) || 0) + direction * step);
+        }
+        event.preventDefault();
+      });
+
+      handle.addEventListener("dblclick", () => {
+        freezeVisibleWidths();
+        setColumnWidth(handle, defaultWidths.get(key));
+      });
+    });
+  }
+
   const search = document.querySelector(".dashboard-search input[type='search']");
   const rows = [...document.querySelectorAll(".signal-row")];
   const selectionStatus = document.getElementById("dashboard-selection-status");

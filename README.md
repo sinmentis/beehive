@@ -30,7 +30,7 @@ Beehive collects updates from the sources you care about, ranks each item agains
 
 ### See what matters first
 
-Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic. The home dashboard ranks content fetched during a configurable Auckland calendar-day window, defaults to three days, and separates all, unread, and read signals.
+Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic. The home dashboard ranks content published during a configurable Auckland calendar-day window, defaults to three days, falls back to fetch time when publication time is unavailable, and separates all, unread, and read signals.
 
 <img src="docs/assets/dashboard-product.png" alt="Beehive dashboard with ranked synthetic signals" width="100%">
 

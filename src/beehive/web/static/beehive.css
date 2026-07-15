@@ -413,6 +413,7 @@ h1{
 .signal-engagement-col{width:5.5rem}
 .signal-age-col{width:4.5rem}
 .signal-table th{
+  position:relative;
   height:1.1875rem;
   padding:0 .5rem;
   border-bottom:1px solid var(--border-strong);
@@ -424,6 +425,35 @@ h1{
   text-align:left;
   text-transform:uppercase;
   white-space:nowrap;
+}
+.signal-column-resizer{
+  position:absolute;
+  z-index:2;
+  top:0;
+  right:-.3125rem;
+  width:.625rem;
+  height:100%;
+  cursor:col-resize;
+  touch-action:none;
+}
+.signal-column-resizer::after{
+  position:absolute;
+  top:.18rem;
+  bottom:.18rem;
+  left:calc(50% - .5px);
+  width:1px;
+  background:transparent;
+  content:"";
+  transition:background-color 120ms cubic-bezier(.2,0,0,1);
+}
+.signal-table th:hover .signal-column-resizer::after,
+.signal-column-resizer:focus-visible::after,
+.signal-column-resizer.is-active::after{background:var(--accent)}
+.signal-column-resizer:focus-visible{outline:1px solid var(--accent);outline-offset:-2px}
+html.signal-column-resize-active,
+html.signal-column-resize-active *{
+  cursor:col-resize!important;
+  user-select:none;
 }
 .signal-table td{
   height:var(--dashboard-row-height);

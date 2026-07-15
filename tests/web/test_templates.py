@@ -205,6 +205,27 @@ def test_dashboard_script_implements_displayed_keyboard_shortcuts():
     assert '.replace("__CHANNEL__", channel)' not in content
 
 
+def test_featured_table_columns_support_pointer_and_keyboard_resizing():
+    template = (_TEMPLATES_DIR / "dashboard.html").read_text()
+    css = (_STATIC_DIR / "beehive.css").read_text()
+    script = (_STATIC_DIR / "beehive.js").read_text()
+
+    for key in ("state", "score", "channel", "source", "summary", "engagement", "time"):
+        assert f'data-column-key="{key}"' in template
+        assert f'data-column-header="{key}"' in template
+        assert f"resize_handle('{key}'" in template
+
+    assert 'role="separator"' in template
+    assert 'aria-orientation="vertical"' in template
+    assert ".signal-column-resizer{" in css
+    assert "cursor:col-resize" in css
+    assert "transition:background-color" in css
+    assert 'handle.addEventListener("pointerdown"' in script
+    assert 'handle.addEventListener("pointermove"' in script
+    assert '["ArrowLeft", "ArrowRight", "Home"]' in script
+    assert 'handle.addEventListener("dblclick"' in script
+
+
 def test_static_asset_version_changes_when_asset_bytes_change(tmp_path, monkeypatch):
     asset = tmp_path / "asset.css"
     asset.write_text("first")

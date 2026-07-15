@@ -906,10 +906,13 @@ def test_dashboard_shows_ranked_signal_table(conn, client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert '<table class="signal-table">' in resp.text
-    assert '<th scope="col">Score</th>' in resp.text
-    assert '<th scope="col">Channel</th>' in resp.text
-    assert '<th scope="col" class="signal-source-heading">Source</th>' in resp.text
-    assert '<th scope="col">AI summary</th>' in resp.text
+    assert '<th scope="col" data-column-header="score">Score' in resp.text
+    assert '<th scope="col" data-column-header="channel">Channel' in resp.text
+    assert (
+        '<th scope="col" class="signal-source-heading" data-column-header="source">Source'
+        in resp.text
+    )
+    assert '<th scope="col" data-column-header="summary">AI summary' in resp.text
     assert 'class="signal-row is-unread"' in resp.text
     assert f'class="signal-channel" href="/channels/{channel_id}"' in resp.text
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
@@ -1009,6 +1012,53 @@ def test_dashboard_uses_configured_featured_window(conn, client, monkeypatch):
 
     assert "today summary" in response.text
     assert "previous-day summary" not in response.text
+
+
+def test_dashboard_excludes_old_publication_fetched_within_featured_window(
+    conn, client, monkeypatch,
+):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 7, 15, 9, 0, tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, created_at in (
+        ("old-publication", datetime(2026, 6, 24, 7, 0, tzinfo=timezone.utc)),
+        ("recent-publication", datetime(2026, 7, 15, 8, 0, tzinfo=timezone.utc)),
+    ):
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=external_id,
+                title=external_id,
+                url=f"https://x/{external_id}",
+                created_at=created_at,
+            ),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=90,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+        c.execute(
+            "UPDATE items SET fetched_at = '2026-07-15T08:30:00' WHERE external_id = ?",
+            (external_id,),
+        )
+    c.commit()
+
+    response = client.get("/")
+
+    assert "recent-publication summary" in response.text
+    assert "old-publication summary" not in response.text
 
 
 def test_dashboard_excludes_items_outside_featured_window(conn, client, monkeypatch):
@@ -1311,7 +1361,14 @@ def test_archive_treats_empty_date_query_params_as_no_filter(conn, client):
     assert "Rates fall" in resp.text
 
 
-def test_dashboard_teaser_carries_an_exact_time_tooltip(conn, client):
+def test_dashboard_teaser_carries_an_exact_time_tooltip(conn, client, monkeypatch):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
