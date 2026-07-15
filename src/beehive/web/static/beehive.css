@@ -112,6 +112,21 @@ button:active,.btn:active{transform:translateY(1px) scale(.985)}
   content:"";
 }
 .brand-name{font-size:.86rem}
+.brand-context{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  color:var(--muted);
+  font-size:.74rem;
+  font-weight:600;
+  letter-spacing:0;
+}
+.brand-context::before{
+  width:1px;
+  height:.85rem;
+  background:var(--border-strong);
+  content:"";
+}
 .site-nav{display:flex;align-items:center;gap:.35rem}
 .site-nav a{
   position:relative;
@@ -341,9 +356,8 @@ h1{
 }
 .dashboard-tabs::-webkit-scrollbar{display:none}
 .dashboard-tabs>a,
-.dashboard-tabs>span:not(.dashboard-channel-tab),
-.dashboard-tabs>strong,
-.dashboard-channel-link{
+.dashboard-tabs>span,
+.dashboard-tabs>strong{
   flex:none;
   padding:.25rem .375rem;
   border-radius:.1875rem;
@@ -354,31 +368,6 @@ h1{
 }
 .dashboard-tabs a:hover{color:var(--text)}
 .dashboard-tabs>strong[aria-current="page"]{background:var(--surface-raised);color:var(--text)}
-.dashboard-channel-tab{position:relative;display:block;padding-right:1.5rem;flex:none}
-.dashboard-channel-link{display:block}
-.dashboard-channel-teaser{
-  position:absolute;
-  top:50%;
-  right:0;
-  z-index:2;
-  display:grid;
-  width:1.5rem;
-  height:1.5rem;
-  border:1px solid var(--border-strong);
-  border-radius:.1875rem;
-  place-items:center;
-  background:var(--surface-raised);
-  color:var(--accent);
-  font-size:.75rem;
-  opacity:0;
-  pointer-events:none;
-  transform:translateY(-50%);
-}
-.dashboard-channel-tab:hover .dashboard-channel-teaser,
-.dashboard-channel-tab:focus-within .dashboard-channel-teaser{
-  opacity:1;
-  pointer-events:auto;
-}
 .dashboard-search{
   position:relative;
   flex:none;
@@ -556,10 +545,6 @@ h1{
 }
 .dashboard-signals-empty strong{color:var(--text-soft);font-size:.76rem}
 .dashboard-channel-empty{margin:2rem 0}
-
-@media (hover:none), (pointer:coarse){
-  .dashboard-channel-teaser{right:0;opacity:1;pointer-events:auto}
-}
 
 .feed-section{margin-top:4.5rem}
 .read-history-link{
@@ -1719,6 +1704,7 @@ select{
   --header-height:5.65rem;
   background:var(--bg);
 }
+.page-archive{--header-height:3rem}
 .page-archive::before,.page-admin:not(.page-editor)::before{display:none}
 .page-dashboard .site-header,
 .page-channel .site-header,
@@ -1753,6 +1739,10 @@ select{
 .page-channel .brand-name,
 .page-archive .brand-name,
 .page-admin:not(.page-editor) .brand-name{font-size:.82rem}
+.page-dashboard .brand-context,
+.page-channel .brand-context,
+.page-archive .brand-context,
+.page-admin .brand-context{font-size:.72rem}
 .page-dashboard .site-nav,
 .page-channel .site-nav,
 .page-archive .site-nav,
@@ -1808,10 +1798,6 @@ select{
   background:var(--accent);
   content:"";
 }
-.channel-shelf .dashboard-channel-tab{align-self:stretch;padding-right:1.75rem}
-.channel-shelf .dashboard-channel-tab .channel-shelf-link{height:100%}
-.channel-shelf .dashboard-channel-teaser{right:0}
-
 .page-dashboard .dashboard-toolbar{
   height:2.75rem;
   padding:0 .9rem;
@@ -1922,19 +1908,22 @@ select{
 .page-admin:not(.page-editor) .admin-heading{grid-template-columns:1fr}
 .admin-tabs{
   display:flex;
-  min-height:2.75rem;
-  margin:0 0 1.6rem;
+  min-height:2.65rem;
+  margin:0;
+  padding:0 .9rem;
+  border-top:1px solid var(--border);
   border-bottom:1px solid var(--border-strong);
-  align-items:flex-end;
+  align-items:center;
   gap:1.65rem;
   overflow-x:auto;
+  background:#11140f;
   scrollbar-width:none;
 }
 .admin-tabs::-webkit-scrollbar{display:none}
 .admin-tabs a{
   position:relative;
   display:inline-flex;
-  min-height:2.75rem;
+  min-height:2.65rem;
   flex:none;
   align-items:center;
   color:var(--muted);
@@ -2134,6 +2123,7 @@ select{
   .page-channel,
   .page-archive,
   .page-admin:not(.page-editor){--header-height:5.65rem}
+  .page-archive{--header-height:3rem}
   .page-dashboard .site-header,
   .page-channel .site-header,
   .page-archive .site-header,
@@ -2180,7 +2170,7 @@ select{
   .archive-filters .btn{min-height:2.75rem}
   .page-archive .archive-row{grid-template-columns:1fr;gap:.35rem}
   .page-archive .archive-side{text-align:left}
-  .admin-tabs{gap:1.2rem}
+  .admin-tabs{padding:0 .75rem;gap:1.2rem}
   .admin-section-heading{align-items:flex-start;flex-direction:column;gap:.65rem}
   .channel-bulk-toolbar{align-items:flex-start;flex-direction:column;padding:.65rem 0}
   .channel-bulk-toolbar .btn{width:100%}

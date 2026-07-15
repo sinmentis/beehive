@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t('web.title.source_new', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-admin page-editor{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell source-form-shell">
   <p class="crumb"><a href="/admin/channels/{{ channel.id }}/edit">← {{ channel.name }}</a></p>

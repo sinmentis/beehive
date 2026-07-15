@@ -1,12 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t('web.title.archive', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-archive{% endblock %}
-{% block channel_navigation %}
-  {% set nav_channels = channels %}
-  {% set active_channel_id = selected_channel %}
-  {% set channel_navigation_all_active = selected_channel is none %}
-  {% include "_channel_shelf.html" %}
-{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.archive') }}</span>{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell archive-shell">
   <header class="page-heading compact-heading">

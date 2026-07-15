@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t('web.title.channel', product=t('common.product_name'), channel=channel.name) }}{% endblock %}
 {% block body_class %}page-channel{% endblock %}
-{% block channel_navigation %}
+{% block secondary_navigation %}
   {% set active_channel_id = channel.id %}
   {% set channel_navigation_all_active = false %}
   {% include "_channel_shelf.html" %}

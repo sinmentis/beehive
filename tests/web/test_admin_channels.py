@@ -429,11 +429,6 @@ def test_channels_list_freshness_has_exact_time_tooltip(authed_client, db_path):
 
     resp = authed_client.get("/admin/")
     assert 'title="2026-07-09 15:00"' in resp.text
-    assert (
-        f'href="/channels/{channel_id}"\n'
-        '     \n'
-        '     title="2026-07-09 15:00 ·'
-    ) in resp.text
 
 
 def test_admin_channels_list_shows_fetch_stats(authed_client, db_path):

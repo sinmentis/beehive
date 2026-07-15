@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ t('web.title.admin_settings', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-admin{% endblock %}
-{% block channel_navigation %}
-  {% set nav_channels = channels %}
-  {% set active_channel_id = none %}
-  {% set channel_navigation_all_active = true %}
-  {% include "_channel_shelf.html" %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% block secondary_navigation %}
+  <nav class="admin-tabs" aria-label="{{ t('web.admin.tabs.aria') }}">
+    <a href="/admin/?tab=channels"{% if active_tab == "channels" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.channels') }}</a>
+    <a href="/admin/?tab=ai"{% if active_tab == "ai" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.ai_language') }}</a>
+    <a href="/admin/?tab=delivery"{% if active_tab == "delivery" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.delivery') }}</a>
+    <a href="/admin/?tab=system"{% if active_tab == "system" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.system') }}</a>
+  </nav>
 {% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell admin-shell">
@@ -16,13 +19,6 @@
       <p class="page-lede">{{ t('web.admin.settings.lede') }}</p>
     </div>
   </header>
-
-  <nav class="admin-tabs" aria-label="{{ t('web.admin.tabs.aria') }}">
-    <a href="/admin/?tab=channels"{% if active_tab == "channels" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.channels') }}</a>
-    <a href="/admin/?tab=ai"{% if active_tab == "ai" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.ai_language') }}</a>
-    <a href="/admin/?tab=delivery"{% if active_tab == "delivery" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.delivery') }}</a>
-    <a href="/admin/?tab=system"{% if active_tab == "system" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.system') }}</a>
-  </nav>
 
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
 

@@ -82,6 +82,11 @@ def test_admin_home_separates_settings_and_channel_management_into_tabs(
     assert "Delivery" in response.text
     assert "System" in response.text
     assert "Default email address" not in response.text
+    assert '<span class="brand-context">Admin</span>' in response.text
+    assert 'class="channel-shelf"' not in response.text
+    assert response.text.index('class="admin-tabs"') < response.text.index(
+        '<main id="main-content"'
+    )
 
 
 def test_channel_management_is_the_default_admin_tab():

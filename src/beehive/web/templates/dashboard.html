@@ -2,7 +2,7 @@
 {% block title %}{{ t('web.title.dashboard', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-dashboard{% endblock %}
 {% block header_status %}<span class="dashboard-clock">{{ dashboard_time }} · {{ t('web.dashboard.unread_count', count=total_unread) }}</span>{% endblock %}
-{% block channel_navigation %}
+{% block secondary_navigation %}
   {% set nav_channels = channels %}
   {% set active_channel_id = none %}
   {% set channel_navigation_all_active = true %}

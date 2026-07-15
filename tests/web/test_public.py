@@ -49,7 +49,7 @@ def authed_client(db_path, conn):
     return client
 
 
-def test_dashboard_channel_tab_keeps_secondary_teaser_link(conn, client):
+def test_dashboard_channel_tab_has_no_secondary_popup_action(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
@@ -62,11 +62,8 @@ def test_dashboard_channel_tab_keeps_secondary_teaser_link(conn, client):
     assert "NZ Finance" in resp.text
     assert "RBNZ 降息" in resp.text
     assert 'aria-label="NZ Finance, 1 new item"' in resp.text
-    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    assert 'class="dashboard-channel-teaser"' in resp.text
-    assert f'href="/items/{item_id}/open"' in resp.text
-    assert 'target="_blank" rel="noopener noreferrer"' in resp.text
-    assert 'aria-label="Open NZ Finance&#39;s latest signal: RBNZ 降息 (opens in a new window)"' in resp.text
+    assert 'class="dashboard-channel-teaser"' not in resp.text
+    assert "Open NZ Finance&#39;s latest signal" not in resp.text
 
 
 def test_dashboard_renders_fingerprinted_static_assets(client):
@@ -616,6 +613,8 @@ def test_archive_shows_items_across_channels_grouped_by_day(conn, client):
     assert resp.status_code == 200
     assert "Rates fall" in resp.text
     assert "2026-07-05" in resp.text
+    assert '<span class="brand-context">Archive</span>' in resp.text
+    assert 'class="channel-shelf"' not in resp.text
 
 
 def test_archive_filters_by_channel_query_param(conn, client):

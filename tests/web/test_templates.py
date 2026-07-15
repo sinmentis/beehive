@@ -32,6 +32,8 @@ def test_base_template_uses_shared_design_system_and_brand_mark():
     assert 'href="/static/favicon.svg?v={{ asset_version }}"' in content
     assert 'class="skip-link"' in content
     assert 'class="brand-mark"' in content
+    assert "{% block brand_context %}" in content
+    assert "{% block secondary_navigation %}" in content
     assert "🐝" not in content
 
 
@@ -41,7 +43,7 @@ def test_shared_stylesheet_defines_responsive_dense_dashboard():
     assert "font-variant-numeric:tabular-nums" in content
     assert "--dashboard-row-height:1.625rem" in content
     assert ".signal-table" in content
-    assert ".dashboard-channel-teaser" in content
+    assert ".dashboard-channel-teaser" not in content
     assert "@media (max-width:720px)" in content
     assert "grid-template-columns:1fr" in content
     assert ":focus-visible" in content
@@ -60,11 +62,10 @@ def test_shared_stylesheet_defines_responsive_dense_dashboard():
     )
     assert compact_search is not None
     assert "min-height:0" in compact_search.group(1)
-    for selector in (r"\.dashboard-channel-teaser", r"\.signal-comment summary"):
-        target = re.search(rf"{selector}\{{([^}}]*)\}}", content)
-        assert target is not None
-        assert "width:1.5rem" in target.group(1)
-        assert "height:1.5rem" in target.group(1)
+    target = re.search(r"\.signal-comment summary\{([^}]*)\}", content)
+    assert target is not None
+    assert "width:1.5rem" in target.group(1)
+    assert "height:1.5rem" in target.group(1)
 
 
 def test_dashboard_matches_selected_a2_pixel_contract():
@@ -91,14 +92,43 @@ def test_dashboard_matches_selected_a2_pixel_contract():
 
     assert ".channel-strip{" not in css
     assert ".signal-row.is-dim{opacity:" not in css
-    assert "@media (hover:none), (pointer:coarse)" in css
     assert 'class="channel-strip"' not in template
     assert '{% include "_channel_shelf.html" %}' in template
     assert 'class="channel-shelf"' in channel_shelf
-    assert 'class="dashboard-channel-tab"' in channel_shelf
+    assert 'class="dashboard-channel-teaser"' not in channel_shelf
     assert 'class="dashboard-search-shortcut"' in template
     assert 'id="dashboard-selection-status"' in template
     assert 'aria-live="polite"' in template
+
+
+def test_secondary_navigation_is_scoped_to_each_product_area():
+    dashboard = (_TEMPLATES_DIR / "dashboard.html").read_text()
+    channel = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+    archive = (_TEMPLATES_DIR / "archive.html").read_text()
+    admin = (_TEMPLATES_DIR / "admin_settings.html").read_text()
+
+    assert "{% block secondary_navigation %}" in dashboard
+    assert "{% block secondary_navigation %}" in channel
+    assert '{% include "_channel_shelf.html" %}' in dashboard
+    assert '{% include "_channel_shelf.html" %}' in channel
+
+    assert "{% block secondary_navigation %}" not in archive
+    assert '{% include "_channel_shelf.html" %}' not in archive
+    assert 'class="brand-context"' in archive
+
+    assert "{% block secondary_navigation %}" in admin
+    assert admin.count('class="admin-tabs"') == 1
+    assert '{% include "_channel_shelf.html" %}' not in admin
+    assert 'class="brand-context"' in admin
+
+    for template_name in (
+        "admin_login.html",
+        "admin_new_channel.html",
+        "admin_edit_channel.html",
+        "admin_add_source.html",
+    ):
+        admin_flow = (_TEMPLATES_DIR / template_name).read_text()
+        assert 'class="brand-context"' in admin_flow
 
 
 def test_dashboard_typography_is_readable_at_default_zoom():

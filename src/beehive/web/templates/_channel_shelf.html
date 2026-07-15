@@ -8,8 +8,6 @@
   {% set shelf_freshness_exact = nav_channel.freshness_exact if nav_channel.freshness_exact is defined else (nav_channel.freshness_exact_label if nav_channel.freshness_exact_label is defined else none) %}
   {% set shelf_next_fetch = nav_channel.next_fetch if nav_channel.next_fetch is defined else none %}
   {% set shelf_fetch_stats = nav_channel.fetch_stats if nav_channel.fetch_stats is defined else (nav_channel.fetch_stats_label if nav_channel.fetch_stats_label is defined else none) %}
-  {% if nav_channel.teaser %}
-  <span class="dashboard-channel-tab">
   <a class="channel-shelf-link{{ ' active' if active_channel_id == nav_channel.id else '' }}"
      href="/channels/{{ nav_channel.id }}"
      {% if nav_channel.unread_count is defined %}aria-label="{{ t('web.dashboard.channel_tab_aria', name=nav_channel.name, count=nav_channel.unread_count) }}"{% endif %}
@@ -17,18 +15,5 @@
      {% if active_channel_id == nav_channel.id %}aria-current="page"{% endif %}>
     {{ nav_channel.name }}
   </a>
-  <a class="dashboard-channel-teaser" href="{{ nav_channel.teaser.open_url }}"
-     target="_blank" rel="noopener noreferrer" title="{{ nav_channel.teaser.exact_time }}"
-     aria-label="{{ t('web.dashboard.teaser_aria', name=nav_channel.name, summary=nav_channel.teaser.ai_summary) }}">↗</a>
-  </span>
-  {% else %}
-  <a class="channel-shelf-link{{ ' active' if active_channel_id == nav_channel.id else '' }}"
-     href="/channels/{{ nav_channel.id }}"
-     {% if nav_channel.unread_count is defined %}aria-label="{{ t('web.dashboard.channel_tab_aria', name=nav_channel.name, count=nav_channel.unread_count) }}"{% endif %}
-     {% if shelf_freshness %}title="{% if shelf_freshness_exact %}{{ shelf_freshness_exact }} · {% endif %}{{ shelf_freshness }}{% if shelf_next_fetch %} · {{ shelf_next_fetch }}{% endif %}{% if shelf_fetch_stats %} · {{ shelf_fetch_stats }}{% endif %}"{% endif %}
-     {% if active_channel_id == nav_channel.id %}aria-current="page"{% endif %}>
-    {{ nav_channel.name }}
-  </a>
-  {% endif %}
   {% endfor %}
 </nav>
