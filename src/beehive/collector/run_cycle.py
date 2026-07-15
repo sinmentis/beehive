@@ -17,6 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from beehive.ai.comment_summarizer import CommentCandidate, summarize_comments
+from beehive.ai.model_selection import DEFAULT_MODEL
 from beehive.ai.prompt_builder import ItemCandidate, VoteExample
 from beehive.ai.ranker import rank_channel
 from beehive.ai.response_parser import RankedItem
@@ -53,7 +54,7 @@ async def run_channel_cycle(
     conn: sqlite3.Connection,
     channel: dict,
     notifier: Notifier,
-    model: str = "claude-haiku-4.5",
+    model: str = DEFAULT_MODEL,
     recipient: str | None = None,
     *,
     localizer: Localizer,

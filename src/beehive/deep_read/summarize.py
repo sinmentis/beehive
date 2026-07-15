@@ -33,6 +33,7 @@ import re
 from dataclasses import dataclass
 
 from beehive.ai.llm_client import run_data_only_prompt
+from beehive.ai.model_selection import DEFAULT_MODEL
 from beehive.localization import Language, Localizer
 
 _FENCE_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL)
@@ -57,9 +58,6 @@ _FIGURE_VALUE_CHAR_CAP = 60
 _FIGURE_LABEL_CHAR_CAP = 120
 _WHY_IT_MATTERS_CHAR_CAP = 700
 _LIMITATIONS_CHAR_CAP = 500
-
-DEFAULT_MODEL = "claude-haiku-4.5"
-
 
 class DeepReadParseError(ValueError):
     pass

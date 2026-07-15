@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Awaitable, Callable
 from urllib.parse import urlsplit
 
+from beehive.ai.model_selection import load_model
 from beehive.collector.deep_read_trigger import (
     consume_deep_read_wakeup,
     request_deep_read_worker,
@@ -197,6 +198,7 @@ async def process_deep_read_queue(
                     continue
 
                 localizer = load_localizer(conn)
+                model = load_model(conn)
                 fetched_url = item["url"]
                 try:
                     fetched = fetcher.fetch(item["url"])
@@ -298,6 +300,7 @@ async def process_deep_read_queue(
                             reason=partial_reason,
                         ),
                         localizer=localizer,
+                        model=model,
                     )
                 except asyncio.CancelledError:
                     raise

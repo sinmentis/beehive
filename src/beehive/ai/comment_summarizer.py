@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 
 from beehive.ai.llm_client import run_prompt
+from beehive.ai.model_selection import DEFAULT_MODEL
 from beehive.localization import Language
 
 _FENCE_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL)
@@ -96,7 +97,7 @@ def parse_comment_summary_response(raw_text: str, expected_ids: set[str]) -> dic
 
 
 async def summarize_comments(candidates: list[CommentCandidate], language: Language,
-                              model: str = "claude-haiku-4.5") -> dict[str, str]:
+                              model: str = DEFAULT_MODEL) -> dict[str, str]:
     if not candidates:
         return {}
     prompt = build_comment_summary_prompt(candidates, language)

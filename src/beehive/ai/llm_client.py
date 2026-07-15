@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import inspect
 
+from beehive.ai.model_selection import DEFAULT_MODEL
+
 
 def _decline_user_input(request: dict) -> dict:
     return {"response": "No human is available; proceed using your own best judgment."}
@@ -74,7 +76,7 @@ async def _send_and_extract(session, prompt: str, timeout: float) -> str:
     return response.data.content
 
 
-async def run_prompt(prompt: str, model: str = "claude-haiku-4.5", timeout: float = 120.0) -> str:
+async def run_prompt(prompt: str, model: str = DEFAULT_MODEL, timeout: float = 120.0) -> str:
     """Trusted-prompt call used by ranking: full built-in tool set, auto-approved permissions."""
     from copilot import CopilotClient
     from copilot.session import PermissionHandler
@@ -93,7 +95,7 @@ async def run_prompt(prompt: str, model: str = "claude-haiku-4.5", timeout: floa
 
 
 async def run_data_only_prompt(
-        prompt: str, model: str = "claude-haiku-4.5", timeout: float = 120.0) -> str:
+        prompt: str, model: str = DEFAULT_MODEL, timeout: float = 120.0) -> str:
     """Tool-free call for prompts that embed untrusted text (e.g. a fetched article body).
 
     See the module docstring for why this needs its own entry point and how the tool-free

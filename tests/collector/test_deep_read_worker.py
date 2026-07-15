@@ -16,6 +16,7 @@ from beehive.db.sources import create_source
 from beehive.deep_read.extract import ExtractionQuality, ExtractionResult, PartialReason
 from beehive.deep_read.fetch import ArticleFetcher, FetchedArticle, FetchFailure, FetchFailureReason
 from beehive.deep_read.summarize import DeepReadResult, ImportantFigure
+from beehive.ai.model_selection import save_model
 from beehive.localization import save_language
 
 _NOW = datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc)
@@ -101,6 +102,7 @@ def queued_db(tmp_path):
 async def test_worker_completes_queued_deep_read_in_current_language(queued_db):
     conn, item_id, data_dir = queued_db
     save_language(conn, "ja")
+    save_model(conn, "gpt-5.6-sol")
     fetcher = _FakeFetcher(FetchedArticle(
         url="https://example.com/final",
         status_code=200,
@@ -126,6 +128,7 @@ async def test_worker_completes_queued_deep_read_in_current_language(queued_db):
     assert stored.warning_code is None
     assert '"bottom_line"' in stored.result_json
     assert generator.await_args.kwargs["localizer"].code == "ja"
+    assert generator.await_args.kwargs["model"] == "gpt-5.6-sol"
     assert generator.await_args.kwargs["item_context"].url == "https://example.com/final"
     assert fetcher.urls == ["https://example.com/article"]
     assert fetcher.closed is True

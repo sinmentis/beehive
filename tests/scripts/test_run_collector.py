@@ -262,6 +262,7 @@ async def test_run_unread_summary_rewrite_loads_language_and_prints_result(
     capsys,
 ):
     from beehive.db.connection import connect, init_schema
+    from beehive.ai.model_selection import save_model
     from beehive.localization import save_language
     from scripts.run_collector import run_unread_summary_rewrite
 
@@ -269,6 +270,7 @@ async def test_run_unread_summary_rewrite_loads_language_and_prints_result(
     conn = connect(db_path)
     init_schema(conn)
     save_language(conn, "de")
+    save_model(conn, "claude-sonnet-5")
     conn.close()
 
     with patch(
@@ -294,6 +296,7 @@ async def test_run_unread_summary_rewrite_loads_language_and_prints_result(
         )
 
     assert mock_rewrite.await_args.args[3].code == "de"
+    assert mock_rewrite.await_args.kwargs["model"] == "claude-sonnet-5"
     assert '"run_id": "rewrite-1"' in capsys.readouterr().out
     assert result == mock_rewrite.return_value
 
@@ -325,6 +328,7 @@ async def test_run_fetch_loads_and_passes_the_stored_platform_language(tmp_path,
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from beehive.db.channels import create_channel
     from beehive.db.connection import connect, init_schema
+    from beehive.ai.model_selection import save_model
     from beehive.localization import save_language
     from scripts.run_collector import run_fetch
 
@@ -332,6 +336,7 @@ async def test_run_fetch_loads_and_passes_the_stored_platform_language(tmp_path,
     conn = connect(db_path)
     init_schema(conn)
     save_language(conn, "ja")
+    save_model(conn, "gpt-5.6-sol")
     create_channel(conn, "Some Channel", "profile")
     conn.close()
 
@@ -344,6 +349,7 @@ async def test_run_fetch_loads_and_passes_the_stored_platform_language(tmp_path,
     localizer = mock_cycle.await_args.kwargs["localizer"]
     assert localizer.code == "ja"
     assert localizer.llm_name == "Japanese"
+    assert mock_cycle.await_args.kwargs["model"] == "gpt-5.6-sol"
 
 
 @pytest.mark.asyncio
@@ -369,6 +375,7 @@ async def test_run_fetch_defaults_to_english_when_no_language_is_stored(tmp_path
     localizer = mock_cycle.await_args.kwargs["localizer"]
     assert localizer.code == "en"
     assert localizer.llm_name == "English"
+    assert mock_cycle.await_args.kwargs["model"] == "claude-haiku-4.5"
 
 
 @pytest.mark.asyncio
@@ -377,6 +384,7 @@ async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from beehive.collector.manual_trigger import request_channel_fetch
+    from beehive.ai.model_selection import save_model
     from beehive.db.channels import create_channel
     from beehive.db.connection import connect, init_schema
     from beehive.localization import save_language
@@ -386,6 +394,7 @@ async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
     conn = connect(db_path)
     init_schema(conn)
     save_language(conn, "de")
+    save_model(conn, "gemini-3.5-flash")
     channel_id = create_channel(conn, "Manual Channel", "profile")
     conn.close()
 
@@ -401,6 +410,7 @@ async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
 
     localizer = mock_cycle.await_args.kwargs["localizer"]
     assert localizer.code == "de"
+    assert mock_cycle.await_args.kwargs["model"] == "gemini-3.5-flash"
     assert mock_cycle.await_args.kwargs["force_fetch"] is True
 
 
@@ -617,7 +627,7 @@ async def test_run_fetch_isolates_alert_delivery_config_error_and_still_raises(
 
     config_error = EmailConfigurationError("No email recipient is configured")
 
-    def cycle(conn, channel, notifier, *, recipient=None, localizer=None):
+    def cycle(conn, channel, notifier, *, recipient=None, localizer=None, model=None):
         if channel["name"] == "First Channel":
             raise config_error
 
@@ -666,6 +676,7 @@ async def test_run_fetch_channel_logs_and_reraises_alert_delivery_config_error(
         *,
         recipient=None,
         localizer=None,
+        model=None,
         force_fetch=False,
     ):
         assert force_fetch is True

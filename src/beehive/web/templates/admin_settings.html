@@ -66,6 +66,28 @@
         <button class="btn primary" type="submit">{{ t('web.admin.language.save') }}</button>
       </form>
     </section>
+
+    <section class="admin-panel settings-panel" aria-labelledby="model-title">
+      <header class="panel-heading">
+        <p class="section-kicker" lang="en">Model</p>
+        <h2 id="model-title">{{ t('web.admin.model.heading') }}</h2>
+      </header>
+      {% if model_saved %}<p class="flash" role="status">{{ t('web.admin.model.saved') }}</p>{% endif %}
+      <form class="settings-form" method="post" action="/admin/model">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="field">
+          <label for="llm-model">{{ t('web.admin.model.field_label') }}</label>
+          <select id="llm-model" name="model">
+            {% for model in models %}
+            <option value="{{ model.model_id }}" {{ "selected" if current_model == model.model_id else "" }}>{{ model.display_name }}</option>
+            {% endfor %}
+          </select>
+          <p class="hint">{{ t('web.admin.model.hint') }}</p>
+          {% if model_error %}<p class="error" role="alert">{{ model_error }}</p>{% endif %}
+        </div>
+        <button class="btn primary" type="submit">{{ t('web.admin.model.apply') }}</button>
+      </form>
+    </section>
     </aside>
 
     <section class="admin-panel channels-panel" aria-labelledby="admin-channels-title">

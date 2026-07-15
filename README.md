@@ -42,7 +42,7 @@ The owner can request an asynchronous AI deep read for any ranked item. Beehive 
 
 ### Control every signal
 
-Choose sources, cadence, the global interface and AI output language, and the email destination for each channel.
+Choose sources, cadence, the global interface and AI output language, the LLM model used for future AI work, and the email destination for each channel.
 
 <img src="docs/assets/channel-configuration.png" alt="Beehive channel configuration with synthetic sources and email routing" width="100%">
 
@@ -111,6 +111,10 @@ Do not store credentials in the repository. The included Quadlet examples inject
 The admin settings page stores one global platform language in SQLite. English is the default;
 the selected language applies to the web interface, email copy, alerts, AI summaries, rationales,
 comment summaries, and article briefs. Existing generated content is not translated automatically.
+
+The same page also stores one global LLM model. `claude-haiku-4.5` preserves the default behavior;
+changing it applies to future rankings, comment summaries, summary rewrites, and article briefs.
+Previously generated content is not regenerated automatically.
 
 ## Collect and digest
 

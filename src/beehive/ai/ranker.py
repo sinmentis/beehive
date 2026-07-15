@@ -5,13 +5,14 @@ exception itself (ADR-0002: an LLM failure alerts and is scoped to just that Cha
 from __future__ import annotations
 
 from beehive.ai.llm_client import run_prompt
+from beehive.ai.model_selection import DEFAULT_MODEL
 from beehive.ai.prompt_builder import ItemCandidate, VoteExample, build_ranking_prompt
 from beehive.ai.response_parser import RankedItem, parse_ranking_response
 from beehive.localization import Language
 
 
 async def rank_channel(profile: str, votes: list[VoteExample], candidates: list[ItemCandidate],
-                        language: Language, model: str = "claude-haiku-4.5") -> list[RankedItem]:
+                        language: Language, model: str = DEFAULT_MODEL) -> list[RankedItem]:
     if not candidates:
         return []
     prompt = build_ranking_prompt(profile, votes, candidates, language)

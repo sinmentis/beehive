@@ -27,6 +27,7 @@ from beehive.collector.summary_rewrite import (
 )
 from beehive.collector.deep_read_worker import process_deep_read_queue
 from beehive.collector.run_cycle import run_channel_cycle
+from beehive.ai.model_selection import load_model
 from beehive.digest.send import send_daily_digest
 from beehive.email_routing import (
     EmailConfigurationError,
@@ -53,6 +54,7 @@ async def run_fetch(db_path: str) -> None:
     init_schema(conn)
     try:
         localizer = load_localizer(conn)
+        model = load_model(conn)
         notifier, default_recipient = _build_delivery_context(conn)
         alert_delivery_failures: list[EmailConfigurationError] = []
         for channel in list_channels(conn):
@@ -65,7 +67,7 @@ async def run_fetch(db_path: str) -> None:
             try:
                 await run_channel_cycle(
                     conn, channel, notifier, recipient=recipient.address,
-                    localizer=localizer)
+                    localizer=localizer, model=model)
             except EmailConfigurationError as exc:
                 print(f"[fetch] Channel \"{channel['name']}\" could not deliver an alert "
                       f"email, continuing with the other Channels: {exc}")
@@ -83,6 +85,7 @@ async def run_fetch_channel(db_path: str) -> None:
     init_schema(conn)
     try:
         localizer = load_localizer(conn)
+        model = load_model(conn)
         data_dir = os.path.dirname(db_path)
         channel_id = consume_pending_manual_trigger(data_dir)
         if channel_id is None:
@@ -102,7 +105,7 @@ async def run_fetch_channel(db_path: str) -> None:
         try:
             await run_channel_cycle(
                 conn, channel, notifier, recipient=recipient.address,
-                localizer=localizer, force_fetch=True)
+                localizer=localizer, model=model, force_fetch=True)
         except EmailConfigurationError as exc:
             print(f"[fetch-channel] Channel \"{channel['name']}\" could not deliver an "
                   f"alert email: {exc}")
@@ -148,6 +151,7 @@ async def run_unread_summary_rewrite(
             high_water_item_id,
             run_id,
             load_localizer(conn),
+            model=load_model(conn),
             dry_run=dry_run,
             canary_limit=canary_limit,
             after_id=after_id,

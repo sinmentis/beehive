@@ -101,6 +101,25 @@ def test_channel_management_occupies_the_primary_admin_column():
     assert ".admin-settings-rail{position:static}" in stylesheet
 
 
+def test_model_selector_matches_the_platform_language_card_width():
+    template = (
+        Path(__file__).parent.parent.parent
+        / "src" / "beehive" / "web" / "templates" / "admin_settings.html"
+    ).read_text()
+    stylesheet = (
+        Path(__file__).parent.parent.parent
+        / "src" / "beehive" / "web" / "static" / "beehive.css"
+    ).read_text()
+
+    rail_start = template.index('<aside class="admin-settings-rail">')
+    rail_end = template.index("</aside>", rail_start)
+    rail = template[rail_start:rail_end]
+
+    assert 'aria-labelledby="language-title"' in rail
+    assert 'aria-labelledby="model-title"' in rail
+    assert ".admin-settings-rail > .admin-panel{width:100%}" in stylesheet
+
+
 def test_settings_validation_error_preserves_channel_list(
     authed_client, db_path,
 ):
@@ -334,6 +353,85 @@ def test_save_language_requires_session(db_path):
         follow_redirects=False)
     response = client.post("/admin/language", data={
         "language": "zh-CN",
+        "csrf_token": "csrf1",
+    })
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login"
+
+
+def test_fresh_database_defaults_to_current_llm_model(authed_client):
+    response = authed_client.get("/admin/")
+    assert response.status_code == 200
+    assert 'value="claude-haiku-4.5" selected' in response.text
+    assert "Claude Haiku 4.5" in response.text
+
+
+def test_model_selector_lists_current_copilot_models(authed_client):
+    response = authed_client.get("/admin/")
+    for model_name in ("Auto", "Claude Sonnet 5", "GPT-5.6 Sol", "Gemini 3.5 Flash"):
+        assert model_name in response.text
+
+
+def test_save_model_persists_and_redirects(authed_client, db_path):
+    from beehive.ai.model_selection import load_model
+
+    response = authed_client.post("/admin/model", data={
+        "model": "gpt-5.6-sol",
+        "csrf_token": "csrf1",
+    })
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/?model_saved=1"
+
+    conn = connect(db_path)
+    assert load_model(conn) == "gpt-5.6-sol"
+
+
+def test_save_model_rejects_unsupported_id_without_writing(authed_client, db_path):
+    from beehive.ai.model_selection import load_model
+
+    response = authed_client.post("/admin/model", data={
+        "model": "unknown-model",
+        "csrf_token": "csrf1",
+    })
+    assert response.status_code == 400
+    assert "That model isn&#39;t supported." in response.text
+
+    conn = connect(db_path)
+    assert load_model(conn) == "claude-haiku-4.5"
+
+
+def test_save_model_rejects_wrong_csrf_token(authed_client, db_path):
+    from beehive.ai.model_selection import load_model
+
+    response = authed_client.post("/admin/model", data={
+        "model": "gpt-5.6-sol",
+        "csrf_token": "wrong",
+    })
+    assert response.status_code == 403
+
+    conn = connect(db_path)
+    assert load_model(conn) == "claude-haiku-4.5"
+
+
+def test_save_model_is_not_coupled_to_email_validation(authed_client, db_path):
+    from beehive.ai.model_selection import load_model
+
+    response = authed_client.post("/admin/model", data={
+        "model": "claude-sonnet-5",
+        "csrf_token": "csrf1",
+    })
+    assert response.status_code == 303
+
+    conn = connect(db_path)
+    assert load_model(conn) == "claude-sonnet-5"
+
+
+def test_save_model_requires_session(db_path):
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"),
+        follow_redirects=False)
+    response = client.post("/admin/model", data={
+        "model": "gpt-5.6-sol",
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303

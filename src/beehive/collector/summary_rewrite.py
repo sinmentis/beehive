@@ -31,7 +31,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from beehive.ai.summary_rewrite import DEFAULT_MODEL, RewriteItemContext, rewrite_item_summary
+from beehive.ai.model_selection import DEFAULT_MODEL
+from beehive.ai.summary_rewrite import RewriteItemContext, rewrite_item_summary
 from beehive.db.items import list_unread_rewrite_candidates
 from beehive.db.summary_rewrites import (
     apply_summary_rewrite,

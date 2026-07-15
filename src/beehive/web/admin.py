@@ -11,6 +11,12 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from beehive.ai.model_selection import (
+    SUPPORTED_MODELS,
+    UnsupportedModelError,
+    load_model,
+    save_model,
+)
 from beehive.auth.passwords import verify_password
 from beehive.auth.rate_limit import is_locked_out
 from beehive.auth.tokens import generate_session_id, sign_session_id
@@ -227,6 +233,8 @@ def _render_admin_home_page(
     triggered: int | None = None,
     language_saved: bool = False,
     language_error: str | None = None,
+    model_saved: bool = False,
+    model_error: str | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
     effective, default_error = _resolve_default_for_admin(conn, t)
@@ -251,6 +259,10 @@ def _render_admin_home_page(
             "current_language": t.code,
             "language_saved": language_saved,
             "language_error": language_error,
+            "models": SUPPORTED_MODELS,
+            "current_model": load_model(conn),
+            "model_saved": model_saved,
+            "model_error": model_error,
         },
         status_code=status_code,
     )
@@ -262,6 +274,7 @@ def admin_settings(
     saved: int | None = None,
     triggered: int | None = None,
     language_saved: int | None = None,
+    model_saved: int | None = None,
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -274,6 +287,7 @@ def admin_settings(
         saved=saved == 1,
         triggered=triggered,
         language_saved=language_saved == 1,
+        model_saved=model_saved == 1,
     )
 
 
@@ -331,6 +345,32 @@ def save_language_submit(
             status_code=400,
         )
     return RedirectResponse("/admin/?language_saved=1", status_code=303)
+
+
+@router.post("/model", response_class=HTMLResponse)
+def save_model_submit(
+    request: Request,
+    model: str = Form(...),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    """Save the model independently from language and email settings.
+
+    Collector and deep-read processes load this value when they begin future LLM work. Existing
+    generated content remains unchanged.
+    """
+    verify_csrf(session, csrf_token)
+    try:
+        save_model(conn, model)
+    except UnsupportedModelError:
+        return _render_admin_home_page(
+            request, conn, session, t,
+            model_error=t.text("web.admin.model.invalid"),
+            status_code=400,
+        )
+    return RedirectResponse("/admin/?model_saved=1", status_code=303)
 
 
 @router.post("/channels/{channel_id}/trigger-fetch")

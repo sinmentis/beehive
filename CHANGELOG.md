@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Owner-triggered, asynchronous full-article AI briefs with cached results, regeneration,
   partial-content warnings, and a dedicated responsive reading page.
 - A safe, resumable, and reversible migration for rewriting existing unread summaries.
+- An admin model selector that applies one validated Copilot model to future rankings, comment
+  summaries, summary rewrites, and article briefs.
 
 ### Changed
 
