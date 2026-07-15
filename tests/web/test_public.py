@@ -61,11 +61,11 @@ def test_dashboard_channel_tab_keeps_secondary_teaser_link(conn, client):
     assert resp.status_code == 200
     assert "NZ Finance" in resp.text
     assert "RBNZ 降息" in resp.text
+    assert 'aria-label="NZ Finance, 1 new item"' in resp.text
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    assert (
-        f'class="dashboard-channel-teaser" href="/items/{item_id}/open" '
-        'target="_blank" rel="noopener noreferrer"'
-    ) in resp.text
+    assert 'class="dashboard-channel-teaser"' in resp.text
+    assert f'href="/items/{item_id}/open"' in resp.text
+    assert 'target="_blank" rel="noopener noreferrer"' in resp.text
     assert 'aria-label="Open NZ Finance&#39;s latest signal: RBNZ 降息 (opens in a new window)"' in resp.text
 
 

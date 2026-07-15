@@ -46,7 +46,7 @@ def test_settings_page_shows_environment_fallback(
     authed_client, monkeypatch,
 ):
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
-    response = authed_client.get("/admin/")
+    response = authed_client.get("/admin/?tab=delivery")
     assert response.status_code == 200
     assert "fallback@example.com" in response.text
     assert "environment variable" in response.text
@@ -59,12 +59,12 @@ def test_settings_page_shows_database_override(
     conn = connect(db_path)
     app_state.set(conn, "default_digest_email", "database@example.com")
     conn.close()
-    response = authed_client.get("/admin/")
+    response = authed_client.get("/admin/?tab=delivery")
     assert 'value="database@example.com"' in response.text
     assert "From the database" in response.text
 
 
-def test_admin_home_combines_settings_and_channel_management(
+def test_admin_home_separates_settings_and_channel_management_into_tabs(
     authed_client, db_path, monkeypatch,
 ):
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
@@ -75,52 +75,40 @@ def test_admin_home_combines_settings_and_channel_management(
     response = authed_client.get("/admin/")
 
     assert response.status_code == 200
-    assert "Default email address" in response.text
-    assert "fallback@example.com" in response.text
     assert "NZ Finance" in response.text
     assert "Every 3 hours" in response.text
     assert "+ New channel" in response.text
+    assert "AI &amp; language" in response.text
+    assert "Delivery" in response.text
+    assert "System" in response.text
+    assert "Default email address" not in response.text
 
 
-def test_channel_management_occupies_the_primary_admin_column():
+def test_channel_management_is_the_default_admin_tab():
     template = (
         Path(__file__).parent.parent.parent
         / "src" / "beehive" / "web" / "templates" / "admin_settings.html"
     ).read_text()
-    stylesheet = (
-        Path(__file__).parent.parent.parent
-        / "src" / "beehive" / "web" / "static" / "beehive.css"
-    ).read_text()
-
-    rail_start = template.index('<aside class="admin-settings-rail">')
-    rail_end = template.index("</aside>", rail_start)
-    channels_start = template.index('class="admin-panel channels-panel"')
-
-    assert rail_start < rail_end < channels_start
-    assert ".admin-settings-rail{" in stylesheet
-    assert ".admin-settings-rail{position:static}" in stylesheet
+    assert '{% if active_tab == "channels" %}' in template
+    assert 'class="channel-bulk-form"' in template
+    assert 'action="/admin/channels/trigger-fetch"' in template
 
 
-def test_model_selector_matches_the_platform_language_card_width():
+def test_language_and_model_share_the_ai_settings_tab():
     template = (
         Path(__file__).parent.parent.parent
         / "src" / "beehive" / "web" / "templates" / "admin_settings.html"
     ).read_text()
-    stylesheet = (
-        Path(__file__).parent.parent.parent
-        / "src" / "beehive" / "web" / "static" / "beehive.css"
-    ).read_text()
+    ai_start = template.index('{% elif active_tab == "ai" %}')
+    delivery_start = template.index('{% elif active_tab == "delivery" %}', ai_start)
+    ai_panel = template[ai_start:delivery_start]
 
-    rail_start = template.index('<aside class="admin-settings-rail">')
-    rail_end = template.index("</aside>", rail_start)
-    rail = template[rail_start:rail_end]
-
-    assert 'aria-labelledby="language-title"' in rail
-    assert 'aria-labelledby="model-title"' in rail
-    assert ".admin-settings-rail > .admin-panel{width:100%}" in stylesheet
+    assert 'aria-labelledby="language-title"' in ai_panel
+    assert 'aria-labelledby="model-title"' in ai_panel
+    assert ai_panel.count('class="setting-row"') == 2
 
 
-def test_settings_validation_error_preserves_channel_list(
+def test_settings_validation_error_preserves_tab_navigation(
     authed_client, db_path,
 ):
     conn = connect(db_path)
@@ -134,7 +122,8 @@ def test_settings_validation_error_preserves_channel_list(
 
     assert response.status_code == 400
     assert "Only one email address is supported" in response.text
-    assert "Still Visible" in response.text
+    assert 'href="/admin/?tab=channels"' in response.text
+    assert 'href="/admin/?tab=delivery" aria-current="page"' in response.text
 
 
 def test_save_valid_default_email(authed_client, db_path):
@@ -143,7 +132,7 @@ def test_save_valid_default_email(authed_client, db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/?saved=1"
+    assert response.headers["location"] == "/admin/?tab=delivery&saved=1"
     conn = connect(db_path)
     assert app_state.get(conn, "default_digest_email") == "owner@example.com"
 
@@ -205,7 +194,7 @@ def test_settings_save_rejects_wrong_csrf(authed_client):
 def test_admin_home_drops_unused_add_row_css(authed_client):
     """The dashed .add-row rule has no markup after the new-Channel action
     switched to .btn ghost small, so it must not ship in the rendered page."""
-    response = authed_client.get("/admin/")
+    response = authed_client.get("/admin/?tab=ai")
     assert response.status_code == 200
     assert ".add-row" not in response.text
 
@@ -264,7 +253,7 @@ def test_clear_without_env_uses_english_exception_with_translated_display_text()
 def test_fresh_database_defaults_to_english(authed_client):
     """A fresh DB (as created by the db_path fixture, with no platform_language row) must
     render the admin page in English and select English in the language dropdown."""
-    response = authed_client.get("/admin/")
+    response = authed_client.get("/admin/?tab=ai")
     assert response.status_code == 200
     assert '<html lang="en">' in response.text
     assert 'value="en" selected' in response.text
@@ -272,7 +261,7 @@ def test_fresh_database_defaults_to_english(authed_client):
 
 
 def test_language_selector_lists_supported_languages_by_native_name(authed_client):
-    response = authed_client.get("/admin/")
+    response = authed_client.get("/admin/?tab=ai")
     for native_name in ("English", "简体中文", "日本語", "한국어", "Español", "Français", "Deutsch"):
         assert native_name in response.text
 
@@ -285,7 +274,7 @@ def test_save_language_persists_and_redirects(authed_client, db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/?language_saved=1"
+    assert response.headers["location"] == "/admin/?tab=ai&language_saved=1"
 
     conn = connect(db_path)
     localizer = load_localizer(conn)
@@ -360,14 +349,14 @@ def test_save_language_requires_session(db_path):
 
 
 def test_fresh_database_defaults_to_current_llm_model(authed_client):
-    response = authed_client.get("/admin/")
+    response = authed_client.get("/admin/?tab=ai")
     assert response.status_code == 200
     assert 'value="claude-haiku-4.5" selected' in response.text
     assert "Claude Haiku 4.5" in response.text
 
 
 def test_model_selector_lists_current_copilot_models(authed_client):
-    response = authed_client.get("/admin/")
+    response = authed_client.get("/admin/?tab=ai")
     for model_name in ("Auto", "Claude Sonnet 5", "GPT-5.6 Sol", "Gemini 3.5 Flash"):
         assert model_name in response.text
 
@@ -380,7 +369,7 @@ def test_save_model_persists_and_redirects(authed_client, db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/?model_saved=1"
+    assert response.headers["location"] == "/admin/?tab=ai&model_saved=1"
 
     conn = connect(db_path)
     assert load_model(conn) == "gpt-5.6-sol"

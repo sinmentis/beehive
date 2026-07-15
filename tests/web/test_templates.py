@@ -47,7 +47,7 @@ def test_shared_stylesheet_defines_responsive_dense_dashboard():
     assert ":focus-visible" in content
     assert ":lang(zh)" in content
     assert ".type-option:has(input:focus-visible)" in content
-    assert "--muted-2:#838979" in content
+    assert "--muted-2:#686e64" in content
     non_link_cells = re.search(
         r"\.signal-source,\.signal-engagement,\.signal-age\{([^}]*)\}",
         content,
@@ -70,18 +70,16 @@ def test_shared_stylesheet_defines_responsive_dense_dashboard():
 def test_dashboard_matches_selected_a2_pixel_contract():
     css = (_STATIC_DIR / "beehive.css").read_text()
     template = (_TEMPLATES_DIR / "dashboard.html").read_text()
+    channel_shelf = (_TEMPLATES_DIR / "_channel_shelf.html").read_text()
 
-    dashboard_page = re.search(r"\.page-dashboard\{([^}]*)\}", css)
-    assert dashboard_page is not None
-    assert "--header-height:2rem" in dashboard_page.group(1)
-    assert "--muted:#8b948b" in dashboard_page.group(1)
-    assert "--muted-2:#838979" in dashboard_page.group(1)
+    assert "--header-height:5.65rem" in css
+    assert "--muted:#8b9085" in css
+    assert "--muted-2:#686e64" in css
 
-    toolbar = re.search(r"\.dashboard-toolbar\{([^}]*)\}", css)
+    toolbar = re.search(r"\.page-dashboard \.dashboard-toolbar\{([^}]*)\}", css)
     assert toolbar is not None
-    assert "display:flex" in toolbar.group(1)
-    assert "height:2.5rem" in toolbar.group(1)
-    assert "padding:0 .6875rem" in toolbar.group(1)
+    assert "height:2.75rem" in toolbar.group(1)
+    assert "padding:0 .9rem" in toolbar.group(1)
 
     table_heading = re.search(r"\.signal-table th\{([^}]*)\}", css)
     assert table_heading is not None
@@ -95,7 +93,9 @@ def test_dashboard_matches_selected_a2_pixel_contract():
     assert ".signal-row.is-dim{opacity:" not in css
     assert "@media (hover:none), (pointer:coarse)" in css
     assert 'class="channel-strip"' not in template
-    assert 'class="dashboard-channel-tab"' in template
+    assert '{% include "_channel_shelf.html" %}' in template
+    assert 'class="channel-shelf"' in channel_shelf
+    assert 'class="dashboard-channel-tab"' in channel_shelf
     assert 'class="dashboard-search-shortcut"' in template
     assert 'id="dashboard-selection-status"' in template
     assert 'aria-live="polite"' in template
@@ -104,8 +104,7 @@ def test_dashboard_matches_selected_a2_pixel_contract():
 def test_dashboard_typography_is_readable_at_default_zoom():
     css = (_STATIC_DIR / "beehive.css").read_text()
     expected_sizes = {
-        r"\.dashboard-tabs>a,\s*\.dashboard-tabs>span:not\(\.dashboard-channel-tab\),"
-        r"\s*\.dashboard-tabs>strong,\s*\.dashboard-channel-link": ".6875rem",
+        r"\.channel-shelf-link": ".72rem",
         r'\.dashboard-search input\[type="search"\]': ".6875rem",
         r"\.signal-table th": ".625rem",
         r"\.signal-table td": ".8125rem",
@@ -122,11 +121,9 @@ def test_channel_matches_dashboard_dense_visual_contract():
     css = (_STATIC_DIR / "beehive.css").read_text()
     template = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
 
-    channel_page = re.search(r"\.page-channel\{([^}]*)\}", css)
-    assert channel_page is not None
-    assert "--header-height:2rem" in channel_page.group(1)
-    assert "--muted:#8b948b" in channel_page.group(1)
-    assert "--muted-2:#838979" in channel_page.group(1)
+    assert "--header-height:5.65rem" in css
+    assert "--muted:#8b9085" in css
+    assert "--muted-2:#686e64" in css
 
     header = re.search(r"\.page-channel \.site-header\{([^}]*)\}", css)
     assert header is not None
@@ -156,6 +153,7 @@ def test_channel_matches_dashboard_dense_visual_contract():
         assert f"font-size:{font_size}" in declaration.group(1)
 
     assert '{% block body_class %}page-channel{% endblock %}' in template
+    assert '{% include "_channel_shelf.html" %}' in template
     assert 'class="channel-toolbar"' in template
     assert 'class="channel-section-heading"' in template
 
@@ -191,10 +189,15 @@ def test_static_asset_version_changes_when_asset_bytes_change(tmp_path, monkeypa
 def test_english_editorial_labels_declare_their_language():
     for template_path in _TEMPLATES_DIR.glob("*.html"):
         content = template_path.read_text()
-        labels = re.findall(r'<p class="(?:eyebrow|section-kicker)"[^>]*>', content)
-        assert all('lang="en"' in label for label in labels), (
-            f"{template_path.name} has English micro-copy without lang=en"
+        labels = re.findall(
+            r'<p class="(?:eyebrow|section-kicker)"([^>]*)>(.*?)</p>',
+            content,
         )
+        for attributes, body in labels:
+            if "{{ t(" not in body:
+                assert 'lang="en"' in attributes, (
+                    f"{template_path.name} has English micro-copy without lang=en"
+                )
 
 
 def test_htmx_helpers_restore_focus_and_announce_feedback():

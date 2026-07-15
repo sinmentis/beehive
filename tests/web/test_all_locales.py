@@ -224,16 +224,19 @@ def test_admin_settings_page_renders_in_every_supported_language(authed_client, 
     _, c = conn
     save_language(c, language_code)
 
-    resp = authed_client.get("/admin/")
+    channels_response = authed_client.get("/admin/")
+    ai_response = authed_client.get("/admin/?tab=ai")
 
-    assert resp.status_code == 200
-    assert f'<html lang="{language_code}">' in resp.text
+    assert channels_response.status_code == 200
+    assert ai_response.status_code == 200
+    assert f'<html lang="{language_code}">' in channels_response.text
+    assert f'<html lang="{language_code}">' in ai_response.text
     assert localizer_for(language_code).text(
-        "web.admin.settings.channels_heading") in resp.text
+        "web.admin.settings.channels_heading") in channels_response.text
     # The language selector itself must always list every language's own native name,
     # regardless of which language is currently active.
     for language in SUPPORTED_LANGUAGES:
-        assert language.native_name in resp.text
+        assert language.native_name in ai_response.text
 
 
 @pytest.mark.parametrize("language_code", LANGUAGE_CODES)

@@ -218,6 +218,7 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "channel_drilldown.html", {
         "channel": channel,
+        "nav_channels": list_channels(conn),
         "highlighted": visible_items[:HIGHLIGHT_COUNT],
         "folded": visible_items[HIGHLIGHT_COUNT:],
         "freshness": freshness_label(sources, t),

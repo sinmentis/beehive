@@ -2,6 +2,12 @@
 {% block title %}{{ t('web.title.dashboard', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-dashboard{% endblock %}
 {% block header_status %}<span class="dashboard-clock">{{ dashboard_time }} · {{ t('web.dashboard.unread_count', count=total_unread) }}</span>{% endblock %}
+{% block channel_navigation %}
+  {% set nav_channels = channels %}
+  {% set active_channel_id = none %}
+  {% set channel_navigation_all_active = true %}
+  {% include "_channel_shelf.html" %}
+{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell dashboard-shell">
   <header class="dashboard-toolbar">
@@ -21,14 +27,6 @@
       {% else %}
       <a href="/?minimum_score=90">{{ t('web.dashboard.tab_high_priority', count=high_priority_count) }}</a>
       {% endif %}
-      {% for channel in channels %}
-      <span class="dashboard-channel-tab">
-        <a class="dashboard-channel-link" href="/channels/{{ channel.id }}" title="{% if channel.freshness_exact %}{{ channel.freshness_exact }} · {% endif %}{{ channel.freshness }}{% if channel.next_fetch %} · {{ channel.next_fetch }}{% endif %}{% if channel.fetch_stats %} · {{ channel.fetch_stats }}{% endif %}" aria-label="{{ t('web.dashboard.channel_tab_aria', name=channel.name, count=channel.unread_count) }}">{{ channel.name }}</a>
-        {% if channel.teaser %}
-        <a class="dashboard-channel-teaser" href="{{ channel.teaser.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ channel.teaser.exact_time }}" aria-label="{{ t('web.dashboard.teaser_aria', name=channel.name, summary=channel.teaser.ai_summary) }}">↗</a>
-        {% endif %}
-      </span>
-      {% endfor %}
     </nav>
     <form class="dashboard-search" action="/archive" method="get" role="search">
       <label class="sr-only" for="dashboard-search">{{ t('web.dashboard.search_label') }}</label>

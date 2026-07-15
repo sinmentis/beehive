@@ -1,12 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ t('web.title.archive', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-archive{% endblock %}
+{% block channel_navigation %}
+  {% set nav_channels = channels %}
+  {% set active_channel_id = selected_channel %}
+  {% set channel_navigation_all_active = selected_channel is none %}
+  {% include "_channel_shelf.html" %}
+{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell archive-shell">
-  <p class="crumb"><a href="/">{{ t('web.common.back_to_home') }}</a></p>
   <header class="page-heading compact-heading">
     <div>
-      <p class="eyebrow" lang="en">Long-term memory</p>
+      <p class="eyebrow">{{ t('web.archive.eyebrow') }}</p>
       <h1>{{ t('web.archive.heading') }}</h1>
       <p class="page-lede">{{ t('web.archive.lede') }}</p>
     </div>
@@ -16,7 +21,7 @@
     </div>
   </header>
 
-  <form class="filters" method="get" aria-label="{{ t('web.archive.filters_aria') }}">
+  <form class="filters archive-filters" method="get" aria-label="{{ t('web.archive.filters_aria') }}">
     <div class="field search-field">
       <label for="archive-query">{{ t('web.archive.query_label') }}</label>
       <input id="archive-query" type="search" name="q" value="{{ selected_search }}" placeholder="{{ t('web.archive.query_placeholder') }}">

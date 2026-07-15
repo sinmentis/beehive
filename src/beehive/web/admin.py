@@ -20,7 +20,7 @@ from beehive.ai.model_selection import (
 from beehive.auth.passwords import verify_password
 from beehive.auth.rate_limit import is_locked_out
 from beehive.auth.tokens import generate_session_id, sign_session_id
-from beehive.collector.manual_trigger import request_channel_fetch
+from beehive.collector.manual_trigger import request_channel_fetch, request_channel_fetch_batch
 from beehive.connectors import (  # noqa: F401 (registers the connectors)
     google_news,
     hackernews,
@@ -70,6 +70,7 @@ router = APIRouter(prefix="/admin")
 
 _PASSWORD_HASH_KEY = "admin_password_hash"
 _SESSION_LIFETIME_DAYS = 90
+_ADMIN_TABS = frozenset({"channels", "ai", "delivery", "system"})
 
 _CLEAR_DEFAULT_WITHOUT_ENV_ERROR = (
     "Cannot clear default recipient because DIGEST_EMAIL_TO is not configured")
@@ -235,6 +236,9 @@ def _render_admin_home_page(
     language_error: str | None = None,
     model_saved: bool = False,
     model_error: str | None = None,
+    active_tab: str = "channels",
+    triggered_count: int | None = None,
+    bulk_error: str | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
     effective, default_error = _resolve_default_for_admin(conn, t)
@@ -263,6 +267,9 @@ def _render_admin_home_page(
             "current_model": load_model(conn),
             "model_saved": model_saved,
             "model_error": model_error,
+            "active_tab": active_tab if active_tab in _ADMIN_TABS else "channels",
+            "triggered_count": triggered_count,
+            "bulk_error": bulk_error,
         },
         status_code=status_code,
     )
@@ -271,8 +278,10 @@ def _render_admin_home_page(
 @router.get("/", response_class=HTMLResponse)
 def admin_settings(
     request: Request,
+    tab: str = "channels",
     saved: int | None = None,
     triggered: int | None = None,
+    triggered_count: int | None = None,
     language_saved: int | None = None,
     model_saved: int | None = None,
     session: dict = Depends(require_admin_session),
@@ -286,8 +295,10 @@ def admin_settings(
         t,
         saved=saved == 1,
         triggered=triggered,
+        triggered_count=triggered_count,
         language_saved=language_saved == 1,
         model_saved=model_saved == 1,
+        active_tab=tab,
     )
 
 
@@ -316,9 +327,10 @@ def admin_settings_submit(
             request, conn, session, t,
             submitted_email=default_digest_email,
             error=_email_error_message(exc, t),
+            active_tab="delivery",
             status_code=400,
         )
-    return RedirectResponse("/admin/?saved=1", status_code=303)
+    return RedirectResponse("/admin/?tab=delivery&saved=1", status_code=303)
 
 
 @router.post("/language", response_class=HTMLResponse)
@@ -342,9 +354,10 @@ def save_language_submit(
         return _render_admin_home_page(
             request, conn, session, t,
             language_error=t.text("web.admin.language.invalid"),
+            active_tab="ai",
             status_code=400,
         )
-    return RedirectResponse("/admin/?language_saved=1", status_code=303)
+    return RedirectResponse("/admin/?tab=ai&language_saved=1", status_code=303)
 
 
 @router.post("/model", response_class=HTMLResponse)
@@ -368,9 +381,10 @@ def save_model_submit(
         return _render_admin_home_page(
             request, conn, session, t,
             model_error=t.text("web.admin.model.invalid"),
+            active_tab="ai",
             status_code=400,
         )
-    return RedirectResponse("/admin/?model_saved=1", status_code=303)
+    return RedirectResponse("/admin/?tab=ai&model_saved=1", status_code=303)
 
 
 @router.post("/channels/{channel_id}/trigger-fetch")
@@ -382,7 +396,42 @@ def trigger_channel_fetch(channel_id: int, request: Request, csrf_token: str = F
         raise HTTPException(status_code=404, detail="Channel not found")
     data_dir = os.path.dirname(request.app.state.db_path)
     request_channel_fetch(data_dir, channel_id)
-    return RedirectResponse(f"/admin/?triggered={channel_id}", status_code=303)
+    return RedirectResponse(
+        f"/admin/?tab=channels&triggered={channel_id}",
+        status_code=303,
+    )
+
+
+@router.post("/channels/trigger-fetch", response_class=HTMLResponse)
+def trigger_channel_fetch_batch(
+    request: Request,
+    channel_ids: list[int] | None = Form(None),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    selected_ids = list(dict.fromkeys(channel_ids or []))
+    if not selected_ids:
+        return _render_admin_home_page(
+            request,
+            conn,
+            session,
+            t,
+            active_tab="channels",
+            bulk_error=t.text("web.admin.settings.bulk_fetch_empty"),
+            status_code=400,
+        )
+    for channel_id in selected_ids:
+        if get_channel(conn, channel_id) is None:
+            raise HTTPException(status_code=404, detail="Channel not found")
+    data_dir = os.path.dirname(request.app.state.db_path)
+    request_channel_fetch_batch(data_dir, selected_ids)
+    return RedirectResponse(
+        f"/admin/?tab=channels&triggered_count={len(selected_ids)}",
+        status_code=303,
+    )
 
 
 @router.get("/channels/new", response_class=HTMLResponse)

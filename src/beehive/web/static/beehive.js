@@ -31,6 +31,42 @@
     feedbackMessage = "";
   });
 
+  const channelForm = document.querySelector(".channel-bulk-form");
+  if (channelForm instanceof HTMLFormElement) {
+    const selectAll = channelForm.querySelector("[data-channel-select-all]");
+    const channelCheckboxes = [
+      ...channelForm.querySelectorAll("[data-channel-checkbox]"),
+    ];
+    const countLabel = channelForm.querySelector(".channel-selection-count");
+    const submitButton = channelForm.querySelector("button[type='submit']");
+    const countTemplate = channelForm.dataset.selectedTemplate || "__COUNT__";
+
+    const syncChannelSelection = () => {
+      const selectedCount = channelCheckboxes.filter((checkbox) => checkbox.checked).length;
+      if (countLabel) {
+        countLabel.textContent = countTemplate.replace("__COUNT__", String(selectedCount));
+      }
+      if (submitButton instanceof HTMLButtonElement) {
+        submitButton.disabled = selectedCount === 0;
+      }
+      if (selectAll instanceof HTMLInputElement) {
+        selectAll.checked = selectedCount === channelCheckboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < channelCheckboxes.length;
+      }
+    };
+
+    selectAll?.addEventListener("change", () => {
+      channelCheckboxes.forEach((checkbox) => {
+        checkbox.checked = selectAll.checked;
+      });
+      syncChannelSelection();
+    });
+    channelCheckboxes.forEach((checkbox) => {
+      checkbox.addEventListener("change", syncChannelSelection);
+    });
+    syncChannelSelection();
+  }
+
   const search = document.querySelector(".dashboard-search input[type='search']");
   const rows = [...document.querySelectorAll(".signal-row")];
   const selectionStatus = document.getElementById("dashboard-selection-status");

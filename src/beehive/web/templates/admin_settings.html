@@ -1,133 +1,181 @@
 {% extends "base.html" %}
 {% block title %}{{ t('web.title.admin_settings', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-admin{% endblock %}
+{% block channel_navigation %}
+  {% set nav_channels = channels %}
+  {% set active_channel_id = none %}
+  {% set channel_navigation_all_active = true %}
+  {% include "_channel_shelf.html" %}
+{% endblock %}
 {% block content %}
 <main id="main-content" class="page-shell admin-shell">
   <header class="page-heading admin-heading">
     <div>
-      <p class="eyebrow" lang="en">Control room</p>
+      <p class="eyebrow">{{ t('web.admin.settings.eyebrow') }}</p>
       <h1>{{ t('web.admin.settings.heading') }}</h1>
       <p class="page-lede">{{ t('web.admin.settings.lede') }}</p>
     </div>
-    <a class="btn ghost" href="/">{{ t('web.admin.settings.view_public_site') }}</a>
   </header>
+
+  <nav class="admin-tabs" aria-label="{{ t('web.admin.tabs.aria') }}">
+    <a href="/admin/?tab=channels"{% if active_tab == "channels" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.channels') }}</a>
+    <a href="/admin/?tab=ai"{% if active_tab == "ai" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.ai_language') }}</a>
+    <a href="/admin/?tab=delivery"{% if active_tab == "delivery" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.delivery') }}</a>
+    <a href="/admin/?tab=system"{% if active_tab == "system" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.system') }}</a>
+  </nav>
+
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
 
-  <div class="admin-grid">
-    <aside class="admin-settings-rail">
-    <section class="admin-panel settings-panel" aria-labelledby="email-title">
-      <header class="panel-heading">
-        <p class="section-kicker" lang="en">Delivery</p>
-        <h2 id="email-title">{{ t('web.admin.settings.email_heading') }}</h2>
-      </header>
-      {% if saved %}<p class="flash" role="status">{{ t('web.admin.settings.email_saved') }}</p>{% endif %}
-      <div class="status">
-        <span>{{ t('web.admin.settings.currently_effective') }}</span>
-        <strong>{{ effective_email or t('web.admin.settings.not_configured') }}</strong>
-        <small>
-          {% if effective_source == "database" %}{{ t('web.admin.settings.source_database') }}
-          {% elif effective_source == "environment" %}{{ t('web.admin.settings.source_environment') }}
-          {% else %}{{ t('web.admin.settings.source_none') }}{% endif %}
-        </small>
+  {% if active_tab == "channels" %}
+  <section class="admin-tab-panel" aria-labelledby="admin-channels-title">
+    <header class="admin-section-heading">
+      <div>
+        <h2 id="admin-channels-title">{{ t('web.admin.settings.channels_heading') }}</h2>
+        <p>{{ t('web.admin.settings.channels_lede') }}</p>
       </div>
-      <form class="settings-form" method="post" action="/admin/">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="field">
-          <label for="default-digest-email">{{ t('web.admin.settings.email_field_label') }}</label>
-          <input id="default-digest-email" type="text" inputmode="email" name="default_digest_email"
-                 value="{{ submitted_email }}"
-                 placeholder="{{ environment_email or 'owner@example.com' }}"
-                 autocomplete="email">
-          <p class="hint">{{ t('web.admin.settings.email_field_hint') }}</p>
-          {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-        </div>
-        <button class="btn primary" type="submit">{{ t('web.admin.settings.email_save') }}</button>
-      </form>
-    </section>
+      <a class="text-action" href="/admin/channels/new">{{ t('web.admin.settings.new_channel') }}</a>
+    </header>
 
-    <section class="admin-panel settings-panel" aria-labelledby="language-title">
-      <header class="panel-heading">
-        <p class="section-kicker" lang="en">Language</p>
-        <h2 id="language-title">{{ t('web.admin.language.heading') }}</h2>
-      </header>
-      {% if language_saved %}<p class="flash" role="status">{{ t('web.admin.language.saved') }}</p>{% endif %}
-      <form class="settings-form" method="post" action="/admin/language">
+    {% if triggered_count %}
+    <p class="flash admin-feedback" role="status">{{ t('web.admin.settings.bulk_fetch_submitted', count=triggered_count) }}</p>
+    {% endif %}
+    {% if bulk_error %}<p class="error admin-feedback" role="alert">{{ bulk_error }}</p>{% endif %}
+
+    {% if channels %}
+    <form class="channel-bulk-form" method="post" action="/admin/channels/trigger-fetch"
+          data-selected-template="{{ t('web.admin.settings.selected_count', count='__COUNT__') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="channel-bulk-toolbar">
+        <span class="channel-selection-count" aria-live="polite">{{ t('web.admin.settings.selected_count', count=0) }}</span>
+        <button class="btn primary small" type="submit">{{ t('web.admin.settings.bulk_fetch') }}</button>
+      </div>
+      <div class="channel-admin-table" role="table" aria-label="{{ t('web.admin.settings.channels_heading') }}">
+        <div class="channel-admin-head" role="row">
+          <span role="columnheader">
+            <input class="channel-checkbox" type="checkbox" data-channel-select-all
+                   aria-label="{{ t('web.admin.settings.select_all') }}">
+          </span>
+          <span role="columnheader">{{ t('web.admin.settings.channel_column') }}</span>
+          <span role="columnheader">{{ t('web.admin.settings.sources_column') }}</span>
+          <span role="columnheader">{{ t('web.admin.settings.cadence_column') }}</span>
+          <span role="columnheader">{{ t('web.admin.settings.freshness_column') }}</span>
+          <span aria-hidden="true"></span>
+        </div>
+        {% for channel in channels %}
+        <div class="channel-admin-row" role="row">
+          <span role="cell">
+            <input class="channel-checkbox" type="checkbox" name="channel_ids" value="{{ channel.id }}"
+                   data-channel-checkbox aria-label="{{ channel.name }}">
+          </span>
+          <span class="channel-admin-name" role="cell">
+            <strong>{{ channel.name }}</strong>
+            <small>{{ channel.fetch_stats_label or t('web.admin.settings.recipient_label', email=(channel.effective_email or t('web.admin.settings.not_configured'))) }}</small>
+            {% if triggered == channel.id %}<em class="trigger-flash" role="status">{{ t('web.admin.settings.trigger_flash') }}</em>{% endif %}
+          </span>
+          <span role="cell">{{ t('web.admin.settings.source_count', count=channel.source_count) }}</span>
+          <span role="cell">{{ channel.fetch_interval_label }}</span>
+          <span role="cell" title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>
+          <span class="channel-edit-cell" role="cell"><a class="channel-edit-link" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.settings.edit_channel') }}</a></span>
+        </div>
+        {% endfor %}
+      </div>
+    </form>
+    {% else %}
+    <div class="empty-state">
+      <h3>{{ t('web.admin.settings.empty_channels_heading') }}</h3>
+      <p>{{ t('web.admin.settings.empty_channels_body') }}</p>
+      <a class="btn primary" href="/admin/channels/new">{{ t('web.dashboard.empty_channels_cta') }}</a>
+    </div>
+    {% endif %}
+  </section>
+
+  {% elif active_tab == "ai" %}
+  <section class="admin-tab-panel settings-list">
+    <section class="settings-section" aria-labelledby="language-title">
+      <h2 id="language-title">{{ t('web.admin.settings.language_section') }}</h2>
+      <form class="setting-row" method="post" action="/admin/language">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="field">
-          <label for="platform-language">{{ t('web.admin.language.field_label') }}</label>
+        <div class="setting-copy">
+          <label for="platform-language">{{ t('web.admin.language.heading') }}</label>
+          <p>{{ t('web.admin.language.hint') }}</p>
+          {% if language_saved %}<span class="flash" role="status">{{ t('web.admin.language.saved') }}</span>{% endif %}
+          {% if language_error %}<span class="error" role="alert">{{ language_error }}</span>{% endif %}
+        </div>
+        <div class="setting-action">
           <select id="platform-language" name="language">
             {% for language in languages %}
             <option value="{{ language.code }}" {{ "selected" if current_language == language.code else "" }}>{{ language.native_name }}</option>
             {% endfor %}
           </select>
-          <p class="hint">{{ t('web.admin.language.hint') }}</p>
-          {% if language_error %}<p class="error" role="alert">{{ language_error }}</p>{% endif %}
+          <button class="btn primary small" type="submit">{{ t('web.admin.language.save') }}</button>
         </div>
-        <button class="btn primary" type="submit">{{ t('web.admin.language.save') }}</button>
       </form>
     </section>
 
-    <section class="admin-panel settings-panel" aria-labelledby="model-title">
-      <header class="panel-heading">
-        <p class="section-kicker" lang="en">Model</p>
-        <h2 id="model-title">{{ t('web.admin.model.heading') }}</h2>
-      </header>
-      {% if model_saved %}<p class="flash" role="status">{{ t('web.admin.model.saved') }}</p>{% endif %}
-      <form class="settings-form" method="post" action="/admin/model">
+    <section class="settings-section" aria-labelledby="model-title">
+      <h2 id="model-title">{{ t('web.admin.settings.model_section') }}</h2>
+      <form class="setting-row" method="post" action="/admin/model">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="field">
-          <label for="llm-model">{{ t('web.admin.model.field_label') }}</label>
+        <div class="setting-copy">
+          <label for="llm-model">{{ t('web.admin.model.heading') }}</label>
+          <p>{{ t('web.admin.model.hint') }}</p>
+          {% if model_saved %}<span class="flash" role="status">{{ t('web.admin.model.saved') }}</span>{% endif %}
+          {% if model_error %}<span class="error" role="alert">{{ model_error }}</span>{% endif %}
+        </div>
+        <div class="setting-action">
           <select id="llm-model" name="model">
             {% for model in models %}
             <option value="{{ model.model_id }}" {{ "selected" if current_model == model.model_id else "" }}>{{ model.display_name }}</option>
             {% endfor %}
           </select>
-          <p class="hint">{{ t('web.admin.model.hint') }}</p>
-          {% if model_error %}<p class="error" role="alert">{{ model_error }}</p>{% endif %}
+          <button class="btn primary small" type="submit">{{ t('web.admin.model.apply') }}</button>
         </div>
-        <button class="btn primary" type="submit">{{ t('web.admin.model.apply') }}</button>
       </form>
     </section>
-    </aside>
+  </section>
 
-    <section class="admin-panel channels-panel" aria-labelledby="admin-channels-title">
-      <header class="panel-heading split-heading">
-        <div>
-          <p class="section-kicker" lang="en">Streams</p>
-          <h2 id="admin-channels-title">{{ t('web.admin.settings.channels_heading') }}</h2>
+  {% elif active_tab == "delivery" %}
+  <section class="admin-tab-panel settings-list">
+    <section class="settings-section" aria-labelledby="email-title">
+      <h2 id="email-title">{{ t('web.admin.tabs.delivery') }}</h2>
+      <form class="setting-row" method="post" action="/admin/">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="setting-copy">
+          <label for="default-digest-email">{{ t('web.admin.settings.email_heading') }}</label>
+          <p>{{ t('web.admin.settings.email_field_hint') }}</p>
+          <span class="setting-current">
+            {{ t('web.admin.settings.currently_effective') }}:
+            <strong>{{ effective_email or t('web.admin.settings.not_configured') }}</strong>
+            {% if effective_source == "database" %}· {{ t('web.admin.settings.source_database') }}
+            {% elif effective_source == "environment" %}· {{ t('web.admin.settings.source_environment') }}
+            {% else %}· {{ t('web.admin.settings.source_none') }}{% endif %}
+          </span>
+          {% if saved %}<span class="flash" role="status">{{ t('web.admin.settings.email_saved') }}</span>{% endif %}
+          {% if error %}<span class="error" role="alert">{{ error }}</span>{% endif %}
         </div>
-        <a class="btn ghost small" href="/admin/channels/new">{{ t('web.admin.settings.new_channel') }}</a>
-      </header>
-      <div class="channel-admin-list">
-        {% for channel in channels %}
-        <article class="channel-admin-row">
-          <div class="channel-admin-copy">
-            <h3>{{ channel.name }}</h3>
-            <p>{{ t('web.admin.settings.source_count', count=channel.source_count) }} · {{ channel.fetch_interval_label }}</p>
-            <p><span title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>{% if channel.fetch_stats_label %} · {{ channel.fetch_stats_label }}{% endif %}</p>
-            <p class="recipient">{{ t('web.admin.settings.recipient_label', email=(channel.effective_email or t('web.admin.settings.not_configured'))) }}</p>
-            {% if triggered == channel.id %}
-            <p class="trigger-flash" role="status">{{ t('web.admin.settings.trigger_flash') }}</p>
-            {% endif %}
-          </div>
-          <div class="row-actions">
-            <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="btn ghost small" type="submit">{{ t('web.admin.settings.trigger_fetch') }}</button>
-            </form>
-            <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.settings.edit_channel') }}</a>
-          </div>
-        </article>
-        {% endfor %}
-      </div>
-      {% if not channels %}
-      <div class="empty-state">
-        <h3>{{ t('web.admin.settings.empty_channels_heading') }}</h3>
-        <p>{{ t('web.admin.settings.empty_channels_body') }}</p>
-        <a class="btn primary" href="/admin/channels/new">{{ t('web.dashboard.empty_channels_cta') }}</a>
-      </div>
-      {% endif %}
+        <div class="setting-action">
+          <input id="default-digest-email" type="text" inputmode="email" name="default_digest_email"
+                 value="{{ submitted_email }}"
+                 placeholder="{{ environment_email or 'owner@example.com' }}"
+                 autocomplete="email">
+          <button class="btn primary small" type="submit">{{ t('web.admin.settings.email_save') }}</button>
+        </div>
+      </form>
     </section>
-  </div>
+  </section>
+
+  {% else %}
+  <section class="admin-tab-panel settings-list">
+    <section class="settings-section" aria-labelledby="system-title">
+      <h2 id="system-title">{{ t('web.admin.settings.system_heading') }}</h2>
+      <div class="admin-system-empty">
+        <p>{{ t('web.admin.settings.system_body') }}</p>
+      </div>
+    </section>
+  </section>
+  {% endif %}
 </main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
 {% endblock %}

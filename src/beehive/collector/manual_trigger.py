@@ -1,10 +1,11 @@
-"""Marker-file protocol for the manual per-Channel fetch trigger. request_channel_fetch
-(called by the admin web route) atomically writes the watched marker;
-consume_pending_manual_trigger (called by the beehive-fetch-manual container's Python
-entrypoint) reads the ALREADY-renamed .inflight file -- systemd's ExecStartPre= moves the
-watched marker there, host-side, before the container even starts, so a container-boot failure
-can't leave the watched path around to loop-retrigger the .path unit forever. This module never
-touches the watched path from the read side, and never performs the rename itself."""
+"""Marker-file protocol for manual per-Channel fetch triggers.
+
+The admin web route atomically writes one or more Channel ids to the watched marker.
+The beehive-fetch-manual entrypoint reads the ALREADY-renamed .inflight file -- systemd's
+ExecStartPre= moves the watched marker there, host-side, before the container starts, so a
+container-boot failure cannot leave the watched path around to loop-retrigger the .path unit.
+This module never touches the watched path from the read side or performs the rename itself.
+"""
 from __future__ import annotations
 
 import os
@@ -13,27 +14,38 @@ import tempfile
 _MARKER_NAME = "fetch_trigger_channel_id"
 
 
-def request_channel_fetch(data_dir: str, channel_id: int) -> None:
-    """Atomically writes channel_id to <data_dir>/fetch_trigger_channel_id: write to a temp file
-    in the same directory, then os.replace() it into place, so the systemd .path unit watching
-    this exact path can never observe a partially-written file."""
+def _write_channel_ids(data_dir: str, channel_ids: list[int]) -> None:
     marker_path = os.path.join(data_dir, _MARKER_NAME)
     fd, tmp_path = tempfile.mkstemp(dir=data_dir, prefix=f".{_MARKER_NAME}.tmp-")
     try:
         with os.fdopen(fd, "w") as f:
-            f.write(str(channel_id))
+            f.write("\n".join(str(channel_id) for channel_id in channel_ids))
         os.replace(tmp_path, marker_path)
     except BaseException:
         os.unlink(tmp_path)
         raise
 
 
-def consume_pending_manual_trigger(data_dir: str) -> int | None:
-    """Reads <data_dir>/fetch_trigger_channel_id.inflight -- the path ExecStartPre= already
-    renamed the watched marker to, host-side, before this container started -- and deletes it.
-    Returns the parsed Channel id, or None if the file is absent or its content isn't a plain
-    integer. Both None cases are handled identically by the caller: a clean no-op, never a
-    fallback to the all-Channels sweep (see the design doc's Error Handling section)."""
+def request_channel_fetch(data_dir: str, channel_id: int) -> None:
+    """Atomically writes one Channel id to the watched marker."""
+    _write_channel_ids(data_dir, [channel_id])
+
+
+def request_channel_fetch_batch(data_dir: str, channel_ids: list[int]) -> None:
+    """Atomically writes a deduplicated non-empty batch of Channel ids to the watched marker."""
+    unique_ids = list(dict.fromkeys(channel_ids))
+    if not unique_ids:
+        raise ValueError("at least one Channel id is required")
+    if any(channel_id <= 0 for channel_id in unique_ids):
+        raise ValueError("Channel ids must be positive integers")
+    _write_channel_ids(data_dir, unique_ids)
+
+
+def consume_pending_manual_triggers(data_dir: str) -> list[int] | None:
+    """Consumes the inflight marker and returns every valid requested Channel id.
+
+    A missing or malformed marker is a clean no-op, never a fallback to the all-Channels sweep.
+    """
     inflight_path = os.path.join(data_dir, f"{_MARKER_NAME}.inflight")
     try:
         with open(inflight_path) as f:
@@ -41,7 +53,18 @@ def consume_pending_manual_trigger(data_dir: str) -> int | None:
     except FileNotFoundError:
         return None
     os.remove(inflight_path)
+    if not content:
+        return None
     try:
-        return int(content)
+        channel_ids = [int(value) for value in content.splitlines()]
     except ValueError:
         return None
+    if any(channel_id <= 0 for channel_id in channel_ids):
+        return None
+    return list(dict.fromkeys(channel_ids))
+
+
+def consume_pending_manual_trigger(data_dir: str) -> int | None:
+    """Compatibility wrapper returning the first id from a consumed marker."""
+    channel_ids = consume_pending_manual_triggers(data_dir)
+    return channel_ids[0] if channel_ids else None

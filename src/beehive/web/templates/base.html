@@ -18,13 +18,13 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <span class="brand-name">{{ t('common.product_name') }}</span>
     </a>
+    {% block header_status %}{% endblock %}
     <nav class="site-nav" aria-label="{{ t('web.nav.aria_label') }}">
-      <a href="/"{% if request.url.path == "/" or request.url.path.startswith("/channels/") %} aria-current="page"{% endif %}>{{ t('web.nav.home') }}</a>
       <a href="/archive"{% if request.url.path == "/archive" %} aria-current="page"{% endif %}>{{ t('web.nav.archive') }}</a>
       <a href="/admin/login"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>{{ t('web.nav.admin') }}</a>
     </nav>
-    {% block header_status %}{% endblock %}
   </div>
+  {% block channel_navigation %}{% endblock %}
 </header>
 {% block content %}{% endblock %}
 {% block scripts %}{% endblock %}

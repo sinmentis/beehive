@@ -18,7 +18,7 @@ from dataclasses import asdict
 from beehive.connectors import google_news, hackernews, official_feeds, reddit  # noqa: F401  (registers the connectors)
 from beehive.db.channels import get_channel, list_channels
 from beehive.db.connection import connect, init_schema
-from beehive.collector.manual_trigger import consume_pending_manual_trigger
+from beehive.collector.manual_trigger import consume_pending_manual_triggers
 from beehive.collector.summary_rewrite import (
     SummaryRewriteRollbackResult,
     SummaryRewriteRunResult,
@@ -87,29 +87,43 @@ async def run_fetch_channel(db_path: str) -> None:
         localizer = load_localizer(conn)
         model = load_model(conn)
         data_dir = os.path.dirname(db_path)
-        channel_id = consume_pending_manual_trigger(data_dir)
-        if channel_id is None:
+        channel_ids = consume_pending_manual_triggers(data_dir)
+        if channel_ids is None:
             print("[fetch-channel] no valid trigger marker found; nothing to do")
             return
-        channel = get_channel(conn, channel_id)
-        if channel is None:
-            print(f"[fetch-channel] Channel {channel_id} no longer exists; nothing to do")
+        channels = []
+        for channel_id in channel_ids:
+            channel = get_channel(conn, channel_id)
+            if channel is None:
+                print(f"[fetch-channel] Channel {channel_id} no longer exists; skipping it")
+                continue
+            channels.append(channel)
+        if not channels:
             return
         notifier, default_recipient = _build_delivery_context(conn)
-        try:
-            recipient = resolve_channel_email(channel, default_recipient)
-        except EmailConfigurationError as exc:
-            print(f"[fetch-channel] Channel \"{channel['name']}\" has an invalid email "
-                  f"recipient, skipping it: {exc}")
-            return
-        try:
-            await run_channel_cycle(
-                conn, channel, notifier, recipient=recipient.address,
-                localizer=localizer, model=model, force_fetch=True)
-        except EmailConfigurationError as exc:
-            print(f"[fetch-channel] Channel \"{channel['name']}\" could not deliver an "
-                  f"alert email: {exc}")
-            raise
+        alert_delivery_failures: list[EmailConfigurationError] = []
+        for channel in channels:
+            try:
+                recipient = resolve_channel_email(channel, default_recipient)
+            except EmailConfigurationError as exc:
+                print(f"[fetch-channel] Channel \"{channel['name']}\" has an invalid email "
+                      f"recipient, skipping it: {exc}")
+                continue
+            try:
+                await run_channel_cycle(
+                    conn, channel, notifier, recipient=recipient.address,
+                    localizer=localizer, model=model, force_fetch=True)
+            except EmailConfigurationError as exc:
+                print(f"[fetch-channel] Channel \"{channel['name']}\" could not deliver an "
+                      f"alert email: {exc}")
+                alert_delivery_failures.append(exc)
+        if len(alert_delivery_failures) == 1:
+            raise alert_delivery_failures[0]
+        if alert_delivery_failures:
+            raise ExceptionGroup(
+                "Multiple manually fetched Channels could not deliver alert emails",
+                alert_delivery_failures,
+            )
     finally:
         conn.close()
 

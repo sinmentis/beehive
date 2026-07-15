@@ -1,9 +1,13 @@
 # tests/collector/test_manual_trigger.py
 import os
 
+import pytest
+
 from beehive.collector.manual_trigger import (
     consume_pending_manual_trigger,
+    consume_pending_manual_triggers,
     request_channel_fetch,
+    request_channel_fetch_batch,
 )
 
 _MARKER_NAME = "fetch_trigger_channel_id"
@@ -30,12 +34,29 @@ def test_request_leaves_no_leftover_temp_file(tmp_path):
     assert leftovers == []
 
 
+def test_batch_request_writes_each_unique_channel_id(tmp_path):
+    request_channel_fetch_batch(str(tmp_path), [7, 42, 7])
+    marker_path = tmp_path / _MARKER_NAME
+    assert marker_path.read_text() == "7\n42"
+
+
+def test_batch_request_rejects_an_empty_selection(tmp_path):
+    with pytest.raises(ValueError, match="at least one"):
+        request_channel_fetch_batch(str(tmp_path), [])
+
+
 def test_full_round_trip_via_the_execstartpre_rename(tmp_path):
     request_channel_fetch(str(tmp_path), 42)
     _simulate_execstartpre_rename(str(tmp_path))
     assert consume_pending_manual_trigger(str(tmp_path)) == 42
     inflight_path = tmp_path / f"{_MARKER_NAME}.inflight"
     assert not inflight_path.exists()
+
+
+def test_batch_round_trip_returns_every_requested_channel(tmp_path):
+    request_channel_fetch_batch(str(tmp_path), [42, 7])
+    _simulate_execstartpre_rename(str(tmp_path))
+    assert consume_pending_manual_triggers(str(tmp_path)) == [42, 7]
 
 
 def test_consume_returns_none_when_no_inflight_marker_exists(tmp_path):

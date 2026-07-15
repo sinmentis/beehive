@@ -493,6 +493,41 @@ async def test_run_fetch_channel_processes_only_the_requested_channel(tmp_path, 
 
 
 @pytest.mark.asyncio
+async def test_run_fetch_channel_processes_every_channel_in_a_batch(tmp_path, monkeypatch):
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from beehive.collector.manual_trigger import request_channel_fetch_batch
+    from beehive.db.channels import create_channel
+    from beehive.db.connection import connect, init_schema
+    from scripts.run_collector import run_fetch_channel
+
+    db_path = str(tmp_path / "t.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    first_id = create_channel(conn, "First", "profile")
+    second_id = create_channel(conn, "Second", "profile")
+    conn.close()
+
+    request_channel_fetch_batch(str(tmp_path), [first_id, second_id])
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
+
+    with patch(
+        "scripts.run_collector.run_channel_cycle",
+        new=AsyncMock(),
+    ) as mock_cycle:
+        await run_fetch_channel(db_path)
+
+    assert [call.args[1]["id"] for call in mock_cycle.await_args_list] == [
+        first_id,
+        second_id,
+    ]
+    assert all(call.kwargs["force_fetch"] is True for call in mock_cycle.await_args_list)
+
+
+@pytest.mark.asyncio
 async def test_run_fetch_channel_is_a_noop_with_no_marker_present(tmp_path, monkeypatch):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     from beehive.db.channels import create_channel

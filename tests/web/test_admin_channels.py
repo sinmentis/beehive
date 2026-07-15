@@ -286,7 +286,7 @@ def test_trigger_fetch_writes_marker_and_redirects(authed_client, db_path):
     resp = authed_client.post(f"/admin/channels/{channel_id}/trigger-fetch",
                                data={"csrf_token": "csrf1"})
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/admin/?triggered={channel_id}"
+    assert resp.headers["location"] == f"/admin/?tab=channels&triggered={channel_id}"
 
     data_dir = os.path.dirname(db_path)
     marker_path = os.path.join(data_dir, "fetch_trigger_channel_id")
@@ -303,14 +303,95 @@ def test_channels_list_shows_freshness_label(authed_client, db_path):
     assert "Not fetched yet" in resp.text
 
 
-def test_channels_list_shows_trigger_fetch_button(authed_client, db_path):
+def test_channels_list_shows_bulk_fetch_controls(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
     resp = authed_client.get("/admin/")
-    assert f"/admin/channels/{channel_id}/trigger-fetch" in resp.text
-    assert "Fetch now" in resp.text
+    assert 'action="/admin/channels/trigger-fetch"' in resp.text
+    assert f'name="channel_ids" value="{channel_id}"' in resp.text
+    assert "Fetch selected" in resp.text
+
+
+def test_bulk_fetch_writes_selected_channels_and_redirects(authed_client, db_path):
+    conn = connect(db_path)
+    first_id = create_channel(conn, "First", "profile")
+    second_id = create_channel(conn, "Second", "profile")
+    conn.close()
+
+    response = authed_client.post(
+        "/admin/channels/trigger-fetch",
+        data={
+            "channel_ids": [str(first_id), str(second_id)],
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/?tab=channels&triggered_count=2"
+    marker_path = os.path.join(os.path.dirname(db_path), "fetch_trigger_channel_id")
+    with open(marker_path) as marker:
+        assert marker.read() == f"{first_id}\n{second_id}"
+
+
+def test_bulk_fetch_requires_a_selection(authed_client):
+    response = authed_client.post(
+        "/admin/channels/trigger-fetch",
+        data={"csrf_token": "csrf1"},
+    )
+
+    assert response.status_code == 400
+    assert "Select at least one channel to fetch." in response.text
+
+
+def test_bulk_fetch_rejects_wrong_csrf(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    conn.close()
+
+    response = authed_client.post(
+        "/admin/channels/trigger-fetch",
+        data={"channel_ids": str(channel_id), "csrf_token": "wrong"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_bulk_fetch_requires_session(db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    conn.close()
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"),
+        follow_redirects=False,
+    )
+
+    response = client.post(
+        "/admin/channels/trigger-fetch",
+        data={"channel_ids": str(channel_id), "csrf_token": "csrf1"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login"
+
+
+def test_bulk_fetch_rejects_missing_channel(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    conn.close()
+
+    response = authed_client.post(
+        "/admin/channels/trigger-fetch",
+        data={
+            "channel_ids": [str(channel_id), "999"],
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert response.status_code == 404
+    marker_path = os.path.join(os.path.dirname(db_path), "fetch_trigger_channel_id")
+    assert not os.path.exists(marker_path)
 
 
 def test_channels_list_shows_flash_message_when_triggered_param_matches(authed_client, db_path):
@@ -348,6 +429,11 @@ def test_channels_list_freshness_has_exact_time_tooltip(authed_client, db_path):
 
     resp = authed_client.get("/admin/")
     assert 'title="2026-07-09 15:00"' in resp.text
+    assert (
+        f'href="/channels/{channel_id}"\n'
+        '     \n'
+        '     title="2026-07-09 15:00 ·'
+    ) in resp.text
 
 
 def test_admin_channels_list_shows_fetch_stats(authed_client, db_path):
