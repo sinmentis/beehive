@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from beehive.db.connection import connect, init_schema
 
 
@@ -14,6 +16,16 @@ def test_wal_mode_enabled(tmp_path):
     conn = connect(str(tmp_path / "test.db"))
     mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     assert mode.lower() == "wal"
+
+
+def test_connection_can_cross_fastapi_worker_threads(tmp_path):
+    conn = connect(str(tmp_path / "test.db"))
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(
+            lambda: conn.execute("SELECT 1").fetchone()[0]
+        ).result()
+    assert result == 1
+    conn.close()
 
 
 def test_foreign_keys_cascade_channel_to_source_to_item(tmp_path):

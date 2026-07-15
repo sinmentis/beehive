@@ -27,7 +27,9 @@ _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"
 
 
 def connect(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    # FastAPI may enter, use, and finalize one sync dependency on different worker threads.
+    # Each request still owns its connection; this only disables sqlite3's thread-affinity guard.
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
