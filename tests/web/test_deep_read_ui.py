@@ -94,16 +94,18 @@ def test_shared_action_partial_is_wired_into_every_ranked_item_surface():
     dashboard = (_TEMPLATES_DIR / "dashboard.html").read_text()
     item_card = (_TEMPLATES_DIR / "_item_card.html").read_text()
     channel = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+    folded_item = (_TEMPLATES_DIR / "_folded_item.html").read_text()
     archive = (_TEMPLATES_DIR / "archive.html").read_text()
 
     assert '{% include "_deep_read_action.html" %}' in dashboard
     assert '{% include "_deep_read_action.html" %}' in item_card
-    assert '{% include "_deep_read_action.html" %}' in channel
+    assert '{% include "_folded_item.html" %}' in channel
+    assert '{% include "_deep_read_action.html" %}' in folded_item
     assert '{% include "_deep_read_action.html" %}' in archive
 
     # Dashboard rows and folded Channel items are dense: the control must stay hidden at rest.
     assert 'deep_read_variant = "dense"' in dashboard
-    assert 'deep_read_variant = "dense"' in channel
+    assert 'deep_read_variant = "dense"' in folded_item
     # Highlighted Channel cards and Archive rows have room to keep it always visible.
     assert 'deep_read_variant = "card"' in item_card
     assert 'deep_read_variant = "side"' in archive
@@ -237,8 +239,12 @@ def test_dashboard_row_action_sits_outside_the_summary_link():
 
 
 def test_folded_item_action_sits_outside_the_title_link():
-    template = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
-    folded_article = re.search(r'<article class="folded-item">(.*?)</article>', template, re.DOTALL)
+    template = (_TEMPLATES_DIR / "_folded_item.html").read_text()
+    folded_article = re.search(
+        r'<article class="folded-item"[^>]*>(.*?)</article>',
+        template,
+        re.DOTALL,
+    )
     assert folded_article is not None
     body = folded_article.group(1)
     title_link_end = body.index("</a>")
@@ -379,7 +385,8 @@ def test_css_defines_deep_read_responsive_breakpoints_and_touch_targets():
     breakpoint_720_blocks = re.findall(
         r"@media \(max-width:720px\)\{(.*?)\n\}", css, re.DOTALL)
     assert any(".deep-read-" in block for block in breakpoint_720_blocks)
-    assert any("folded-item" in block and "deep-read-action" in block for block in breakpoint_720_blocks)
+    assert any("folded-actions" in block for block in breakpoint_720_blocks)
+    assert ".folded-item .deep-read-action--dense{justify-self:end}" in css
 
     touch_block = re.search(
         r"@media \(hover:none\),\(pointer:coarse\)\{(.*?)\n\}", css, re.DOTALL)

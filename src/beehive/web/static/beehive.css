@@ -410,7 +410,6 @@ h1{
 .signal-score-col{width:2.125rem}
 .signal-channel-col{width:5rem}
 .signal-source-col{width:5.5rem}
-.signal-vote-col{width:3.8rem}
 .signal-engagement-col{width:5.5rem}
 .signal-age-col{width:4.5rem}
 .signal-table th{
@@ -478,7 +477,6 @@ h1{
   white-space:nowrap;
 }
 .signal-engagement,.signal-engagement-heading{text-align:right}
-.signal-vote-heading{text-align:center}
 .signal-channel{color:var(--text-soft);font-weight:650}
 .signal-channel:hover,.signal-summary:hover{color:var(--accent)}
 .signal-summary-cell{white-space:nowrap}
@@ -532,27 +530,6 @@ h1{
   white-space:normal;
 }
 .signal-age{text-align:right}
-.signal-vote-cell{padding-inline:.2rem!important}
-.signal-votes{display:flex;align-items:center;justify-content:center;gap:.1rem}
-.signal-votes form{margin:0}
-.signal-votes button{
-  display:grid;
-  width:1.55rem;
-  height:1.55rem;
-  min-width:0;
-  min-height:0;
-  padding:0;
-  border:0;
-  border-radius:.15rem;
-  background:transparent;
-  color:var(--muted-2);
-  place-items:center;
-  font-size:.78rem;
-  line-height:1;
-}
-.signal-votes button:hover{background:var(--surface-raised);color:var(--text)}
-.signal-votes button.active.up{background:rgba(92,150,104,.16);color:#86b98e}
-.signal-votes button.active.down{background:rgba(204,112,103,.15);color:#d38a82}
 .signal-statusbar{
   display:flex;
   height:1.375rem;
@@ -1441,6 +1418,35 @@ select{
   white-space:nowrap;
 }
 .page-channel .folded-title:hover{color:var(--accent)}
+.page-channel .folded-actions{
+  display:flex;
+  align-items:center;
+  justify-self:end;
+  gap:.25rem;
+}
+.page-channel .folded-votes{display:flex;align-items:center;gap:.1rem}
+.page-channel .folded-votes button,
+.page-channel .folded-vote-state{
+  display:grid;
+  width:1.5rem;
+  height:1.5rem;
+  min-width:0;
+  min-height:0;
+  padding:0;
+  border:0;
+  border-radius:.15rem;
+  background:transparent;
+  color:var(--muted-2);
+  place-items:center;
+  font-size:.75rem;
+  line-height:1;
+}
+.page-channel .folded-votes button:hover{background:var(--surface-raised);color:var(--text)}
+.page-channel .folded-votes button.active.up,
+.page-channel .folded-vote-state.up{background:rgba(92,150,104,.16);color:#86b98e}
+.page-channel .folded-votes button.active.down,
+.page-channel .folded-vote-state.down{background:rgba(204,112,103,.15);color:#d38a82}
+.page-channel .folded-actions .deep-read-action--dense{justify-self:auto}
 
 @media (max-width:720px){
   .page-channel{--header-height:3rem}
@@ -1489,7 +1495,7 @@ select{
     grid-row:2;
     white-space:normal;
   }
-  .page-channel .deep-read-action--dense{
+  .page-channel .folded-actions{
     grid-column:1/-1;
     grid-row:3;
     justify-self:end;
@@ -1501,7 +1507,8 @@ select{
   .page-channel .site-nav a,
   .channel-back,.channel-read-link,
   .mark-read-button,
-  .page-channel .votes button,.page-channel .vote-state{
+  .page-channel .votes button,.page-channel .vote-state,
+  .page-channel .folded-votes button,.page-channel .folded-vote-state{
     min-width:2.75rem;
     min-height:2.75rem;
   }

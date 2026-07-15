@@ -1,0 +1,34 @@
+<article class="folded-item" id="folded-item-{{ item.id }}">
+  <span class="folded-source">{{ item.source_label }}</span>
+  <a class="folded-title" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer"
+     title="{{ item.exact_time }}">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+  {% if item.engagement_label %}<span class="folded-engagement">{{ item.engagement_label }}</span>{% endif %}
+  <div class="folded-actions">
+    {% if is_admin %}
+    <div class="folded-votes" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}">
+      <button type="button" aria-label="{{ t('web.item.vote_up_aria') }}"
+              aria-pressed="{{ 'true' if item.vote_value == 1 else 'false' }}"
+              class="{{ 'active up' if item.vote_value == 1 else '' }}"
+              data-focus-key="folded-{{ item.id }}-up"
+              data-feedback-message="{{ t('web.item.vote_up_feedback') }}"
+              hx-post="/items/{{ item.id }}/vote"
+              hx-vals='{{ {"value": 1, "csrf_token": csrf_token, "origin": "folded"} | tojson }}'
+              hx-target="#folded-item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↑</span></button>
+      <button type="button" aria-label="{{ t('web.item.vote_down_aria') }}"
+              aria-pressed="{{ 'true' if item.vote_value == -1 else 'false' }}"
+              class="{{ 'active down' if item.vote_value == -1 else '' }}"
+              data-focus-key="folded-{{ item.id }}-down"
+              data-feedback-message="{{ t('web.item.vote_down_feedback') }}"
+              hx-post="/items/{{ item.id }}/vote"
+              hx-vals='{{ {"value": -1, "csrf_token": csrf_token, "origin": "folded"} | tojson }}'
+              hx-target="#folded-item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↓</span></button>
+    </div>
+    {% elif item.vote_value == 1 %}
+    <span class="folded-vote-state up" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>
+    {% elif item.vote_value == -1 %}
+    <span class="folded-vote-state down" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>
+    {% endif %}
+    {% set deep_read_variant = "dense" %}
+    {% include "_deep_read_action.html" %}
+  </div>
+</article>

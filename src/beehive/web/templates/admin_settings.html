@@ -164,9 +164,21 @@
   <section class="admin-tab-panel settings-list">
     <section class="settings-section" aria-labelledby="system-title">
       <h2 id="system-title">{{ t('web.admin.settings.system_heading') }}</h2>
-      <div class="admin-system-empty">
-        <p>{{ t('web.admin.settings.system_body') }}</p>
-      </div>
+      <form class="setting-row" method="post" action="/admin/featured-window">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="setting-copy">
+          <label for="featured-window-days">{{ t('web.admin.featured.heading') }}</label>
+          <p>{{ t('web.admin.featured.hint') }}</p>
+          {% if featured_saved %}<span class="flash" role="status">{{ t('web.admin.featured.saved') }}</span>{% endif %}
+          {% if featured_error %}<span class="error" role="alert">{{ featured_error }}</span>{% endif %}
+        </div>
+        <div class="setting-action">
+          <input id="featured-window-days" type="number" name="featured_window_days"
+                 value="{{ featured_window_days }}" min="1" max="30" required
+                 aria-label="{{ t('web.admin.featured.field_label') }}">
+          <button class="btn primary small" type="submit">{{ t('web.admin.featured.save') }}</button>
+        </div>
+      </form>
     </section>
   </section>
   {% endif %}

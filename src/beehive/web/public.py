@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Literal
 from urllib.parse import urlencode, urlparse
 
@@ -23,8 +23,8 @@ from beehive.db.items import (count_dashboard_signals, get_item, list_archive, l
                               mark_read)
 from beehive.db.sources import get_source, list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
+from beehive.featured import featured_utc_bounds, load_featured_window_days
 from beehive.localization import Localizer
-from beehive.scheduling import HOST_TZ
 from beehive.web.deep_read_view import (ALLOWED_ORIGINS, brief_url, build_brief_context,
                                         decorate_deep_read_state)
 from beehive.web.deps import get_db, get_localizer, get_optional_session, require_admin_session, verify_csrf
@@ -116,16 +116,6 @@ def _time_label(iso_str: str) -> str:
     return datetime.fromisoformat(iso_str).strftime("%H:%M")
 
 
-def _dashboard_day_bounds(now: datetime) -> tuple[str, str]:
-    local_now = now.astimezone(HOST_TZ)
-    start_local = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_local = start_local + timedelta(days=1)
-    return tuple(
-        boundary.astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
-        for boundary in (start_local, end_local)
-    )
-
-
 def _dashboard_url(view: str, minimum_score: int | None) -> str:
     params: dict[str, str | int] = {}
     if view != "all":
@@ -145,7 +135,8 @@ def dashboard(
     t: Localizer = Depends(get_localizer),
 ):
     now = datetime.now(timezone.utc)
-    fetched_from, fetched_to = _dashboard_day_bounds(now)
+    featured_window_days = load_featured_window_days(conn)
+    fetched_from, fetched_to = featured_utc_bounds(now, featured_window_days)
     day_filters = {
         "fetched_from": fetched_from,
         "fetched_to": fetched_to,
@@ -217,6 +208,7 @@ def dashboard(
         "unread_signal_count": signal_counts["unread"],
         "read_signal_count": signal_counts["read"],
         "dashboard_time": host_local_time_label(now.isoformat())[-5:],
+        "featured_window_days": featured_window_days,
         "view": view,
         "minimum_score": minimum_score,
         "all_url": _dashboard_url("all", None),
@@ -292,8 +284,6 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
 def vote_on_item(item_id: int, request: Request, value: int = Form(...),
                   csrf_token: str = Form(...), reason: str | None = Form(None),
                   origin: str = Form("channel"),
-                  dashboard_view: str = Form("all"),
-                  minimum_score: int | None = Form(None),
                   session: dict = Depends(require_admin_session),
                   conn: sqlite3.Connection = Depends(get_db),
                   t: Localizer = Depends(get_localizer)):
@@ -309,18 +299,6 @@ def vote_on_item(item_id: int, request: Request, value: int = Form(...),
     else:
         upsert_vote(conn, item_id, value, None)
 
-    if origin == "dashboard":
-        safe_view = dashboard_view if dashboard_view in {"all", "unread", "read"} else "all"
-        safe_minimum_score = (
-            minimum_score
-            if minimum_score is not None and 0 <= minimum_score <= 100
-            else None
-        )
-        return RedirectResponse(
-            _dashboard_url(safe_view, safe_minimum_score),
-            status_code=303,
-        )
-
     item = get_item(conn, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -335,7 +313,8 @@ def vote_on_item(item_id: int, request: Request, value: int = Form(...),
         item, get_deep_read(conn, item_id), True, "channel", channel_id, session["csrf_token"])
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(request, "_item_card.html", {
+    template_name = "_folded_item.html" if origin == "folded" else "_item_card.html"
+    return templates.TemplateResponse(request, template_name, {
         "item": item, "is_admin": True, "csrf_token": session["csrf_token"],
     })
 

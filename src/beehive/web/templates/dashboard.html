@@ -58,14 +58,13 @@
     {% if highlights %}
     <div class="signal-table-scroll" role="region" aria-labelledby="signals-title" tabindex="0">
       <table class="signal-table">
-        <caption class="sr-only">{{ t('web.dashboard.table_caption') }}</caption>
+        <caption class="sr-only">{{ t('web.dashboard.table_caption', days=featured_window_days) }}</caption>
         <colgroup>
           <col class="signal-state-col">
           <col class="signal-score-col">
           <col class="signal-channel-col">
           <col class="signal-source-col">
           <col class="signal-summary-col">
-          {% if is_admin %}<col class="signal-vote-col">{% endif %}
           <col class="signal-engagement-col">
           <col class="signal-age-col">
         </colgroup>
@@ -76,7 +75,6 @@
             <th scope="col">{{ t('web.dashboard.column_channel') }}</th>
             <th scope="col" class="signal-source-heading">{{ t('web.dashboard.column_source') }}</th>
             <th scope="col">{{ t('web.dashboard.column_summary') }}</th>
-            {% if is_admin %}<th scope="col" class="signal-vote-heading">{{ t('web.dashboard.column_feedback') }}</th>{% endif %}
             <th scope="col" class="signal-engagement-heading">{{ t('web.dashboard.column_engagement') }}</th>
             <th scope="col">{{ t('web.dashboard.column_time') }}</th>
           </tr>
@@ -99,32 +97,6 @@
               {% set deep_read_variant = "dense" %}
               {% include "_deep_read_action.html" %}
             </td>
-            {% if is_admin %}
-            <td class="signal-vote-cell">
-              <div class="signal-votes" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}">
-                <form method="post" action="/items/{{ item.id }}/vote">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <input type="hidden" name="value" value="1">
-                  <input type="hidden" name="origin" value="dashboard">
-                  <input type="hidden" name="dashboard_view" value="{{ view }}">
-                  {% if minimum_score is not none %}<input type="hidden" name="minimum_score" value="{{ minimum_score }}">{% endif %}
-                  <button type="submit" aria-label="{{ t('web.item.vote_up_aria') }}"
-                          aria-pressed="{{ 'true' if item.vote_value == 1 else 'false' }}"
-                          class="{{ 'active up' if item.vote_value == 1 else '' }}"><span aria-hidden="true">↑</span></button>
-                </form>
-                <form method="post" action="/items/{{ item.id }}/vote">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <input type="hidden" name="value" value="-1">
-                  <input type="hidden" name="origin" value="dashboard">
-                  <input type="hidden" name="dashboard_view" value="{{ view }}">
-                  {% if minimum_score is not none %}<input type="hidden" name="minimum_score" value="{{ minimum_score }}">{% endif %}
-                  <button type="submit" aria-label="{{ t('web.item.vote_down_aria') }}"
-                          aria-pressed="{{ 'true' if item.vote_value == -1 else 'false' }}"
-                          class="{{ 'active down' if item.vote_value == -1 else '' }}"><span aria-hidden="true">↓</span></button>
-                </form>
-              </div>
-            </td>
-            {% endif %}
             <td class="signal-engagement">{{ item.engagement_label or "—" }}</td>
             <td class="signal-age" title="{{ item.exact_time }}">{{ item.age or "—" }}</td>
           </tr>
@@ -142,7 +114,7 @@
     {% else %}
     <div class="dashboard-signals-empty">
       <strong>{{ t('web.dashboard.empty_signals_heading') }}</strong>
-      <span>{{ t('web.dashboard.empty_signals_body') }}</span>
+      <span>{{ t('web.dashboard.empty_signals_body', days=featured_window_days) }}</span>
     </div>
     {% endif %}
   </section>

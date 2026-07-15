@@ -53,6 +53,11 @@ from beehive.email_routing import (
     set_stored_default_email,
     validate_email,
 )
+from beehive.featured import (
+    InvalidFeaturedWindowError,
+    load_featured_window_days,
+    save_featured_window_days,
+)
 from beehive.localization import SUPPORTED_LANGUAGES, Localizer, UnsupportedLanguageError, save_language
 from beehive.web.deps import (
     SESSION_COOKIE_NAME,
@@ -236,6 +241,9 @@ def _render_admin_home_page(
     language_error: str | None = None,
     model_saved: bool = False,
     model_error: str | None = None,
+    featured_saved: bool = False,
+    featured_error: str | None = None,
+    submitted_featured_window_days: int | None = None,
     active_tab: str = "channels",
     triggered_count: int | None = None,
     bulk_error: str | None = None,
@@ -267,6 +275,13 @@ def _render_admin_home_page(
             "current_model": load_model(conn),
             "model_saved": model_saved,
             "model_error": model_error,
+            "featured_window_days": (
+                load_featured_window_days(conn)
+                if submitted_featured_window_days is None
+                else submitted_featured_window_days
+            ),
+            "featured_saved": featured_saved,
+            "featured_error": featured_error,
             "active_tab": active_tab if active_tab in _ADMIN_TABS else "channels",
             "triggered_count": triggered_count,
             "bulk_error": bulk_error,
@@ -284,6 +299,7 @@ def admin_settings(
     triggered_count: int | None = None,
     language_saved: int | None = None,
     model_saved: int | None = None,
+    featured_saved: int | None = None,
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -298,6 +314,7 @@ def admin_settings(
         triggered_count=triggered_count,
         language_saved=language_saved == 1,
         model_saved=model_saved == 1,
+        featured_saved=featured_saved == 1,
         active_tab=tab,
     )
 
@@ -385,6 +402,35 @@ def save_model_submit(
             status_code=400,
         )
     return RedirectResponse("/admin/?tab=ai&model_saved=1", status_code=303)
+
+
+@router.post("/featured-window", response_class=HTMLResponse)
+def save_featured_window_submit(
+    request: Request,
+    featured_window_days: int = Form(...),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    try:
+        save_featured_window_days(conn, featured_window_days)
+    except InvalidFeaturedWindowError:
+        return _render_admin_home_page(
+            request,
+            conn,
+            session,
+            t,
+            featured_error=t.text("web.admin.featured.invalid"),
+            submitted_featured_window_days=featured_window_days,
+            active_tab="system",
+            status_code=400,
+        )
+    return RedirectResponse(
+        "/admin/?tab=system&featured_saved=1",
+        status_code=303,
+    )
 
 
 @router.post("/channels/{channel_id}/trigger-fetch")

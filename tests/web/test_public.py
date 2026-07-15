@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
 from beehive.connectors.base import RawItem
+from beehive.db import app_state
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import insert_new, update_ai_ranking
@@ -260,6 +261,70 @@ def test_channel_drilldown_folded_item_links_to_the_original_post_in_a_new_tab(c
     # title/summary does since sub-project B, not stay plain unlinked text.
     item_id = c.execute("SELECT id FROM items WHERE external_id='t9'").fetchone()[0]
     assert f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
+
+
+def test_folded_items_show_vote_controls_only_to_owner(conn, client, authed_client):
+    _, c = conn
+    channel_id = create_channel(
+        c,
+        "NZ Finance",
+        "economic news",
+        highlight_count=1,
+    )
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for index in range(2):
+        external_id = f"t{index}"
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url=f"https://x/{index}"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=90 - index,
+            summary=f"summary {index}",
+            rationale="r",
+        )
+    folded_id = c.execute(
+        "SELECT id FROM items WHERE external_id = 't1'"
+    ).fetchone()[0]
+
+    anonymous_response = client.get(f"/channels/{channel_id}")
+    owner_response = authed_client.get(f"/channels/{channel_id}")
+
+    assert 'class="folded-votes"' not in anonymous_response.text
+    assert f'id="folded-item-{folded_id}"' in owner_response.text
+    assert 'class="folded-votes"' in owner_response.text
+    assert '"origin": "folded"' in owner_response.text
+
+
+def test_folded_vote_returns_folded_fragment_and_persists(
+    conn, authed_client, db_path,
+):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Signal", url="https://x"))
+    update_ai_ranking(c, source_id, "t1", score=70, summary="folded summary", rationale="r")
+    item_id = c.execute("SELECT id FROM items WHERE external_id = 't1'").fetchone()[0]
+
+    response = authed_client.post(
+        f"/items/{item_id}/vote",
+        data={"value": "1", "csrf_token": "csrf1", "origin": "folded"},
+    )
+
+    assert response.status_code == 200
+    assert f'id="folded-item-{item_id}"' in response.text
+    assert 'class="folded-item"' in response.text
+    assert 'aria-pressed="true"' in response.text
+    assert 'class="item' not in response.text
+    conn2 = connect(db_path)
+    assert conn2.execute(
+        "SELECT value FROM votes WHERE item_id = ?",
+        (item_id,),
+    ).fetchone()["value"] == 1
 
 
 def test_channel_drilldown_folded_google_news_item_shows_publisher_not_zero_score(conn, client):
@@ -852,7 +917,18 @@ def test_dashboard_shows_ranked_signal_table(conn, client):
     assert "RBNZ 大幅降息" in resp.text
 
 
-def test_dashboard_only_ranks_items_fetched_today(conn, client, monkeypatch):
+def test_home_channel_shelf_labels_the_aggregate_view_featured(client):
+    response = client.get("/")
+
+    assert re.search(
+        r'class="channel-shelf-link active"[^>]*>\s*Featured\s*</a>',
+        response.text,
+    )
+
+
+def test_dashboard_default_featured_window_includes_three_calendar_days(
+    conn, client, monkeypatch,
+):
     class FixedDatetime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -863,54 +939,52 @@ def test_dashboard_only_ranks_items_fetched_today(conn, client, monkeypatch):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(
-        external_id="old",
-        title="Old high score",
-        url="https://example.com/old",
-    ))
-    insert_new(c, source_id, RawItem(
-        external_id="today",
-        title="Today lower score",
-        url="https://example.com/today",
-    ))
-    update_ai_ranking(
-        c, source_id, "old", score=99,
-        summary="Old high score signal", rationale="old",
-    )
-    update_ai_ranking(
-        c, source_id, "today", score=80,
-        summary="Today lower score signal", rationale="today",
-    )
-    c.execute(
-        "UPDATE items SET fetched_at = '2026-05-01T00:00:00' WHERE external_id = 'old'"
-    )
-    c.execute(
-        "UPDATE items SET fetched_at = '2026-07-15T08:00:00' WHERE external_id = 'today'"
-    )
+    for external_id, fetched_at in (
+        ("outside", "2026-07-12T11:59:59"),
+        ("first-day", "2026-07-12T12:00:00"),
+        ("today", "2026-07-15T08:00:00"),
+    ):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=90,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+        c.execute(
+            "UPDATE items SET fetched_at = ? WHERE external_id = ?",
+            (fetched_at, external_id),
+        )
     c.commit()
 
     response = client.get("/")
 
-    assert response.status_code == 200
-    assert "Today lower score signal" in response.text
-    assert "Old high score signal" not in response.text
+    assert "first-day summary" in response.text
+    assert "today summary" in response.text
+    assert "outside summary" not in response.text
 
 
-def test_dashboard_uses_auckland_calendar_day_boundaries(conn, client, monkeypatch):
+def test_dashboard_uses_configured_featured_window(conn, client, monkeypatch):
     class FixedDatetime(datetime):
         @classmethod
         def now(cls, tz=None):
-            value = datetime(2026, 7, 14, 12, 30, tzinfo=timezone.utc)
+            value = datetime(2026, 7, 15, 9, 0, tzinfo=timezone.utc)
             return value if tz is None else value.astimezone(tz)
 
     monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
     _, c = conn
+    app_state.set(c, "featured_window_days", "1")
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     for external_id, fetched_at in (
         ("previous-day", "2026-07-14T11:59:59"),
         ("today", "2026-07-14T12:00:00"),
-        ("next-day", "2026-07-15T12:00:00"),
     ):
         insert_new(
             c,
@@ -935,7 +1009,50 @@ def test_dashboard_uses_auckland_calendar_day_boundaries(conn, client, monkeypat
 
     assert "today summary" in response.text
     assert "previous-day summary" not in response.text
-    assert "next-day summary" not in response.text
+
+
+def test_dashboard_excludes_items_outside_featured_window(conn, client, monkeypatch):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 7, 15, 9, 0, tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(
+        external_id="old",
+        title="Old high score",
+        url="https://example.com/old",
+    ))
+    insert_new(c, source_id, RawItem(
+        external_id="today",
+        title="Recent lower score",
+        url="https://example.com/today",
+    ))
+    update_ai_ranking(
+        c, source_id, "old", score=99,
+        summary="Old high score signal", rationale="old",
+    )
+    update_ai_ranking(
+        c, source_id, "today", score=80,
+        summary="Recent lower score signal", rationale="recent",
+    )
+    c.execute(
+        "UPDATE items SET fetched_at = '2026-05-01T00:00:00' WHERE external_id = 'old'"
+    )
+    c.execute(
+        "UPDATE items SET fetched_at = '2026-07-15T08:00:00' WHERE external_id = 'today'"
+    )
+    c.commit()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Recent lower score signal" in response.text
+    assert "Old high score signal" not in response.text
 
 
 def test_dashboard_respects_each_channels_minimum_score(conn, client):
@@ -1038,7 +1155,7 @@ def test_dashboard_filters_and_counts_read_state(conn, client):
     assert 'class="signal-row is-unread' in all_response.text
 
 
-def test_dashboard_shows_vote_controls_only_to_owner(conn, client, authed_client):
+def test_dashboard_never_shows_vote_controls(conn, client, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -1049,37 +1166,9 @@ def test_dashboard_shows_vote_controls_only_to_owner(conn, client, authed_client
     anonymous_response = client.get("/")
     owner_response = authed_client.get("/")
 
-    assert 'class="signal-votes"' not in anonymous_response.text
-    assert f'action="/items/{item_id}/vote"' in owner_response.text
-    assert 'name="origin" value="dashboard"' in owner_response.text
-
-
-def test_dashboard_vote_redirects_back_to_active_view(conn, authed_client, db_path):
-    _, c = conn
-    channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Signal", url="https://x"))
-    update_ai_ranking(c, source_id, "t1", score=90, summary="summary", rationale="r")
-    item_id = c.execute("SELECT id FROM items WHERE external_id = 't1'").fetchone()[0]
-
-    response = authed_client.post(
-        f"/items/{item_id}/vote",
-        data={
-            "value": "1",
-            "csrf_token": "csrf1",
-            "origin": "dashboard",
-            "dashboard_view": "unread",
-            "minimum_score": "90",
-        },
-    )
-
-    assert response.status_code == 303
-    assert response.headers["location"] == "/?view=unread&minimum_score=90"
-    conn2 = connect(db_path)
-    assert conn2.execute(
-        "SELECT value FROM votes WHERE item_id = ?",
-        (item_id,),
-    ).fetchone()["value"] == 1
+    for response in (anonymous_response, owner_response):
+        assert 'class="signal-votes"' not in response.text
+        assert f'action="/items/{item_id}/vote"' not in response.text
 
 
 def test_dashboard_hides_signal_table_when_nothing_qualifies(client):

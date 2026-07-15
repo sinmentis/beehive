@@ -1,7 +1,7 @@
 <nav class="channel-shelf" aria-label="{{ t('web.nav.channels_aria') }}">
   <a class="channel-shelf-link{{ ' active' if channel_navigation_all_active else '' }}"
      href="/"{% if channel_navigation_all_active %} aria-current="page"{% endif %}>
-    {{ t('web.dashboard.tab_all') }}
+    {{ t('web.dashboard.tab_featured') }}
   </a>
   {% for nav_channel in nav_channels %}
   {% set shelf_freshness = nav_channel.freshness if nav_channel.freshness is defined else (nav_channel.freshness_label if nav_channel.freshness_label is defined else none) %}

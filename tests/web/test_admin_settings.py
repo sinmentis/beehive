@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,38 @@ def test_channel_management_is_the_default_admin_tab():
     assert '{% if active_tab == "channels" %}' in template
     assert 'class="channel-bulk-form"' in template
     assert 'action="/admin/channels/trigger-fetch"' in template
+
+
+def test_system_tab_shows_default_featured_window(authed_client):
+    response = authed_client.get("/admin/?tab=system")
+
+    assert response.status_code == 200
+    assert "Featured window" in response.text
+    assert re.search(r'name="featured_window_days"\s+value="3"', response.text)
+
+
+def test_save_featured_window_persists_and_redirects(authed_client, db_path):
+    response = authed_client.post("/admin/featured-window", data={
+        "featured_window_days": "7",
+        "csrf_token": "csrf1",
+    })
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/?tab=system&featured_saved=1"
+    conn = connect(db_path)
+    assert app_state.get(conn, "featured_window_days") == "7"
+
+
+def test_save_featured_window_rejects_invalid_value(authed_client, db_path):
+    response = authed_client.post("/admin/featured-window", data={
+        "featured_window_days": "0",
+        "csrf_token": "csrf1",
+    })
+
+    assert response.status_code == 400
+    assert "between 1 and 30 days" in response.text
+    conn = connect(db_path)
+    assert app_state.get(conn, "featured_window_days") is None
 
 
 def test_language_and_model_share_the_ai_settings_tab():
