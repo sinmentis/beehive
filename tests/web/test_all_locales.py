@@ -4,6 +4,7 @@ job is narrower and orthogonal: loop across every beehive.localization.SUPPORTED
 and prove that (a) full page rendering never raises MissingTranslationError/other exceptions for
 any locale, (b) <html lang="..."> always matches the saved platform language, and (c) the
 formatting/label helpers used across pages produce a string for every locale without raising."""
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -13,6 +14,7 @@ from beehive.auth.tokens import sign_session_id
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
+from beehive.db.deep_reads import claim_deep_read, complete_deep_read_success, fail_deep_read, request_deep_read
 from beehive.db.items import insert_new, update_ai_ranking
 from beehive.db.sessions import create_session
 from beehive.db.sources import create_source, record_fetch_success
@@ -98,6 +100,99 @@ def test_channel_drilldown_renders_in_every_supported_language(conn, language_co
 
     assert resp.status_code == 200
     assert f'<html lang="{language_code}">' in resp.text
+
+
+_DEEP_READ_NOW = datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc)
+_DEEP_READ_RESULT = {
+    "item_id": "1",
+    "bottom_line": "Rates fell by 25 basis points.",
+    "key_findings": ["Inflation cooled", "Wage growth held"],
+    "important_figures": [{"value": "25bp", "label": "rate cut"}],
+    "why_it_matters": "Borrowing costs will ease for households.",
+    "limitations": "Based on a single central bank statement.",
+}
+
+
+def _create_deep_read_item(c):
+    channel_id = create_channel(c, "Tech", "developer news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="A story", url="https://example.com/a"))
+    update_ai_ranking(c, source_id, "t1", score=90, summary="s", rationale="r")
+    return c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+
+
+@pytest.mark.parametrize("language_code", LANGUAGE_CODES)
+def test_deep_read_brief_page_renders_ready_state_in_every_supported_language(conn, language_code):
+    path, c = conn
+    save_language(c, language_code)
+    item_id = _create_deep_read_item(c)
+    request_deep_read(c, item_id, _DEEP_READ_NOW)
+    claimed = claim_deep_read(c, item_id, _DEEP_READ_NOW, lease_seconds=1500)
+    complete_deep_read_success(
+        c, item_id, claimed.request_version, claimed.claim_token,
+        json.dumps(_DEEP_READ_RESULT), language_code, _DEEP_READ_NOW,
+        warning_code="content_incomplete")
+
+    client = TestClient(create_app(path))
+    resp = client.get(f"/items/{item_id}/brief")
+
+    assert resp.status_code == 200
+    assert f'<html lang="{language_code}">' in resp.text
+    assert "{{" not in resp.text
+    assert "}}" not in resp.text
+
+
+@pytest.mark.parametrize("language_code", LANGUAGE_CODES)
+def test_deep_read_brief_page_renders_pending_state_in_every_supported_language(conn, language_code):
+    path, c = conn
+    save_language(c, language_code)
+    item_id = _create_deep_read_item(c)
+    request_deep_read(c, item_id, _DEEP_READ_NOW)
+
+    client = TestClient(create_app(path))
+    resp = client.get(f"/items/{item_id}/brief")
+
+    assert resp.status_code == 200
+    assert f'<html lang="{language_code}">' in resp.text
+    assert "{{" not in resp.text
+    assert "}}" not in resp.text
+
+
+@pytest.mark.parametrize("language_code", LANGUAGE_CODES)
+def test_deep_read_brief_page_renders_failed_state_in_every_supported_language(
+    conn, language_code,
+):
+    path, c = conn
+    save_language(c, language_code)
+    item_id = _create_deep_read_item(c)
+    request_deep_read(c, item_id, _DEEP_READ_NOW)
+    claimed = claim_deep_read(c, item_id, _DEEP_READ_NOW, lease_seconds=1500)
+    fail_deep_read(c, item_id, claimed.request_version, claimed.claim_token,
+                    "fetch", "raw trace", _DEEP_READ_NOW)
+
+    client = TestClient(create_app(path))
+    resp = client.get(f"/items/{item_id}/brief")
+
+    assert resp.status_code == 200
+    assert f'<html lang="{language_code}">' in resp.text
+    assert "{{" not in resp.text
+    assert "}}" not in resp.text
+
+
+@pytest.mark.parametrize("language_code", LANGUAGE_CODES)
+def test_deep_read_brief_page_renders_not_requested_state_in_every_supported_language(
+    conn, authed_client, language_code,
+):
+    path, c = conn
+    save_language(c, language_code)
+    item_id = _create_deep_read_item(c)
+
+    resp = authed_client.get(f"/items/{item_id}/brief")
+
+    assert resp.status_code == 200
+    assert f'<html lang="{language_code}">' in resp.text
+    assert "{{" not in resp.text
+    assert "}}" not in resp.text
 
 
 @pytest.mark.parametrize("language_code", LANGUAGE_CODES)

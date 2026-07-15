@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global English-default localization for the web interface, email delivery, alerts, and
   language-aware AI output, with Simplified Chinese, Japanese, Korean, Spanish, French, and
   German support.
+- Owner-triggered, asynchronous full-article AI briefs with cached results, regeneration,
+  partial-content warnings, and a dedicated responsive reading page.
+- A safe, resumable, and reversible migration for rewriting existing unread summaries.
+
+### Changed
+
+- New ranking summaries state the strongest evidence-supported conclusion in one sentence instead
+  of only describing the article topic.
 
 ## [0.1.0] - 2026-07-14
 

@@ -663,7 +663,7 @@ h1{
   display:grid;
   padding:1rem 0;
   border-bottom:1px solid var(--border);
-  grid-template-columns:10rem minmax(0,1fr) auto;
+  grid-template-columns:10rem minmax(0,1fr) auto auto;
   align-items:baseline;
   gap:1rem;
 }
@@ -671,6 +671,62 @@ h1{
 .folded-engagement{font-variant-numeric:tabular-nums;text-align:right}
 .folded-item>a{font-size:.88rem;line-height:1.6}
 .folded-item>a:hover{color:var(--accent)}
+
+/* Deep read: compact action control shared by Dashboard rows, Channel highlighted/folded items,
+   and Archive rows (see _deep_read_action.html). Kept intentionally small/neutral so it reads as
+   a secondary action next to the item's own direct source link, never as a competing headline. */
+.deep-read-action{display:inline-flex;align-items:center;vertical-align:middle}
+.deep-read-form{display:inline-flex;margin:0}
+.deep-read-chip{
+  display:inline-flex;
+  min-height:1.5rem;
+  padding:.16rem .5rem;
+  border:1px solid var(--border-strong);
+  border-radius:.2rem;
+  align-items:center;
+  justify-content:center;
+  background:var(--surface-raised);
+  color:var(--muted);
+  cursor:pointer;
+  font-size:.66rem;
+  font-weight:680;
+  line-height:1;
+  white-space:nowrap;
+}
+button.deep-read-chip{border-color:var(--border-strong)}
+.deep-read-chip:hover{border-color:var(--border-strong);background:var(--surface-hover);color:var(--text)}
+.deep-read-chip-open{border-color:rgba(214,164,74,.42);color:var(--accent)}
+.deep-read-chip-open:hover{background:var(--accent-soft)}
+.deep-read-chip-pending{cursor:default}
+.deep-read-chip-pending:hover{background:var(--surface-raised);color:var(--muted)}
+.deep-read-chip-retry{border-color:rgba(204,112,103,.4);color:var(--danger)}
+.deep-read-chip-retry:hover{background:var(--danger-soft)}
+
+/* Dense surfaces (Dashboard rows, folded Channel items): the control stays invisible at rest so
+   the existing row rhythm/height is untouched, and only appears on row hover, keyboard focus
+   inside the row, or when its own control has focus -- i.e. visible on focus and on touch (see
+   the hover:none override below), never hover-only. */
+.deep-read-action--dense{opacity:0}
+.signal-row:hover .deep-read-action--dense,
+.signal-row:focus-within .deep-read-action--dense,
+.folded-item:hover .deep-read-action--dense,
+.folded-item:focus-within .deep-read-action--dense,
+.deep-read-action--dense:has(.deep-read-chip:focus-visible){opacity:1}
+.signal-summary-cell .deep-read-action--dense{margin-left:.4rem}
+.folded-item .deep-read-action--dense{justify-self:end}
+
+/* Channel highlighted cards: enough room to stay always visible, as its own line under the
+   headline (a secondary action, not a replacement for the title's direct source link). */
+.deep-read-action--card{display:flex;margin:.55rem 0 0}
+
+/* Archive rows: always visible, inline with the time/vote-state column. */
+.deep-read-action--side{display:inline-flex;margin-left:.5rem;vertical-align:middle}
+
+@media (hover:none),(pointer:coarse){
+  .deep-read-action--dense{opacity:1}
+  .deep-read-chip{min-height:2.75rem;padding:.4rem .7rem;font-size:.72rem}
+}
+
 
 .filters{
   display:grid;
@@ -1347,10 +1403,11 @@ select{
   min-height:2rem;
   padding:.3125rem .6875rem;
   border-bottom:1px solid var(--border);
-  grid-template-columns:8rem minmax(0,1fr) auto;
+  grid-template-columns:8rem minmax(0,1fr) auto auto;
   align-items:center;
   gap:.75rem;
 }
+.page-channel .folded-item:hover{background:var(--surface-hover)}
 .page-channel .folded-source,.page-channel .folded-engagement{
   overflow:hidden;
   font-size:.6875rem;
@@ -1413,6 +1470,12 @@ select{
     grid-row:2;
     white-space:normal;
   }
+  .page-channel .deep-read-action--dense{
+    grid-column:1/-1;
+    grid-row:3;
+    justify-self:end;
+    margin-top:.2rem;
+  }
 }
 
 @media (hover:none), (pointer:coarse){
@@ -1428,4 +1491,207 @@ select{
     align-items:center;
     justify-content:center;
   }
+}
+
+/* Deep read: dedicated brief page (mock C). An editorial reading page in the same dark olive
+   system as Archive/not-found -- no dense table chrome, no nested cards, no gradients beyond the
+   existing global body wash. */
+.deep-read-shell{width:min(100% - 2.5rem,46rem)}
+.deep-read-back{
+  display:inline-block;
+  margin-bottom:2.25rem;
+  color:var(--muted);
+  font-size:.75rem;
+  font-weight:650;
+}
+.deep-read-back:hover{color:var(--accent)}
+.deep-read-kicker{
+  margin:0 0 .8rem;
+  color:var(--accent);
+  font-size:.69rem;
+  font-weight:700;
+  letter-spacing:.17em;
+  text-transform:uppercase;
+}
+.deep-read-header{margin-bottom:2.25rem}
+.deep-read-title{
+  max-width:none;
+  margin:0;
+  font-size:clamp(1.7rem,4.2vw,2.55rem);
+  font-weight:600;
+  letter-spacing:-.03em;
+  line-height:1.22;
+  text-wrap:pretty;
+}
+:lang(zh) .deep-read-title,:lang(ja) .deep-read-title,:lang(ko) .deep-read-title{
+  font-weight:500;
+  letter-spacing:-.01em;
+}
+.deep-read-meta{
+  display:flex;
+  flex-wrap:wrap;
+  margin:1.1rem 0 0;
+  align-items:baseline;
+  gap:.4rem .8rem;
+  color:var(--muted);
+  font-size:.78rem;
+}
+.deep-read-meta-age{font-variant-numeric:tabular-nums}
+.deep-read-source-link{color:var(--accent);font-weight:650}
+.deep-read-source-link:hover{color:var(--accent-strong);text-decoration:underline;text-underline-offset:.2rem}
+
+.deep-read-owner-controls{margin:1.8rem 0 0}
+
+.deep-read-status{
+  margin-top:2.2rem;
+  padding-top:2rem;
+  border-top:1px solid var(--border-strong);
+}
+.deep-read-status h2{
+  margin:0 0 .6rem;
+  font-family:var(--font-display);
+  font-size:1.5rem;
+  font-weight:550;
+  letter-spacing:-.02em;
+}
+.deep-read-status-body{max-width:42ch;margin:0;color:var(--muted);font-size:.86rem;line-height:1.75;text-wrap:pretty}
+.deep-read-status-body-failed{color:#e9aaa4}
+.deep-read-status-failed .deep-read-form{margin-top:1.3rem}
+.deep-read-status-unavailable .deep-read-status-body{max-width:none}
+
+.deep-read-skeleton{display:grid;margin-top:2.4rem;gap:1.9rem}
+.skeleton-group{display:grid;gap:.55rem}
+.skeleton-line{
+  height:.85rem;
+  border-radius:.2rem;
+  background:var(--surface-raised);
+  animation:skeleton-pulse 1.6s ease-in-out infinite;
+}
+.skeleton-line--full{width:100%}
+.skeleton-line--3-4{width:75%}
+.skeleton-line--1-2{width:50%}
+.skeleton-line--1-3{width:33%}
+.skeleton-figures{display:flex;flex-wrap:wrap;gap:1.5rem}
+.skeleton-figure{
+  width:5.5rem;
+  border-left:2px solid var(--border-strong);
+  padding-left:.7rem;
+}
+.skeleton-figure::before,.skeleton-figure::after{
+  display:block;
+  border-radius:.2rem;
+  background:var(--surface-raised);
+  animation:skeleton-pulse 1.6s ease-in-out infinite;
+  content:"";
+}
+.skeleton-figure::before{width:70%;height:.9rem;margin-bottom:.45rem}
+.skeleton-figure::after{width:100%;height:.6rem}
+@keyframes skeleton-pulse{0%,100%{opacity:.4}50%{opacity:.95}}
+
+.deep-read-result{margin-top:2.2rem}
+.deep-read-warning{
+  display:flex;
+  margin:0 0 2.2rem;
+  padding:.9rem 1.1rem;
+  border-left:2px solid var(--accent);
+  background:var(--accent-soft);
+  align-items:flex-start;
+  gap:.65rem;
+  color:var(--text-soft);
+  font-size:.82rem;
+  line-height:1.65;
+}
+.deep-read-warning-mark{
+  display:inline-flex;
+  width:1.2rem;
+  height:1.2rem;
+  flex:none;
+  border-radius:50%;
+  align-items:center;
+  justify-content:center;
+  background:var(--accent);
+  color:var(--bg);
+  font-family:var(--font-display);
+  font-size:.78rem;
+  font-weight:700;
+}
+.deep-read-section{padding:2rem 0;border-top:1px solid var(--border)}
+.deep-read-section:first-of-type{padding-top:0;border-top:0}
+.deep-read-section h2{
+  margin:0 0 .9rem;
+  color:var(--accent);
+  font-size:.75rem;
+  font-weight:700;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+:lang(zh) .deep-read-section h2,:lang(ja) .deep-read-section h2,:lang(ko) .deep-read-section h2{
+  letter-spacing:.05em;
+  text-transform:none;
+}
+.deep-read-section p{max-width:60ch;margin:0;color:var(--text-soft);font-size:.95rem;line-height:1.75;text-wrap:pretty}
+.deep-read-bottom-line p{
+  font-family:var(--font-display);
+  font-size:clamp(1.2rem,2.4vw,1.55rem);
+  font-weight:550;
+  line-height:1.5;
+  letter-spacing:-.01em;
+  color:var(--text);
+  text-wrap:pretty;
+}
+.deep-read-findings{display:grid;margin:0;padding:0;gap:.85rem;list-style:none}
+.deep-read-findings li{
+  max-width:60ch;
+  padding-left:1.1rem;
+  border-left:2px solid var(--accent);
+  color:var(--text-soft);
+  font-size:.92rem;
+  line-height:1.65;
+  text-wrap:pretty;
+}
+.deep-read-figures{
+  display:grid;
+  margin:0;
+  padding:0;
+  grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));
+  gap:1.4rem 2rem;
+  list-style:none;
+}
+.deep-read-figure{padding-left:.9rem;border-left:2px solid var(--border-strong)}
+.deep-read-figure-value{
+  display:block;
+  font-family:var(--font-display);
+  font-size:1.5rem;
+  font-weight:550;
+  letter-spacing:-.02em;
+  line-height:1.15;
+  overflow-wrap:anywhere;
+}
+.deep-read-figure-label{display:block;margin-top:.3rem;color:var(--muted);font-size:.72rem;line-height:1.4}
+.deep-read-muted{color:var(--muted);font-size:.85rem}
+.deep-read-limitations p{color:var(--muted)}
+.deep-read-provenance{
+  margin:2.2rem 0 0;
+  padding-top:1.4rem;
+  border-top:1px solid var(--border);
+  color:var(--muted-2);
+  font-size:.7rem;
+  font-variant-numeric:tabular-nums;
+}
+
+@media (max-width:760px){
+  .deep-read-shell{width:min(100% - 2rem,46rem)}
+  .deep-read-title{font-size:clamp(1.5rem,7vw,2.05rem)}
+  .deep-read-figures{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media (max-width:720px){
+  .deep-read-owner-controls .deep-read-form,
+  .deep-read-status-failed .deep-read-form{display:flex;width:100%}
+  .deep-read-owner-controls .btn,
+  .deep-read-status-failed .btn{width:100%;min-height:2.75rem}
+  .deep-read-figures{grid-template-columns:1fr}
+  .deep-read-section{padding:1.6rem 0}
+  .deep-read-provenance{font-size:.68rem}
+  .skeleton-figures{gap:1rem}
 }

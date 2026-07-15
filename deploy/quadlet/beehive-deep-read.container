@@ -1,0 +1,20 @@
+[Unit]
+Description=Beehive queued article deep-read worker
+
+[Container]
+Image=localhost/beehive:latest
+ContainerName=beehive-deep-read
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+Secret=beehive-copilot-github-token,type=env,target=COPILOT_GITHUB_TOKEN
+Exec=-m scripts.run_collector --mode deep-read
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sh -c 'mv -f %h/.local/share/containers/storage/volumes/beehive-data/_data/deep_read_trigger %h/.local/share/containers/storage/volumes/beehive-data/_data/deep_read_trigger.inflight 2>/dev/null || true'
+Restart=on-failure
+CPUQuota=100%
+CPUWeight=20
+MemoryHigh=640M
+MemoryMax=768M
+TimeoutStartSec=1800

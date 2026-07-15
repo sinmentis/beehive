@@ -87,6 +87,8 @@
                 <span class="signal-comment-content">{{ item.best_comment_summary }}</span>
               </details>
               {% endif %}
+              {% set deep_read_variant = "dense" %}
+              {% include "_deep_read_action.html" %}
             </td>
             <td class="signal-engagement">{{ item.engagement_label or "—" }}</td>
             <td class="signal-age" title="{{ item.exact_time }}">{{ item.age or "—" }}</td>

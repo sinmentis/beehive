@@ -7,8 +7,9 @@ from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import (count_dashboard_signals, get_item, insert_new, list_archive,
                                   list_by_channel, list_dashboard_highlights, list_new_since,
-                                  mark_channel_read, mark_item_opened, mark_read, update_ai_ranking,
-                                  update_ai_ranking_by_id, update_best_comment)
+                                  list_unread_rewrite_candidates, mark_channel_read,
+                                  mark_item_opened, mark_read, revert_ai_summary_if_unchanged,
+                                  update_ai_ranking, update_ai_ranking_by_id, update_best_comment)
 from beehive.db.sources import create_source
 
 
@@ -483,3 +484,113 @@ def test_fresh_item_has_no_best_comment_summary(conn, source_id):
     insert_new(conn, source_id, _raw_item("t1"))
     row = conn.execute("SELECT best_comment_summary FROM items WHERE external_id='t1'").fetchone()
     assert row["best_comment_summary"] is None
+
+
+# ============================================================================
+# Summary-only rewrite: list_unread_rewrite_candidates (candidate lookup) and
+# revert_ai_summary_if_unchanged (rollback's write half). The forward-apply write itself --
+# db/summary_rewrites.py's apply_summary_rewrite -- is tested in tests/db/test_summary_rewrites.py
+# alongside the rest of that module, since it has to live and be tested there to guarantee its
+# single-transaction seam with the summary_rewrite_log INSERT.
+# ============================================================================
+
+def _scored_item_id(conn, source_id, external_id, score=50.0, summary="old summary"):
+    insert_new(conn, source_id, _raw_item(external_id, external_id))
+    update_ai_ranking(conn, source_id, external_id, score=score, summary=summary, rationale="r")
+    return conn.execute(
+        "SELECT id FROM items WHERE external_id = ?", (external_id,)).fetchone()[0]
+
+
+def test_list_unread_rewrite_candidates_returns_unread_scored_items(conn, source_id):
+    item_id = _scored_item_id(conn, source_id, "t1")
+
+    candidates = list_unread_rewrite_candidates(conn, high_water_item_id=item_id)
+
+    assert [c["id"] for c in candidates] == [item_id]
+
+
+def test_list_unread_rewrite_candidates_excludes_read_items(conn, source_id):
+    item_id = _scored_item_id(conn, source_id, "t1")
+    mark_read(conn, item_id)
+
+    candidates = list_unread_rewrite_candidates(conn, high_water_item_id=item_id)
+
+    assert candidates == []
+
+
+def test_list_unread_rewrite_candidates_excludes_unscored_items(conn, source_id):
+    insert_new(conn, source_id, _raw_item("t1", "t1"))  # ai_score/ai_summary stay NULL
+    item_id = conn.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+
+    candidates = list_unread_rewrite_candidates(conn, high_water_item_id=item_id)
+
+    assert candidates == []
+
+
+def test_list_unread_rewrite_candidates_excludes_items_with_null_summary(conn, source_id):
+    """Eligibility is exactly is_read=0 AND ai_score IS NOT NULL AND ai_summary IS NOT NULL --
+    a row can only reach ai_score IS NOT NULL with ai_summary NULL via a raw UPDATE (never via
+    update_ai_ranking, which always sets both together), but the guard must still hold."""
+    insert_new(conn, source_id, _raw_item("t1", "t1"))
+    conn.execute("UPDATE items SET ai_score = 50 WHERE external_id = 't1'")
+    conn.commit()
+    item_id = conn.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+
+    candidates = list_unread_rewrite_candidates(conn, high_water_item_id=item_id)
+
+    assert candidates == []
+
+
+def test_list_unread_rewrite_candidates_excludes_items_above_the_high_water_mark(conn, source_id):
+    first_id = _scored_item_id(conn, source_id, "t1")
+    second_id = _scored_item_id(conn, source_id, "t2")
+    assert second_id > first_id
+
+    candidates = list_unread_rewrite_candidates(conn, high_water_item_id=first_id)
+
+    assert [c["id"] for c in candidates] == [first_id]
+    # second_id exists and is otherwise eligible, but is newer than the pre-deployment
+    # watermark, so it must never show up as a rewrite candidate.
+    assert second_id not in [c["id"] for c in candidates]
+
+
+def test_list_unread_rewrite_candidates_orders_oldest_first_by_id(conn, source_id):
+    ids = [_scored_item_id(conn, source_id, f"t{i}") for i in range(3)]
+
+    candidates = list_unread_rewrite_candidates(conn, high_water_item_id=ids[-1])
+
+    assert [c["id"] for c in candidates] == sorted(ids)
+
+
+def test_list_unread_rewrite_candidates_after_id_paginates_deterministically(conn, source_id):
+    ids = [_scored_item_id(conn, source_id, f"t{i}") for i in range(5)]
+
+    page_1 = list_unread_rewrite_candidates(conn, high_water_item_id=ids[-1], limit=2)
+    page_2 = list_unread_rewrite_candidates(
+        conn, high_water_item_id=ids[-1], after_id=page_1[-1]["id"], limit=2)
+
+    assert [c["id"] for c in page_1] == ids[:2]
+    assert [c["id"] for c in page_2] == ids[2:4]
+
+
+def test_revert_ai_summary_if_unchanged_restores_the_previous_value(conn, source_id):
+    item_id = _scored_item_id(conn, source_id, "t1", summary="old summary")
+    conn.execute("UPDATE items SET ai_summary = 'new summary' WHERE id = ?", (item_id,))
+    conn.commit()
+
+    reverted = revert_ai_summary_if_unchanged(conn, item_id, "new summary", "old summary")
+
+    assert reverted is True
+    assert get_item(conn, item_id)["ai_summary"] == "old summary"
+
+
+def test_revert_ai_summary_if_unchanged_is_a_noop_when_value_changed_since(conn, source_id):
+    item_id = _scored_item_id(conn, source_id, "t1", summary="old summary")
+    conn.execute("UPDATE items SET ai_summary = ? WHERE id = ?",
+                 ("someone else's edit", item_id))
+    conn.commit()
+
+    reverted = revert_ai_summary_if_unchanged(conn, item_id, "new summary", "old summary")
+
+    assert reverted is False
+    assert get_item(conn, item_id)["ai_summary"] == "someone else's edit"

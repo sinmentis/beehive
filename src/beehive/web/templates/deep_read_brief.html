@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.deep_read_brief', product=t('common.product_name'), title=item.ai_summary or item.title) }}{% endblock %}
+{% block body_class %}page-deep-read{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell deep-read-shell">
+  <a class="deep-read-back" href="{{ back_link.href }}">{{ back_link.label }}</a>
+
+  <header class="deep-read-header">
+    <p class="deep-read-kicker">{{ t('web.deep_read.eyebrow') }}</p>
+    <h1 class="deep-read-title" id="deep-read-heading">{{ item.ai_summary or item.title }}</h1>
+    <p class="deep-read-meta">
+      <span class="deep-read-meta-source">{{ t('web.deep_read.source_label', source=item.source_label) }}</span>
+      {% if item.age %}<span class="deep-read-meta-age" title="{{ item.exact_time }}">{{ item.age }}</span>{% endif %}
+      <a class="deep-read-source-link" href="{{ item.safe_url }}" target="_blank" rel="noopener noreferrer">{{ t('web.deep_read.source_link') }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+    </p>
+  </header>
+
+  {% if can_start or (status == 'ready' and can_regenerate) %}
+  <div class="deep-read-owner-controls" role="group" aria-label="{{ t('web.deep_read.owner_controls_aria') }}">
+    <form class="deep-read-form" method="post" action="{{ request_url }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="origin" value="{{ form_origin }}">
+      {% if channel_id is not none %}<input type="hidden" name="channel_id" value="{{ channel_id }}">{% endif %}
+      {% if not can_start %}<input type="hidden" name="regenerate" value="true">{% endif %}
+      <button type="submit" class="btn {{ 'primary' if can_start else 'ghost' }} small"
+              aria-label="{{ t('web.deep_read.button_start_aria', title=item.ai_summary or item.title) if can_start else t('web.deep_read.button_regenerate_aria') }}">{{ t('web.deep_read.button_start') if can_start else t('web.deep_read.button_regenerate') }}</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if status == 'ready' and brief %}
+  <article class="deep-read-result" aria-labelledby="deep-read-heading">
+    {% if warning_text %}
+    <p class="deep-read-warning" role="note">
+      <span class="deep-read-warning-mark" aria-hidden="true">!</span>
+      <span>{{ warning_text }}</span>
+    </p>
+    {% endif %}
+
+    <section class="deep-read-section deep-read-bottom-line" aria-labelledby="deep-read-bottom-line-heading">
+      <h2 id="deep-read-bottom-line-heading">{{ t('web.deep_read.section_bottom_line') }}</h2>
+      <p>{{ brief.bottom_line }}</p>
+    </section>
+
+    <section class="deep-read-section" aria-labelledby="deep-read-key-findings-heading">
+      <h2 id="deep-read-key-findings-heading">{{ t('web.deep_read.section_key_findings') }}</h2>
+      <ul class="deep-read-findings">
+        {% for finding in brief.key_findings %}
+        <li>{{ finding }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="deep-read-section" aria-labelledby="deep-read-important-figures-heading">
+      <h2 id="deep-read-important-figures-heading">{{ t('web.deep_read.section_important_figures') }}</h2>
+      {% if brief.important_figures %}
+      <ul class="deep-read-figures">
+        {% for figure in brief.important_figures %}
+        <li class="deep-read-figure">
+          <span class="deep-read-figure-value">{{ figure.value }}</span>
+          <span class="deep-read-figure-label">{{ figure.label }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="deep-read-muted">{{ t('web.deep_read.no_important_figures') }}</p>
+      {% endif %}
+    </section>
+
+    <section class="deep-read-section" aria-labelledby="deep-read-why-it-matters-heading">
+      <h2 id="deep-read-why-it-matters-heading">{{ t('web.deep_read.section_why_it_matters') }}</h2>
+      <p>{{ brief.why_it_matters }}</p>
+    </section>
+
+    {% if brief.limitations %}
+    <section class="deep-read-section deep-read-limitations" aria-labelledby="deep-read-limitations-heading">
+      <h2 id="deep-read-limitations-heading">{{ t('web.deep_read.section_limitations') }}</h2>
+      <p>{{ brief.limitations }}</p>
+    </section>
+    {% endif %}
+
+    <p class="deep-read-provenance">
+      {% if generated_at %}{{ t('web.deep_read.generated_at_label', time=generated_at) }}{% endif %}
+      {% if generated_at and language_display_name %}<span aria-hidden="true"> · </span>{% endif %}
+      {% if language_display_name %}{{ t('web.deep_read.generated_language_label', language=language_display_name) }}{% endif %}
+    </p>
+  </article>
+  {% else %}
+  {% include "_deep_read_status.html" %}
+  {% endif %}
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>
+{% endblock %}

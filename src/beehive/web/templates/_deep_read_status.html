@@ -1,0 +1,54 @@
+{# Pending states poll; terminal states intentionally omit HTMX triggers. #}
+{% if is_pending %}
+<section id="deep-read-status" class="deep-read-status deep-read-status-pending" role="status" aria-live="polite"
+          hx-get="{{ status_url }}" hx-trigger="every 3s" hx-swap="outerHTML">
+  <p class="deep-read-kicker">{{ t('web.deep_read.eyebrow') }}</p>
+  <h2>{{ t('web.deep_read.pending_heading') }}</h2>
+  <p class="deep-read-status-body">{{ t('web.deep_read.pending_body') }}</p>
+  <div class="deep-read-skeleton" aria-hidden="true">
+    <div class="skeleton-group">
+      <span class="skeleton-line skeleton-line--full"></span>
+      <span class="skeleton-line skeleton-line--3-4"></span>
+    </div>
+    <div class="skeleton-group">
+      <span class="skeleton-line skeleton-line--full"></span>
+      <span class="skeleton-line skeleton-line--full"></span>
+      <span class="skeleton-line skeleton-line--1-2"></span>
+    </div>
+    <div class="skeleton-group skeleton-figures">
+      <span class="skeleton-figure"></span>
+      <span class="skeleton-figure"></span>
+      <span class="skeleton-figure"></span>
+    </div>
+    <div class="skeleton-group">
+      <span class="skeleton-line skeleton-line--full"></span>
+      <span class="skeleton-line skeleton-line--1-3"></span>
+    </div>
+  </div>
+  <p class="sr-only">{{ t('web.deep_read.pending_live_region') }}</p>
+</section>
+{% elif status == 'ready' %}
+<section id="deep-read-status" class="deep-read-status deep-read-status-ready" role="status" aria-live="polite">
+  <p class="sr-only">{{ t('web.deep_read.ready_announcement') }}</p>
+</section>
+{% elif status == 'failed' %}
+<section id="deep-read-status" class="deep-read-status deep-read-status-failed" role="status" aria-live="polite">
+  <p class="deep-read-kicker">{{ t('web.deep_read.eyebrow') }}</p>
+  <p class="deep-read-status-body deep-read-status-body-failed">{{ failure_text }}</p>
+  <p class="sr-only">{{ t('web.deep_read.failed_announcement') }}</p>
+  {% if can_regenerate %}
+  <form class="deep-read-form" method="post" action="{{ request_url }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="origin" value="{{ form_origin }}">
+    {% if channel_id is not none %}<input type="hidden" name="channel_id" value="{{ channel_id }}">{% endif %}
+    <input type="hidden" name="regenerate" value="true">
+    <button type="submit" class="btn ghost small"
+            aria-label="{{ t('web.deep_read.button_retry_aria', title=item.ai_summary or item.title) }}">{{ t('web.deep_read.button_retry') }}</button>
+  </form>
+  {% endif %}
+</section>
+{% elif not can_start %}
+<section id="deep-read-status" class="deep-read-status deep-read-status-unavailable" role="status" aria-live="polite">
+  <p class="deep-read-status-body">{{ t('web.deep_read.failure_unavailable') }}</p>
+</section>
+{% endif %}

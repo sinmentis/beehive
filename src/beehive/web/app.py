@@ -50,6 +50,13 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        if not request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "private, no-store"
+            vary = response.headers.get("Vary")
+            if not vary:
+                response.headers["Vary"] = "Cookie"
+            elif "cookie" not in {value.strip().lower() for value in vary.split(",")}:
+                response.headers["Vary"] = f"{vary}, Cookie"
         return response
 
 

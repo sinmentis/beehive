@@ -1,11 +1,12 @@
 # Beehive deployment (rootless Podman + Quadlet)
 
-Beehive runs on a single rootless-Podman host as one shared image (`../Containerfile`) that
-serves three roles, each selected by a Quadlet unit's `Exec=`:
+Beehive runs on a single rootless-Podman host as one shared image (`../Containerfile`). Each
+process selects its role through a Quadlet unit's `Exec=`:
 
 - an always-on public web app (Dashboard, Channel drill-down, and `/admin/*`),
 - a timer-triggered fetch/AI-rank cycle, and
-- a once-daily digest email job.
+- a once-daily digest email job, and
+- a queued, owner-triggered article deep-read worker.
 
 The public read surfaces are served directly; `/admin/*` and all write actions are gated by the
 app's own password login (ADR-0003, ADR-0005), so no host-level identity gateway is required. If
@@ -13,16 +14,21 @@ you want to expose Beehive beyond localhost, put any reverse proxy or tunnel (ng
 cloudflared, etc.) in front of the web container's published port. The examples below use
 placeholder values; replace them with your own.
 
+Dynamic responses use `Cache-Control: private, no-store` and `Vary: Cookie` because public pages
+show owner-only controls when an authenticated session is present. Do not override these headers in
+the reverse proxy.
+
 ## Files
 
 | Path | Purpose |
 |------|---------|
-| `../Containerfile` | Single shared image for all three roles; `ENTRYPOINT` is bare `python`, each unit supplies its own `-m scripts...` invocation |
-| `quadlet/beehive-data.volume` | Named Podman volume backing `/data` (the SQLite DB), shared by all four units below |
+| `../Containerfile` | Single shared image for every role; `ENTRYPOINT` is bare `python`, each unit supplies its own `-m scripts...` invocation |
+| `quadlet/beehive-data.volume` | Named Podman volume backing `/data` (the SQLite DB), shared by all containers below |
 | `quadlet/beehive-web.container` | Always-on web app — `PublishPort=127.0.0.1:8095:8000`, `Restart=always` |
 | `quadlet/beehive-fetch.container` + `.timer` | Fetch → dedup → AI-rank cycle, every 3 hours |
 | `quadlet/beehive-fetch-manual.container` + `.path` | Manual per-Channel trigger — started only when the admin UI writes a trigger marker, never on a timer |
 | `quadlet/beehive-digest.container` + `.timer` | Once-daily digest email, 08:00 Pacific/Auckland |
+| `quadlet/beehive-deep-read.container` + `.path` + `.timer` | Bounded article brief worker; the path provides low-latency wakeup and the timer reconciles missed wakeups |
 
 The web container publishes to `127.0.0.1` only, so the app is reachable from the host's loopback
 and from whatever reverse proxy or tunnel you place in front of it, not from the public internet
@@ -49,8 +55,9 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
 - `beehive-session-secret` → `SESSION_SECRET` (admin session cookie signing, ADR-0005 — the web
   container cannot protect `/admin/*` or write actions meaningfully without it, though it does not
   crash outright; see `web/deps.py`'s `require_admin_session`).
-- `beehive-copilot-github-token` → `COPILOT_GITHUB_TOKEN` (the fetch container's AI ranking call,
-  via `ai/llm_client.py`).
+- `beehive-copilot-github-token` → `COPILOT_GITHUB_TOKEN` (the fetch container's AI ranking call
+  and the deep-read container's article brief generation, via `ai/llm_client.py`). The web
+  container does not receive this secret.
 - `beehive-acs-connection` → `ACS_CONNECTION_STRING` (the digest container's alert/digest email
   delivery, paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM` `Environment=` values on
   `beehive-digest.container`). Omit this secret to skip email; the app falls back to logging.
@@ -89,4 +96,10 @@ systemctl --user start beehive-web.service
 systemctl --user enable --now beehive-fetch.timer
 systemctl --user enable --now beehive-digest.timer
 systemctl --user enable --now beehive-fetch-manual.path
+systemctl --user enable --now beehive-deep-read.path
+systemctl --user enable --now beehive-deep-read.timer
 ```
+
+When the owner requests a brief, the web process commits a pending SQLite job before writing the
+wakeup marker. The marker is only a latency hint: `beehive-deep-read.timer` starts the same bounded
+worker every five minutes so queued work is not stranded if the path event is missed.

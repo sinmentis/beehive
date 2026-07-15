@@ -1,0 +1,33 @@
+{# Shared state-aware action for ranked-item list surfaces. #}
+{% if item.deep_read %}
+{% set dr = item.deep_read %}
+{% set dr_title = item.ai_summary or item.title %}
+{% set dr_is_owner = dr.csrf_token is not none %}
+<div class="deep-read-action{% if deep_read_variant %} deep-read-action--{{ deep_read_variant }}{% endif %}"
+     data-deep-read-status="{{ dr.status }}">
+  {% if dr.is_ready %}
+  <a class="deep-read-chip deep-read-chip-open" href="{{ dr.brief_url }}"
+     aria-label="{{ t('web.deep_read.button_open_aria', title=dr_title) }}">{{ t('web.deep_read.button_open') }}</a>
+  {% elif dr.can_start %}
+  <form class="deep-read-form" method="post" action="{{ dr.request_url }}">
+    <input type="hidden" name="csrf_token" value="{{ dr.csrf_token }}">
+    <input type="hidden" name="origin" value="{{ dr.origin }}">
+    {% if dr.channel_id is not none %}<input type="hidden" name="channel_id" value="{{ dr.channel_id }}">{% endif %}
+    <button type="submit" class="deep-read-chip deep-read-chip-start"
+            aria-label="{{ t('web.deep_read.button_start_aria', title=dr_title) }}">{{ t('web.deep_read.button_start') }}</button>
+  </form>
+  {% elif dr.is_pending and dr_is_owner %}
+  <a class="deep-read-chip deep-read-chip-pending" href="{{ dr.brief_url }}"
+     aria-label="{{ t('web.deep_read.button_pending_aria', title=dr_title) }}">{{ t('web.deep_read.button_pending') }}</a>
+  {% elif dr.is_failed and dr.can_regenerate %}
+  <form class="deep-read-form" method="post" action="{{ dr.request_url }}">
+    <input type="hidden" name="csrf_token" value="{{ dr.csrf_token }}">
+    <input type="hidden" name="origin" value="{{ dr.origin }}">
+    {% if dr.channel_id is not none %}<input type="hidden" name="channel_id" value="{{ dr.channel_id }}">{% endif %}
+    <input type="hidden" name="regenerate" value="true">
+    <button type="submit" class="deep-read-chip deep-read-chip-retry"
+            aria-label="{{ t('web.deep_read.button_retry_aria', title=dr_title) }}">{{ t('web.deep_read.button_retry') }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}

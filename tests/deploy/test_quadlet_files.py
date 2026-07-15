@@ -26,7 +26,7 @@ def _parser() -> configparser.ConfigParser:
 def test_expected_container_files_exist():
     names = {f.name for f in _QUADLET_DIR.glob("*.container")}
     assert {"beehive-web.container", "beehive-fetch.container",
-            "beehive-digest.container"} <= names
+            "beehive-digest.container", "beehive-deep-read.container"} <= names
 
 
 def test_expected_volume_files_exist():
@@ -61,7 +61,11 @@ def test_container_files_are_valid_ini_with_no_service_keys_under_container():
 
 
 def test_oneshot_containers_have_no_install_section():
-    for name in ("beehive-fetch.container", "beehive-digest.container"):
+    for name in (
+        "beehive-fetch.container",
+        "beehive-digest.container",
+        "beehive-deep-read.container",
+    ):
         parser = _parser()
         parser.read(_QUADLET_DIR / name)
         assert "Install" not in parser, f"{name}: oneshot units are timer-started, not boot-started"
@@ -107,7 +111,7 @@ def test_web_container_has_digest_email_fallback():
 
 def test_expected_path_unit_exists():
     names = {f.name for f in _QUADLET_DIR.glob("*.path")}
-    assert "beehive-fetch-manual.path" in names
+    assert {"beehive-fetch-manual.path", "beehive-deep-read.path"} <= names
 
 
 def test_manual_fetch_container_exists_and_has_no_install_section():
@@ -138,3 +142,24 @@ def test_manual_fetch_path_unit_watches_the_correct_marker_and_references_the_ma
     assert "Path" in parser, "missing [Path] section"
     assert parser["Path"]["PathExists"].endswith("fetch_trigger_channel_id")
     assert parser["Path"]["Unit"] == "beehive-fetch-manual.service"
+
+
+def test_deep_read_container_has_secret_limits_and_reconciliation_units():
+    parser = _parser()
+    parser.read(_QUADLET_DIR / "beehive-deep-read.container")
+
+    assert "target=COPILOT_GITHUB_TOKEN" in parser["Container"]["Secret"]
+    assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
+    assert parser["Container"]["Exec"] == "-m scripts.run_collector --mode deep-read"
+    assert parser["Service"]["Restart"] == "on-failure"
+    assert parser["Service"]["TimeoutStartSec"] == "1800"
+    assert "deep_read_trigger.inflight" in parser["Service"]["ExecStartPre"]
+
+    path_parser = _parser()
+    path_parser.read(_QUADLET_DIR / "beehive-deep-read.path")
+    assert path_parser["Path"]["PathExists"].endswith("deep_read_trigger")
+    assert path_parser["Path"]["Unit"] == "beehive-deep-read.service"
+
+    timer_parser = _parser()
+    timer_parser.read(_QUADLET_DIR / "beehive-deep-read.timer")
+    assert timer_parser["Timer"]["Unit"] == "beehive-deep-read.service"

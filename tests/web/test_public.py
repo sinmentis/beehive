@@ -372,6 +372,8 @@ def test_response_includes_security_headers(client):
     assert "script-src 'self'" in resp.headers["content-security-policy"]
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert resp.headers["x-frame-options"] == "DENY"
+    assert resp.headers["cache-control"] == "private, no-store"
+    assert "cookie" in {value.strip().lower() for value in resp.headers["vary"].split(",")}
 
 
 def test_response_disallows_search_indexing(client):

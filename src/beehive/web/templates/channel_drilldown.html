@@ -49,6 +49,8 @@
         <span class="folded-source">{{ item.source_label }}</span>
         <a class="folded-title" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
         {% if item.engagement_label %}<span class="folded-engagement">{{ item.engagement_label }}</span>{% endif %}
+        {% set deep_read_variant = "dense" %}
+        {% include "_deep_read_action.html" %}
       </article>
       {% endfor %}
     </div>

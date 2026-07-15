@@ -1,25 +1,31 @@
 #!/usr/bin/env python
-"""Entrypoint for the timer-driven collector. Three modes share this one script/image
-(deploy/quadlet/beehive-fetch.container, beehive-fetch-manual.container, and
-beehive-digest.container each invoke this with a different --mode): `fetch` runs the
-per-Channel fetch->AI-rank cycle for every Channel (every few hours, timer-triggered);
-`fetch-channel` runs it for exactly one Channel (started only by beehive-fetch-manual.path
-when the admin UI's "Fetch now" button writes a trigger marker); `digest` composes and sends
-the one daily 08:00 email. Importing beehive.connectors.reddit/google_news/hackernews/official_feeds registers those
-connectors as a side effect (Task 8) before any Channel's Sources are processed. All three modes call
-init_schema on every run -- schema.sql is all CREATE TABLE IF NOT EXISTS, so this is a cheap,
-idempotent bootstrap that guarantees a fresh beehive-data.volume gets its tables on first run,
-rather than requiring a separate migration step before any of the timers/path units ever fire."""
+"""Entrypoint for scheduled, path-triggered, and maintenance work.
+
+Every mode shares one image and selects its role through ``--mode``. ``fetch`` runs the scheduled
+per-Channel fetch and AI-rank cycle; ``fetch-channel`` handles one admin-triggered Channel;
+``digest`` sends the daily email; ``deep-read`` drains queued article briefs; the rewrite modes
+migrate or restore existing unread summaries. Connector imports register source adapters before any
+Channel is processed. Every mode initializes the idempotent SQLite schema on startup.
+"""
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
+from dataclasses import asdict
 
 from beehive.connectors import google_news, hackernews, official_feeds, reddit  # noqa: F401  (registers the connectors)
 from beehive.db.channels import get_channel, list_channels
 from beehive.db.connection import connect, init_schema
 from beehive.collector.manual_trigger import consume_pending_manual_trigger
+from beehive.collector.summary_rewrite import (
+    SummaryRewriteRollbackResult,
+    SummaryRewriteRunResult,
+    rollback_summary_rewrite,
+    run_summary_rewrite,
+)
+from beehive.collector.deep_read_worker import process_deep_read_queue
 from beehive.collector.run_cycle import run_channel_cycle
 from beehive.digest.send import send_daily_digest
 from beehive.email_routing import (
@@ -116,16 +122,109 @@ def run_digest(db_path: str) -> None:
         conn.close()
 
 
+async def run_deep_read(db_path: str) -> None:
+    conn = connect(db_path)
+    init_schema(conn)
+    try:
+        await process_deep_read_queue(conn, os.path.dirname(db_path))
+    finally:
+        conn.close()
+
+
+async def run_unread_summary_rewrite(
+    db_path: str,
+    *,
+    high_water_item_id: int,
+    run_id: str,
+    dry_run: bool,
+    canary_limit: int | None = None,
+    after_id: int = 0,
+) -> SummaryRewriteRunResult:
+    conn = connect(db_path)
+    init_schema(conn)
+    try:
+        result = await run_summary_rewrite(
+            conn,
+            high_water_item_id,
+            run_id,
+            load_localizer(conn),
+            dry_run=dry_run,
+            canary_limit=canary_limit,
+            after_id=after_id,
+        )
+        print(json.dumps(asdict(result), sort_keys=True))
+        return result
+    finally:
+        conn.close()
+
+
+def run_unread_summary_rollback(db_path: str, *, run_id: str) -> SummaryRewriteRollbackResult:
+    conn = connect(db_path)
+    init_schema(conn)
+    try:
+        result = rollback_summary_rewrite(conn, run_id)
+        print(json.dumps(asdict(result), sort_keys=True))
+        return result
+    finally:
+        conn.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=["fetch", "fetch-channel", "digest"], required=True)
+    parser.add_argument(
+        "--mode",
+        choices=[
+            "fetch",
+            "fetch-channel",
+            "digest",
+            "deep-read",
+            "rewrite-unread-summaries",
+            "rollback-unread-summaries",
+        ],
+        required=True,
+    )
     parser.add_argument("--db-path", default=os.environ.get("DB_PATH", "/data/beehive.db"))
+    parser.add_argument("--high-water-item-id", type=int)
+    parser.add_argument("--run-id")
+    parser.add_argument("--canary-limit", type=int)
+    parser.add_argument("--after-id", type=int, default=0)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--confirm-rewrite", action="store_true")
+    parser.add_argument("--confirm-rollback", action="store_true")
     args = parser.parse_args()
 
     if args.mode == "fetch":
         asyncio.run(run_fetch(args.db_path))
     elif args.mode == "fetch-channel":
         asyncio.run(run_fetch_channel(args.db_path))
+    elif args.mode == "deep-read":
+        asyncio.run(run_deep_read(args.db_path))
+    elif args.mode == "rewrite-unread-summaries":
+        if args.run_id is None or args.high_water_item_id is None:
+            parser.error("rewrite-unread-summaries requires --run-id and --high-water-item-id")
+        if args.dry_run == args.confirm_rewrite:
+            parser.error(
+                "rewrite-unread-summaries requires exactly one of "
+                "--dry-run or --confirm-rewrite"
+            )
+        result = asyncio.run(run_unread_summary_rewrite(
+            args.db_path,
+            high_water_item_id=args.high_water_item_id,
+            run_id=args.run_id,
+            dry_run=args.dry_run,
+            canary_limit=args.canary_limit,
+            after_id=args.after_id,
+        ))
+        if result.failed > 0:
+            raise SystemExit(1)
+    elif args.mode == "rollback-unread-summaries":
+        if args.run_id is None or not args.confirm_rollback:
+            parser.error(
+                "rollback-unread-summaries requires --run-id and --confirm-rollback"
+            )
+        result = run_unread_summary_rollback(args.db_path, run_id=args.run_id)
+        if result.changed_since > 0:
+            raise SystemExit(1)
     else:
         run_digest(args.db_path)
 

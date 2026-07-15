@@ -11,6 +11,37 @@ def _close_coroutine(coroutine):
     coroutine.close()
 
 
+def _close_coroutine_returning(result):
+    def close(coroutine):
+        coroutine.close()
+        return result
+    return close
+
+
+def _rewrite_result(*, failed=0):
+    from beehive.collector.summary_rewrite import SummaryRewriteRunResult
+    return SummaryRewriteRunResult(
+        run_id="rewrite-1",
+        dry_run=False,
+        considered=1,
+        rewritten=0 if failed else 1,
+        already_migrated=0,
+        no_longer_eligible=0,
+        failed=failed,
+        last_item_id=1,
+    )
+
+
+def _rollback_result(*, changed_since=0):
+    from beehive.collector.summary_rewrite import SummaryRewriteRollbackResult
+    return SummaryRewriteRollbackResult(
+        run_id="rewrite-1",
+        entries_found=1,
+        reverted=0 if changed_since else 1,
+        changed_since=changed_since,
+    )
+
+
 def test_fetch_mode_invokes_asyncio_run(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv",
                          ["prog", "--mode", "fetch", "--db-path", str(tmp_path / "t.db")])
@@ -27,6 +58,244 @@ def test_digest_mode_invokes_run_digest(monkeypatch, tmp_path):
         from scripts.run_collector import main
         main()
     mock_digest.assert_called_once_with(db_path)
+
+
+def test_deep_read_mode_invokes_asyncio_run(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["prog", "--mode", "deep-read", "--db-path", str(tmp_path / "t.db")],
+    )
+    with patch("scripts.run_collector.asyncio.run", side_effect=_close_coroutine) as mock_run:
+        from scripts.run_collector import main
+        main()
+    mock_run.assert_called_once()
+
+
+def test_summary_rewrite_dry_run_mode_invokes_asyncio_run(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prog",
+            "--mode",
+            "rewrite-unread-summaries",
+            "--db-path",
+            str(tmp_path / "t.db"),
+            "--run-id",
+            "rewrite-1",
+            "--high-water-item-id",
+            "42",
+            "--dry-run",
+        ],
+    )
+    with patch(
+        "scripts.run_collector.asyncio.run",
+        side_effect=_close_coroutine_returning(_rewrite_result()),
+    ) as mock_run:
+        from scripts.run_collector import main
+        main()
+    mock_run.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        [],
+        ["--run-id", "rewrite-1", "--high-water-item-id", "42"],
+        [
+            "--run-id",
+            "rewrite-1",
+            "--high-water-item-id",
+            "42",
+            "--dry-run",
+            "--confirm-rewrite",
+        ],
+    ],
+)
+def test_summary_rewrite_mode_requires_explicit_safe_execution_choice(
+    monkeypatch,
+    tmp_path,
+    extra_args,
+):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prog",
+            "--mode",
+            "rewrite-unread-summaries",
+            "--db-path",
+            str(tmp_path / "t.db"),
+            *extra_args,
+        ],
+    )
+    from scripts.run_collector import main
+
+    with pytest.raises(SystemExit):
+        main()
+
+
+def test_summary_rollback_requires_confirmation(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prog",
+            "--mode",
+            "rollback-unread-summaries",
+            "--db-path",
+            str(tmp_path / "t.db"),
+            "--run-id",
+            "rewrite-1",
+        ],
+    )
+    from scripts.run_collector import main
+
+    with pytest.raises(SystemExit):
+        main()
+
+
+def test_summary_rollback_mode_calls_rollback(monkeypatch, tmp_path):
+    db_path = str(tmp_path / "t.db")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prog",
+            "--mode",
+            "rollback-unread-summaries",
+            "--db-path",
+            db_path,
+            "--run-id",
+            "rewrite-1",
+            "--confirm-rollback",
+        ],
+    )
+    with patch("scripts.run_collector.run_unread_summary_rollback") as mock_rollback:
+        mock_rollback.return_value = _rollback_result()
+        from scripts.run_collector import main
+        main()
+
+    mock_rollback.assert_called_once_with(db_path, run_id="rewrite-1")
+
+
+def test_summary_rewrite_mode_exits_nonzero_when_any_item_failed(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prog",
+            "--mode",
+            "rewrite-unread-summaries",
+            "--db-path",
+            str(tmp_path / "t.db"),
+            "--run-id",
+            "rewrite-1",
+            "--high-water-item-id",
+            "42",
+            "--confirm-rewrite",
+        ],
+    )
+
+    with patch(
+        "scripts.run_collector.asyncio.run",
+        side_effect=_close_coroutine_returning(_rewrite_result(failed=1)),
+    ):
+        from scripts.run_collector import main
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+
+
+def test_summary_rollback_mode_exits_nonzero_when_entries_remain(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prog",
+            "--mode",
+            "rollback-unread-summaries",
+            "--db-path",
+            str(tmp_path / "t.db"),
+            "--run-id",
+            "rewrite-1",
+            "--confirm-rollback",
+        ],
+    )
+    with patch(
+        "scripts.run_collector.run_unread_summary_rollback",
+        return_value=_rollback_result(changed_since=1),
+    ):
+        from scripts.run_collector import main
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code == 1
+
+
+@pytest.mark.asyncio
+async def test_run_deep_read_bootstraps_schema_and_passes_data_dir(tmp_path):
+    from beehive.db.connection import connect
+    from scripts.run_collector import run_deep_read
+
+    db_path = str(tmp_path / "brand_new.db")
+    with patch(
+        "scripts.run_collector.process_deep_read_queue",
+        new=AsyncMock(),
+    ) as mock_process:
+        await run_deep_read(db_path)
+
+    conn = connect(db_path)
+    assert conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='deep_reads'"
+    ).fetchone()
+    conn.close()
+    mock_process.assert_awaited_once()
+    assert mock_process.await_args.args[1] == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_run_unread_summary_rewrite_loads_language_and_prints_result(
+    tmp_path,
+    capsys,
+):
+    from beehive.db.connection import connect, init_schema
+    from beehive.localization import save_language
+    from scripts.run_collector import run_unread_summary_rewrite
+
+    db_path = str(tmp_path / "rewrite.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    save_language(conn, "de")
+    conn.close()
+
+    with patch(
+        "scripts.run_collector.run_summary_rewrite",
+        new=AsyncMock(),
+    ) as mock_rewrite:
+        from beehive.collector.summary_rewrite import SummaryRewriteRunResult
+        mock_rewrite.return_value = SummaryRewriteRunResult(
+            run_id="rewrite-1",
+            dry_run=True,
+            considered=0,
+            rewritten=0,
+            already_migrated=0,
+            no_longer_eligible=0,
+            failed=0,
+            last_item_id=0,
+        )
+        result = await run_unread_summary_rewrite(
+            db_path,
+            high_water_item_id=42,
+            run_id="rewrite-1",
+            dry_run=True,
+        )
+
+    assert mock_rewrite.await_args.args[3].code == "de"
+    assert '"run_id": "rewrite-1"' in capsys.readouterr().out
+    assert result == mock_rewrite.return_value
 
 
 @pytest.mark.asyncio

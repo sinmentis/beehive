@@ -39,6 +39,55 @@ def update_ai_ranking_by_id(conn: sqlite3.Connection, item_id: int, score: float
     conn.commit()
 
 
+# ============================================================================
+# Summary-only rewrite (collector/summary_rewrite.py): candidate lookup + rollback support for
+# the unread-summary rewrite tool. Eligibility is exactly is_read = 0 AND ai_score IS NOT NULL
+# AND ai_summary IS NOT NULL -- an item that was never ranked (ai_score/ai_summary still NULL)
+# is not "rewritten", it is still awaiting its first ranking pass, so it must never be touched
+# here. Only ai_summary is ever read/written by this section; score, rationale, votes,
+# best_comment_summary, is_read and opened_at are never referenced, let alone written.
+#
+# The actual rewrite WRITE (re-checking this same eligibility) lives in
+# db/summary_rewrites.py's apply_summary_rewrite, not here -- it has to happen in the same
+# transaction as that module's summary_rewrite_log INSERT, which a standalone,
+# separately-committing function in this file could not guarantee (a prior revision here,
+# update_ai_summary_if_unread, committed independently of its caller's later log insert,
+# which is exactly the crash/failure gap apply_summary_rewrite's single seam closes).
+# ============================================================================
+
+def list_unread_rewrite_candidates(conn: sqlite3.Connection, high_water_item_id: int,
+                                    after_id: int = 0, limit: int = 20) -> list[dict]:
+    """Deterministic oldest-first page of rewrite candidates, keyset-paginated on `items.id`
+    (the autoincrement PK, so ascending id IS oldest-first) rather than LIMIT/OFFSET -- an
+    OFFSET page would silently skip or repeat rows if an earlier item's is_read flips between
+    two pages of the same run, while `id > after_id` only ever walks forward. `high_water_item_id`
+    is the caller-supplied pre-deployment watermark: any item with a newer (larger) id than
+    this was never touched by the old prompt contract, so it is excluded from candidacy
+    entirely, not just from being rewritten."""
+    rows = conn.execute(
+        "SELECT items.*, sources.type AS source_type, sources.config AS source_config "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        "WHERE items.is_read = 0 AND items.ai_score IS NOT NULL AND items.ai_summary IS NOT NULL "
+        "AND items.id > ? AND items.id <= ? "
+        "ORDER BY items.id ASC LIMIT ?",
+        (after_id, high_water_item_id, limit)).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def revert_ai_summary_if_unchanged(conn: sqlite3.Connection, item_id: int,
+                                    expected_current_summary: str,
+                                    restored_summary: str) -> bool:
+    """Rollback's write half: restores ai_summary to its pre-rewrite value, but only if the
+    row's ai_summary still equals exactly what this run wrote (`expected_current_summary`) --
+    guarding against clobbering a later, unrelated edit (e.g. a further rewrite run, or a
+    manual admin fix) that happened to land on this same item after this run touched it."""
+    cur = conn.execute(
+        "UPDATE items SET ai_summary = ? WHERE id = ? AND ai_summary = ?",
+        (restored_summary, item_id, expected_current_summary))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def mark_item_opened(conn: sqlite3.Connection, item_id: int) -> None:
     conn.execute(
         "UPDATE items SET opened_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') "

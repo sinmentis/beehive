@@ -1,6 +1,6 @@
 # Containerfile
-# One shared image for all three roles (web/fetch/digest) — each Quadlet unit below
-# selects its role via Exec=, following a "one image, Exec-selected roles" design.
+# One shared image for the web process and every background job. Each Quadlet unit selects its
+# role via Exec=, following a "one image, Exec-selected roles" design.
 # ENTRYPOINT is bare `python`; each unit supplies the `-m scripts...` module invocation.
 FROM python:3.12-slim
 WORKDIR /app

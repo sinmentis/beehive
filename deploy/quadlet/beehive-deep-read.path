@@ -1,0 +1,9 @@
+[Unit]
+Description=Start the Beehive deep-read worker when an article is queued
+
+[Path]
+PathExists=%h/.local/share/containers/storage/volumes/beehive-data/_data/deep_read_trigger
+Unit=beehive-deep-read.service
+
+[Install]
+WantedBy=paths.target

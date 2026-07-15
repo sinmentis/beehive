@@ -67,7 +67,11 @@
             <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
             {% endif %}
           </div>
-          <div class="archive-side">{{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>{% elif item.vote_value == -1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>{% endif %}</div>
+          <div class="archive-side">
+            {{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>{% elif item.vote_value == -1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>{% endif %}
+            {% set deep_read_variant = "side" %}
+            {% include "_deep_read_action.html" %}
+          </div>
         </article>
         {% endfor %}
       </div>

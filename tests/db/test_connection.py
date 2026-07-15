@@ -1,3 +1,4 @@
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 from beehive.db.connection import connect, init_schema
@@ -9,7 +10,7 @@ def test_init_schema_creates_all_tables(tmp_path):
     tables = {row["name"] for row in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"channels", "sources", "items", "votes", "admin_login_attempts", "app_state",
-            "sessions"} <= tables
+            "sessions", "deep_reads"} <= tables
 
 
 def test_wal_mode_enabled(tmp_path):
@@ -171,3 +172,51 @@ def test_existing_channels_receive_legacy_digest_checkpoint_once(tmp_path):
         "WHERE name = 'Created Later'").fetchone()
     assert later["last_digest_sent_at"] is None
     assert later["last_digest_date"] is None
+
+
+def _insert_item(conn) -> int:
+    conn.execute("INSERT INTO channels (name, profile) VALUES ('Test', 'x')")
+    channel_id = conn.execute("SELECT id FROM channels").fetchone()[0]
+    conn.execute(
+        "INSERT INTO sources (channel_id, type, config) VALUES (?, 'reddit_subreddit', '{}')",
+        (channel_id,))
+    source_id = conn.execute("SELECT id FROM sources").fetchone()[0]
+    conn.execute(
+        "INSERT INTO items (source_id, external_id, title, url) VALUES (?, 't1', 'T', 'https://x')",
+        (source_id,))
+    conn.commit()
+    return conn.execute("SELECT id FROM items").fetchone()[0]
+
+
+def test_deep_reads_defaults_and_cascades_from_item(tmp_path):
+    conn = connect(str(tmp_path / "test.db"))
+    init_schema(conn)
+    item_id = _insert_item(conn)
+
+    conn.execute(
+        "INSERT INTO deep_reads (item_id, requested_at) VALUES (?, '2026-07-15T00:00:00+00:00')",
+        (item_id,))
+    conn.commit()
+    row = conn.execute("SELECT * FROM deep_reads WHERE item_id = ?", (item_id,)).fetchone()
+    assert row["status"] == "pending"  # DEFAULT applies without an explicit value
+    assert row["request_version"] == 1  # DEFAULT applies without an explicit value
+
+    conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM deep_reads").fetchone()[0] == 0
+
+
+def test_deep_reads_status_check_constraint_rejects_unknown_status(tmp_path):
+    conn = connect(str(tmp_path / "test.db"))
+    init_schema(conn)
+    item_id = _insert_item(conn)
+
+    try:
+        conn.execute(
+            "INSERT INTO deep_reads (item_id, status, requested_at) "
+            "VALUES (?, 'bogus', '2026-07-15T00:00:00+00:00')",
+            (item_id,))
+        raised = False
+    except sqlite3.IntegrityError:
+        raised = True
+    assert raised

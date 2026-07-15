@@ -33,6 +33,8 @@
     </div>
   </div>
   <h3 class="item-title"><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
+  {% set deep_read_variant = "card" %}
+  {% include "_deep_read_action.html" %}
   {% if item.best_comment_summary %}
   <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
   {% endif %}

@@ -1,3 +1,5 @@
+import string
+
 import pytest
 
 from beehive.db import app_state
@@ -94,3 +96,91 @@ def test_combined_catalog_keys_and_plural_shapes_match_english():
                 assert isinstance(translated_message, dict) == isinstance(english_message, dict)
                 if isinstance(english_message, dict):
                     assert set(translated_message) == set(english_message)
+
+
+def _placeholder_names(template: str) -> set[str]:
+    """Field names a str.format() template consumes, e.g. {"count", "title"} for
+    "{count} results for {title}". Ignores literal text and positional/unnamed fields."""
+    return {
+        field_name for _, field_name, _, _ in string.Formatter().parse(template)
+        if field_name
+    }
+
+
+def test_combined_catalog_placeholders_match_english_for_every_locale():
+    """Every locale's translation of a key must interpolate exactly the same {placeholder}
+    names as the English original -- a missing or renamed placeholder would raise KeyError at
+    render time, or silently drop data, only for that one language."""
+    modules = (common.CATALOGS, web.CATALOGS, background.CATALOGS)
+    for module_catalogs in modules:
+        english = module_catalogs["en"]
+        for key, english_message in english.items():
+            if isinstance(english_message, dict):
+                english_placeholders = {
+                    category: _placeholder_names(template)
+                    for category, template in english_message.items()
+                }
+            else:
+                english_placeholders = _placeholder_names(english_message)
+
+            for language in SUPPORTED_LANGUAGES:
+                translated_message = module_catalogs[language.code][key]
+                if isinstance(english_message, dict):
+                    for category, expected in english_placeholders.items():
+                        actual = _placeholder_names(translated_message[category])
+                        assert actual == expected, (
+                            f"{key!r} ({category}) placeholder mismatch for "
+                            f"{language.code!r}: {actual} != {expected}")
+                else:
+                    actual = _placeholder_names(translated_message)
+                    assert actual == english_placeholders, (
+                        f"{key!r} placeholder mismatch for {language.code!r}: "
+                        f"{actual} != {english_placeholders}")
+
+
+def test_deep_read_namespace_renders_in_every_supported_language():
+    """Narrow, targeted coverage for the web.deep_read.* namespace added for the deep-read
+    feature: proves every key -- button states, dedicated-page metadata, section labels,
+    failure copy, owner-only controls, and live-region/announcement text -- renders a non-empty
+    string with plausible interpolation values in every supported language, and that the
+    English catalog contains every state the feature plan calls for."""
+    deep_read_keys = {key for key in web.CATALOGS["en"] if key.startswith("web.deep_read.")}
+    expected_keys = {
+        "web.deep_read.button_start", "web.deep_read.button_start_aria",
+        "web.deep_read.button_pending", "web.deep_read.button_pending_aria",
+        "web.deep_read.button_open", "web.deep_read.button_open_aria",
+        "web.deep_read.button_retry", "web.deep_read.button_retry_aria",
+        "web.deep_read.button_regenerate", "web.deep_read.button_regenerate_aria",
+        "web.deep_read.eyebrow",
+        "web.deep_read.back_default", "web.deep_read.back_to_dashboard",
+        "web.deep_read.back_to_channel", "web.deep_read.back_to_archive",
+        "web.deep_read.source_label", "web.deep_read.generated_at_label",
+        "web.deep_read.generated_language_label",
+        "web.deep_read.source_link", "web.deep_read.source_link_aria",
+        "web.deep_read.section_bottom_line", "web.deep_read.section_key_findings",
+        "web.deep_read.section_important_figures", "web.deep_read.section_why_it_matters",
+        "web.deep_read.section_limitations",
+        "web.deep_read.no_important_figures", "web.deep_read.incomplete_warning",
+        "web.deep_read.failure_fetch", "web.deep_read.failure_extraction",
+        "web.deep_read.failure_llm", "web.deep_read.failure_unavailable",
+        "web.deep_read.owner_controls_aria",
+        "web.deep_read.pending_heading", "web.deep_read.pending_body",
+        "web.deep_read.pending_live_region",
+        "web.deep_read.ready_announcement", "web.deep_read.failed_announcement",
+    }
+    assert deep_read_keys == expected_keys
+    assert "web.title.deep_read_brief" in web.CATALOGS["en"]
+
+    sample_values = {
+        "product": "Beehive", "title": "Rates fall again", "channel": "NZ Finance",
+        "source": "Reuters", "time": "2 hours ago", "language": "Deutsch",
+    }
+    for language in SUPPORTED_LANGUAGES:
+        localizer = localizer_for(language.code)
+        rendered = localizer.text("web.title.deep_read_brief", **sample_values)
+        assert rendered.strip()
+        for key in deep_read_keys:
+            placeholders = _placeholder_names(web.CATALOGS["en"][key])
+            values = {name: sample_values[name] for name in placeholders}
+            rendered = localizer.text(key, **values)
+            assert rendered.strip(), f"{key!r} rendered blank for {language.code!r}"

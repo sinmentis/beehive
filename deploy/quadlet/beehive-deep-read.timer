@@ -1,0 +1,10 @@
+[Unit]
+Description=Reconcile queued Beehive deep-read jobs
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=beehive-deep-read.service
+
+[Install]
+WantedBy=timers.target
