@@ -161,6 +161,7 @@ def test_deep_read_namespace_renders_in_every_supported_language():
         "web.deep_read.section_important_figures", "web.deep_read.section_why_it_matters",
         "web.deep_read.section_limitations",
         "web.deep_read.no_important_figures", "web.deep_read.incomplete_warning",
+        "web.deep_read.stored_source_warning",
         "web.deep_read.failure_fetch", "web.deep_read.failure_fetch_not_found",
         "web.deep_read.failure_fetch_http_error", "web.deep_read.failure_fetch_timeout",
         "web.deep_read.failure_extraction", "web.deep_read.failure_extraction_google_news",

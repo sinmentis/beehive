@@ -59,6 +59,7 @@ class ExtractionQuality(str, Enum):
 
 
 class PartialReason(str, Enum):
+    STORED_SOURCE = "stored_source"
     TRANSPORT_TRUNCATED = "transport_truncated"
     EXTRACTION_TRUNCATED = "extraction_truncated"
     PROMPT_BUDGET_TRUNCATED = "prompt_budget_truncated"

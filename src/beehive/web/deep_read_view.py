@@ -261,7 +261,9 @@ def build_brief_context(*, item: dict, deep_read: DeepRead | None, is_owner: boo
             status = "failed"
             failure = failure_explanation(t, "unavailable", item["url"])
         else:
-            if deep_read.warning_code == "content_incomplete":
+            if deep_read.warning_code == "stored_source_content":
+                warning_text = t.text("web.deep_read.stored_source_warning")
+            elif deep_read.warning_code == "content_incomplete":
                 warning_text = t.text("web.deep_read.incomplete_warning")
     elif raw_status == "failed" and deep_read is not None:
         failure = failure_explanation(t, deep_read.error_code, item["url"])

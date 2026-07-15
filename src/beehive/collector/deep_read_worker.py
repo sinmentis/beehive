@@ -23,7 +23,12 @@ from beehive.db.deep_reads import (
     requeue_deep_read,
 )
 from beehive.db.items import get_item
-from beehive.deep_read.extract import ExtractionQuality, ExtractionResult, extract_article_text
+from beehive.deep_read.extract import (
+    ExtractionQuality,
+    ExtractionResult,
+    PartialReason,
+    extract_article_text,
+)
 from beehive.deep_read.fetch import ArticleFetcher, FetchFailure, FetchFailureReason
 from beehive.deep_read.summarize import (
     DeepReadResult,
@@ -36,6 +41,7 @@ from beehive.localization import load_localizer
 _LEASE_SECONDS = 1500
 _MAX_JOBS_PER_RUN = 1
 _ERROR_DETAIL_CAP = 1000
+_STORED_SOURCE_MAX_CHARS = 20_000
 
 FetcherFactory = Callable[[], ArticleFetcher]
 Extractor = Callable[..., ExtractionResult]
@@ -79,6 +85,35 @@ def _unusable_extraction_error_code(final_url: str) -> str:
     if (urlsplit(final_url).hostname or "").lower() == "news.google.com":
         return "extraction_google_news"
     return "extraction_no_text"
+
+
+def _stored_reddit_body(item: dict) -> ExtractionResult | None:
+    if item["source_type"] != "reddit_subreddit":
+        return None
+    text = str(item.get("body") or "").strip()
+    if not text:
+        return None
+
+    reasons = [PartialReason.STORED_SOURCE]
+    if len(text) > _STORED_SOURCE_MAX_CHARS:
+        text = text[:_STORED_SOURCE_MAX_CHARS]
+        reasons.append(PartialReason.EXTRACTION_TRUNCATED)
+    if len(text) < 200:
+        reasons.append(PartialReason.SHORT_CONTENT)
+    return ExtractionResult(
+        quality=ExtractionQuality.PARTIAL,
+        text=text,
+        reasons=tuple(reasons),
+        char_count=len(text),
+    )
+
+
+def _warning_code(extraction: ExtractionResult) -> str | None:
+    if PartialReason.STORED_SOURCE in extraction.reasons:
+        return "stored_source_content"
+    if extraction.quality is ExtractionQuality.PARTIAL:
+        return "content_incomplete"
+    return None
 
 
 def _fail_claim(
@@ -162,6 +197,7 @@ async def process_deep_read_queue(
                     continue
 
                 localizer = load_localizer(conn)
+                fetched_url = item["url"]
                 try:
                     fetched = fetcher.fetch(item["url"])
                 except Exception as exc:
@@ -181,51 +217,59 @@ async def process_deep_read_queue(
                     )
                     continue
                 if isinstance(fetched, FetchFailure):
-                    _fail_claim(
-                        conn,
-                        item_id=item_id,
-                        request_version=request_version,
-                        claim_token=claim_token,
-                        error_code=_fetch_error_code(fetched),
-                        detail=f"{fetched.reason.value}: {fetched.detail}",
-                        now_factory=now_factory,
-                    )
-                    failed += 1
-                    continue
-
-                try:
-                    extraction = extractor(
-                        fetched.html,
-                        transport_truncated=fetched.truncated,
-                    )
-                except Exception as exc:
-                    _fail_claim(
-                        conn,
-                        item_id=item_id,
-                        request_version=request_version,
-                        claim_token=claim_token,
-                        error_code="extraction",
-                        detail=f"{type(exc).__name__}: {exc}",
-                        now_factory=now_factory,
-                    )
-                    failed += 1
-                    print(
-                        f"[deep-read] extraction failed for item {item_id}: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
-                    continue
-                if extraction.quality is ExtractionQuality.UNUSABLE:
-                    _fail_claim(
-                        conn,
-                        item_id=item_id,
-                        request_version=request_version,
-                        claim_token=claim_token,
-                        error_code=_unusable_extraction_error_code(fetched.url),
-                        detail="Article extraction produced no usable text",
-                        now_factory=now_factory,
-                    )
-                    failed += 1
-                    continue
+                    extraction = _stored_reddit_body(item)
+                    if extraction is None:
+                        _fail_claim(
+                            conn,
+                            item_id=item_id,
+                            request_version=request_version,
+                            claim_token=claim_token,
+                            error_code=_fetch_error_code(fetched),
+                            detail=f"{fetched.reason.value}: {fetched.detail}",
+                            now_factory=now_factory,
+                        )
+                        failed += 1
+                        continue
+                else:
+                    fetched_url = fetched.url
+                    try:
+                        extraction = extractor(
+                            fetched.html,
+                            transport_truncated=fetched.truncated,
+                        )
+                    except Exception as exc:
+                        _fail_claim(
+                            conn,
+                            item_id=item_id,
+                            request_version=request_version,
+                            claim_token=claim_token,
+                            error_code="extraction",
+                            detail=f"{type(exc).__name__}: {exc}",
+                            now_factory=now_factory,
+                        )
+                        failed += 1
+                        print(
+                            f"[deep-read] extraction failed for item {item_id}: "
+                            f"{type(exc).__name__}: {exc}"
+                        )
+                        continue
+                    if extraction.quality is ExtractionQuality.UNUSABLE:
+                        stored_extraction = _stored_reddit_body(item)
+                        if stored_extraction is not None:
+                            extraction = stored_extraction
+                            fetched_url = item["url"]
+                        else:
+                            _fail_claim(
+                                conn,
+                                item_id=item_id,
+                                request_version=request_version,
+                                claim_token=claim_token,
+                                error_code=_unusable_extraction_error_code(fetched.url),
+                                detail="Article extraction produced no usable text",
+                                now_factory=now_factory,
+                            )
+                            failed += 1
+                            continue
 
                 if not heartbeat_deep_read(
                     conn,
@@ -243,7 +287,7 @@ async def process_deep_read_queue(
                         item_id=item_id,
                         item_context=ItemContext(
                             title=item["title"],
-                            url=fetched.url,
+                            url=fetched_url,
                             source_name=_source_name(item),
                             source_type=item["source_type"],
                             published_at=item["created_at"],
@@ -281,11 +325,7 @@ async def process_deep_read_queue(
                     _result_json(result),
                     localizer.code,
                     now_factory(),
-                    warning_code=(
-                        "content_incomplete"
-                        if extraction.quality is ExtractionQuality.PARTIAL
-                        else None
-                    ),
+                    warning_code=_warning_code(extraction),
                 )
                 if completed:
                     succeeded += 1

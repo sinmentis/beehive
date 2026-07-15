@@ -295,6 +295,10 @@ CATALOGS = {
             'This brief may be based on incomplete source content — the original article may '
             'be paywalled, truncated, or partially unavailable.'
         ),
+        "web.deep_read.stored_source_warning": (
+            "This brief uses the stored post text from Reddit's public feed. Comments, later "
+            "edits, linked content, and part of a long post may be missing."
+        ),
         "web.deep_read.failure_fetch": (
             "We couldn't retrieve the original article. It may be temporarily unavailable or "
             "blocking automated access. The LLM was not called because no source text was available."
@@ -634,6 +638,9 @@ CATALOGS = {
         "web.deep_read.incomplete_warning": (
             '本简报可能基于不完整的原文内容——原文可能存在付费墙、被截断或部分内容无法获取。'
         ),
+        "web.deep_read.stored_source_warning": (
+            '本简报基于 Reddit 公共订阅源中保存的帖子正文。评论、后续编辑、外链内容以及长帖的部分正文可能未包含在内。'
+        ),
         "web.deep_read.failure_fetch": (
             '无法获取原文。原文可能暂时不可用，或阻止了自动访问。由于没有可用正文，系统没有调用 LLM。'
         ),
@@ -962,6 +969,10 @@ CATALOGS = {
         "web.deep_read.incomplete_warning": (
             'このブリーフは不完全な元記事に基づいている可能性があります — '
             '元記事が有料会員限定、切り詰められている、または一部取得できない場合があります。'
+        ),
+        "web.deep_read.stored_source_warning": (
+            'このブリーフはRedditの公開フィードに保存された投稿本文を使用しています。'
+            'コメント、後からの編集、リンク先の内容、長い投稿の一部は含まれていない可能性があります。'
         ),
         "web.deep_read.failure_fetch": (
             '元記事を取得できませんでした。一時的に利用できないか、'
@@ -1299,6 +1310,10 @@ CATALOGS = {
             '이 브리프는 불완전한 원문 콘텐츠를 기반으로 했을 수 있습니다 — 원문이 유료 '
             '구독 전용이거나, 잘렸거나, 일부를 가져오지 못했을 수 있습니다.'
         ),
+        "web.deep_read.stored_source_warning": (
+            '이 브리프는 Reddit 공개 피드에 저장된 게시글 본문을 사용합니다. 댓글, 이후 수정, '
+            '링크된 콘텐츠, 긴 게시글의 일부는 포함되지 않을 수 있습니다.'
+        ),
         "web.deep_read.failure_fetch": (
             '원문을 가져올 수 없습니다. 일시적으로 사용할 수 없거나 '
             '자동 접근을 차단하고 있을 수 있습니다. 원문이 없어 LLM은 호출되지 않았습니다.'
@@ -1633,6 +1648,11 @@ CATALOGS = {
         "web.deep_read.incomplete_warning": (
             'Este resumen puede basarse en contenido de origen incompleto — el artículo '
             'original puede estar tras un muro de pago, truncado o parcialmente no disponible.'
+        ),
+        "web.deep_read.stored_source_warning": (
+            'Este resumen usa el texto de la publicación guardado desde el feed público de '
+            'Reddit. Pueden faltar comentarios, ediciones posteriores, contenido enlazado y '
+            'parte de una publicación larga.'
         ),
         "web.deep_read.failure_fetch": (
             'No se pudo obtener el artículo original. Puede estar temporalmente no disponible '
@@ -1974,6 +1994,11 @@ CATALOGS = {
         "web.deep_read.incomplete_warning": (
             "Cette synthèse peut être basée sur un contenu source incomplet — l'article "
             "original peut être derrière un mur payant, tronqué ou partiellement indisponible."
+        ),
+        "web.deep_read.stored_source_warning": (
+            "Cette synthèse utilise le texte de la publication enregistré depuis le flux public "
+            "de Reddit. Les commentaires, modifications ultérieures, contenus liés et une partie "
+            "des longues publications peuvent manquer."
         ),
         "web.deep_read.failure_fetch": (
             "Impossible de récupérer l'article original. Il est peut-être temporairement "
@@ -2317,6 +2342,10 @@ CATALOGS = {
             'Dieser Kurzbericht beruht möglicherweise auf unvollständigem Quellinhalt — der '
             'Originalartikel könnte hinter einer Bezahlschranke liegen, gekürzt oder teilweise '
             'nicht verfügbar sein.'
+        ),
+        "web.deep_read.stored_source_warning": (
+            'Dieser Kurzbericht verwendet den im öffentlichen Reddit-Feed gespeicherten Beitragstext. '
+            'Kommentare, spätere Bearbeitungen, verlinkte Inhalte und Teile langer Beiträge können fehlen.'
         ),
         "web.deep_read.failure_fetch": (
             'Der Originalartikel konnte nicht abgerufen werden. Er ist möglicherweise '

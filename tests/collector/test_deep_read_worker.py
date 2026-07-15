@@ -21,14 +21,21 @@ from beehive.localization import save_language
 _NOW = datetime(2026, 7, 15, 1, 0, tzinfo=timezone.utc)
 
 
-def _create_ranked_item(conn, *, title="Fed report", url="https://example.com/article"):
+def _create_ranked_item(
+    conn,
+    *,
+    title="Fed report",
+    url="https://example.com/article",
+    source_type="google_news_query",
+    body="Feed excerpt",
+):
     channel_id = create_channel(conn, "Markets", "macro news")
-    source_id = create_source(conn, channel_id, "google_news_query", {"query": "Fed"})
+    source_id = create_source(conn, channel_id, source_type, {"query": "Fed"})
     insert_new(conn, source_id, RawItem(
         external_id="item-1",
         title=title,
         url=url,
-        body="Feed excerpt",
+        body=body,
         created_at=_NOW,
         raw_metadata={"source_name": "Federal Reserve"},
     ))
@@ -266,6 +273,123 @@ async def test_worker_classifies_google_news_wrapper_without_calling_llm(queued_
 
     stored = get_deep_read(conn, item_id)
     assert stored.error_code == "extraction_google_news"
+    generator.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_worker_uses_stored_reddit_body_when_fetch_is_blocked(tmp_path):
+    conn = connect(str(tmp_path / "worker.db"))
+    init_schema(conn)
+    stored_body = (
+        "The Reserve Bank increased the OCR to 2.50%. The post explains the rate outlook, "
+        "recent swap-rate moves, and the likely effect on mortgage rates. " * 5
+    )
+    item_id = _create_ranked_item(
+        conn,
+        title="OCR increased to 2.50%",
+        url="https://www.reddit.com/r/PersonalFinanceNZ/comments/example/post/",
+        source_type="reddit_subreddit",
+        body=stored_body,
+    )
+    request_deep_read(conn, item_id, _NOW)
+    fetcher = _FakeFetcher(FetchFailure(
+        FetchFailureReason.HTTP_ERROR,
+        "unexpected status code 403",
+        status_code=403,
+    ))
+    generator = AsyncMock(return_value=_result(item_id))
+
+    result = await process_deep_read_queue(
+        conn,
+        str(tmp_path),
+        fetcher_factory=lambda: fetcher,
+        generator=generator,
+        now_factory=lambda: _NOW,
+    )
+
+    stored = get_deep_read(conn, item_id)
+    assert result.succeeded == 1
+    assert stored.status == "ready"
+    assert stored.warning_code == "stored_source_content"
+    assert generator.await_args.kwargs["article_text"] == stored_body.strip()
+    partial = generator.await_args.kwargs["partial_content"]
+    assert partial.is_partial is True
+    assert partial.reason == "stored_source"
+
+
+@pytest.mark.asyncio
+async def test_worker_uses_stored_reddit_body_when_live_html_is_unusable(tmp_path):
+    conn = connect(str(tmp_path / "worker.db"))
+    init_schema(conn)
+    stored_body = "A detailed stored Reddit self-post. " * 20
+    item_url = "https://www.reddit.com/r/example/comments/item/post/"
+    item_id = _create_ranked_item(
+        conn,
+        url=item_url,
+        source_type="reddit_subreddit",
+        body=stored_body,
+    )
+    request_deep_read(conn, item_id, _NOW)
+    fetcher = _FakeFetcher(FetchedArticle(
+        url="https://www.reddit.com/interstitial",
+        status_code=200,
+        content_type="text/html",
+        html="<nav>bot check</nav>",
+        truncated=False,
+    ))
+    unusable = ExtractionResult(
+        quality=ExtractionQuality.UNUSABLE,
+        text="",
+        reasons=(),
+        char_count=0,
+    )
+    generator = AsyncMock(return_value=_result(item_id))
+
+    result = await process_deep_read_queue(
+        conn,
+        str(tmp_path),
+        fetcher_factory=lambda: fetcher,
+        extractor=lambda *_args, **_kwargs: unusable,
+        generator=generator,
+        now_factory=lambda: _NOW,
+    )
+
+    assert result.succeeded == 1
+    assert get_deep_read(conn, item_id).warning_code == "stored_source_content"
+    assert generator.await_args.kwargs["article_text"] == stored_body.strip()
+    assert generator.await_args.kwargs["item_context"].url == item_url
+
+
+@pytest.mark.asyncio
+async def test_worker_keeps_fetch_failure_when_reddit_body_is_empty(tmp_path):
+    conn = connect(str(tmp_path / "worker.db"))
+    init_schema(conn)
+    item_id = _create_ranked_item(
+        conn,
+        url="https://www.reddit.com/r/example/comments/item/post/",
+        source_type="reddit_subreddit",
+        body="   ",
+    )
+    request_deep_read(conn, item_id, _NOW)
+    fetcher = _FakeFetcher(FetchFailure(
+        FetchFailureReason.HTTP_ERROR,
+        "unexpected status code 403",
+        status_code=403,
+    ))
+    generator = AsyncMock()
+
+    result = await process_deep_read_queue(
+        conn,
+        str(tmp_path),
+        fetcher_factory=lambda: fetcher,
+        generator=generator,
+        now_factory=lambda: _NOW,
+    )
+
+    stored = get_deep_read(conn, item_id)
+    assert result.failed == 1
+    assert stored.status == "failed"
+    assert stored.error_code == "fetch_http_error"
     generator.assert_not_awaited()
 
 

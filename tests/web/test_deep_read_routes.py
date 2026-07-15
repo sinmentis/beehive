@@ -625,6 +625,19 @@ def test_brief_page_shows_incomplete_warning(conn, client):
     assert "incomplete source content" in resp.text
 
 
+def test_brief_page_shows_stored_reddit_content_warning(conn, client):
+    _, c = conn
+    _, item_id = _create_ranked_item(c)
+    request_deep_read(c, item_id, _NOW)
+    _complete_ready(c, item_id, warning_code="stored_source_content")
+
+    resp = client.get(f"/items/{item_id}/brief")
+
+    assert resp.status_code == 200
+    assert "stored post text" in resp.text
+    assert "Comments, later edits, linked content, and part of a long post may be missing" in resp.text
+
+
 # ============================================================================
 # GET /items/{item_id}/brief/status (HTMX polling)
 # ============================================================================
