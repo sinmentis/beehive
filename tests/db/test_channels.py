@@ -21,6 +21,22 @@ def test_create_and_get_channel(conn):
     assert row["name"] == "NZ Finance"
     assert row["profile"] == "economic news"
     assert row["fetch_interval_hours"] == 3
+    assert row["highlight_count"] == 8
+    assert row["minimum_score"] == 0
+
+
+def test_create_channel_saves_display_settings(conn):
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "economic news",
+        highlight_count=5,
+        minimum_score=72,
+    )
+
+    row = get_channel(conn, channel_id)
+    assert row["highlight_count"] == 5
+    assert row["minimum_score"] == 72
 
 
 def test_get_channel_missing_returns_none(conn):
@@ -37,11 +53,14 @@ def test_list_channels(conn):
 def test_update_channel_changes_fields(conn):
     channel_id = create_channel(conn, "Old Name", "old profile", fetch_interval_hours=3)
     update_channel(conn, channel_id, "New Name", "new profile",
-                   fetch_interval_hours=6, digest_email=None)
+                   fetch_interval_hours=6, digest_email=None,
+                   highlight_count=4, minimum_score=65)
     channel = get_channel(conn, channel_id)
     assert channel["name"] == "New Name"
     assert channel["profile"] == "new profile"
     assert channel["fetch_interval_hours"] == 6
+    assert channel["highlight_count"] == 4
+    assert channel["minimum_score"] == 65
 
 
 def test_delete_channel_removes_it(conn):

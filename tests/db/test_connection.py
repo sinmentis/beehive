@@ -130,7 +130,13 @@ def test_fresh_channels_schema_has_email_and_digest_checkpoint_columns(tmp_path)
     conn = connect(str(tmp_path / "fresh.db"))
     init_schema(conn)
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(channels)")}
-    assert {"digest_email", "last_digest_sent_at", "last_digest_date"} <= columns
+    assert {
+        "digest_email",
+        "last_digest_sent_at",
+        "last_digest_date",
+        "highlight_count",
+        "minimum_score",
+    } <= columns
 
 
 def test_existing_channels_receive_legacy_digest_checkpoint_once(tmp_path):
@@ -152,6 +158,12 @@ def test_existing_channels_receive_legacy_digest_checkpoint_once(tmp_path):
     conn.commit()
 
     init_schema(conn)
+
+    channel = conn.execute(
+        "SELECT highlight_count, minimum_score FROM channels WHERE name = 'Existing'"
+    ).fetchone()
+    assert channel["highlight_count"] == 8
+    assert channel["minimum_score"] == 0
 
     row = conn.execute(
         "SELECT last_digest_sent_at, last_digest_date FROM channels WHERE name = 'Existing'"

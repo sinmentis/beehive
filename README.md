@@ -30,7 +30,7 @@ Beehive collects updates from the sources you care about, ranks each item agains
 
 ### See what matters first
 
-Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic.
+Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic. The home dashboard ranks only content fetched during the current Auckland calendar day and separates all, unread, and read signals.
 
 <img src="docs/assets/dashboard-product.png" alt="Beehive dashboard with ranked synthetic signals" width="100%">
 
@@ -42,7 +42,7 @@ The owner can request an asynchronous AI deep read for any ranked item. Beehive 
 
 ### Control every signal
 
-Choose sources, cadence, the global interface and AI output language, the LLM model used for future AI work, and the email destination for each channel.
+Choose sources, cadence, the number of highlights, the minimum visible AI score, the global interface and AI output language, the LLM model used for future AI work, and the email destination for each channel.
 
 <img src="docs/assets/channel-configuration.png" alt="Beehive channel configuration with synthetic sources and email routing" width="100%">
 

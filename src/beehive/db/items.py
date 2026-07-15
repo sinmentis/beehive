@@ -205,9 +205,16 @@ def list_dashboard_highlights(
     conn: sqlite3.Connection,
     limit: int = 5,
     minimum_score: float | None = None,
+    fetched_from: str | None = None,
+    fetched_to: str | None = None,
+    read_state: str = "all",
 ) -> list[dict]:
-    score_filter = "" if minimum_score is None else "AND items.ai_score >= ? "
-    params = () if minimum_score is None else (minimum_score,)
+    where, params = _dashboard_signal_filters(
+        minimum_score=minimum_score,
+        fetched_from=fetched_from,
+        fetched_to=fetched_to,
+        read_state=read_state,
+    )
     rows = conn.execute(
         "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
         "channels.name AS channel_name, channels.id AS item_channel_id, "
@@ -215,25 +222,59 @@ def list_dashboard_highlights(
         "FROM items JOIN sources ON sources.id = items.source_id "
         "JOIN channels ON channels.id = sources.channel_id "
         "LEFT JOIN votes ON votes.item_id = items.id "
-        "WHERE items.opened_at IS NULL AND items.ai_summary IS NOT NULL "
-        "AND (votes.value IS NULL OR votes.value != -1) "
-        f"{score_filter}"
-        "ORDER BY items.ai_score DESC LIMIT ?",
-        params + (limit,)).fetchall()
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY items.ai_score DESC, items.id ASC LIMIT ?",
+        params + [limit]).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
 def count_dashboard_signals(
     conn: sqlite3.Connection,
     minimum_score: float | None = None,
+    fetched_from: str | None = None,
+    fetched_to: str | None = None,
+    read_state: str = "all",
 ) -> int:
-    score_filter = "" if minimum_score is None else "AND items.ai_score >= ? "
-    params = () if minimum_score is None else (minimum_score,)
+    where, params = _dashboard_signal_filters(
+        minimum_score=minimum_score,
+        fetched_from=fetched_from,
+        fetched_to=fetched_to,
+        read_state=read_state,
+    )
     return conn.execute(
         "SELECT COUNT(*) FROM items "
+        "JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
         "LEFT JOIN votes ON votes.item_id = items.id "
-        "WHERE items.opened_at IS NULL AND items.ai_summary IS NOT NULL "
-        "AND (votes.value IS NULL OR votes.value != -1) "
-        f"{score_filter}",
+        f"WHERE {' AND '.join(where)}",
         params,
     ).fetchone()[0]
+
+
+def _dashboard_signal_filters(
+    *,
+    minimum_score: float | None,
+    fetched_from: str | None,
+    fetched_to: str | None,
+    read_state: str,
+) -> tuple[list[str], list]:
+    where = [
+        "items.ai_summary IS NOT NULL",
+        "items.ai_score >= channels.minimum_score",
+        "(votes.value IS NULL OR votes.value != -1)",
+    ]
+    params: list = []
+    if minimum_score is not None:
+        where.append("items.ai_score >= ?")
+        params.append(minimum_score)
+    if fetched_from is not None:
+        where.append("items.fetched_at >= ?")
+        params.append(fetched_from)
+    if fetched_to is not None:
+        where.append("items.fetched_at < ?")
+        params.append(fetched_to)
+    if read_state == "read":
+        where.append("items.is_read = 1")
+    elif read_state == "unread":
+        where.append("items.is_read = 0")
+    return where, params

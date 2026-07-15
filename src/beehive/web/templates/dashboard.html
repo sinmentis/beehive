@@ -16,16 +16,25 @@
       <span>{{ highlights|length }}{% if has_more_signals %}+{% endif %}</span>
     </div>
     <nav class="dashboard-tabs" aria-label="{{ t('web.dashboard.tabs_aria') }}">
-      {% if minimum_score is none %}
-      <strong aria-current="page">{{ t('web.dashboard.tab_all') }}</strong>
+      {% if view == "all" and minimum_score is none %}
+      <strong aria-current="page">{{ t('web.dashboard.tab_all_count', count=all_signal_count) }}</strong>
       {% else %}
-      <a href="/">{{ t('web.dashboard.tab_all') }}</a>
+      <a href="{{ all_url }}">{{ t('web.dashboard.tab_all_count', count=all_signal_count) }}</a>
       {% endif %}
-      <a href="/archive?read_state=unread">{{ t('web.dashboard.tab_unread', count=total_unread) }}</a>
+      {% if view == "unread" and minimum_score is none %}
+      <strong aria-current="page">{{ t('web.dashboard.tab_unread', count=unread_signal_count) }}</strong>
+      {% else %}
+      <a href="{{ unread_url }}">{{ t('web.dashboard.tab_unread', count=unread_signal_count) }}</a>
+      {% endif %}
+      {% if view == "read" and minimum_score is none %}
+      <strong aria-current="page">{{ t('web.dashboard.tab_read', count=read_signal_count) }}</strong>
+      {% else %}
+      <a href="{{ read_url }}">{{ t('web.dashboard.tab_read', count=read_signal_count) }}</a>
+      {% endif %}
       {% if minimum_score is not none %}
       <strong aria-current="page">{{ t('web.dashboard.tab_minimum_score', score=minimum_score, count=pending_signal_count) }}</strong>
       {% else %}
-      <a href="/?minimum_score=90">{{ t('web.dashboard.tab_high_priority', count=high_priority_count) }}</a>
+      <a href="{{ high_priority_url }}">{{ t('web.dashboard.tab_high_priority', count=high_priority_count) }}</a>
       {% endif %}
     </nav>
     <form class="dashboard-search" action="/archive" method="get" role="search">
@@ -56,6 +65,7 @@
           <col class="signal-channel-col">
           <col class="signal-source-col">
           <col class="signal-summary-col">
+          {% if is_admin %}<col class="signal-vote-col">{% endif %}
           <col class="signal-engagement-col">
           <col class="signal-age-col">
         </colgroup>
@@ -66,13 +76,14 @@
             <th scope="col">{{ t('web.dashboard.column_channel') }}</th>
             <th scope="col" class="signal-source-heading">{{ t('web.dashboard.column_source') }}</th>
             <th scope="col">{{ t('web.dashboard.column_summary') }}</th>
+            {% if is_admin %}<th scope="col" class="signal-vote-heading">{{ t('web.dashboard.column_feedback') }}</th>{% endif %}
             <th scope="col" class="signal-engagement-heading">{{ t('web.dashboard.column_engagement') }}</th>
             <th scope="col">{{ t('web.dashboard.column_time') }}</th>
           </tr>
         </thead>
         <tbody>
           {% for item in highlights %}
-          <tr class="signal-row{{ ' is-unread' if not item.is_read else '' }}{{ ' is-dim' if item.ai_score < 60 else '' }}" tabindex="-1">
+          <tr class="signal-row {{ 'is-read' if item.is_read else 'is-unread' }}{{ ' is-dim' if item.ai_score < 60 else '' }}" tabindex="-1">
             <td class="signal-state"><span class="signal-unread-dot" aria-hidden="true"></span><span class="sr-only">{{ t('web.dashboard.state_unread') if not item.is_read else t('web.dashboard.state_read') }}</span></td>
             <td class="signal-score">{{ item.ai_score|round|int }}</td>
             <td><a class="signal-channel" href="/channels/{{ item.item_channel_id }}" title="{{ item.channel_name }}">{{ item.channel_name }}</a></td>
@@ -88,6 +99,32 @@
               {% set deep_read_variant = "dense" %}
               {% include "_deep_read_action.html" %}
             </td>
+            {% if is_admin %}
+            <td class="signal-vote-cell">
+              <div class="signal-votes" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}">
+                <form method="post" action="/items/{{ item.id }}/vote">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="value" value="1">
+                  <input type="hidden" name="origin" value="dashboard">
+                  <input type="hidden" name="dashboard_view" value="{{ view }}">
+                  {% if minimum_score is not none %}<input type="hidden" name="minimum_score" value="{{ minimum_score }}">{% endif %}
+                  <button type="submit" aria-label="{{ t('web.item.vote_up_aria') }}"
+                          aria-pressed="{{ 'true' if item.vote_value == 1 else 'false' }}"
+                          class="{{ 'active up' if item.vote_value == 1 else '' }}"><span aria-hidden="true">↑</span></button>
+                </form>
+                <form method="post" action="/items/{{ item.id }}/vote">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="value" value="-1">
+                  <input type="hidden" name="origin" value="dashboard">
+                  <input type="hidden" name="dashboard_view" value="{{ view }}">
+                  {% if minimum_score is not none %}<input type="hidden" name="minimum_score" value="{{ minimum_score }}">{% endif %}
+                  <button type="submit" aria-label="{{ t('web.item.vote_down_aria') }}"
+                          aria-pressed="{{ 'true' if item.vote_value == -1 else 'false' }}"
+                          class="{{ 'active down' if item.vote_value == -1 else '' }}"><span aria-hidden="true">↓</span></button>
+                </form>
+              </div>
+            </td>
+            {% endif %}
             <td class="signal-engagement">{{ item.engagement_label or "—" }}</td>
             <td class="signal-age" title="{{ item.exact_time }}">{{ item.age or "—" }}</td>
           </tr>

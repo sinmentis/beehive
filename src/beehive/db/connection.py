@@ -21,6 +21,16 @@ _COLUMNS_TO_ENSURE = [
     ("channels", "digest_email", "TEXT"),
     ("channels", "last_digest_sent_at", "TEXT"),
     ("channels", "last_digest_date", "TEXT"),
+    (
+        "channels",
+        "highlight_count",
+        "INTEGER NOT NULL DEFAULT 8 CHECK (highlight_count BETWEEN 1 AND 50)",
+    ),
+    (
+        "channels",
+        "minimum_score",
+        "INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100)",
+    ),
 ]
 
 _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"

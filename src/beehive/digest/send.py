@@ -63,6 +63,7 @@ def send_daily_digest(conn: sqlite3.Connection, notifier: Notifier,
         new_items = [
             item for item in list_new_since(conn, channel["id"], since)
             if item["ai_score"] is not None
+            and item["ai_score"] >= channel["minimum_score"]
         ]
         warnings = [
             localizer.text("background.source_fetch_warning",
@@ -71,7 +72,11 @@ def send_daily_digest(conn: sqlite3.Connection, notifier: Notifier,
             if source["last_fetch_error"]
         ]
         digest = compose_channel_digest(
-            channel["name"], new_items, warnings)
+            channel["name"],
+            new_items,
+            warnings,
+            highlight_count=channel["highlight_count"],
+        )
         groups.setdefault(recipient.address, []).append(
             (channel["id"], digest))
 

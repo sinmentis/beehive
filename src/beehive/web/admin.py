@@ -448,11 +448,21 @@ def new_channel_form(
 
 @router.post("/channels/new")
 def new_channel_submit(name: str = Form(...), profile: str = Form(...),
-                        fetch_interval_hours: int = Form(...), csrf_token: str = Form(...),
+                        fetch_interval_hours: int = Form(...),
+                        highlight_count: int = Form(8, ge=1, le=50),
+                        minimum_score: int = Form(0, ge=0, le=100),
+                        csrf_token: str = Form(...),
                         session: dict = Depends(require_admin_session),
                         conn: sqlite3.Connection = Depends(get_db)):
     verify_csrf(session, csrf_token)
-    channel_id = create_channel(conn, name, profile, fetch_interval_hours=fetch_interval_hours)
+    channel_id = create_channel(
+        conn,
+        name,
+        profile,
+        fetch_interval_hours=fetch_interval_hours,
+        highlight_count=highlight_count,
+        minimum_score=minimum_score,
+    )
     return RedirectResponse(f"/admin/channels/{channel_id}/edit", status_code=303)
 
 
@@ -596,6 +606,8 @@ def edit_channel_form(channel_id: int, request: Request,
 def edit_channel_submit(channel_id: int, request: Request,
                          name: str = Form(...), profile: str = Form(...),
                          fetch_interval_hours: int = Form(...),
+                         highlight_count: int | None = Form(None, ge=1, le=50),
+                         minimum_score: int | None = Form(None, ge=0, le=100),
                          digest_email: str = Form(""), csrf_token: str = Form(...),
                          session: dict = Depends(require_admin_session),
                          conn: sqlite3.Connection = Depends(get_db),
@@ -613,13 +625,28 @@ def edit_channel_submit(channel_id: int, request: Request,
             "name": name,
             "profile": profile,
             "fetch_interval_hours": fetch_interval_hours,
+            "highlight_count": (
+                existing["highlight_count"] if highlight_count is None else highlight_count
+            ),
+            "minimum_score": (
+                existing["minimum_score"] if minimum_score is None else minimum_score
+            ),
             "digest_email": digest_email,
         }
         return _render_edit_channel_page(
             request, conn, session, channel, t,
             effective_channel=existing,
             error=_email_error_message(exc, t), status_code=400)
-    update_channel(conn, channel_id, name, profile, fetch_interval_hours, normalized_email)
+    update_channel(
+        conn,
+        channel_id,
+        name,
+        profile,
+        fetch_interval_hours,
+        normalized_email,
+        highlight_count=highlight_count,
+        minimum_score=minimum_score,
+    )
     return RedirectResponse(f"/admin/channels/{channel_id}/edit", status_code=303)
 
 

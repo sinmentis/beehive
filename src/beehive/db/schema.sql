@@ -8,9 +8,11 @@ CREATE TABLE IF NOT EXISTS channels (
     name TEXT NOT NULL UNIQUE,
     profile TEXT NOT NULL DEFAULT '',
     fetch_interval_hours INTEGER NOT NULL DEFAULT 3,
-    digest_email TEXT,
-    last_digest_sent_at TEXT,
-    last_digest_date TEXT,
+    highlight_count      INTEGER NOT NULL DEFAULT 8 CHECK (highlight_count BETWEEN 1 AND 50),
+    minimum_score        INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100),
+    digest_email          TEXT,
+    last_digest_sent_at   TEXT,
+    last_digest_date      TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
 

@@ -8,8 +8,9 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
-from urllib.parse import urlparse
+from datetime import datetime, timedelta, timezone
+from typing import Literal
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -18,10 +19,12 @@ from beehive.collector.deep_read_trigger import request_deep_read_worker
 from beehive.db.channels import get_channel, list_channels
 from beehive.db.deep_reads import get_deep_read, get_deep_reads_for_items, request_deep_read
 from beehive.db.items import (count_dashboard_signals, get_item, list_archive, list_by_channel,
-                              list_dashboard_highlights, mark_channel_read, mark_item_opened)
+                              list_dashboard_highlights, mark_channel_read, mark_item_opened,
+                              mark_read)
 from beehive.db.sources import get_source, list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.localization import Localizer
+from beehive.scheduling import HOST_TZ
 from beehive.web.deep_read_view import (ALLOWED_ORIGINS, brief_url, build_brief_context,
                                         decorate_deep_read_state)
 from beehive.web.deps import get_db, get_localizer, get_optional_session, require_admin_session, verify_csrf
@@ -36,7 +39,6 @@ def _safe_href(url: str) -> str:
 
 router = APIRouter()
 
-HIGHLIGHT_COUNT = 8
 DASHBOARD_SIGNAL_COUNT = 24
 
 
@@ -114,37 +116,73 @@ def _time_label(iso_str: str) -> str:
     return datetime.fromisoformat(iso_str).strftime("%H:%M")
 
 
+def _dashboard_day_bounds(now: datetime) -> tuple[str, str]:
+    local_now = now.astimezone(HOST_TZ)
+    start_local = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_local = start_local + timedelta(days=1)
+    return tuple(
+        boundary.astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+        for boundary in (start_local, end_local)
+    )
+
+
+def _dashboard_url(view: str, minimum_score: int | None) -> str:
+    params: dict[str, str | int] = {}
+    if view != "all":
+        params["view"] = view
+    if minimum_score is not None:
+        params["minimum_score"] = minimum_score
+    return f"/?{urlencode(params)}" if params else "/"
+
+
 @router.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
+    view: Literal["all", "unread", "read"] = Query(default="all"),
     minimum_score: int | None = Query(default=None, ge=0, le=100),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
 ):
-    pending_signal_count = count_dashboard_signals(conn, minimum_score=minimum_score)
+    now = datetime.now(timezone.utc)
+    fetched_from, fetched_to = _dashboard_day_bounds(now)
+    day_filters = {
+        "fetched_from": fetched_from,
+        "fetched_to": fetched_to,
+    }
+    signal_counts = {
+        state: count_dashboard_signals(conn, read_state=state, **day_filters)
+        for state in ("all", "unread", "read")
+    }
+    pending_signal_count = count_dashboard_signals(
+        conn,
+        minimum_score=minimum_score,
+        read_state=view,
+        **day_filters,
+    )
     highlights = list_dashboard_highlights(
         conn,
         limit=DASHBOARD_SIGNAL_COUNT,
         minimum_score=minimum_score,
+        fetched_from=fetched_from,
+        fetched_to=fetched_to,
+        read_state=view,
     )
     has_more_signals = pending_signal_count > DASHBOARD_SIGNAL_COUNT
     for item in highlights:
         _decorate_item(item, t)
-    now = datetime.now(timezone.utc)
     channels = []
-    total_unread = 0
     for channel in list_channels(conn):
-        items = list_by_channel(conn, channel["id"])
+        items = [
+            item
+            for item in list_by_channel(conn, channel["id"])
+            if item["ai_score"] is None or item["ai_score"] >= channel["minimum_score"]
+        ]
         unread_count = sum(1 for i in items if not i["is_read"])
-        total_unread += unread_count
-        teaser = next((i for i in items if i["ai_summary"]), None)
-        if teaser is not None:
-            _decorate_item(teaser, t)
         sources = list_sources(conn, channel["id"])
         channels.append({
             "id": channel["id"], "name": channel["name"],
-            "unread_count": unread_count, "teaser": teaser,
+            "unread_count": unread_count,
             "freshness": freshness_label(sources, t),
             "freshness_exact": freshness_exact_time(sources),
             "next_fetch": next_fetch_countdown(
@@ -158,9 +196,8 @@ def dashboard(
 
     is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
-    ranked_items = list(highlights) + [c["teaser"] for c in channels if c["teaser"] is not None]
-    deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in ranked_items])
-    for item in ranked_items:
+    deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in highlights])
+    for item in highlights:
         decorate_deep_read_state(
             item, deep_reads.get(item["id"]), is_admin, "dashboard", None, csrf_token)
 
@@ -169,11 +206,24 @@ def dashboard(
         "channels": channels,
         "highlights": highlights,
         "has_more_signals": has_more_signals,
-        "high_priority_count": count_dashboard_signals(conn, minimum_score=90),
+        "high_priority_count": count_dashboard_signals(
+            conn,
+            minimum_score=90,
+            read_state="all",
+            **day_filters,
+        ),
         "pending_signal_count": pending_signal_count,
+        "all_signal_count": signal_counts["all"],
+        "unread_signal_count": signal_counts["unread"],
+        "read_signal_count": signal_counts["read"],
         "dashboard_time": host_local_time_label(now.isoformat())[-5:],
+        "view": view,
         "minimum_score": minimum_score,
-        "total_unread": total_unread,
+        "all_url": _dashboard_url("all", None),
+        "unread_url": _dashboard_url("unread", None),
+        "read_url": _dashboard_url("read", None),
+        "high_priority_url": _dashboard_url("all", 90),
+        "total_unread": signal_counts["unread"],
         "is_admin": is_admin,
         "csrf_token": csrf_token,
     })
@@ -184,6 +234,7 @@ def open_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     mark_item_opened(conn, item_id)
+    mark_read(conn, item_id)
     return RedirectResponse(_safe_href(item["url"]), status_code=302)
 
 
@@ -198,7 +249,11 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
 
     is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
-    items = list_by_channel(conn, channel_id)
+    items = [
+        item
+        for item in list_by_channel(conn, channel_id)
+        if item["ai_score"] is None or item["ai_score"] >= channel["minimum_score"]
+    ]
     deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in items])
     for item in items:
         _decorate_item(item, t)
@@ -219,8 +274,8 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
     return templates.TemplateResponse(request, "channel_drilldown.html", {
         "channel": channel,
         "nav_channels": list_channels(conn),
-        "highlighted": visible_items[:HIGHLIGHT_COUNT],
-        "folded": visible_items[HIGHLIGHT_COUNT:],
+        "highlighted": visible_items[:channel["highlight_count"]],
+        "folded": visible_items[channel["highlight_count"]:],
         "freshness": freshness_label(sources, t),
         "freshness_exact": freshness_exact_time(sources),
         "fetch_stats": fetch_stats_label(sources, t),
@@ -236,6 +291,9 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
 @router.post("/items/{item_id}/vote", response_class=HTMLResponse)
 def vote_on_item(item_id: int, request: Request, value: int = Form(...),
                   csrf_token: str = Form(...), reason: str | None = Form(None),
+                  origin: str = Form("channel"),
+                  dashboard_view: str = Form("all"),
+                  minimum_score: int | None = Form(None),
                   session: dict = Depends(require_admin_session),
                   conn: sqlite3.Connection = Depends(get_db),
                   t: Localizer = Depends(get_localizer)):
@@ -250,6 +308,18 @@ def vote_on_item(item_id: int, request: Request, value: int = Form(...),
         delete_vote(conn, item_id)
     else:
         upsert_vote(conn, item_id, value, None)
+
+    if origin == "dashboard":
+        safe_view = dashboard_view if dashboard_view in {"all", "unread", "read"} else "all"
+        safe_minimum_score = (
+            minimum_score
+            if minimum_score is not None and 0 <= minimum_score <= 100
+            else None
+        )
+        return RedirectResponse(
+            _dashboard_url(safe_view, safe_minimum_score),
+            status_code=303,
+        )
 
     item = get_item(conn, item_id)
     if item is None:

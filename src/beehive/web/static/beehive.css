@@ -410,6 +410,7 @@ h1{
 .signal-score-col{width:2.125rem}
 .signal-channel-col{width:5rem}
 .signal-source-col{width:5.5rem}
+.signal-vote-col{width:3.8rem}
 .signal-engagement-col{width:5.5rem}
 .signal-age-col{width:4.5rem}
 .signal-table th{
@@ -436,6 +437,9 @@ h1{
 }
 .signal-row:hover,.signal-row.is-selected{background:var(--surface)}
 .signal-row:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
+.signal-row.is-unread{background:rgba(208,163,67,.025)}
+.signal-row.is-read td{color:#737b74}
+.signal-row.is-read .signal-summary{color:#8f968f;font-weight:470}
 .signal-row:nth-child(-n+2) .signal-state{box-shadow:inset 2px 0 var(--accent)}
 .signal-row.is-dim td,
 .signal-row.is-dim .signal-channel,
@@ -452,6 +456,11 @@ h1{
   background:transparent;
 }
 .signal-row.is-unread .signal-unread-dot{background:var(--accent)}
+.signal-row.is-read .signal-unread-dot{
+  width:.32rem;
+  height:.32rem;
+  border:1px solid #596159;
+}
 .signal-score{
   color:var(--accent)!important;
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
@@ -469,6 +478,7 @@ h1{
   white-space:nowrap;
 }
 .signal-engagement,.signal-engagement-heading{text-align:right}
+.signal-vote-heading{text-align:center}
 .signal-channel{color:var(--text-soft);font-weight:650}
 .signal-channel:hover,.signal-summary:hover{color:var(--accent)}
 .signal-summary-cell{white-space:nowrap}
@@ -522,6 +532,27 @@ h1{
   white-space:normal;
 }
 .signal-age{text-align:right}
+.signal-vote-cell{padding-inline:.2rem!important}
+.signal-votes{display:flex;align-items:center;justify-content:center;gap:.1rem}
+.signal-votes form{margin:0}
+.signal-votes button{
+  display:grid;
+  width:1.55rem;
+  height:1.55rem;
+  min-width:0;
+  min-height:0;
+  padding:0;
+  border:0;
+  border-radius:.15rem;
+  background:transparent;
+  color:var(--muted-2);
+  place-items:center;
+  font-size:.78rem;
+  line-height:1;
+}
+.signal-votes button:hover{background:var(--surface-raised);color:var(--text)}
+.signal-votes button.active.up{background:rgba(92,150,104,.16);color:#86b98e}
+.signal-votes button.active.down{background:rgba(204,112,103,.15);color:#d38a82}
 .signal-statusbar{
   display:flex;
   height:1.375rem;
@@ -856,6 +887,7 @@ button.deep-read-chip{border-color:var(--border-strong)}
 .confirm-actions{display:flex;align-items:center;gap:.65rem}
 
 .field{margin-bottom:1.4rem}
+.field-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
 .field label,.source-types legend{
   display:block;
   margin:0 0 .48rem;
@@ -865,7 +897,7 @@ button.deep-read-chip{border-color:var(--border-strong)}
 }
 .source-types{padding:0;border:0}
 .source-types legend{margin-bottom:.7rem}
-input[type="text"],input[type="password"],input[type="email"],input[type="search"],input[type="date"],textarea,select{
+input[type="text"],input[type="password"],input[type="email"],input[type="search"],input[type="date"],input[type="number"],textarea,select{
   width:100%;
   min-height:2.8rem;
   padding:.72rem .85rem;
@@ -1140,6 +1172,7 @@ select{
   .delete-confirm{justify-self:start}
   .confirm{right:auto;left:0}
   .type-options{grid-template-columns:1fr}
+  .field-pair{grid-template-columns:1fr;gap:0}
   .not-found-shell{width:min(100% - 2rem,72rem);padding:3rem 0}
   .not-found-code{font-size:7.5rem}
 }

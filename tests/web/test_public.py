@@ -80,6 +80,8 @@ def test_dashboard_shows_unread_count(conn, client):
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     insert_new(c, source_id, RawItem(external_id="t1", title="A", url="https://x"))
     insert_new(c, source_id, RawItem(external_id="t2", title="B", url="https://y"))
+    update_ai_ranking(c, source_id, "t1", score=90, summary="A", rationale="r")
+    update_ai_ranking(c, source_id, "t2", score=80, summary="B", rationale="r")
 
     resp = client.get("/")
     assert " · 2 new</span>" in resp.text
@@ -183,6 +185,66 @@ def test_channel_drilldown_splits_highlighted_and_folded(conn, client):
     assert "summary 9" in resp.text  # rank 9 is folded but still rendered as a one-liner
 
 
+def test_channel_drilldown_uses_configured_highlight_count(conn, client):
+    _, c = conn
+    channel_id = create_channel(
+        c,
+        "NZ Finance",
+        "economic news",
+        highlight_count=2,
+    )
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for i in range(3):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=f"t{i}", title=f"Item {i}", url=f"https://x/{i}"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            f"t{i}",
+            score=100 - i,
+            summary=f"summary {i}",
+            rationale="r",
+        )
+
+    resp = client.get(f"/channels/{channel_id}")
+
+    assert len(resp.context["highlighted"]) == 2
+    assert len(resp.context["folded"]) == 1
+
+
+def test_channel_drilldown_hides_items_below_configured_minimum_score(conn, client):
+    _, c = conn
+    channel_id = create_channel(
+        c,
+        "NZ Finance",
+        "economic news",
+        minimum_score=80,
+    )
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, score in (("low", 79), ("high", 80)):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=score,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+
+    resp = client.get(f"/channels/{channel_id}")
+
+    assert "high summary" in resp.text
+    assert "low summary" not in resp.text
+
+
 def test_channel_drilldown_folded_item_links_to_the_original_post_in_a_new_tab(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
@@ -193,8 +255,8 @@ def test_channel_drilldown_folded_item_links_to_the_original_post_in_a_new_tab(c
         update_ai_ranking(c, source_id, f"t{i}", score=100 - i, summary=f"summary {i}", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
-    # rank 9 (score 91) is in the folded tier (HIGHLIGHT_COUNT=8 caps the highlighted tier at
-    # the top 8); its summary text must link out to the original post like every other post's
+    # Rank 9 (score 91) is in the folded tier because the default Channel setting caps highlights
+    # at the top 8. Its summary text must link out to the original post like every other post's
     # title/summary does since sub-project B, not stay plain unlinked text.
     item_id = c.execute("SELECT id FROM items WHERE external_id='t9'").fetchone()[0]
     assert f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
@@ -212,8 +274,8 @@ def test_channel_drilldown_folded_google_news_item_shows_publisher_not_zero_scor
         update_ai_ranking(c, source_id, f"g{i}", score=100 - i, summary=f"summary {i}", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
-    # rank 9 (score 91) lands in the folded tier (HIGHLIGHT_COUNT=8 caps the highlighted tier at the
-    # top 8). A Google News item has no "score", so the folded tier must render its publisher via
+    # Rank 9 (score 91) lands in the folded tier because the default Channel setting caps highlights
+    # at 8. A Google News item has no "score", so the folded tier must render its publisher via
     # item.engagement_label, never the old hardcoded, meaningless "(0 upvotes)".
     assert resp.status_code == 200
     assert "Reuters" in resp.text
@@ -790,11 +852,241 @@ def test_dashboard_shows_ranked_signal_table(conn, client):
     assert "RBNZ 大幅降息" in resp.text
 
 
+def test_dashboard_only_ranks_items_fetched_today(conn, client, monkeypatch):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 7, 15, 9, 0, tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(
+        external_id="old",
+        title="Old high score",
+        url="https://example.com/old",
+    ))
+    insert_new(c, source_id, RawItem(
+        external_id="today",
+        title="Today lower score",
+        url="https://example.com/today",
+    ))
+    update_ai_ranking(
+        c, source_id, "old", score=99,
+        summary="Old high score signal", rationale="old",
+    )
+    update_ai_ranking(
+        c, source_id, "today", score=80,
+        summary="Today lower score signal", rationale="today",
+    )
+    c.execute(
+        "UPDATE items SET fetched_at = '2026-05-01T00:00:00' WHERE external_id = 'old'"
+    )
+    c.execute(
+        "UPDATE items SET fetched_at = '2026-07-15T08:00:00' WHERE external_id = 'today'"
+    )
+    c.commit()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Today lower score signal" in response.text
+    assert "Old high score signal" not in response.text
+
+
+def test_dashboard_uses_auckland_calendar_day_boundaries(conn, client, monkeypatch):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 7, 14, 12, 30, tzinfo=timezone.utc)
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, fetched_at in (
+        ("previous-day", "2026-07-14T11:59:59"),
+        ("today", "2026-07-14T12:00:00"),
+        ("next-day", "2026-07-15T12:00:00"),
+    ):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=90,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+        c.execute(
+            "UPDATE items SET fetched_at = ? WHERE external_id = ?",
+            (fetched_at, external_id),
+        )
+    c.commit()
+
+    response = client.get("/")
+
+    assert "today summary" in response.text
+    assert "previous-day summary" not in response.text
+    assert "next-day summary" not in response.text
+
+
+def test_dashboard_respects_each_channels_minimum_score(conn, client):
+    _, c = conn
+    strict_channel = create_channel(
+        c,
+        "Strict",
+        "profile",
+        minimum_score=80,
+    )
+    permissive_channel = create_channel(
+        c,
+        "Permissive",
+        "profile",
+        minimum_score=0,
+    )
+    strict_source = create_source(c, strict_channel, "reddit_subreddit", {"subreddit": "strict"})
+    permissive_source = create_source(
+        c,
+        permissive_channel,
+        "reddit_subreddit",
+        {"subreddit": "permissive"},
+    )
+    for source_id, external_id in ((strict_source, "strict"), (permissive_source, "permissive")):
+        insert_new(c, source_id, RawItem(external_id=external_id, title=external_id, url="https://x"))
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=79,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+
+    response = client.get("/")
+
+    assert "permissive summary" in response.text
+    assert "strict summary" not in response.text
+
+
+def test_dashboard_channel_tab_count_excludes_subthreshold_items(conn, client):
+    _, c = conn
+    channel_id = create_channel(
+        c,
+        "Strict",
+        "profile",
+        minimum_score=80,
+    )
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "strict"})
+    for external_id, score in (("hidden", 79), ("visible", 80)):
+        insert_new(c, source_id, RawItem(external_id=external_id, title=external_id, url="https://x"))
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=score,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+
+    response = client.get("/")
+
+    assert 'aria-label="Strict, 1 new item"' in response.text
+
+
+def test_dashboard_filters_and_counts_read_state(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    summaries = {"unread": "fresh item", "read": "seen item"}
+    for external_id in ("unread", "read"):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=90,
+            summary=summaries[external_id],
+            rationale="r",
+        )
+    c.execute("UPDATE items SET is_read = 1 WHERE external_id = 'read'")
+    c.commit()
+
+    all_response = client.get("/")
+    unread_response = client.get("/?view=unread")
+    read_response = client.get("/?view=read")
+
+    assert "All 2" in all_response.text
+    assert "Unread 1" in all_response.text
+    assert "Read 1" in all_response.text
+    assert "fresh item" in unread_response.text
+    assert "seen item" not in unread_response.text
+    assert "seen item" in read_response.text
+    assert "fresh item" not in read_response.text
+    assert 'class="signal-row is-read' in all_response.text
+    assert 'class="signal-row is-unread' in all_response.text
+
+
+def test_dashboard_shows_vote_controls_only_to_owner(conn, client, authed_client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Signal", url="https://x"))
+    update_ai_ranking(c, source_id, "t1", score=90, summary="summary", rationale="r")
+    item_id = c.execute("SELECT id FROM items WHERE external_id = 't1'").fetchone()[0]
+
+    anonymous_response = client.get("/")
+    owner_response = authed_client.get("/")
+
+    assert 'class="signal-votes"' not in anonymous_response.text
+    assert f'action="/items/{item_id}/vote"' in owner_response.text
+    assert 'name="origin" value="dashboard"' in owner_response.text
+
+
+def test_dashboard_vote_redirects_back_to_active_view(conn, authed_client, db_path):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Signal", url="https://x"))
+    update_ai_ranking(c, source_id, "t1", score=90, summary="summary", rationale="r")
+    item_id = c.execute("SELECT id FROM items WHERE external_id = 't1'").fetchone()[0]
+
+    response = authed_client.post(
+        f"/items/{item_id}/vote",
+        data={
+            "value": "1",
+            "csrf_token": "csrf1",
+            "origin": "dashboard",
+            "dashboard_view": "unread",
+            "minimum_score": "90",
+        },
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/?view=unread&minimum_score=90"
+    conn2 = connect(db_path)
+    assert conn2.execute(
+        "SELECT value FROM votes WHERE item_id = ?",
+        (item_id,),
+    ).fetchone()["value"] == 1
+
+
 def test_dashboard_hides_signal_table_when_nothing_qualifies(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert '<table class="signal-table">' not in resp.text
-    assert "No pending signals right now" in resp.text
+    assert "No signals match this view" in resp.text
 
 
 def test_dashboard_requests_twenty_four_ranked_signals(conn, client):
@@ -883,7 +1175,7 @@ def test_dashboard_high_priority_tab_filters_signals(conn, client):
 
     assert '<a href="/?minimum_score=90">≥90 1</a>' in default_resp.text
     assert '<strong aria-current="page">≥90 1</strong>' in filtered_resp.text
-    assert '<a href="/">All</a>' in filtered_resp.text
+    assert '<a href="/">All 2</a>' in filtered_resp.text
     assert "高分摘要" in filtered_resp.text
     assert "低分摘要" not in filtered_resp.text
     assert filtered_resp.context["pending_signal_count"] == 1
@@ -1019,7 +1311,7 @@ def test_channel_drilldown_freshness_has_exact_time_tooltip(conn, client):
     assert 'title="2026-07-09 15:00"' in resp.text  # NZST = UTC+12 in July
 
 
-def test_open_item_route_redirects_to_the_real_url_and_marks_it_opened(conn, client):
+def test_open_item_route_redirects_to_the_real_url_and_marks_it_read(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -1031,8 +1323,9 @@ def test_open_item_route_redirects_to_the_real_url_and_marks_it_opened(conn, cli
     assert resp.status_code == 302
     assert resp.headers["location"] == "https://reddit.com/r/x/comments/t1"
 
-    row = c.execute("SELECT opened_at FROM items WHERE id = ?", (item_id,)).fetchone()
+    row = c.execute("SELECT opened_at, is_read FROM items WHERE id = ?", (item_id,)).fetchone()
     assert row["opened_at"] is not None
+    assert row["is_read"] == 1
 
 
 def test_open_item_route_404s_for_a_missing_item(client):

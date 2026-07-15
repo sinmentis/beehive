@@ -74,6 +74,8 @@ def test_new_channel_form_requires_session(db_path):
 def test_new_channel_form_includes_csrf_token(authed_client):
     resp = authed_client.get("/admin/channels/new")
     assert 'name="csrf_token" value="csrf1"' in resp.text
+    assert 'name="highlight_count" value="8"' in resp.text
+    assert 'name="minimum_score" value="0"' in resp.text
 
 
 def test_new_channel_form_links_back_to_admin_home(authed_client):
@@ -112,7 +114,8 @@ def test_delete_channel_confirmation_uses_keyboard_accessible_details(
 def test_create_channel_succeeds_with_valid_csrf(authed_client, db_path):
     resp = authed_client.post("/admin/channels/new", data={
         "name": "NZ Finance", "profile": "economic news",
-        "fetch_interval_hours": "3", "csrf_token": "csrf1",
+        "fetch_interval_hours": "3", "highlight_count": "5",
+        "minimum_score": "72", "csrf_token": "csrf1",
     })
     assert resp.status_code == 303
     assert resp.headers["location"].startswith("/admin/channels/")
@@ -122,6 +125,8 @@ def test_create_channel_succeeds_with_valid_csrf(authed_client, db_path):
     row = conn.execute("SELECT * FROM channels WHERE name = 'NZ Finance'").fetchone()
     assert row["profile"] == "economic news"
     assert row["fetch_interval_hours"] == 3
+    assert row["highlight_count"] == 5
+    assert row["minimum_score"] == 72
 
 
 def test_create_channel_rejects_wrong_csrf_token(authed_client, db_path):
@@ -152,7 +157,14 @@ def test_create_channel_rejects_non_ascii_csrf_token(authed_client, db_path):
 
 def test_edit_channel_form_shows_current_values(authed_client, db_path):
     conn = connect(db_path)
-    channel_id = create_channel(conn, "NZ Finance", "economic news", fetch_interval_hours=3)
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "economic news",
+        fetch_interval_hours=3,
+        highlight_count=6,
+        minimum_score=70,
+    )
     create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
     conn.close()
 
@@ -160,6 +172,10 @@ def test_edit_channel_form_shows_current_values(authed_client, db_path):
     assert resp.status_code == 200
     assert 'value="NZ Finance"' in resp.text
     assert "economic news" in resp.text
+    assert 'id="highlight-count"' in resp.text
+    assert 'value="6" min="1" max="50"' in resp.text
+    assert 'id="minimum-score"' in resp.text
+    assert 'value="70" min="0" max="100"' in resp.text
     assert "r/PersonalFinanceNZ" in resp.text
 
 
@@ -200,7 +216,8 @@ def test_update_channel_saves_changes(authed_client, db_path):
 
     resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
         "name": "New Name", "profile": "new profile",
-        "fetch_interval_hours": "6", "digest_email": "", "csrf_token": "csrf1",
+        "fetch_interval_hours": "6", "highlight_count": "4",
+        "minimum_score": "65", "digest_email": "", "csrf_token": "csrf1",
     })
     assert resp.status_code == 303
 
@@ -208,6 +225,36 @@ def test_update_channel_saves_changes(authed_client, db_path):
     row = conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
     assert row["name"] == "New Name"
     assert row["fetch_interval_hours"] == 6
+    assert row["highlight_count"] == 4
+    assert row["minimum_score"] == 65
+
+
+def test_update_channel_preserves_display_settings_when_fields_are_omitted(
+    authed_client, db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(
+        conn,
+        "Old",
+        "old profile",
+        highlight_count=5,
+        minimum_score=70,
+    )
+    conn.close()
+
+    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
+        "name": "New Name",
+        "profile": "new profile",
+        "fetch_interval_hours": "6",
+        "digest_email": "",
+        "csrf_token": "csrf1",
+    })
+
+    assert resp.status_code == 303
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    assert row["highlight_count"] == 5
+    assert row["minimum_score"] == 70
 
 
 def test_update_channel_rejects_wrong_csrf(authed_client, db_path):

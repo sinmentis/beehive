@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A safe, resumable, and reversible migration for rewriting existing unread summaries.
 - An admin model selector that applies one validated Copilot model to future rankings, comment
   summaries, summary rewrites, and article briefs.
+- Per-channel highlight-count and minimum-score settings for Channel pages and daily digests.
+- Home-dashboard read/unread views, counts, and owner voting controls.
 
 ### Changed
 
@@ -26,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   safe next step without exposing internal error details.
 - Reddit deep reads fall back to stored self-post text when Reddit blocks automated page access,
   with an explicit warning about missing comments, edits, links, and truncated long posts.
+- Today's signals now ranks only content fetched during the current Auckland calendar day instead
+  of mixing in older high-scoring items.
 
 ## [0.1.0] - 2026-07-14
 

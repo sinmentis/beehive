@@ -47,6 +47,39 @@ def test_first_ever_digest_includes_all_scored_items(conn):
     assert "RBNZ cuts rates" in html
 
 
+def test_digest_uses_channel_highlight_count_and_minimum_score(conn):
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "profile",
+        highlight_count=1,
+        minimum_score=80,
+    )
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, score in (("top", 90), ("second", 85), ("low", 79)):
+        insert_new(
+            conn,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+        )
+        update_ai_ranking(
+            conn,
+            source_id,
+            external_id,
+            score=score,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+
+    notifier = MagicMock()
+    send_daily_digest(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    _, plain_text, _html = notifier.send.call_args.args
+    assert "top summary" in plain_text
+    assert "second summary" not in plain_text
+    assert "low summary" not in plain_text
+
+
 def test_next_days_digest_only_includes_items_since_first_send(conn):
     channel_id = create_channel(conn, "NZ Finance", "profile")
     source_id = create_source(

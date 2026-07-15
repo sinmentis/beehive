@@ -406,7 +406,7 @@ def test_list_dashboard_highlights_respects_limit(conn, source_id):
     assert len(list_dashboard_highlights(conn, limit=3)) == 3
 
 
-def test_count_dashboard_signals_uses_the_same_pending_filters(conn, source_id):
+def test_count_dashboard_signals_uses_the_same_visibility_filters(conn, source_id):
     from beehive.db.votes import upsert_vote
 
     for external_id, score in (("high", 95), ("low", 70), ("down", 99), ("open", 98)):
@@ -423,8 +423,8 @@ def test_count_dashboard_signals_uses_the_same_pending_filters(conn, source_id):
     mark_item_opened(conn, open_id)
     insert_new(conn, source_id, _raw_item("unranked"))
 
-    assert count_dashboard_signals(conn) == 2
-    assert count_dashboard_signals(conn, minimum_score=90) == 1
+    assert count_dashboard_signals(conn) == 3
+    assert count_dashboard_signals(conn, minimum_score=90) == 2
 
 
 def test_mark_item_opened_sets_opened_at(conn, source_id):
@@ -450,13 +450,15 @@ def test_mark_item_opened_does_not_overwrite_the_first_timestamp(conn, source_id
     assert row["opened_at"] == "2020-01-01T00:00:00"
 
 
-def test_list_dashboard_highlights_excludes_opened_items_even_if_still_unread(conn, source_id):
+def test_list_dashboard_highlights_keeps_opened_items_available_in_all_view(conn, source_id):
     insert_new(conn, source_id, _raw_item("t1"))
     update_ai_ranking(conn, source_id, "t1", score=90.0, summary="s", rationale="r")
     item_id = conn.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
     mark_item_opened(conn, item_id)
 
-    assert list_dashboard_highlights(conn) == []
+    highlights = list_dashboard_highlights(conn)
+    assert len(highlights) == 1
+    assert highlights[0]["external_id"] == "t1"
 
 
 def test_list_dashboard_highlights_includes_read_but_unopened_items(conn, source_id):
