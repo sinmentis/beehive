@@ -3,12 +3,15 @@
   <h2 id="research-plan-title" class="sr-only">{{ t('web.research.plan.heading') }}</h2>
   {% if plan_revisions %}
   <div class="research-plan-list">
-    {% for revision in plan_revisions %}
-    <article class="research-plan-revision">
-      <header class="research-plan-revision-heading">
+    {% for revision in plan_revisions|reverse %}
+    <details class="research-plan-revision"{% if loop.first %} open{% endif %}>
+      <summary class="research-plan-revision-heading">
         <span>{{ t('web.research.plan.version_label', version=revision.version) }}</span>
+        {% if loop.first %}
+        <span class="research-plan-latest-badge">{{ t('web.research.plan.latest_badge') }}</span>
+        {% endif %}
         <span class="research-plan-time">{{ revision.created_at_label }}</span>
-      </header>
+      </summary>
       {% if revision.is_available %}
       <p class="research-plan-summary">{{ revision.summary }}</p>
       {% if revision.sources %}
@@ -24,7 +27,7 @@
       {% else %}
       <p class="research-plan-summary research-plan-unavailable">{{ revision.summary }}</p>
       {% endif %}
-    </article>
+    </details>
     {% endfor %}
   </div>
   {% else %}

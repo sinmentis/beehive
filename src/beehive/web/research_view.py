@@ -24,6 +24,7 @@ in exactly one place:
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -329,9 +330,17 @@ class EvidenceTabView:
     clusters: tuple[EvidenceClusterView, ...]
     has_any_evidence: bool
     all_excluded: bool
+    total_items: int = 0
+    page: int = 1
+    total_pages: int = 1
+    has_prev: bool = False
+    has_next: bool = False
 
 
-def build_evidence_tab_view(conn, session_id: int, t: Localizer) -> EvidenceTabView:
+_EVIDENCE_PAGE_SIZE = 10
+
+
+def build_evidence_tab_view(conn, session_id: int, t: Localizer, page: int = 1) -> EvidenceTabView:
     snapshot_id = _latest_sealed_snapshot_id(conn, session_id)
     if snapshot_id is None:
         return EvidenceTabView(clusters=(), has_any_evidence=False, all_excluded=False)
@@ -390,8 +399,19 @@ def build_evidence_tab_view(conn, session_id: int, t: Localizer) -> EvidenceTabV
     active_ids = set(revision.evidence_item_ids) if revision is not None else set()
     all_excluded = len(item_ids) > 0 and not active_ids
 
+    # Evidence sets can grow into the thousands over repeated refreshes, so only one page of
+    # clusters is ever sent to the template; total_items still counts every item across all
+    # pages so the header's result-stat count stays accurate regardless of the current page.
+    total_items = sum(len(c.items) for c in cluster_views)
+    total_pages = max(1, math.ceil(len(cluster_views) / _EVIDENCE_PAGE_SIZE))
+    safe_page = min(max(page, 1), total_pages)
+    start = (safe_page - 1) * _EVIDENCE_PAGE_SIZE
+    page_clusters = cluster_views[start:start + _EVIDENCE_PAGE_SIZE]
+
     return EvidenceTabView(
-        clusters=tuple(cluster_views), has_any_evidence=True, all_excluded=all_excluded)
+        clusters=tuple(page_clusters), has_any_evidence=True, all_excluded=all_excluded,
+        total_items=total_items, page=safe_page, total_pages=total_pages,
+        has_prev=safe_page > 1, has_next=safe_page < total_pages)
 
 
 # ============================================================================

@@ -209,6 +209,7 @@ def research_detail(
     session_id: int,
     request: Request,
     tab: str = "synthesis",
+    page: int = 1,
     action_error: str | None = None,
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
@@ -221,7 +222,7 @@ def research_detail(
 
     synthesis_document = research_view.load_synthesis_document(conn, session_id)
     synthesis_view = research_view.build_synthesis_tab_view(synthesis_document, t)
-    evidence_view = research_view.build_evidence_tab_view(conn, session_id, t)
+    evidence_view = research_view.build_evidence_tab_view(conn, session_id, t, page=page)
     plan_views = research_view.build_plan_views(conn, run.id, t) if run is not None else ()
     conversation_view = research_view.build_conversation_view(
         conn, research_session, synthesis_document, evidence_view.all_excluded, t)

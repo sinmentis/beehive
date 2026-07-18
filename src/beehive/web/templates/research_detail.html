@@ -11,24 +11,43 @@
       <p class="eyebrow">{{ t('web.research.session_status.' + research_session.status.value) }}</p>
       <h1 id="research-question-heading">{{ question }}</h1>
       {% if sources %}
-      <p class="page-lede research-sources-summary">
-        {{ t('web.research.detail.sources_label') }}
-        {% for source in sources %}{{ source.label }}{% if not loop.last %}, {% endif %}{% endfor %}
-      </p>
+      <ul class="research-sources-chips">
+        {% for source in sources[:3] %}
+        <li class="research-source-chip">{{ source.label }}</li>
+        {% endfor %}
+        {% if sources|length > 3 %}
+        <li>
+          <details class="research-sources-more">
+            <summary>{{ t('web.research.detail.sources_more', count=sources|length - 3) }}</summary>
+            {% for source in sources[3:] %}
+            <span class="research-source-chip">{{ source.label }}</span>
+            {% endfor %}
+          </details>
+        </li>
+        {% endif %}
+      </ul>
       {% endif %}
     </div>
-    <div class="row-actions research-detail-actions">
-      {% if can_unarchive %}
-      <form method="post" action="/research/{{ research_session.id }}/unarchive">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn ghost small">{{ t('web.research.detail.unarchive') }}</button>
-      </form>
-      {% elif can_archive %}
-      <form method="post" action="/research/{{ research_session.id }}/archive">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn ghost small">{{ t('web.research.detail.archive') }}</button>
-      </form>
+    <div class="research-detail-side">
+      {% if evidence.has_any_evidence %}
+      <div class="result-stat research-evidence-stat">
+        <strong>{{ evidence.total_items }}</strong>
+        <span>{{ t('web.research.evidence.total_label') }}</span>
+      </div>
       {% endif %}
+      <div class="row-actions research-detail-actions">
+        {% if can_unarchive %}
+        <form method="post" action="/research/{{ research_session.id }}/unarchive">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn ghost small">{{ t('web.research.detail.unarchive') }}</button>
+        </form>
+        {% elif can_archive %}
+        <form method="post" action="/research/{{ research_session.id }}/archive">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn ghost small">{{ t('web.research.detail.archive') }}</button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </header>
 
@@ -64,6 +83,27 @@
         {% include "_research_evidence_cluster.html" %}
         {% endfor %}
       </div>
+      {% if evidence.total_pages > 1 %}
+      <nav class="research-evidence-pager" aria-label="{{ t('web.research.evidence.pager_aria') }}">
+        {% if evidence.has_prev %}
+        <a href="/research/{{ research_session.id }}?tab=evidence&page={{ evidence.page - 1 }}" class="btn ghost small">{{ t('web.research.evidence.pager_prev') }}</a>
+        {% else %}
+        <span class="btn ghost small research-evidence-pager-disabled" aria-disabled="true">{{ t('web.research.evidence.pager_prev') }}</span>
+        {% endif %}
+        <span class="research-evidence-pager-label">{{ t('web.research.evidence.pager_page_label', page=evidence.page, total=evidence.total_pages) }}</span>
+        {% if evidence.has_next %}
+        <a href="/research/{{ research_session.id }}?tab=evidence&page={{ evidence.page + 1 }}" class="btn ghost small">{{ t('web.research.evidence.pager_next') }}</a>
+        {% else %}
+        <span class="btn ghost small research-evidence-pager-disabled" aria-disabled="true">{{ t('web.research.evidence.pager_next') }}</span>
+        {% endif %}
+        <form method="get" action="/research/{{ research_session.id }}" class="research-evidence-pager-jump">
+          <input type="hidden" name="tab" value="evidence">
+          <label for="research-evidence-page-input">{{ t('web.research.evidence.pager_jump_label') }}</label>
+          <input type="number" id="research-evidence-page-input" name="page" min="1" max="{{ evidence.total_pages }}" value="{{ evidence.page }}">
+          <button type="submit" class="btn ghost small">{{ t('web.research.evidence.pager_jump_submit') }}</button>
+        </form>
+      </nav>
+      {% endif %}
       {% else %}
       <div class="empty-state compact-empty">
         <h3>{{ t('web.research.evidence.empty_heading') }}</h3>
