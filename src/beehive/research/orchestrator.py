@@ -425,9 +425,22 @@ def _collection_sources(
     return combined
 
 
+async def _call_data_only(
+    prompt: str, *, model: str, timeout: float, client: object | None,
+) -> str:
+    """Calls `run_data_only_prompt`, forwarding `client` only when one was actually given --
+    tests patch this module's own `run_data_only_prompt` name with fakes that predate the
+    `client` parameter, so passing `client=None` explicitly (rather than omitting it) would
+    break every such fake with an unexpected-keyword-argument error for no behavioral benefit,
+    since `client=None` and omitting it are equivalent to the real implementation anyway."""
+    if client is not None:
+        return await run_data_only_prompt(prompt, model=model, timeout=timeout, client=client)
+    return await run_data_only_prompt(prompt, model=model, timeout=timeout)
+
+
 async def _generate_plan(
     question: str, prior_plan: ResearchPlan | None, gaps: Sequence[str], localizer: Localizer,
-    model: str, timeout: float,
+    model: str, timeout: float, *, client: object | None = None,
 ) -> ResearchPlan:
     """Builds the exact same prompts planner.py's own generate_initial_plan/
     generate_revision_plan would build, and parses the response with the exact same
@@ -439,16 +452,16 @@ async def _generate_plan(
         prompt = build_initial_plan_prompt(question, localizer.language)
     else:
         prompt = build_revision_plan_prompt(question, prior_plan, gaps, localizer.language)
-    raw_response = await run_data_only_prompt(prompt, model=model, timeout=timeout)
+    raw_response = await _call_data_only(prompt, model=model, timeout=timeout, client=client)
     return parse_plan_response(raw_response)
 
 
 async def _assess(
     question: str, evidence: Sequence[EvidenceProjection], prior_gaps: Sequence[str],
-    localizer: Localizer, model: str, timeout: float,
+    localizer: Localizer, model: str, timeout: float, *, client: object | None = None,
 ) -> SufficiencyAssessment:
     prompt = build_sufficiency_prompt(question, evidence, prior_gaps, localizer.language)
-    raw_response = await run_data_only_prompt(prompt, model=model, timeout=timeout)
+    raw_response = await _call_data_only(prompt, model=model, timeout=timeout, client=client)
     return parse_sufficiency_response(raw_response)
 
 
@@ -486,6 +499,7 @@ async def _finalize(
     synthesis_model: str, with_evidence_status: RunOutcomeStatus,
     sufficiency: SufficiencyAssessment | None, rounds_completed: int,
     source_failures: tuple[SourceFailureRecord, ...], now_fn: Callable[[], datetime],
+    client: object | None = None,
 ) -> SealedEvidenceOutcome:
     """The single exit path for every routine stopping condition (sufficient / limits reached /
     novelty exhausted / cancelled). Seals+pins evidence, then hands off to
@@ -571,7 +585,8 @@ async def _finalize(
         conn, run_id, claim_token, session_id, finalized.snapshot, finalized.revision, now,
         question=question, localizer=localizer, synthesis_model=synthesis_model,
         with_evidence_status=with_evidence_status, sufficiency=sufficiency,
-        rounds_completed=rounds_completed, source_failures=source_failures, now_fn=now_fn)
+        rounds_completed=rounds_completed, source_failures=source_failures, now_fn=now_fn,
+        client=client)
 
 
 async def _synthesize_and_terminate(
@@ -580,7 +595,7 @@ async def _synthesize_and_terminate(
     localizer: Localizer, synthesis_model: str,
     with_evidence_status: RunOutcomeStatus, sufficiency: SufficiencyAssessment | None,
     rounds_completed: int, source_failures: tuple[SourceFailureRecord, ...],
-    now_fn: Callable[[], datetime],
+    now_fn: Callable[[], datetime], client: object | None = None,
 ) -> SealedEvidenceOutcome:
     """The shared tail of both a fresh finalization (`_finalize`, immediately after
     `finalize_snapshot_if_claimed` just sealed `sealed`/pinned `revision` THIS call) and a
@@ -689,7 +704,7 @@ async def _synthesize_and_terminate(
                     conn, session_id, run_id, claim_token, question, revision.id,
                     sufficiency_state, localizer, admission_now, prior_gaps=gaps,
                     prior_contradictions=contradictions, model=synthesis_model, timeout=timeout,
-                    now_fn=now_fn, reuse_existing_for_run=True)
+                    now_fn=now_fn, reuse_existing_for_run=True, client=client)
             except SynthesisCancelledError:
                 # Cancellation committed while the two AI calls were still in flight, discovered
                 # only once persistence itself rereran this same check at its own, later lock --
@@ -753,7 +768,7 @@ async def _synthesize_and_terminate(
 async def _resume_sealed_run(
     conn: sqlite3.Connection, run_id: int, claim_token: str, session_id: int,
     snapshot: EvidenceSnapshot, now: datetime, *, question: str, localizer: Localizer,
-    synthesis_model: str, now_fn: Callable[[], datetime],
+    synthesis_model: str, now_fn: Callable[[], datetime], client: object | None = None,
 ) -> SealedEvidenceOutcome:
     """Resumes a run whose `snapshot` (this run's own -- at most one ever exists, per the
     schema's UNIQUE(run_id) index on research_snapshots) is already 'sealed': a PRIOR attempt of
@@ -835,7 +850,7 @@ async def _resume_sealed_run(
         conn, run_id, claim_token, session_id, snapshot, revision, now,
         question=question, localizer=localizer, synthesis_model=synthesis_model,
         with_evidence_status=with_evidence_status, sufficiency=None,
-        rounds_completed=0, source_failures=(), now_fn=now_fn)
+        rounds_completed=0, source_failures=(), now_fn=now_fn, client=client)
 
 
 async def run_research_orchestration(
@@ -854,13 +869,20 @@ async def run_research_orchestration(
     synthesis_model: str = DEFAULT_MODEL,
     max_deep_fetches_per_round: int = MAX_DEEP_FETCHES_PER_ROUND,
     max_rounds: int = MAX_REVISION_ROUNDS,
+    client: object | None = None,
 ) -> SealedEvidenceOutcome:
     """Runs an already-claimed Research Run (run.status == 'processing', run.claim_token ==
     claim_token, per db/research_runs.py's claim_research_run) through as many
     plan -> collect -> enrich -> assess rounds as Evidence Sufficiency and the run's own
     deadline/claim allow, then finalizes (clusters, seals, pins, synthesizes) exactly once.
     Never raises for a routine stopping condition -- see SealedEvidenceOutcome and
-    RunOutcomeStatus. Raises ValueError only for a caller error (blank question)."""
+    RunOutcomeStatus. Raises ValueError only for a caller error (blank question).
+
+    `client` (e.g. from `ai.llm_client.tool_free_client()`) is passed through, unchanged, to
+    every `run_data_only_prompt` call this run makes (plan generation, sufficiency assessment,
+    synthesis) so a caller running the whole plan-collect-enrich-assess-synthesize lifecycle can
+    pay the SDK's per-process startup cost once instead of once per call. Omitting it (the
+    default) preserves the exact original one-client-per-call behavior."""
     if not question or not question.strip():
         raise ValueError("question must be non-empty")
 
@@ -892,7 +914,7 @@ async def run_research_orchestration(
         return await _resume_sealed_run(
             conn, run_id, claim_token, session_id, snapshot, now_fn(),
             question=question, localizer=localizer, synthesis_model=synthesis_model,
-            now_fn=now_fn)
+            now_fn=now_fn, client=client)
 
     seen_evidence_ids: set[int] = set(list_snapshot_item_ids(conn, snapshot.id))
 
@@ -901,7 +923,7 @@ async def run_research_orchestration(
             conn, run_id, claim_token, session_id, snapshot.id, now_fn(),
             question=question, localizer=localizer, synthesis_model=synthesis_model,
             with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
-            sufficiency=None, rounds_completed=0, source_failures=(), now_fn=now_fn)
+            sufficiency=None, rounds_completed=0, source_failures=(), now_fn=now_fn, client=client)
 
     prior_plan: ResearchPlan | None = None
     gaps: list[str] = []
@@ -922,7 +944,7 @@ async def run_research_orchestration(
                 question=question, localizer=localizer, synthesis_model=synthesis_model,
                 with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                 sufficiency=last_assessment, rounds_completed=rounds_completed,
-                source_failures=tuple(source_failures), now_fn=now_fn)
+                source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
         if _remaining_seconds(run, now_fn()) <= 0:
             stop_status = RunOutcomeStatus.LIMITS_REACHED
@@ -935,7 +957,7 @@ async def run_research_orchestration(
         try:
             plan = await _generate_plan(
                 question, prior_plan, gaps, localizer, planner_model,
-                _ai_call_timeout(run, now_fn()))
+                _ai_call_timeout(run, now_fn()), client=client)
         except StructuredResponseError:
             # A malformed Research Plan response cannot safely be used to collect anything
             # this round -- treat it the same as "no new plan this round" and fall through
@@ -952,7 +974,7 @@ async def run_research_orchestration(
                 question=question, localizer=localizer, synthesis_model=synthesis_model,
                 with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                 sufficiency=last_assessment, rounds_completed=rounds_completed,
-                source_failures=tuple(source_failures), now_fn=now_fn)
+                source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
         create_plan_revision(conn, run_id, _plan_to_json(plan), plan.summary, True, now_fn())
         plan_sources = _persist_plan_sources(conn, session_id, plan, now_fn())
@@ -979,7 +1001,7 @@ async def run_research_orchestration(
                 question=question, localizer=localizer, synthesis_model=synthesis_model,
                 with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                 sufficiency=last_assessment, rounds_completed=rounds_completed,
-                source_failures=tuple(source_failures), now_fn=now_fn)
+                source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
         # --- ENRICHING -----------------------------------------------------------------------
         if not advance_research_run_phase(conn, run_id, claim_token, ResearchRunPhase.ENRICHING):
@@ -998,7 +1020,7 @@ async def run_research_orchestration(
                     question=question, localizer=localizer, synthesis_model=synthesis_model,
                     with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                     sufficiency=last_assessment, rounds_completed=rounds_completed,
-                    source_failures=tuple(source_failures), now_fn=now_fn)
+                    source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
             item = persist_candidate_snippet(conn, run_id, claim_token, session_id, now_fn(),
                                               candidate)
@@ -1023,7 +1045,7 @@ async def run_research_orchestration(
                     question=question, localizer=localizer, synthesis_model=synthesis_model,
                     with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                     sufficiency=last_assessment, rounds_completed=rounds_completed,
-                    source_failures=tuple(source_failures), now_fn=now_fn)
+                    source_failures=tuple(source_failures), now_fn=now_fn, client=client)
             # Claim- and deadline-fenced under its own BEGIN IMMEDIATE, atomically with the
             # append itself -- not just via the _require_active check above -- so a stale
             # worker that passed that application-level check, then paused (GC pause, thread
@@ -1059,7 +1081,7 @@ async def run_research_orchestration(
                     question=question, localizer=localizer, synthesis_model=synthesis_model,
                     with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                     sufficiency=last_assessment, rounds_completed=rounds_completed,
-                    source_failures=tuple(source_failures), now_fn=now_fn)
+                    source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
             result = reserve_and_deep_fetch(
                 conn, run_id, claim_token, session_id, item, now_fn(), fetcher=fetcher)
@@ -1085,7 +1107,7 @@ async def run_research_orchestration(
                     question=question, localizer=localizer, synthesis_model=synthesis_model,
                     with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                     sufficiency=last_assessment, rounds_completed=rounds_completed,
-                    source_failures=tuple(source_failures), now_fn=now_fn)
+                    source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
             if result.status is DeepFetchStatus.RESERVATION_DENIED:
                 # Either the run-wide 30-fetch ceiling was reached (claim just reconfirmed
@@ -1107,7 +1129,7 @@ async def run_research_orchestration(
                 question=question, localizer=localizer, synthesis_model=synthesis_model,
                 with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                 sufficiency=last_assessment, rounds_completed=rounds_completed,
-                source_failures=tuple(source_failures), now_fn=now_fn)
+                source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
         all_item_ids = list_snapshot_item_ids(conn, snapshot.id)
         items_by_id = get_evidence_items(conn, all_item_ids)
@@ -1116,7 +1138,7 @@ async def run_research_orchestration(
         try:
             assessment = await _assess(
                 question, projections, gaps, localizer, sufficiency_model,
-                _ai_call_timeout(run, now_fn()))
+                _ai_call_timeout(run, now_fn()), client=client)
         except StructuredResponseError:
             # A malformed Evidence Sufficiency response cannot safely drive another revision
             # round -- stop here with whatever evidence/assessment already exists.
@@ -1133,7 +1155,7 @@ async def run_research_orchestration(
                 question=question, localizer=localizer, synthesis_model=synthesis_model,
                 with_evidence_status=RunOutcomeStatus.CANCELLED_WITH_EVIDENCE,
                 sufficiency=assessment, rounds_completed=rounds_completed,
-                source_failures=tuple(source_failures), now_fn=now_fn)
+                source_failures=tuple(source_failures), now_fn=now_fn, client=client)
 
         last_assessment = assessment
         rounds_completed = round_number
@@ -1154,7 +1176,8 @@ async def run_research_orchestration(
         conn, run_id, claim_token, session_id, snapshot.id, now_fn(),
         question=question, localizer=localizer, synthesis_model=synthesis_model,
         with_evidence_status=stop_status, sufficiency=last_assessment,
-        rounds_completed=rounds_completed, source_failures=tuple(source_failures), now_fn=now_fn)
+        rounds_completed=rounds_completed, source_failures=tuple(source_failures),
+        now_fn=now_fn, client=client)
 
 
 __all__ = [

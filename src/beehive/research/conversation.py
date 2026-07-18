@@ -638,9 +638,22 @@ def submit_owner_message(
 # Public entry point 2: processing an already-claimed request into a validated reply
 # ============================================================================
 
+async def _call_data_only(
+    prompt: str, *, model: str, timeout: float, client: object | None,
+) -> str:
+    """Calls `run_data_only_prompt`, forwarding `client` only when one was actually given -- a
+    fake patched over this module's own `run_data_only_prompt` name that predates the `client`
+    parameter would otherwise break on an unexpected keyword argument, for no behavioral benefit
+    (client=None and omitting it are equivalent to the real implementation anyway)."""
+    if client is not None:
+        return await run_data_only_prompt(prompt, model=model, timeout=timeout, client=client)
+    return await run_data_only_prompt(prompt, model=model, timeout=timeout)
+
+
 async def process_claimed_chat_request(
         conn: sqlite3.Connection, request: ChatRequest, localizer: Localizer, now: datetime,
-        model: str = DEFAULT_MODEL, timeout: float = 120.0) -> ConversationMessage:
+        model: str = DEFAULT_MODEL, timeout: float = 120.0, *,
+        client: object | None = None) -> ConversationMessage:
     """Generates and persists the reply for an already-claimed chat request `request` (e.g. from
     a future worker's `claim_chat_request`). Re-loads and re-validates exactly the request's
     pinned owner message, Evidence State Revision, Research Synthesis, and Conversation Memory
@@ -659,7 +672,13 @@ async def process_claimed_chat_request(
     Raises ConversationError for any invalid pin, a request not currently claimed/processing, or
     a malformed/invalid-alias AI response (zero database writes in every case -- both AI calls'
     output is simply discarded), and ConversationClaimLostError if the request is no longer an
-    active claim by the time persistence runs (also zero database writes)."""
+    active claim by the time persistence runs (also zero database writes).
+
+    `client` (e.g. from `ai.llm_client.tool_free_client()`) is passed through, unchanged, to both
+    `run_data_only_prompt` calls below, letting a caller that already opened one for this chat
+    turn's reply-then-memory-update pair reuse it instead of paying the SDK's per-call startup
+    cost twice. Each call still gets its own fresh session, so omitting `client` (the default)
+    preserves the exact original per-call behavior."""
     if request.status is not ChatRequestStatus.PROCESSING or request.claim_token is None:
         raise ConversationError(f"chat request {request.id} is not an active claimed request")
 
@@ -714,7 +733,7 @@ async def process_claimed_chat_request(
     reply_prompt = build_reply_prompt(
         session.question, owner_message.content, prior_messages, synthesis,
         prior_memory_content, pinned_aliases, localizer.language)
-    reply_raw = await run_data_only_prompt(reply_prompt, model=model, timeout=timeout)
+    reply_raw = await _call_data_only(reply_prompt, model=model, timeout=timeout, client=client)
     raw_claims, raw_notes = parse_reply_response(reply_raw)
     reply_claims = _resolve_reply_claims(raw_claims, alias_map)
     supplementary_notes = tuple(SupplementaryNote(text=note) for note in raw_notes)
@@ -724,7 +743,7 @@ async def process_claimed_chat_request(
     memory_prompt = build_memory_update_prompt(
         session.question, prior_memory_content, owner_message.content, reply_content,
         localizer.language)
-    memory_raw = await run_data_only_prompt(memory_prompt, model=model, timeout=timeout)
+    memory_raw = await _call_data_only(memory_prompt, model=model, timeout=timeout, client=client)
     new_memory_content = parse_memory_update_response(memory_raw)
 
     result = complete_chat_request_with_reply(

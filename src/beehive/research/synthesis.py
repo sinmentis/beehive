@@ -719,6 +719,20 @@ def parse_model_knowledge_response(raw_text: str) -> tuple[str, ...]:
 # Worker-facing orchestration: two AI calls, then one claim-fenced atomic persist
 # ============================================================================
 
+async def _call_data_only(
+    prompt: str, *, model: str, timeout: float, client: object | None,
+) -> str:
+    """Calls `run_data_only_prompt`, forwarding `client` only when one was actually given --
+    tests (including orchestrator.py's, which patch this module's own `run_data_only_prompt`
+    name too) use fakes that predate the `client` parameter, so passing `client=None` explicitly
+    (rather than omitting it) would break every such fake with an unexpected-keyword-argument
+    error for no behavioral benefit, since `client=None` and omitting it are equivalent to the
+    real implementation anyway."""
+    if client is not None:
+        return await run_data_only_prompt(prompt, model=model, timeout=timeout, client=client)
+    return await run_data_only_prompt(prompt, model=model, timeout=timeout)
+
+
 async def generate_synthesis(
         conn: sqlite3.Connection, session_id: int, run_id: int, claim_token: str, question: str,
         evidence_state_revision_id: int, sufficiency_state: SufficiencyState,
@@ -726,7 +740,8 @@ async def generate_synthesis(
         prior_contradictions: Sequence[str] = (), model: str = DEFAULT_MODEL,
         timeout: float = 120.0, *,
         now_fn: Callable[[], datetime] | None = None,
-        reuse_existing_for_run: bool = False) -> ResearchSynthesis:
+        reuse_existing_for_run: bool = False,
+        client: object | None = None) -> ResearchSynthesis:
     """Generates and persists the next Research Synthesis version for `session_id`, pinned to
     `evidence_state_revision_id`. Makes exactly two tool-free LLM calls (core, then
     supplementary model-knowledge) and persists both together in one claim-, deadline-, AND
@@ -751,7 +766,13 @@ async def generate_synthesis(
     own authoritative, lock-held clock -- see that function's docstring. `now` itself is used
     verbatim only when `now_fn` is omitted (deterministic single-connection tests); every
     production caller MUST pass `now_fn` -- its own live clock callback, never a pre-sampled
-    datetime."""
+    datetime.
+
+    `client` (e.g. from `ai.llm_client.tool_free_client()`) is passed through, unchanged, to both
+    `run_data_only_prompt` calls below, letting a caller that already opened one for the rest of
+    a Research Run's lifecycle reuse it here instead of paying the SDK's per-call startup cost
+    twice more. Each call still gets its own fresh session, so omitting `client` (the default)
+    preserves the exact original per-call behavior."""
     if not question or not question.strip():
         raise ValueError("question must be non-empty")
 
@@ -761,12 +782,13 @@ async def generate_synthesis(
 
     core_prompt = build_core_synthesis_prompt(
         question, pinned_aliases, prior_gaps, prior_contradictions, localizer.language)
-    core_raw = await run_data_only_prompt(core_prompt, model=model, timeout=timeout)
+    core_raw = await _call_data_only(core_prompt, model=model, timeout=timeout, client=client)
     core_sections = parse_core_synthesis_response(core_raw)
     core_claims = _resolve_core_claims(core_sections, alias_map)
 
     knowledge_prompt = build_model_knowledge_prompt(question, localizer.language)
-    knowledge_raw = await run_data_only_prompt(knowledge_prompt, model=model, timeout=timeout)
+    knowledge_raw = await _call_data_only(
+        knowledge_prompt, model=model, timeout=timeout, client=client)
     knowledge_notes = parse_model_knowledge_response(knowledge_raw)
     knowledge_claims = tuple(
         SynthesisClaim(

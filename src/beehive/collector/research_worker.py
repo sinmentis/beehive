@@ -98,7 +98,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from beehive.ai.model_selection import load_model
+from beehive.ai.llm_client import tool_free_client
+from beehive.ai.model_selection import DEFAULT_MODEL, load_model
 from beehive.db.connection import connect
 from beehive.db.research_chat_requests import (ChatRequest, claim_chat_request,
                                                 fail_chat_request, heartbeat_chat_request,
@@ -111,8 +112,8 @@ from beehive.db.research_runs import (ResearchRunLease, claim_research_run,
                                        recover_expired_research_runs, requeue_research_run)
 from beehive.db.research_sessions import get_research_session
 from beehive.deep_read.fetch import ArticleFetcher
-from beehive.domain.research import ResearchRunStatus
-from beehive.localization import load_localizer, localizer_for
+from beehive.domain.research import ConversationMessage, ResearchRunStatus
+from beehive.localization import Localizer, load_localizer, localizer_for
 from beehive.research.conversation import (ConversationClaimLostError, ConversationError,
                                             process_claimed_chat_request)
 from beehive.research.limits import MAX_RUN_DURATION
@@ -284,18 +285,26 @@ def _default_research_task_runner(
     one every other connection this worker opens comes from -- a plain, stateless callable that
     is just as safe to call from this background thread as from the main loop) to get its OWN
     sqlite3 connection, never shared with any other task, heartbeat, or the coordinator; opens
-    its own ArticleFetcher; runs the existing, unmodified research.orchestrator.
+    its own ArticleFetcher and one `tool_free_client()`, reused across every tool-free AI call
+    this run makes (plan generation, sufficiency assessment, synthesis) instead of spawning a
+    fresh Copilot SDK process per call; runs the existing, unmodified research.orchestrator.
     run_research_orchestration to completion through a fresh asyncio event loop; and always
-    closes both before returning."""
+    closes all three before returning."""
     conn = connection_factory()
     fetcher = ArticleFetcher()
     try:
-        return asyncio.run(run_research_orchestration(
-            conn, run_id, claim_token, session_id, question, localizer_for(language_code),
-            now_fn=now_fn, fetcher=fetcher, planner_model=model, sufficiency_model=model))
+        async def _run() -> SealedEvidenceOutcome:
+            async with tool_free_client() as ai_client:
+                return await run_research_orchestration(
+                    conn, run_id, claim_token, session_id, question, localizer_for(language_code),
+                    now_fn=now_fn, fetcher=fetcher, planner_model=model, sufficiency_model=model,
+                    client=ai_client)
+
+        return asyncio.run(_run())
     finally:
         fetcher.close()
         conn.close()
+
 
 
 # ============================================================================
@@ -354,6 +363,19 @@ def reconcile_once(
         recovered_chat_requests=chat_recovered)
 
 
+async def _default_chat_processor(
+    conn: sqlite3.Connection, request: ChatRequest, localizer: Localizer, now: datetime,
+    model: str = DEFAULT_MODEL, timeout: float = 120.0,
+) -> ConversationMessage:
+    """The default, real chat-reply body: opens one `tool_free_client()` for this chat turn's
+    two sequential tool-free AI calls (draft reply, then memory update) so they share one
+    Copilot SDK process instead of spawning a fresh one per call, then delegates to the
+    existing, unmodified research.conversation.process_claimed_chat_request."""
+    async with tool_free_client() as ai_client:
+        return await process_claimed_chat_request(
+            conn, request, localizer, now, model=model, timeout=timeout, client=ai_client)
+
+
 # ============================================================================
 # The worker
 # ============================================================================
@@ -365,7 +387,7 @@ class ResearchWorker:
         clock: NowFactory = _utc_now,
         sleep: Sleep = asyncio.sleep,
         research_task_runner: ResearchTaskRunner = _default_research_task_runner,
-        chat_processor: ChatProcessor = process_claimed_chat_request,
+        chat_processor: ChatProcessor = _default_chat_processor,
         log: Logger = print,
     ) -> None:
         self._config = config

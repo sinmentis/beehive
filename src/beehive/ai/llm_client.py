@@ -22,10 +22,22 @@ Two entry points, two trust levels:
   behaving like `approve_all`. Before any of that, `_require_tool_free_capability` inspects the
   installed SDK's `create_session` signature for the `available_tools` parameter; if a future or
   older SDK release doesn't expose it, this raises immediately -- callers must never fall back to
-  an ungated, tool-permissive session for untrusted content."""
+  an ungated, tool-permissive session for untrusted content.
+
+`tool_free_client()` lets a caller that makes several sequential `run_data_only_prompt` calls in
+one logical unit of work (e.g. one Research run's plan/sufficiency rounds and synthesis, or one
+chat turn's reply+memory update) pay the SDK's subprocess-spawn/handshake cost (`client.start()`)
+only once instead of once per call, by opening one `CopilotClient` and passing it to each
+`run_data_only_prompt(..., client=...)` call. Passing `client` only ever changes which process
+sends the prompt -- `run_data_only_prompt` still calls `create_session()` fresh for every single
+call, so each prompt remains fully isolated from any other (no conversation memory or context
+bleed across calls), exactly like today. Callers that omit `client` are unaffected: the default
+`client=None` path is the original one-client-per-call behavior, unchanged."""
 from __future__ import annotations
 
 import inspect
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from beehive.ai.model_selection import DEFAULT_MODEL
 
@@ -94,13 +106,11 @@ async def run_prompt(prompt: str, model: str = DEFAULT_MODEL, timeout: float = 1
         await client.stop()
 
 
-async def run_data_only_prompt(
-        prompt: str, model: str = DEFAULT_MODEL, timeout: float = 120.0) -> str:
-    """Tool-free call for prompts that embed untrusted text (e.g. a fetched article body).
-
-    See the module docstring for why this needs its own entry point and how the tool-free
-    guarantee is verified rather than assumed.
-    """
+@asynccontextmanager
+async def tool_free_client() -> AsyncIterator[object]:
+    """Starts one `CopilotClient` for reuse across several `run_data_only_prompt(..., client=...)`
+    calls, stopping it on exit regardless of how the `with` block ends. See the module docstring
+    for why this exists and what it does (and does not) change about per-call isolation."""
     from copilot import CopilotClient
 
     _require_tool_free_capability(CopilotClient)
@@ -108,6 +118,26 @@ async def run_data_only_prompt(
     client = CopilotClient()
     try:
         await client.start()
+        yield client
+    finally:
+        await client.stop()
+
+
+async def run_data_only_prompt(
+        prompt: str, model: str = DEFAULT_MODEL, timeout: float = 120.0, *,
+        client: object | None = None) -> str:
+    """Tool-free call for prompts that embed untrusted text (e.g. a fetched article body).
+
+    See the module docstring for why this needs its own entry point and how the tool-free
+    guarantee is verified rather than assumed.
+
+    If `client` is given (e.g. from `tool_free_client()`), it is reused as-is instead of starting
+    and stopping a new one -- but `create_session()` is still called fresh here every time, so
+    this call remains exactly as isolated from any other prompt sent on the same `client` as it
+    is today. If `client` is omitted (the default), behavior is unchanged from before: a new
+    `CopilotClient` is started for this call alone and stopped before returning.
+    """
+    if client is not None:
         session = await client.create_session(
             model=model,
             available_tools=[],
@@ -115,5 +145,20 @@ async def run_data_only_prompt(
             on_user_input_request=_reject_user_input,
         )
         return await _send_and_extract(session, prompt, timeout)
+
+    from copilot import CopilotClient
+
+    _require_tool_free_capability(CopilotClient)
+
+    owned_client = CopilotClient()
+    try:
+        await owned_client.start()
+        session = await owned_client.create_session(
+            model=model,
+            available_tools=[],
+            on_permission_request=_deny_all_permissions,
+            on_user_input_request=_reject_user_input,
+        )
+        return await _send_and_extract(session, prompt, timeout)
     finally:
-        await client.stop()
+        await owned_client.stop()
