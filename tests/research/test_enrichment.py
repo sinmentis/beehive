@@ -36,9 +36,10 @@ def session_and_source(conn):
 
 
 def _candidate(source_id, external_id="e1", title="T", url="https://x/1", body="body",
-               quality=EvidenceQuality.PRIMARY, source_topic_hint=None):
+               quality=EvidenceQuality.PRIMARY, source_topic_hint=None,
+               connector_type="rbnz_news"):
     return Candidate(
-        research_source_id=source_id, connector_type="rbnz_news", quality=quality,
+        research_source_id=source_id, connector_type=connector_type, quality=quality,
         raw_item=RawItem(external_id=external_id, title=title, url=url, body=body, created_at=T0),
         source_topic_hint=source_topic_hint)
 
@@ -173,6 +174,51 @@ def test_select_relevant_candidates_topic_hint_does_not_regress_english_question
         source_topic_hint="football scores")
     selected = select_relevant_candidates([c2, c1], "Reserve Bank interest rate", limit=1)
     assert selected == [c1]
+
+
+def test_select_relevant_candidates_excludes_google_news_query_despite_top_relevance():
+    """Regression test for the deep-fetch reservation waste this exclusion fixes:
+    google_news_query's RawItem.url is always an unresolvable Google redirect token (see
+    connectors/google_news.py), so reserve_and_deep_fetch can never turn it into real full
+    text -- ExtractionQuality.UNUSABLE every time. Even a perfectly on-topic google_news_query
+    Candidate must therefore be skipped in favour of a less-relevant but genuinely fetchable
+    one, rather than winning the slot and wasting it."""
+    perfectly_on_topic_but_unfetchable = _candidate(
+        1, "g1", title="best coding model best coding model", body="",
+        quality=EvidenceQuality.AGGREGATOR, connector_type="google_news_query",
+        source_topic_hint="best coding model")
+    only_loosely_related_but_fetchable = _candidate(
+        2, "h1", title="best coding", body="",
+        quality=EvidenceQuality.COMMUNITY, connector_type="hackernews_query")
+    selected = select_relevant_candidates(
+        [perfectly_on_topic_but_unfetchable, only_loosely_related_but_fetchable],
+        "best coding model", limit=1)
+    assert selected == [only_loosely_related_but_fetchable]
+
+
+def test_select_relevant_candidates_all_google_news_query_yields_empty_selection():
+    """If every collected Candidate this round happens to be google_news_query, the deep-fetch
+    selection is legitimately empty rather than an error -- persist_candidate_snippet already
+    made each one a citable title/snippet Evidence Item regardless of this selection."""
+    candidates = [
+        _candidate(1, f"g{i}", connector_type="google_news_query",
+                   quality=EvidenceQuality.AGGREGATOR)
+        for i in range(3)
+    ]
+    assert select_relevant_candidates(candidates, "q", limit=10) == []
+
+
+def test_select_relevant_candidates_excludes_google_news_query_from_limit_accounting():
+    """Excluded Candidates must not consume any of `limit`'s slots: with 1 ineligible and 2
+    eligible Candidates and limit=2, both eligible Candidates should be returned."""
+    ineligible = _candidate(1, "g1", connector_type="google_news_query",
+                             quality=EvidenceQuality.AGGREGATOR)
+    eligible_a = _candidate(2, "h1", connector_type="hackernews_query",
+                             quality=EvidenceQuality.COMMUNITY)
+    eligible_b = _candidate(3, "h2", connector_type="reddit_subreddit",
+                             quality=EvidenceQuality.COMMUNITY)
+    selected = select_relevant_candidates([ineligible, eligible_a, eligible_b], "q", limit=2)
+    assert selected == [eligible_a, eligible_b]
 
 
 # ============================================================================

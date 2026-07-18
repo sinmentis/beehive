@@ -24,7 +24,17 @@ Three distinct pieces of work live here, always in this order for one Candidate:
    (Chinese, Japanese, Korean, Arabic, Cyrillic, ...) -- without this second signal, EVERY
    Candidate would score a tied 0 in that case and selection would degenerate to pure quality
    rank, silently and systematically burying AGGREGATOR-tier (google_news_query) results behind
-   COMMUNITY-tier ones (reddit/hackernews) regardless of actual relevance.
+   COMMUNITY-tier ones (reddit/hackernews) regardless of actual relevance. Before ranking,
+   `select_relevant_candidates` also drops any Candidate whose connector_type is in
+   `_DEEP_FETCH_INELIGIBLE_CONNECTOR_TYPES` -- currently only google_news_query, whose <link> is
+   an opaque Google redirect token that a plain HTTP fetch can never resolve to the real
+   publisher (see connectors/google_news.py's module docstring), so `reserve_and_deep_fetch`
+   below would always reserve one of the run's scarce 30 slots only to discover
+   ExtractionQuality.UNUSABLE and gain nothing. Excluding these upfront -- rather than ranking
+   them and then wasting the reservation -- lets a lower-relevance but *actually fetchable*
+   Candidate take that slot instead. This never affects google_news_query's presence in
+   evidence: persist_candidate_snippet (step 1) already ran for it unconditionally, so its
+   title/snippet remain fully citable, just never deepened into full text.
 3. `reserve_and_deep_fetch` -- for a selected, already-snippet-persisted Evidence Item:
    reserve one of the run's 30 deep-fetch slots via
    `beehive.db.research_runs.reserve_deep_fetch` (a transactional, fenced-on-claim_token
@@ -78,6 +88,18 @@ _QUALITY_RANK: dict[EvidenceQuality, int] = {
     EvidenceQuality.AGGREGATOR: 4,
 }
 
+# connector_types whose collected URL can never be turned into real full text by
+# reserve_and_deep_fetch, so ranking them for deep fetch would only spend one of the run's 30
+# reservations for zero gain. Currently only google_news_query: its RawItem.url is an opaque
+# news.google.com/rss/articles/... redirect token that requires client-side JavaScript to
+# resolve to the actual publisher (see connectors/google_news.py's module docstring) --
+# ArticleFetcher's plain HTTP GET instead returns Google's own interstitial shell page (HTTP
+# 200, <title>Google News</title>, no article body), which extract_full_article_text always
+# classifies ExtractionQuality.UNUSABLE. Keyed on connector_type rather than EvidenceQuality
+# .AGGREGATOR so a future AGGREGATOR-tier connector with genuinely resolvable URLs would not be
+# excluded just for sharing that quality label.
+_DEEP_FETCH_INELIGIBLE_CONNECTOR_TYPES = frozenset({"google_news_query"})
+
 
 def _tokenize(text: str) -> set[str]:
     return set(_TOKEN_RE.findall(text.lower()))
@@ -116,12 +138,22 @@ def select_relevant_candidates(
     own source topic hint (descending, see `_relevance_score`), tie-broken by
     application-assigned EvidenceQuality, then by original collection order (stable sort), and
     returns at most `limit` of them. Never raises; an empty `candidates` list or a non-positive
-    `limit` simply yields an empty selection."""
+    `limit` simply yields an empty selection.
+
+    Candidates whose connector_type is in `_DEEP_FETCH_INELIGIBLE_CONNECTOR_TYPES` are dropped
+    before ranking: no amount of relevance makes them worth a reservation, since
+    `reserve_and_deep_fetch` can never turn their URL into real full text (see that constant's
+    own comment). This only decides who is worth *deepening* -- persist_candidate_snippet
+    already made every Candidate a citable, title/snippet-level Evidence Item regardless."""
     if limit <= 0:
         return []
+    eligible = [
+        candidate for candidate in candidates
+        if candidate.connector_type not in _DEEP_FETCH_INELIGIBLE_CONNECTOR_TYPES
+    ]
     question_tokens = _tokenize(research_question)
     ranked = sorted(
-        enumerate(candidates),
+        enumerate(eligible),
         key=lambda pair: (
             -_relevance_score(pair[1], question_tokens),
             _QUALITY_RANK.get(pair[1].quality, len(_QUALITY_RANK)),
