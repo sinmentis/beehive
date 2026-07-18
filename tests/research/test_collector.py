@@ -194,3 +194,34 @@ def test_candidates_per_source_are_capped():
     outcome = collect([source], connector_resolver=lambda _t: connector, max_candidates_per_source=5)
 
     assert len(outcome.candidates) == 5
+
+
+# ============================================================================
+# collect(): source_topic_hint
+# ============================================================================
+
+def test_collect_populates_source_topic_hint_from_query_config():
+    source = _source(1, connector_type="google_news_query", config={"query": "rbnz rate hike"})
+    connector = _FakeConnector(items=[_raw_item("e1")])
+
+    outcome = collect([source], connector_resolver=lambda _t: connector)
+
+    assert outcome.candidates[0].source_topic_hint == "rbnz rate hike"
+
+
+def test_collect_populates_source_topic_hint_from_subreddit_config():
+    source = _source(1, connector_type="reddit_subreddit", config={"subreddit": "newzealand"})
+    connector = _FakeConnector(items=[_raw_item("e1")])
+
+    outcome = collect([source], connector_resolver=lambda _t: connector)
+
+    assert outcome.candidates[0].source_topic_hint == "newzealand"
+
+
+def test_collect_source_topic_hint_is_none_when_config_has_neither_key():
+    source = _source(1, connector_type="hackernews_stories", config={"feed": "top"})
+    connector = _FakeConnector(items=[_raw_item("e1")])
+
+    outcome = collect([source], connector_resolver=lambda _t: connector)
+
+    assert outcome.candidates[0].source_topic_hint is None

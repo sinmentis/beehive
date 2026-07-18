@@ -36,10 +36,11 @@ def session_and_source(conn):
 
 
 def _candidate(source_id, external_id="e1", title="T", url="https://x/1", body="body",
-               quality=EvidenceQuality.PRIMARY):
+               quality=EvidenceQuality.PRIMARY, source_topic_hint=None):
     return Candidate(
         research_source_id=source_id, connector_type="rbnz_news", quality=quality,
-        raw_item=RawItem(external_id=external_id, title=title, url=url, body=body, created_at=T0))
+        raw_item=RawItem(external_id=external_id, title=title, url=url, body=body, created_at=T0),
+        source_topic_hint=source_topic_hint)
 
 
 def _complete_html(paragraph="Full article body. " * 50):
@@ -119,6 +120,59 @@ def test_select_relevant_candidates_zero_limit_is_empty():
 
 def test_select_relevant_candidates_empty_input_is_empty():
     assert select_relevant_candidates([], "q", limit=5) == []
+
+
+def test_select_relevant_candidates_uses_source_topic_hint_when_question_is_untokenizable():
+    """Regression test for the bug where a non-Latin-script (e.g. Chinese) Research Question
+    tokenizes to nothing, so every Candidate tied at relevance=0 and AGGREGATOR-tier
+    google_news_query results always lost the quality tie-break to COMMUNITY-tier noise. A
+    hint-matched google_news_query Candidate must now outrank a hint-less, quality-favored
+    hackernews_stories Candidate whose title/body do not otherwise relate to anything."""
+    aggregator_hit = _candidate(
+        1, "g1", title="GPT-5.3-Codex tops SWE-bench coding leaderboard", body="",
+        quality=EvidenceQuality.AGGREGATOR, source_topic_hint="best coding model SWE-bench")
+    community_noise = _candidate(
+        2, "h1", title="Show HN: I built a JPEG compressor", body="",
+        quality=EvidenceQuality.COMMUNITY, source_topic_hint=None)
+    selected = select_relevant_candidates(
+        [community_noise, aggregator_hit], "写程序最好用的模型是什么", limit=1)
+    assert selected == [aggregator_hit]
+
+
+def test_select_relevant_candidates_falls_back_to_quality_rank_when_hint_also_absent():
+    """When neither the Research Question nor the Candidate's own source has any topic hint
+    (e.g. hackernews_stories' plain {"feed": "top"} config against an untokenizable question),
+    every Candidate still ties at relevance=0 and selection correctly falls back to
+    _QUALITY_RANK, exactly as it did before source_topic_hint existed."""
+    primary = _candidate(1, "p", title="x", body="", quality=EvidenceQuality.PRIMARY)
+    community = _candidate(2, "c", title="x", body="", quality=EvidenceQuality.COMMUNITY)
+    selected = select_relevant_candidates([community, primary], "写程序最好用的模型是什么", limit=2)
+    assert selected == [primary, community]
+
+
+def test_select_relevant_candidates_reddit_subreddit_name_counts_as_a_topic_hint():
+    on_topic = _candidate(
+        1, "r1", title="Artificial general intelligence coding benchmarks compared", body="",
+        quality=EvidenceQuality.COMMUNITY, source_topic_hint="artificial")
+    off_topic = _candidate(
+        2, "r2", title="Community meetup announcement for next week", body="",
+        quality=EvidenceQuality.COMMUNITY, source_topic_hint=None)
+    selected = select_relevant_candidates([off_topic, on_topic], "写程序最好用的模型是什么", limit=1)
+    assert selected == [on_topic]
+
+
+def test_select_relevant_candidates_topic_hint_does_not_regress_english_question_ranking():
+    """A source_topic_hint only ever adds signal (union of tokens): an English-question ranking
+    that already worked correctly must keep working the same way once every Candidate also
+    carries a hint."""
+    c1 = _candidate(
+        1, "e1", title="Reserve Bank interest rate decision", body="",
+        source_topic_hint="reserve bank rate decision")
+    c2 = _candidate(
+        1, "e2", title="Completely unrelated sports news", body="",
+        source_topic_hint="football scores")
+    selected = select_relevant_candidates([c2, c1], "Reserve Bank interest rate", limit=1)
+    assert selected == [c1]
 
 
 # ============================================================================

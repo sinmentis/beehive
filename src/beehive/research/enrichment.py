@@ -14,7 +14,17 @@ Three distinct pieces of work live here, always in this order for one Candidate:
    row -- the repository itself protects that, this module no longer has to look it up.
 2. `select_relevant_candidates` -- a small, deterministic (no AI, no network) relevance
    ranking of which of those Candidates are worth the expensive full-article fetch, since
-   ADR-0010's 30-deep-fetch-per-run ceiling means not every Candidate can be deepened.
+   ADR-0010's 30-deep-fetch-per-run ceiling means not every Candidate can be deepened. Scores a
+   Candidate against the Research Question's own keyword tokens AND (see `_relevance_score`) its
+   originating Research Source's own `source_topic_hint` -- a query-based connector's search
+   query, or a subreddit-feed connector's community name -- so a Candidate a well-targeted,
+   AI-authored search surfaced still ranks ahead of an untargeted firehose (e.g.
+   hackernews_stories' generic "top" feed) even when the Research Question itself is written in
+   a language/script `_tokenize`'s ASCII-only pattern cannot extract any keywords from at all
+   (Chinese, Japanese, Korean, Arabic, Cyrillic, ...) -- without this second signal, EVERY
+   Candidate would score a tied 0 in that case and selection would degenerate to pure quality
+   rank, silently and systematically burying AGGREGATOR-tier (google_news_query) results behind
+   COMMUNITY-tier ones (reddit/hackernews) regardless of actual relevance.
 3. `reserve_and_deep_fetch` -- for a selected, already-snippet-persisted Evidence Item:
    reserve one of the run's 30 deep-fetch slots via
    `beehive.db.research_runs.reserve_deep_fetch` (a transactional, fenced-on-claim_token
@@ -74,23 +84,39 @@ def _tokenize(text: str) -> set[str]:
 
 
 def _relevance_score(candidate: Candidate, question_tokens: set[str]) -> int:
-    """Deterministic, AI-free relevance signal: how many of the Research Question's own
-    keyword tokens appear in the Candidate's title+body. No network, no LLM call -- this
-    only decides which already-collected Candidates are worth an expensive deep fetch, it
-    never itself reads or scores full article text."""
-    if not question_tokens:
+    """Deterministic, AI-free relevance signal: how many keyword tokens the Candidate's
+    title+body shares with a reference set built from the Research Question's own tokens
+    *plus* the candidate's originating Research Source's own `source_topic_hint` (its search
+    query, or its subreddit name). No network, no LLM call -- this only decides which
+    already-collected Candidates are worth an expensive deep fetch, it never itself reads or
+    scores full article text.
+
+    The topic-hint half matters most when `question_tokens` is empty: `_TOKEN_RE` is
+    ASCII-only, so a Research Question written in Chinese, Japanese, Korean, or any other
+    non-Latin script tokenizes to nothing. Without the hint, every Candidate would then tie at
+    a score of 0 and selection would collapse entirely to `_QUALITY_RANK`, which always ranks
+    AGGREGATOR-tier (google_news_query) behind COMMUNITY-tier (reddit/hackernews) regardless of
+    true relevance -- silently starving what are usually the best-targeted results (the AI
+    planner writes its search queries in whatever language/phrasing tends to find good sources,
+    typically English, even for a non-English Research Question). Folding the hint's own tokens
+    in fixes this without requiring real CJK word segmentation: a hint-driven connector's own
+    results should generally still mention that hint's words in their title/body, so the
+    overlap check still works even when the human's original question can't be tokenized."""
+    reference_tokens = question_tokens | _tokenize(candidate.source_topic_hint or "")
+    if not reference_tokens:
         return 0
     candidate_tokens = _tokenize(candidate.raw_item.title) | _tokenize(candidate.raw_item.body)
-    return len(question_tokens & candidate_tokens)
+    return len(reference_tokens & candidate_tokens)
 
 
 def select_relevant_candidates(
     candidates: list[Candidate], research_question: str, limit: int,
 ) -> list[Candidate]:
-    """Ranks candidates by keyword overlap with the Research Question (descending), tie-broken
-    by application-assigned EvidenceQuality, then by original collection order (stable sort),
-    and returns at most `limit` of them. Never raises; an empty `candidates` list or a
-    non-positive `limit` simply yields an empty selection."""
+    """Ranks candidates by keyword overlap with the Research Question and/or each candidate's
+    own source topic hint (descending, see `_relevance_score`), tie-broken by
+    application-assigned EvidenceQuality, then by original collection order (stable sort), and
+    returns at most `limit` of them. Never raises; an empty `candidates` list or a non-positive
+    `limit` simply yields an empty selection."""
     if limit <= 0:
         return []
     question_tokens = _tokenize(research_question)

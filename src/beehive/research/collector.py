@@ -19,7 +19,12 @@ maps to zero failures do we return zero `SourceFailure`; only when every single 
 Every candidate is tagged with the exact Research Source it came from (`research_source_id`,
 `connector_type`) and an application-derived `EvidenceQuality` (`quality_for_connector_type`) --
 never something the connector itself claims or the AI proposes -- so downstream enrichment,
-clustering, and citation never have to re-derive provenance or guess at source reliability.
+clustering, and citation never have to re-derive provenance or guess at source reliability. Each
+candidate also carries its source's own `source_topic_hint` (its "query" or "subreddit" config
+value, whichever is present) -- enrichment.py's relevance ranking uses this alongside the
+Research Question itself, since a Candidate a query-based connector returned is presumptively
+about that exact query regardless of what language or phrasing the Research Question used to
+reach it.
 
 This module never touches beehive.db: `collect()` takes already-persisted ResearchSource rows in
 and returns plain in-memory Candidate/SourceFailure dataclasses out. Persisting a Candidate as a
@@ -59,16 +64,30 @@ def quality_for_connector_type(connector_type: str) -> EvidenceQuality:
     return _CONNECTOR_QUALITY.get(connector_type, EvidenceQuality.REPORTING)
 
 
+def _topic_hint(config: dict) -> str | None:
+    """The one config value, if any, that names what a Research Source is actually about: a
+    query-based connector's own search "query", or a subreddit-feed connector's community name
+    (e.g. "LocalLLaMA") -- both are meaningful topic signals, unlike a plain feed selector such
+    as hackernews_stories' {"feed": "top"}, which has no topic at all (by design: that connector
+    is a generic front-page firehose, not aimed at anything)."""
+    return config.get("query") or config.get("subreddit")
+
+
 @dataclass(frozen=True)
 class Candidate:
     """One connector-sourced item, tagged with the exact Research Source it came from. Never
     persisted directly -- enrichment.py turns a Candidate into a canonical Evidence Item via
     beehive.db.evidence_items.upsert_evidence_item, keyed on (research_source_id,
-    external_key=raw_item.external_id)."""
+    external_key=raw_item.external_id).
+
+    `source_topic_hint` (see `_topic_hint`) is carried through purely as provenance data, exactly
+    like `connector_type`/`quality` -- this module has no opinion on relevance; only
+    enrichment.py's `select_relevant_candidates` interprets it."""
     research_source_id: int
     connector_type: str
     quality: EvidenceQuality
     raw_item: RawItem
+    source_topic_hint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -131,12 +150,14 @@ def collect(
             ))
             continue
         quality = quality_for_connector_type(source.connector_type)
+        topic_hint = _topic_hint(source.config)
         for raw_item in raw_items[:max_candidates_per_source]:
             candidates.append(Candidate(
                 research_source_id=source.id,
                 connector_type=source.connector_type,
                 quality=quality,
                 raw_item=raw_item,
+                source_topic_hint=topic_hint,
             ))
     return CollectionOutcome(candidates=tuple(candidates), failures=tuple(failures))
 
