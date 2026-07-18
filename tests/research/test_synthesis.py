@@ -282,6 +282,53 @@ def test_parse_core_response_rejects_too_many_citations():
         synth.parse_core_synthesis_response(raw)
 
 
+def _bad_core_response_over_citation_cap():
+    """A structurally-invalid CORE response shaped exactly like the two real production
+    failures the one-shot corrective retry (`synth._call_core`) exists for: one claim cites more
+    aliases than MAX_CITATIONS_PER_SYNTHESIS_CLAIM allows."""
+    aliases = [f"a{i}" for i in range(1, MAX_CITATIONS_PER_SYNTHESIS_CLAIM + 2)]
+    body = {s: [{"text": "x", "citations": ["a1"]}] for s in synth.CORE_SECTIONS}
+    body[synth.KEY_FINDINGS] = [{"text": "over-cited claim", "citations": aliases}]
+    return f"```json\n{json.dumps(body)}\n```"
+
+
+# ============================================================================
+# _call_core: the CORE call's one bounded corrective retry
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_generate_synthesis_retries_once_after_a_malformed_core_response(conn):
+    session_id, run_id, claim_token, revision_id, items = _scenario(conn, n_items=2)
+    responses = [
+        _bad_core_response_over_citation_cap(),
+        _good_core_response(aliases=("a1", "a2")),
+        _good_knowledge_response(),
+    ]
+    with _patch_ai(side_effect=responses) as mock:
+        result = await synth.generate_synthesis(
+            conn, session_id, run_id, claim_token, "q", revision_id, SufficiencyState.PARTIAL,
+            _EN, T0)
+    assert result.version == 1
+    assert mock.await_count == 3
+    retry_prompt = mock.await_args_list[1].args[0]
+    assert "CORRECTION REQUIRED" in retry_prompt
+    assert "exceeding the max" in retry_prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_synthesis_raises_when_the_corrective_retry_is_also_malformed(conn):
+    session_id, run_id, claim_token, revision_id, items = _scenario(conn, n_items=2)
+    responses = [_bad_core_response_over_citation_cap(), _bad_core_response_over_citation_cap()]
+    with _patch_ai(side_effect=responses) as mock:
+        with pytest.raises(StructuredResponseError, match="exceeding the max"):
+            await synth.generate_synthesis(
+                conn, session_id, run_id, claim_token, "q", revision_id,
+                SufficiencyState.PARTIAL, _EN, T0)
+    # exactly two CORE attempts, never a third, and never the supplementary knowledge call
+    assert mock.await_count == 2
+    assert list_syntheses(conn, session_id) == []
+
+
 def test_parse_core_response_rejects_too_many_claims_in_a_section():
     entries = [{"text": f"c{i}", "citations": ["a1"]}
                for i in range(MAX_CLAIMS_PER_SYNTHESIS_SECTION + 1)]

@@ -954,7 +954,11 @@ async def test_synthesis_failure_preserves_evidence_and_fails_run_with_typed_cod
         plan_responses=[_plan_response(
             [{"connector_type": "rbnz_news", "config": {}, "rationale": "primary source"}])],
         sufficiency_responses=[_sufficiency_response(state="sufficient")],
-        synthesis_responses=["not a fenced json response at all"])
+        # Two identical malformed responses: the CORE call's one corrective retry (synthesis.py's
+        # _call_core) does not help a response this broken (no fenced json block at all), so the
+        # run still fails with a typed, captured reason after the retry is exhausted.
+        synthesis_responses=["not a fenced json response at all",
+                              "not a fenced json response at all"])
 
     outcome = await _run_orchestration(conn, session_id, run, connectors=connectors,
                                         ai_script=ai_script)

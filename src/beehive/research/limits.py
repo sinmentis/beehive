@@ -113,7 +113,16 @@ MAX_EVIDENCE_TEXT_CHARS_IN_SYNTHESIS_PROMPT = 1_500
 # claim's own text and citation-alias-list are capped by the two ceilings below.
 MAX_CLAIMS_PER_SYNTHESIS_SECTION = 6
 MAX_SYNTHESIS_CLAIM_TEXT_LENGTH = 400
-MAX_CITATIONS_PER_SYNTHESIS_CLAIM = 6
+
+# The model is told this exact number in the CORE prompt (see synthesis.py's
+# `_output_schema_instructions`) but does not always honor it: an evidence-dense Research
+# Question -- many corroborating sources for one claim, or an "evidence_coverage" claim
+# surveying sources actually used -- makes the model want to over-cite. Raised from the
+# original 6 after two real production failures (7 and 8 aliases on a single claim) to give
+# real headroom instead of moving the same failure by one; `generate_synthesis`'s one-shot
+# corrective retry (synthesis.py) is the other half of this mitigation, for whatever this
+# raised ceiling still does not cover.
+MAX_CITATIONS_PER_SYNTHESIS_CLAIM = 10
 
 # Evidence Sufficiency's own gaps/contradictions (already assessed by sufficiency.py) may be
 # echoed into a synthesis prompt as read-only context -- reuses sufficiency.py's own ceilings

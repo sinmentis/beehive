@@ -7,18 +7,22 @@ thing neither of those two needs: application-side resolution of short, per-call
 aliases into stable, FK-validated citations before anything is persisted.
 
 === Two calls, two trust levels, one isolation boundary ===
-A Research Synthesis is produced by exactly two tool-free AI calls, never one, and the second
-can never influence the first:
+A Research Synthesis is produced by two tool-free AI calls (three when the first needs its one
+corrective retry, `_call_core`'s `_MAX_CORE_CALL_ATTEMPTS`), never fewer, and the second can
+never influence the first:
 
-1. The CORE call (`build_core_synthesis_prompt`/`parse_core_synthesis_response`) is
-   evidence-only: it is shown the pinned Evidence State Revision's active Evidence Items (each
-   behind a short alias like "a3", never a raw evidence_item_id) and must produce all six core
-   sections -- bottom line, key findings, source agreements, source conflicts, unknowns,
-   evidence coverage (CONTEXT.md order) -- as claims that EVERY cite at least one alias. There
-   is no path for this call to add a claim with zero citations; ClaimProvenance.EVIDENCE
-   (beehive.domain.research.SynthesisClaim.__post_init__) already enforces that at the type
-   level, and `_resolve_core_claims` below enforces it again before that type is ever
-   constructed.
+1. The CORE call (`build_core_synthesis_prompt`/`parse_core_synthesis_response`, wrapped by
+   `_call_core`) is evidence-only: it is shown the pinned Evidence State Revision's active
+   Evidence Items (each behind a short alias like "a3", never a raw evidence_item_id) and must
+   produce all six core sections -- bottom line, key findings, source agreements, source
+   conflicts, unknowns, evidence coverage (CONTEXT.md order) -- as claims that EVERY cite at
+   least one alias. There is no path for this call to add a claim with zero citations;
+   ClaimProvenance.EVIDENCE (beehive.domain.research.SynthesisClaim.__post_init__) already
+   enforces that at the type level, and `_resolve_core_claims` below enforces it again before
+   that type is ever constructed. A response that fails `parse_core_synthesis_response`'s shape
+   checks (e.g. a claim citing more aliases than MAX_CITATIONS_PER_SYNTHESIS_CLAIM) gets exactly
+   one corrective retry, quoting back the exact rule the model broke; a second such failure
+   raises StructuredResponseError same as if there were no retry at all.
 2. The SUPPLEMENTARY call (`build_model_knowledge_prompt`/`parse_model_knowledge_response`) is
    tool-free too, but is never shown the evidence at all -- only the Research Question. Its
    output is a short list of general-knowledge notes, persisted as ClaimProvenance.MODEL_KNOWLEDGE
@@ -719,6 +723,50 @@ def parse_model_knowledge_response(raw_text: str) -> tuple[str, ...]:
 # Worker-facing orchestration: two AI calls, then one claim-fenced atomic persist
 # ============================================================================
 
+# The CORE call gets exactly one corrective retry when parse_core_synthesis_response rejects
+# its shape (e.g. a claim over-citing past MAX_CITATIONS_PER_SYNTHESIS_CLAIM): production has
+# shown the model sometimes ignores the exact ceiling it was just told in the prompt, most often
+# for an evidence-dense Research Question or the survey-like "evidence_coverage" section. This
+# is 2 (one original attempt + one retry), never more -- a second failure raises exactly as it
+# would have with no retry at all, so a genuinely broken response still fails the run instead of
+# looping.
+_MAX_CORE_CALL_ATTEMPTS = 2
+
+
+def _core_correction_prompt(core_prompt: str, exc: StructuredResponseError) -> str:
+    """Built only for the one allowed retry after the CORE call's first response failed
+    `parse_core_synthesis_response`. Echoes back `exc`'s own message (never the model's raw
+    invalid output, which could itself carry more malformed structure) so the model can see
+    exactly which rule it broke, then restates that the same strict OUTPUT rules still apply --
+    the retry is parsed by that exact same function, not a looser one."""
+    return (
+        f"{core_prompt}\n\n=== CORRECTION REQUIRED ===\n"
+        f"Your previous response was rejected for this reason: {exc}\n"
+        "Return a corrected response that strictly follows the OUTPUT rules above -- one fenced "
+        "json block, nothing before or after it, nothing else changed.")
+
+
+async def _call_core(
+        core_prompt: str, *, model: str, timeout: float,
+        client: object | None) -> dict[str, list[tuple[str, tuple[str, ...]]]]:
+    """Calls the CORE prompt and parses its response, retrying at most once (see
+    `_MAX_CORE_CALL_ATTEMPTS`) when `parse_core_synthesis_response` raises
+    StructuredResponseError. Raises whatever the final attempt raised; `SynthesisError` (an
+    invented/duplicate alias, judged only once alias_map is available) is never retried here --
+    only the CORE call itself is repeated, so a second, independent call could resolve
+    differently regardless."""
+    prompt = core_prompt
+    for attempt in range(1, _MAX_CORE_CALL_ATTEMPTS + 1):
+        core_raw = await _call_data_only(prompt, model=model, timeout=timeout, client=client)
+        try:
+            return parse_core_synthesis_response(core_raw)
+        except StructuredResponseError as exc:
+            if attempt == _MAX_CORE_CALL_ATTEMPTS:
+                raise
+            prompt = _core_correction_prompt(core_prompt, exc)
+    raise AssertionError("unreachable: loop always returns or raises")
+
+
 async def _call_data_only(
     prompt: str, *, model: str, timeout: float, client: object | None,
 ) -> str:
@@ -743,10 +791,11 @@ async def generate_synthesis(
         reuse_existing_for_run: bool = False,
         client: object | None = None) -> ResearchSynthesis:
     """Generates and persists the next Research Synthesis version for `session_id`, pinned to
-    `evidence_state_revision_id`. Makes exactly two tool-free LLM calls (core, then
-    supplementary model-knowledge) and persists both together in one claim-, deadline-, AND
-    cancellation-fenced transaction (`create_synthesis_if_claimed`). `sufficiency_state` must
-    already have been assessed by sufficiency.py -- this module never re-derives it and never
+    `evidence_state_revision_id`. Makes two tool-free LLM calls (core, then supplementary
+    model-knowledge), or three when the core call needs its one corrective retry (`_call_core`),
+    and persists the outcome together in one claim-, deadline-, AND cancellation-fenced
+    transaction (`create_synthesis_if_claimed`). `sufficiency_state` must already have been
+    assessed by sufficiency.py -- this module never re-derives it and never
     lets the model-knowledge call influence it.
 
     Raises SynthesisError for any invalid pin or malformed/invalid-alias AI response (zero
@@ -772,7 +821,11 @@ async def generate_synthesis(
     `run_data_only_prompt` calls below, letting a caller that already opened one for the rest of
     a Research Run's lifecycle reuse it here instead of paying the SDK's per-call startup cost
     twice more. Each call still gets its own fresh session, so omitting `client` (the default)
-    preserves the exact original per-call behavior."""
+    preserves the exact original per-call behavior.
+
+    The CORE call (only) gets one corrective retry -- see `_call_core` -- when its response
+    fails `parse_core_synthesis_response`'s strict shape checks; a second such failure still
+    raises StructuredResponseError exactly as it would with no retry at all."""
     if not question or not question.strip():
         raise ValueError("question must be non-empty")
 
@@ -782,8 +835,7 @@ async def generate_synthesis(
 
     core_prompt = build_core_synthesis_prompt(
         question, pinned_aliases, prior_gaps, prior_contradictions, localizer.language)
-    core_raw = await _call_data_only(core_prompt, model=model, timeout=timeout, client=client)
-    core_sections = parse_core_synthesis_response(core_raw)
+    core_sections = await _call_core(core_prompt, model=model, timeout=timeout, client=client)
     core_claims = _resolve_core_claims(core_sections, alias_map)
 
     knowledge_prompt = build_model_knowledge_prompt(question, localizer.language)
