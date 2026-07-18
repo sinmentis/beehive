@@ -31,6 +31,7 @@ and returns plain in-memory Candidate/SourceFailure dataclasses out. Persisting 
 canonical Evidence Item is enrichment.py's job."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -38,6 +39,20 @@ from beehive.connectors.base import RawItem, SourceConnector
 from beehive.connectors.registry import get as _default_get_connector
 from beehive.domain.research import EvidenceQuality, ResearchSource
 from beehive.research.limits import MAX_CANDIDATES_PER_SOURCE
+
+# Splits a camelCase/PascalCase identifier into space-separated words: "MachineLearning" ->
+# "Machine Learning", "ChatGPTCoding" -> "Chat GPT Coding". Needed because subreddit names
+# (unlike a query-based connector's own free-text "query", already naturally space-separated)
+# are single unspaced identifiers by Reddit's own naming convention -- enrichment.py's
+# _tokenize would otherwise see e.g. "chatgptcoding" as one meaningless token that (almost)
+# never appears verbatim in any post's title/body, silently making the topic-hint signal
+# useless for every reddit_subreddit source specifically, while working fine for
+# google_news_query/hackernews_query (whose hint is already a naturally spaced search query).
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _split_camel_case(identifier: str) -> str:
+    return _CAMEL_BOUNDARY_RE.sub(" ", identifier)
 
 # Deterministic, application-controlled mapping from connector_type to EvidenceQuality
 # (CONTEXT.md's Evidence Item quality signal) -- never something a connector or the Research
@@ -69,8 +84,16 @@ def _topic_hint(config: dict) -> str | None:
     query-based connector's own search "query", or a subreddit-feed connector's community name
     (e.g. "LocalLLaMA") -- both are meaningful topic signals, unlike a plain feed selector such
     as hackernews_stories' {"feed": "top"}, which has no topic at all (by design: that connector
-    is a generic front-page firehose, not aimed at anything)."""
-    return config.get("query") or config.get("subreddit")
+    is a generic front-page firehose, not aimed at anything). A subreddit name is run through
+    `_split_camel_case` first (a "query" is returned as-is: the AI already writes it as a
+    naturally spaced phrase)."""
+    query = config.get("query")
+    if query:
+        return query
+    subreddit = config.get("subreddit")
+    if subreddit:
+        return _split_camel_case(subreddit)
+    return None
 
 
 @dataclass(frozen=True)

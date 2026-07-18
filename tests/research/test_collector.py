@@ -225,3 +225,36 @@ def test_collect_source_topic_hint_is_none_when_config_has_neither_key():
     outcome = collect([source], connector_resolver=lambda _t: connector)
 
     assert outcome.candidates[0].source_topic_hint is None
+
+
+def test_collect_splits_camel_case_subreddit_name_into_words():
+    """Regression test: a subreddit name is a single unspaced identifier by Reddit's own naming
+    convention (e.g. "MachineLearning", "ChatGPTCoding"), unlike a query-based connector's own
+    "query" value which the AI already writes as a naturally spaced phrase. Without splitting,
+    enrichment.py's _tokenize would see the whole name as one token that (almost) never appears
+    verbatim in any post's title/body, silently making the topic-hint signal useless for every
+    reddit_subreddit source specifically."""
+    source = _source(1, connector_type="reddit_subreddit", config={"subreddit": "MachineLearning"})
+    connector = _FakeConnector(items=[_raw_item("e1")])
+
+    outcome = collect([source], connector_resolver=lambda _t: connector)
+
+    assert outcome.candidates[0].source_topic_hint == "Machine Learning"
+
+
+def test_collect_splits_camel_case_subreddit_name_with_embedded_acronym():
+    source = _source(1, connector_type="reddit_subreddit", config={"subreddit": "ChatGPTCoding"})
+    connector = _FakeConnector(items=[_raw_item("e1")])
+
+    outcome = collect([source], connector_resolver=lambda _t: connector)
+
+    assert outcome.candidates[0].source_topic_hint == "Chat GPT Coding"
+
+
+def test_collect_leaves_already_lowercase_subreddit_name_unchanged():
+    source = _source(1, connector_type="reddit_subreddit", config={"subreddit": "programming"})
+    connector = _FakeConnector(items=[_raw_item("e1")])
+
+    outcome = collect([source], connector_resolver=lambda _t: connector)
+
+    assert outcome.candidates[0].source_topic_hint == "programming"
