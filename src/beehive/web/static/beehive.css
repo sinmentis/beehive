@@ -2262,3 +2262,117 @@ select{
   .setting-action input,.setting-action select{min-height:2.75rem}
   .setting-action .btn{width:100%;min-height:2.75rem}
 }
+
+/* Research workspace: dense, restrained utility surface for the owner-only Research workflow.
+   Reuses .admin-tabs/.admin-tab-panel/.type-options/.source-list/.danger-zone/.delete-confirm/
+   .empty-state/.skeleton-* wholesale (see admin/deep-read CSS above) -- only the components with
+   no existing equivalent get their own rules below. */
+.page-research{
+  --bg:#0f110e;
+  --bg-soft:#131511;
+  --surface:#181b15;
+  --surface-raised:#20241c;
+  --border:#242820;
+  --border-strong:#2c3126;
+}
+.research-shell,.research-form-shell,.research-detail-shell{width:min(100% - 2rem,64rem)}
+.research-session-row{align-items:center}
+.research-session-link strong{font-family:var(--font-display);font-size:1.05rem;font-weight:550;letter-spacing:-.01em}
+.research-session-status{flex:none;color:var(--muted);font-size:.7rem;font-weight:650;text-transform:uppercase;letter-spacing:.04em}
+.research-detail-heading{align-items:start}
+.research-sources-summary{max-width:56ch}
+.research-archived-banner{background:var(--surface-raised);border-color:var(--border-strong);color:var(--text-soft)}
+
+.research-status{
+  display:flex;
+  margin:1.4rem 0;
+  padding:1rem 1.1rem;
+  border:1px solid var(--border);
+  border-radius:var(--radius-md);
+  background:var(--bg-soft);
+  flex-direction:column;
+  gap:.65rem;
+}
+.research-status-state{display:flex;flex-direction:column;gap:.65rem}
+.research-status-line{display:flex;margin:0;align-items:center;gap:.65rem;font-size:.82rem}
+.research-status-line strong{color:var(--text)}
+.research-status-line span{color:var(--muted);font-size:.72rem}
+.research-status-action{margin:0}
+.research-status-failed{border-color:rgba(204,112,103,.35)}
+.research-skeleton{display:grid;gap:.5rem}
+
+.research-tabs{margin-top:.5rem}
+.research-tab-body{padding:1.6rem 0}
+
+.research-plan-list{display:grid;gap:1.1rem}
+.research-plan-revision{padding:1rem 0;border-bottom:1px solid var(--border)}
+.research-plan-revision:last-child{border-bottom:0}
+.research-plan-revision-heading{display:flex;justify-content:space-between;color:var(--muted);font-size:.68rem;font-weight:650;text-transform:uppercase;letter-spacing:.04em}
+.research-plan-summary{margin:.5rem 0 .75rem;color:var(--text-soft);font-size:.85rem;line-height:1.6}
+.research-plan-unavailable{color:var(--muted)}
+.research-plan-sources{margin-top:.5rem}
+.research-plan-rationale{color:var(--muted);font-size:.72rem}
+
+.research-evidence-clusters{display:grid;gap:1rem}
+.research-evidence-cluster-group{padding:.85rem;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-soft)}
+.research-evidence-cluster-label{margin:0 0 .65rem;color:var(--accent);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.research-evidence-items{display:grid;margin:0;padding:0;gap:.75rem;list-style:none}
+.research-evidence-cluster-group .research-evidence-items{gap:.65rem}
+.research-evidence-item{
+  display:flex;
+  padding:.85rem 0;
+  border-bottom:1px solid var(--border);
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+}
+.research-evidence-cluster-group .research-evidence-item{padding:0;border-bottom:0}
+.research-evidence-items li:last-child{border-bottom:0}
+.research-evidence-item-body{min-width:0}
+.research-evidence-citation{margin:0 0 .3rem;color:var(--accent);font-size:.66rem;font-weight:700}
+.research-evidence-title{margin:0 0 .35rem;font-size:.88rem;line-height:1.4}
+.research-evidence-snippet{margin:0 0 .5rem;color:var(--text-soft);font-size:.78rem;line-height:1.55}
+.research-evidence-meta{display:flex;margin:0;color:var(--muted);font-size:.68rem;gap:.6rem;flex-wrap:wrap}
+.research-evidence-state{color:var(--danger)}
+.research-evidence-item-excluded .research-evidence-title,
+.research-evidence-item-excluded .research-evidence-snippet{opacity:.55}
+.research-evidence-action{flex:none}
+.research-evidence-all-excluded{margin-bottom:1.2rem}
+
+.research-synthesis-meta{margin:0 0 1.5rem;color:var(--muted);font-size:.72rem}
+.research-synthesis-section{margin-bottom:1.8rem}
+.research-synthesis-section h3{margin:0 0 .75rem;font-family:var(--font-display);font-size:1.1rem;font-weight:550}
+.research-synthesis-findings{display:grid;margin:0;padding:0;gap:.85rem;list-style:none}
+.research-synthesis-text{color:var(--text-soft);font-size:.86rem;line-height:1.65}
+.research-synthesis-citations{margin-left:.4rem;white-space:nowrap}
+.research-citation-chip{
+  display:inline-flex;
+  margin-left:.25rem;
+  padding:.05rem .35rem;
+  border:1px solid var(--border-strong);
+  border-radius:var(--radius-sm);
+  color:var(--accent-strong);
+  font-size:.68rem;
+  font-weight:700;
+}
+.research-citation-chip:hover{background:var(--accent-soft)}
+.research-synthesis-model-knowledge{padding-top:1rem;border-top:1px dashed var(--border-strong)}
+
+.research-conversation{margin-top:1.8rem;padding-top:1.6rem;border-top:1px solid var(--border)}
+.research-message-list{display:grid;margin-bottom:1.2rem;gap:1rem}
+.research-message{padding:.85rem 1rem;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-soft)}
+.research-message-assistant{background:var(--surface)}
+.research-message-meta{display:flex;margin:0 0 .4rem;color:var(--muted);font-size:.66rem;font-weight:650;text-transform:uppercase;letter-spacing:.04em;gap:.6rem}
+.research-message-content{margin:0;color:var(--text-soft);font-size:.85rem;line-height:1.65;white-space:pre-line}
+.research-message-unavailable{color:var(--muted);font-style:italic}
+.research-message-generating{opacity:.85}
+.research-conversation-empty{color:var(--muted);font-size:.8rem}
+.research-message-form{display:grid;gap:.6rem}
+.research-message-form textarea{min-height:6rem}
+.research-conversation-disabled{margin:0}
+
+@media (max-width:37.5rem){
+  .research-detail-heading{grid-template-columns:1fr}
+  .research-evidence-item{flex-direction:column;align-items:stretch}
+  .research-status-line{flex-wrap:wrap}
+}

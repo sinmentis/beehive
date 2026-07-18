@@ -1,0 +1,17 @@
+[Unit]
+Description=Recover expired Beehive Research run / chat request leases (reconciliation sweep)
+
+[Container]
+Image=localhost/beehive:latest
+ContainerName=beehive-research-reconcile
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+Exec=-m scripts.run_research_worker --reconcile-once
+
+[Service]
+Type=oneshot
+CPUQuota=50%
+CPUWeight=10
+MemoryHigh=128M
+MemoryMax=256M
+TimeoutStartSec=120

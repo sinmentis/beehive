@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.research_new', product=t('common.product_name')) }}{% endblock %}
+{% block body_class %}page-research page-editor{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.research') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell research-form-shell">
+  <p class="crumb"><a href="/research">← {{ t('web.research.list.heading') }}</a></p>
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow">{{ t('web.research.new.eyebrow') }}</p>
+      <h1>{{ t('web.research.new.heading') }}</h1>
+      <p class="page-lede">{{ t('web.research.new.lede') }}</p>
+    </div>
+  </header>
+  {% if error %}<p class="page-banner" role="alert">{{ error }}</p>{% endif %}
+
+  <section class="admin-panel">
+    <form method="post" action="/research/new" class="research-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="field">
+        <label for="research-question">{{ t('web.research.new.question_label') }}</label>
+        <textarea id="research-question" name="question" required
+                  maxlength="{{ max_question_length }}"
+                  aria-describedby="research-question-hint">{{ question }}</textarea>
+        <p class="hint" id="research-question-hint">{{ t('web.research.new.question_hint') }}</p>
+      </div>
+
+      <div class="field">
+        <label for="research-keyword">{{ t('web.research.new.keyword_label') }}</label>
+        <input id="research-keyword" type="text" name="keyword" value="{{ keyword }}"
+               aria-describedby="research-keyword-hint">
+        <p class="hint" id="research-keyword-hint">{{ t('web.research.new.keyword_hint') }}</p>
+      </div>
+
+      <fieldset class="field source-types">
+        <legend>{{ t('web.research.new.sources_legend') }}</legend>
+        <div class="type-options">
+          {% for option in connector_options %}
+          <label class="type-option">
+            <input type="checkbox" name="connectors" value="{{ option.connector_type }}"
+                   {{ "checked" if option.checked else "" }}>
+            <span class="name">{{ option.label }}</span>
+            <span class="option-check" aria-hidden="true"></span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="field">
+        <label for="research-reddit">{{ t('web.research.new.reddit_label') }}</label>
+        <div class="input-with-prefix">
+          <span class="prefix">r/</span>
+          <input id="research-reddit" type="text" name="reddit_subreddit" value="{{ reddit_subreddit }}"
+                 aria-describedby="research-reddit-hint">
+        </div>
+        <p class="hint" id="research-reddit-hint">{{ t('web.research.new.reddit_hint') }}</p>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" type="submit">{{ t('web.research.new.submit') }}</button>
+        <a class="btn ghost" href="/research">{{ t('web.research.new.cancel') }}</a>
+      </div>
+    </form>
+  </section>
+</main>
+{% endblock %}

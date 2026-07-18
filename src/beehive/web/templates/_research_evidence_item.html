@@ -1,0 +1,32 @@
+{# One Evidence Item -- accepts `item` (research_view.EvidenceItemView) and `can_mutate_evidence`
+   (bool). No internal passage viewer: only title/snippet/publisher/quality/citation/source URL
+   and the exclude/restore action are ever shown. #}
+<li class="research-evidence-item{% if item.is_excluded %} research-evidence-item-excluded{% endif %}">
+  <div class="research-evidence-item-body">
+    <p class="research-evidence-citation">{{ t('web.research.evidence.citation_number', number=item.citation_number) }}</p>
+    <h3 class="research-evidence-title">
+      <a href="{{ item.href }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+    </h3>
+    {% if item.snippet %}<p class="research-evidence-snippet">{{ item.snippet }}</p>{% endif %}
+    <p class="research-evidence-meta">
+      <span class="research-evidence-publisher">{{ item.publisher }}</span>
+      <span class="research-evidence-quality">{{ item.quality_label }}</span>
+      {% if item.is_excluded %}<span class="research-evidence-state">{{ t('web.research.evidence.excluded_state') }}</span>{% endif %}
+    </p>
+  </div>
+  {% if can_mutate_evidence %}
+  <div class="research-evidence-action">
+    {% if item.is_excluded %}
+    <form method="post" action="{{ item.restore_url }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn ghost small">{{ t('web.research.evidence.restore_action') }}</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ item.exclude_url }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn ghost small">{{ t('web.research.evidence.exclude_action') }}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</li>

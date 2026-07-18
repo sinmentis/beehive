@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse, Response
 
 from beehive.db.connection import connect, init_schema
 from beehive.localization import load_localizer
-from beehive.web import admin, public
+from beehive.web import admin, public, research
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -35,9 +35,18 @@ def _localization_context(request: Request) -> dict:
     """Exposes t()/localizer/locale to every template via Jinja2Templates' context_processors.
     Matched routes populate request.state.localizer through the get_localizer dependency (over
     the same cached get_db connection, see deps.py); the custom 404 handler below never runs
-    normal dependencies, so it loads the Localizer itself before rendering."""
+    normal dependencies, so it loads the Localizer itself before rendering.
+
+    is_owner mirrors request.state.is_owner, stashed by deps.py's _get_valid_session on every
+    request that depends on require_admin_session or get_optional_session (every page in the
+    app except the unmatched-route 404 handler, which never runs dependencies at all -- hence
+    the getattr default of False there). base.html's top-level Research nav link is gated on
+    this single flag so it never appears for an anonymous visitor on any page."""
     localizer = request.state.localizer
-    return {"t": localizer.text, "localizer": localizer, "locale": localizer.code}
+    return {
+        "t": localizer.text, "localizer": localizer, "locale": localizer.code,
+        "is_owner": getattr(request.state, "is_owner", False),
+    }
 
 
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -102,4 +111,5 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
 
     app.include_router(public.router)
     app.include_router(admin.router)
+    app.include_router(research.router)
     return app

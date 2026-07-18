@@ -5,9 +5,9 @@ lxml tree and never treats a string as a URL to fetch); the network boundary is 
 `fetch.py`'s `ArticleFetcher`. Nothing here persists the extracted text -- callers own that
 decision, and are expected to hold it only for the duration of downstream LLM synthesis.
 
-Trafilatura's output is whitespace-normalized and bounded to a hard character cap, then
-classified as complete/partial/unusable so callers can render an honest result instead of
-silently serving a truncated or paywall-stub brief as if it were the full article:
+Trafilatura's output is whitespace-normalized and classified as complete/partial/unusable.
+`extract_article_text` applies the existing hard character cap for prompt-oriented callers;
+`extract_full_article_text` preserves the full normalized extraction for durable evidence:
 
 - UNUSABLE: extraction produced no meaningful text at all (empty page, non-article
   boilerplate, or Trafilatura's algorithms simply found nothing worth extracting).
@@ -100,6 +100,63 @@ def _has_paywall_marker(text: str) -> bool:
     return any(marker in lowered for marker in _PAYWALL_MARKERS)
 
 
+def _extract_normalized(
+    html: str,
+    extractor: Callable[[str], str | None],
+) -> str:
+    raw = extractor(html)
+    if not raw or not raw.strip():
+        return ""
+    return _normalize_whitespace(raw)
+
+
+def _classify_reasons(
+    text: str,
+    *,
+    transport_truncated: bool,
+    min_usable_chars: int,
+) -> list[PartialReason]:
+    reasons: list[PartialReason] = []
+    if transport_truncated:
+        reasons.append(PartialReason.TRANSPORT_TRUNCATED)
+    if _has_paywall_marker(text):
+        reasons.append(PartialReason.PAYWALL_LIKE)
+    elif len(text) < min_usable_chars:
+        reasons.append(PartialReason.SHORT_CONTENT)
+    return reasons
+
+
+def extract_full_article_text(
+    html: str,
+    *,
+    transport_truncated: bool = False,
+    min_usable_chars: int = _DEFAULT_MIN_USABLE_CHARS,
+    extractor: Callable[[str], str | None] = _default_extract,
+) -> ExtractionResult:
+    """Extract and classify the complete normalized text without an application-side cap."""
+    text = _extract_normalized(html, extractor)
+    if not text:
+        return ExtractionResult(
+            quality=ExtractionQuality.UNUSABLE,
+            text="",
+            reasons=(),
+            char_count=0,
+        )
+
+    reasons = _classify_reasons(
+        text,
+        transport_truncated=transport_truncated,
+        min_usable_chars=min_usable_chars,
+    )
+    quality = ExtractionQuality.PARTIAL if reasons else ExtractionQuality.COMPLETE
+    return ExtractionResult(
+        quality=quality,
+        text=text,
+        reasons=tuple(reasons),
+        char_count=len(text),
+    )
+
+
 def extract_article_text(
     html: str,
     *,
@@ -117,11 +174,7 @@ def extract_article_text(
     prompt_budget_chars and max_chunk_chars are optional caller-supplied caps (an LLM prompt
     budget, a chunking window) applied on top of this module's own max_chars, each recorded
     as its own PartialReason only when it actually truncates further."""
-    raw = extractor(html)
-    if not raw or not raw.strip():
-        return ExtractionResult(quality=ExtractionQuality.UNUSABLE, text="", reasons=(), char_count=0)
-
-    text = _normalize_whitespace(raw)
+    text = _extract_normalized(html, extractor)
     if not text:
         return ExtractionResult(quality=ExtractionQuality.UNUSABLE, text="", reasons=(), char_count=0)
 

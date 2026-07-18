@@ -10,7 +10,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Literal
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -30,11 +30,8 @@ from beehive.web.deep_read_view import (ALLOWED_ORIGINS, brief_url, build_brief_
 from beehive.web.deps import get_db, get_localizer, get_optional_session, require_admin_session, verify_csrf
 from beehive.web.formatting import fetch_stats_label, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time
 from beehive.web.hackernews_labels import hackernews_source_label
+from beehive.web.link_safety import safe_external_href
 from beehive.web.official_feed_labels import official_feed_label
-
-
-def _safe_href(url: str) -> str:
-    return url if urlparse(url).scheme in ("http", "https") else "#"
 
 
 router = APIRouter()
@@ -80,7 +77,7 @@ def _decorate_item(item: dict, t: Localizer) -> None:
     item["engagement_label"] = _engagement_label(item, t)
     item["age"] = relative_time(item["created_at"], t) if item["created_at"] else ""
     item["exact_time"] = host_local_time_label(item["created_at"]) if item["created_at"] else ""
-    item["safe_url"] = _safe_href(item["url"])
+    item["safe_url"] = safe_external_href(item["url"])
     item["open_url"] = f"/items/{item['id']}/open" if item["safe_url"] != "#" else "#"
 
 
@@ -227,7 +224,7 @@ def open_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Item not found")
     mark_item_opened(conn, item_id)
     mark_read(conn, item_id)
-    return RedirectResponse(_safe_href(item["url"]), status_code=302)
+    return RedirectResponse(safe_external_href(item["url"]), status_code=302)
 
 
 @router.get("/channels/{channel_id}", response_class=HTMLResponse)

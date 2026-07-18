@@ -1,0 +1,10 @@
+[Unit]
+Description=Reconcile expired Beehive Research run / chat request leases
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=beehive-research-reconcile.service
+
+[Install]
+WantedBy=timers.target

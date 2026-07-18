@@ -1,0 +1,13 @@
+{# One Evidence Cluster (or a standalone item rendered as a single-item group) -- accepts
+   `cluster` (research_view.EvidenceClusterView) and `can_mutate_evidence` (bool). Duplicate
+   clusters stay visible as a labeled group; a standalone item renders with no group label. #}
+<div class="research-evidence-cluster{% if cluster.is_duplicate_group %} research-evidence-cluster-group{% endif %}">
+  {% if cluster.is_duplicate_group %}
+  <p class="research-evidence-cluster-label">{{ t('web.research.evidence.duplicate_group_label', count=cluster.items|length) }}</p>
+  {% endif %}
+  <ul class="research-evidence-items">
+    {% for item in cluster.items %}
+    {% include "_research_evidence_item.html" %}
+    {% endfor %}
+  </ul>
+</div>

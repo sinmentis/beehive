@@ -9,7 +9,7 @@ from pathlib import Path
 
 _QUADLET_DIR = Path(__file__).parent.parent.parent / "deploy" / "quadlet"
 _SERVICE_ONLY_KEYS = {"CPUQuota", "CPUWeight", "MemoryHigh", "MemoryMax", "TimeoutStartSec",
-                      "ExecStartPre", "Type", "Restart"}
+                      "TimeoutStopSec", "ExecStartPre", "Type", "Restart"}
 
 
 def _parser() -> configparser.ConfigParser:
@@ -26,7 +26,8 @@ def _parser() -> configparser.ConfigParser:
 def test_expected_container_files_exist():
     names = {f.name for f in _QUADLET_DIR.glob("*.container")}
     assert {"beehive-web.container", "beehive-fetch.container",
-            "beehive-digest.container", "beehive-deep-read.container"} <= names
+            "beehive-digest.container", "beehive-deep-read.container",
+            "beehive-research.container", "beehive-research-reconcile.container"} <= names
 
 
 def test_expected_volume_files_exist():
@@ -65,6 +66,7 @@ def test_oneshot_containers_have_no_install_section():
         "beehive-fetch.container",
         "beehive-digest.container",
         "beehive-deep-read.container",
+        "beehive-research-reconcile.container",
     ):
         parser = _parser()
         parser.read(_QUADLET_DIR / name)
@@ -163,3 +165,42 @@ def test_deep_read_container_has_secret_limits_and_reconciliation_units():
     timer_parser = _parser()
     timer_parser.read(_QUADLET_DIR / "beehive-deep-read.timer")
     assert timer_parser["Timer"]["Unit"] == "beehive-deep-read.service"
+
+
+def test_research_container_is_always_on_with_secret_limits_and_install():
+    parser = _parser()
+    parser.read(_QUADLET_DIR / "beehive-research.container")
+
+    assert "target=COPILOT_GITHUB_TOKEN" in parser["Container"]["Secret"]
+    assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
+    assert parser["Container"]["Exec"] == "-m scripts.run_research_worker"
+    assert parser["Container"]["Volume"] == "beehive-data.volume:/data"
+    assert parser["Service"]["Restart"] == "always"
+    assert int(parser["Service"]["TimeoutStopSec"]) > 0
+    assert "Install" in parser, "always-on unit must be boot-wanted"
+    assert parser["Install"]["WantedBy"] == "default.target"
+
+
+def test_research_reconcile_container_is_oneshot_without_copilot_secret():
+    parser = _parser()
+    parser.read(_QUADLET_DIR / "beehive-research-reconcile.container")
+
+    assert parser["Container"]["Exec"] == "-m scripts.run_research_worker --reconcile-once"
+    assert parser["Container"]["Volume"] == "beehive-data.volume:/data"
+    assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
+    # Reconciliation only recovers expired leases -- it never calls the AI, so it does not need
+    # (and should not receive) the Copilot GitHub token secret the always-on worker requires.
+    assert "Secret" not in parser["Container"]
+    assert parser["Service"]["Type"] == "oneshot"
+    assert "Install" not in parser, "oneshot units are timer-started, not boot-started"
+
+
+def test_research_reconcile_timer_references_the_reconcile_service():
+    parser = _parser()
+    parser.read(_QUADLET_DIR / "beehive-research-reconcile.timer")
+    assert parser["Timer"]["Unit"] == "beehive-research-reconcile.service"
+
+
+def test_containerfile_import_smoke_test_includes_research_worker():
+    containerfile = (_QUADLET_DIR.parent.parent / "Containerfile").read_text()
+    assert "scripts.run_research_worker" in containerfile

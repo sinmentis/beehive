@@ -5,6 +5,13 @@ app's traffic scale — no pooling needed for a single-operator tool.
 require_admin_session (Slice 3) gates every /admin/* route and, later, Slice 2's vote/read-state
 writes (ADR-0005) — both are owner-only mutations protected by the same session. It short-circuits
 via a 303 redirect (not a bare 401) since this guards a browser-navigated admin UI, not an API.
+Every Research route (ADR-0008: Research Sessions are owner-only) also depends on it -- there is
+no public/optional Research read, unlike the public Dashboard/Archive/Channel pages below.
+
+_get_valid_session stashes request.state.is_owner on every call (success or failure) so app.py's
+template context processor can expose a single `is_owner` flag to every page -- this is what lets
+the top-level Research nav link stay owner-only without each page duplicating its own session
+check (see that module's docstring).
 
 get_localizer (localization slice) loads the platform's saved language once per request through
 the already-cached get_db connection and stashes it on request.state so the Jinja context
@@ -48,7 +55,14 @@ def _get_valid_session(request: Request, conn: sqlite3.Connection) -> dict | Non
                   if raw_cookie else None)
     session = get_session(conn, session_id) if session_id else None
     if session is None or session["expires_at"] <= datetime.now(timezone.utc).isoformat():
+        request.state.is_owner = False
         return None
+    # Single choke point for "is this request from the authenticated Owner", stashed on
+    # request.state so app.py's _localization_context can expose it to EVERY template (the
+    # top-level Research nav link's owner-only visibility, ADR-0008) without any page needing
+    # its own duplicate session check -- both require_admin_session and get_optional_session
+    # below call this helper, so any route depending on either one populates it.
+    request.state.is_owner = True
     return session
 
 

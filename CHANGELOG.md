@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Owner-only Research Sessions: a persistent, one-time question investigated with the existing
+  credentialless connectors, a visible AI-proposed Research Plan, durable asynchronous evidence
+  collection and clustering, a conclusion-first citation-backed Research Synthesis, stable
+  per-session citation numbers, owner evidence curation (exclude or annotate an Evidence Item),
+  and a durable long-running chat with versioned Conversation Memory. See
+  [Research Sessions](README.md#research-sessions).
+- An always-on durable Research worker and a periodic reconcile timer for Research Runs and
+  Research Chat replies, deployed alongside the existing collector, digest, and deep-read
+  workers. See [`deploy/README.md`](deploy/README.md#research-worker-adr-0009).
 - Global English-default localization for the web interface, email delivery, alerts, and
   language-aware AI output, with Simplified Chinese, Japanese, Korean, Spanish, French, and
   German support.

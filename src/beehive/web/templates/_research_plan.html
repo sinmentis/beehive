@@ -1,0 +1,36 @@
+{# Plan tab body: `plan_revisions` (tuple of research_view.PlanRevisionView), latest run only. #}
+<section class="research-tab-panel research-plan" aria-labelledby="research-plan-title">
+  <h2 id="research-plan-title" class="sr-only">{{ t('web.research.plan.heading') }}</h2>
+  {% if plan_revisions %}
+  <div class="research-plan-list">
+    {% for revision in plan_revisions %}
+    <article class="research-plan-revision">
+      <header class="research-plan-revision-heading">
+        <span>{{ t('web.research.plan.version_label', version=revision.version) }}</span>
+        <span class="research-plan-time">{{ revision.created_at_label }}</span>
+      </header>
+      {% if revision.is_available %}
+      <p class="research-plan-summary">{{ revision.summary }}</p>
+      {% if revision.sources %}
+      <ul class="source-list research-plan-sources">
+        {% for source in revision.sources %}
+        <li class="source-row">
+          <span class="source-name">{{ source.label }}</span>
+          <span class="research-plan-rationale">{{ source.rationale }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% else %}
+      <p class="research-plan-summary research-plan-unavailable">{{ revision.summary }}</p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state compact-empty">
+    <h3>{{ t('web.research.plan.empty_heading') }}</h3>
+    <p>{{ t('web.research.plan.empty_body') }}</p>
+  </div>
+  {% endif %}
+</section>

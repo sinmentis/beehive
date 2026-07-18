@@ -10,5 +10,5 @@ COPY src ./src
 COPY scripts ./scripts
 RUN pip install --no-cache-dir ".[ai,email]"
 # Build-time smoke test: fail loudly here, not at 3am in prod, if an import is unsatisfied.
-RUN python -c "import beehive.web.app, scripts.run_collector, scripts.run_web"
+RUN python -c "import beehive.web.app, scripts.run_collector, scripts.run_web, scripts.run_research_worker"
 ENTRYPOINT ["python"]

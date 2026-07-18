@@ -4,6 +4,7 @@ from beehive.deep_read.extract import (
     ExtractionQuality,
     PartialReason,
     extract_article_text,
+    extract_full_article_text,
 )
 
 # A realistic article shape: headline, byline noise Trafilatura should strip, several
@@ -97,6 +98,36 @@ def test_extraction_truncated_when_text_exceeds_max_chars():
     assert PartialReason.EXTRACTION_TRUNCATED in result.reasons
     assert len(result.text) == 100
     assert result.char_count == 100
+
+
+def test_full_extraction_preserves_text_beyond_prompt_cap():
+    long_text = "word " * 10_000
+
+    result = extract_full_article_text(
+        "<html></html>",
+        extractor=lambda html: long_text,
+        min_usable_chars=1,
+    )
+
+    assert result.quality == ExtractionQuality.COMPLETE
+    assert PartialReason.EXTRACTION_TRUNCATED not in result.reasons
+    assert result.char_count == len(result.text)
+    assert result.char_count > 20_000
+
+
+def test_full_extraction_preserves_transport_and_paywall_classification():
+    result = extract_full_article_text(
+        "<html></html>",
+        extractor=lambda html: "Subscribe to continue reading this report.",
+        transport_truncated=True,
+        min_usable_chars=1,
+    )
+
+    assert result.quality == ExtractionQuality.PARTIAL
+    assert result.reasons == (
+        PartialReason.TRANSPORT_TRUNCATED,
+        PartialReason.PAYWALL_LIKE,
+    )
 
 
 def test_prompt_budget_truncated_when_smaller_than_max_chars():

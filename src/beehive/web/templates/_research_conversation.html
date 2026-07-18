@@ -1,0 +1,47 @@
+{# Conversation panel -- accepts `conversation` (research_view.ConversationTabView),
+   `session_id`, `csrf_token`, `messages_status_url`. Polls only while a chat reply is pending or
+   processing; a terminal (no active request) render omits hx-trigger entirely. #}
+{% if not conversation_fragment_only %}
+<section id="research-conversation" class="research-conversation" aria-labelledby="research-conversation-title"
+         aria-live="polite">
+{% endif %}
+<div id="research-conversation-content"
+     {% if conversation.has_pending_request %}hx-get="{{ messages_status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  <h2 id="research-conversation-title">{{ t('web.research.conversation.heading') }}</h2>
+  {% if conversation.failure_message %}
+  <p class="error" role="alert">{{ conversation.failure_message }}</p>
+  {% endif %}
+
+  <div class="research-message-list" role="log" aria-live="polite">
+    {% for message in conversation.messages %}
+    {% include "_research_message.html" %}
+    {% else %}
+    <p class="research-conversation-empty">{{ t('web.research.conversation.empty') }}</p>
+    {% endfor %}
+    {% if conversation.has_pending_request %}
+    <div class="research-message research-message-assistant research-message-generating" aria-hidden="true">
+      <div class="research-skeleton">
+        <div class="skeleton-group">
+          <span class="skeleton-line skeleton-line--full"></span>
+          <span class="skeleton-line skeleton-line--1-2"></span>
+        </div>
+      </div>
+    </div>
+    <p class="sr-only" role="status">{{ t('web.research.conversation.reply_generating') }}</p>
+    {% endif %}
+  </div>
+
+  {% if conversation.can_submit %}
+  <form class="research-message-form" method="post" action="/research/{{ session_id }}/messages">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="research-message-input">{{ t('web.research.conversation.input_label') }}</label>
+    <textarea id="research-message-input" name="content" required></textarea>
+    <button type="submit" class="btn primary small">{{ t('web.research.conversation.submit') }}</button>
+  </form>
+  {% elif conversation.disabled_reason %}
+  <p class="hint research-conversation-disabled">{{ conversation.disabled_reason }}</p>
+  {% endif %}
+</div>
+{% if not conversation_fragment_only %}
+</section>
+{% endif %}

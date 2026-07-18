@@ -10,6 +10,7 @@
 
 [Product tour](#product-tour) |
 [How it works](#how-it-works) |
+[Research Sessions](#research-sessions) |
 [Quick start](#quick-start) |
 [Deployment](#deployment)
 
@@ -72,6 +73,73 @@ Every source adapter returns a common `RawItem` model. The collector deduplicate
 | New Zealand Government | Official RSS |
 | Federal Reserve | Official RSS |
 
+## Research Sessions
+
+Beside the recurring Channel model above, the Owner can open a Research Session for a one-time
+question that does not belong to any Channel. Every Research Session route, including read-only
+views, requires an authenticated Owner session (ADR-0008); there is no publicly reachable
+Research page.
+
+- **Existing connector coverage.** A Research Plan draws only from the same credentialless
+  connectors used by Channels: Reddit subreddit feeds, Google News search queries, Hacker News
+  stories and search, and the three fixed official RSS feeds (Reserve Bank of New Zealand, New
+  Zealand Government, Federal Reserve). No new connector or credential type is introduced
+  (ADR-0007).
+- **Visible plan.** The AI proposes, and can later revise, a Research Plan listing the
+  source-specific queries it intends to run. The application validates every proposed connector
+  and configuration before anything executes, and the plan itself is shown to the Owner rather
+  than hidden.
+- **Durable, asynchronous evidence collection.** A Research Run collects, enriches, and clusters
+  evidence in the background across a fixed 20-minute budget per run, and survives worker
+  restarts or cancellation: completed steps are persisted before a snapshot is sealed (ADR-0009,
+  ADR-0010).
+- **Conclusion-first synthesis.** A Research Synthesis states a citation-backed answer to the
+  question instead of only listing sources, and is versioned as the Owner refreshes evidence or
+  revises the plan.
+- **Stable external citations.** Each Evidence Item is assigned one citation number the first
+  time it is collected; that number is never reassigned, so a synthesis or chat citation always
+  points at the same item.
+- **Evidence curation.** The Owner can exclude an Evidence Item from future synthesis and chat,
+  or restore it later, without deleting the underlying evidence.
+- **Durable long chat.** Conversation about a Research Session continues past the length of a
+  single AI context window using an AI-maintained, versioned Conversation Memory that a later
+  chat reply can pin.
+
+### Limitations and trust
+
+- **Existing provider coverage, not arbitrary web history.** A Research Plan can only add one of
+  the seven connector types above; it cannot browse an arbitrary URL or search the open web
+  outside these providers.
+- **The AI never executes connectors or tools.** The AI proposes plan sources and drafts
+  synthesis text; the application performs every connector call. Any AI call that reads
+  externally sourced evidence text runs with zero available tools, so an instruction hidden
+  inside fetched content has nothing to invoke.
+- **Model knowledge is labeled separately.** A Research Synthesis may include a clearly
+  separated, clearly labeled section of general model knowledge that supplements, but is never
+  mixed into, the citation-backed answer built from collected evidence.
+- **Full extracted text is stored locally.** Up to 30 Evidence Items per Research Run are deep
+  fetched, and their full extracted text is stored in the local SQLite database, not only a
+  snippet, until the session is hard-deleted; the remaining items keep only the connector's
+  snippet.
+- **Archiving keeps data; deleting removes it.** Archiving a Research Session preserves its
+  question, evidence, and conversation for later reference and blocks new runs or messages
+  against it until it is unarchived. Hard-deleting a session cascades the delete relationally
+  across every research table (sources, runs, plan revisions, evidence, snapshots, curation,
+  clusters, syntheses, messages, chat requests, and conversation memory) in one transaction. This
+  is not a forensic erasure: it does not securely overwrite freed SQLite pages or any prior copy
+  retained in the write-ahead log, which may remain recoverable on disk until the database file
+  is vacuumed or otherwise reclaimed.
+- **No public indexing or private routes.** Research Sessions are covered by the same
+  application-wide `X-Robots-Tag: noindex, nofollow` header described in
+  [Privacy and indexing](#privacy-and-indexing), and every route additionally requires an
+  authenticated Owner session, unlike the public Dashboard and Channel pages.
+
+See [ADR-0006](docs/adr/0006-separate-research-data-model.md) through
+[ADR-0010](docs/adr/0010-durably-stage-research-evidence.md) for the design decisions, and
+`src/beehive/research/` for the plan, collect, enrich, cluster, and assess pipeline a Research Run
+drives end to end. Operating the always-on Research worker and its reconcile timer is covered in
+[`deploy/README.md`](deploy/README.md#research-worker-adr-0009).
+
 ## Quick start
 
 Requirements:
@@ -101,7 +169,7 @@ Open `http://127.0.0.1:8000/`.
 | --- | --- | --- |
 | `DB_PATH` | No | SQLite path. Defaults to `/data/beehive.db`. |
 | `SESSION_SECRET` | Yes for admin access | Signs the owner session cookie. |
-| `COPILOT_GITHUB_TOKEN` | Yes for AI processing | Authenticates ranking, summary migration, and article-brief workers. It is not required by the web process. |
+| `COPILOT_GITHUB_TOKEN` | Yes for AI processing | Authenticates ranking, summary migration, article-brief, and Research worker AI calls. It is not required by the web process. |
 | `ACS_CONNECTION_STRING` | Only for email | Connects to Azure Communication Services Email. |
 | `DIGEST_EMAIL_TO` | Only for email | Default recipient; channels can override it. |
 | `DIGEST_EMAIL_FROM` | Only for email | Verified sender address. |
@@ -132,6 +200,19 @@ The admin interface can create channels, attach sources, configure fetch interva
 
 An owner deep-read request is stored durably in SQLite. In the Quadlet deployment, a path unit starts
 the bounded article worker immediately and a timer reconciles any missed wakeup.
+
+A Research Run or chat reply is likewise stored durably in SQLite and only progresses once the
+Research worker is running. For local development, only `DB_PATH` and `COPILOT_GITHUB_TOKEN` are
+needed; every other knob has a default:
+
+```bash
+export COPILOT_GITHUB_TOKEN="..."
+.venv/bin/python -m scripts.run_research_worker --db-path "$DB_PATH"
+```
+
+Deployment, the pool-size and lease `RESEARCH_WORKER_*` environment overrides, the DB-enforced
+global caps, the reconcile timer, and rollout/rollback are covered in
+[`deploy/README.md`](deploy/README.md#research-worker-adr-0009).
 
 ### Rewrite existing unread summaries
 
@@ -176,11 +257,14 @@ after the later change is removed.
 
 ## Deployment
 
-`deploy/` contains rootless Podman Quadlet units for the web application, scheduled and manual collection, daily digest, and the queued article-brief worker. See [`deploy/README.md`](deploy/README.md).
+`deploy/` contains rootless Podman Quadlet units for the web application, scheduled and manual collection, daily digest, the queued article-brief worker, and the always-on Research worker with its reconcile timer. See [`deploy/README.md`](deploy/README.md).
 
 ## Privacy and indexing
 
 Beehive is designed for a personal dashboard. It sends `X-Robots-Tag: noindex, nofollow` and matching HTML metadata by default. Authentication protects administration and write actions, but deployment-level access control is still recommended if the read surface contains private interests or summaries.
+
+Every Research Session route additionally requires an authenticated Owner session, including
+read-only views, so there is no public or unauthenticated route to a Research Session at all.
 
 Before publishing a deployment, review the generated content, channel names, source configuration, and reverse-proxy policy.
 

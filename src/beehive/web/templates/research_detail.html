@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.research_detail', product=t('common.product_name'), question=question) }}{% endblock %}
+{% block body_class %}page-research{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.research') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell research-shell research-detail-shell">
+  <p class="crumb"><a href="/research">← {{ t('web.research.list.heading') }}</a></p>
+
+  <header class="page-heading compact-heading research-detail-heading">
+    <div>
+      <p class="eyebrow">{{ t('web.research.session_status.' + research_session.status.value) }}</p>
+      <h1 id="research-question-heading">{{ question }}</h1>
+      {% if sources %}
+      <p class="page-lede research-sources-summary">
+        {{ t('web.research.detail.sources_label') }}
+        {% for source in sources %}{{ source.label }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
+      {% endif %}
+    </div>
+    <div class="row-actions research-detail-actions">
+      {% if can_unarchive %}
+      <form method="post" action="/research/{{ research_session.id }}/unarchive">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn ghost small">{{ t('web.research.detail.unarchive') }}</button>
+      </form>
+      {% elif can_archive %}
+      <form method="post" action="/research/{{ research_session.id }}/archive">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn ghost small">{{ t('web.research.detail.archive') }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if is_archived %}
+  <p class="page-banner research-archived-banner" role="note">{{ t('web.research.detail.archived_notice') }}</p>
+  {% endif %}
+  {% if action_error_message %}
+  <p class="page-banner" role="alert">{{ action_error_message }}</p>
+  {% endif %}
+
+  {% include "_research_status.html" %}
+
+  <nav class="admin-tabs research-tabs" aria-label="{{ t('web.research.detail.tabs_aria') }}">
+    <a href="/research/{{ research_session.id }}?tab=synthesis"{% if active_tab == "synthesis" %} aria-current="page"{% endif %}>{{ t('web.research.detail.tab_synthesis') }}</a>
+    <a href="/research/{{ research_session.id }}?tab=plan"{% if active_tab == "plan" %} aria-current="page"{% endif %}>{{ t('web.research.detail.tab_plan') }}</a>
+    <a href="/research/{{ research_session.id }}?tab=evidence"{% if active_tab == "evidence" %} aria-current="page"{% endif %}>{{ t('web.research.detail.tab_evidence') }}</a>
+  </nav>
+
+  <div class="admin-tab-panel research-tab-body">
+    {% if active_tab == "synthesis" %}
+    {% include "_research_synthesis.html" %}
+    {% elif active_tab == "plan" %}
+    {% include "_research_plan.html" %}
+    {% elif active_tab == "evidence" %}
+    <section class="research-tab-panel research-evidence" aria-labelledby="research-evidence-title">
+      <h2 id="research-evidence-title" class="sr-only">{{ t('web.research.evidence.heading') }}</h2>
+      {% if evidence.all_excluded %}
+      <p class="page-banner research-evidence-all-excluded" role="note">{{ t('web.research.evidence.all_excluded_notice') }}</p>
+      {% endif %}
+      {% if evidence.clusters %}
+      <div class="research-evidence-clusters">
+        {% for cluster in evidence.clusters %}
+        {% include "_research_evidence_cluster.html" %}
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state compact-empty">
+        <h3>{{ t('web.research.evidence.empty_heading') }}</h3>
+        <p>{{ t('web.research.evidence.empty_body') }}</p>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  {% include "_research_conversation.html" %}
+
+  <section class="danger-zone" aria-labelledby="research-danger-title">
+    <div>
+      <p class="section-kicker" lang="en">Danger zone</p>
+      <h2 id="research-danger-title">{{ t('web.research.detail.delete_heading') }}</h2>
+      <p>{{ t('web.research.detail.delete_warning') }}</p>
+    </div>
+    <details class="delete-confirm">
+      <summary class="btn danger">
+        <span class="closed-label">{{ t('web.research.detail.delete_action') }}</span>
+        <span class="open-label">{{ t('web.research.detail.delete_cancel') }}</span>
+      </summary>
+      <div class="confirm">
+        <p>{{ t('web.research.detail.delete_confirm') }}</p>
+        <div class="confirm-actions">
+          <form method="post" action="/research/{{ research_session.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn danger" type="submit">{{ t('web.research.detail.delete_confirm_action') }}</button>
+          </form>
+        </div>
+      </div>
+    </details>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>
+{% endblock %}

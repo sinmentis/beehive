@@ -1,0 +1,60 @@
+{# Synthesis tab body -- accepts `synthesis` (research_view.SynthesisTabView). Conclusion-first
+   order per CONTEXT.md: bottom line, key findings, agreements, conflicts, unknowns, evidence
+   coverage, then the structurally-separate, citation-free supplementary model context. #}
+<section class="research-tab-panel research-synthesis" aria-labelledby="research-synthesis-title">
+  <h2 id="research-synthesis-title" class="sr-only">{{ t('web.research.synthesis.heading') }}</h2>
+  {% if synthesis.has_synthesis %}
+  <p class="research-synthesis-meta">
+    {{ t('web.research.synthesis.version_label', version=synthesis.version) }}
+    <span aria-hidden="true"> · </span>{{ synthesis.created_at_label }}
+    <span aria-hidden="true"> · </span>{{ synthesis.sufficiency_label }}
+  </p>
+
+  {% macro finding_section(heading_id, heading, findings) %}
+  {% if findings %}
+  <section class="research-synthesis-section" aria-labelledby="{{ heading_id }}">
+    <h3 id="{{ heading_id }}">{{ heading }}</h3>
+    <ul class="research-synthesis-findings">
+      {% for finding in findings %}
+      <li>
+        <span class="research-synthesis-text">{{ finding.text }}</span>
+        {% if finding.citations %}
+        <span class="research-synthesis-citations">
+          {% for citation in finding.citations %}
+          <a class="research-citation-chip" href="{{ citation.href }}" target="_blank" rel="noopener noreferrer"
+             title="{{ citation.title }}: {{ citation.quality_label }}"><span aria-hidden="true">[{{ citation.citation_number }}]</span><span class="sr-only">[{{ citation.citation_number }}] {{ citation.title }}: {{ citation.quality_label }} {{ t('web.item.opens_new_window') }}</span></a>
+          {% endfor %}
+        </span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% endmacro %}
+
+  {{ finding_section("research-bottom-line", t('web.research.synthesis.section_bottom_line'), synthesis.bottom_line) }}
+  {{ finding_section("research-key-findings", t('web.research.synthesis.section_key_findings'), synthesis.key_findings) }}
+  {{ finding_section("research-agreements", t('web.research.synthesis.section_agreements'), synthesis.source_agreements) }}
+  {{ finding_section("research-conflicts", t('web.research.synthesis.section_conflicts'), synthesis.source_conflicts) }}
+  {{ finding_section("research-unknowns", t('web.research.synthesis.section_unknowns'), synthesis.unknowns) }}
+  {{ finding_section("research-coverage", t('web.research.synthesis.section_evidence_coverage'), synthesis.evidence_coverage) }}
+
+  {% if synthesis.model_knowledge %}
+  <section class="research-synthesis-section research-synthesis-model-knowledge" aria-labelledby="research-model-knowledge">
+    <h3 id="research-model-knowledge">{{ t('web.research.synthesis.section_model_knowledge') }}</h3>
+    <p class="hint">{{ t('web.research.synthesis.model_knowledge_hint') }}</p>
+    <ul class="research-synthesis-findings">
+      {% for note in synthesis.model_knowledge %}
+      <li>{{ note }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% else %}
+  <div class="empty-state compact-empty">
+    <h3>{{ t('web.research.synthesis.empty_heading') }}</h3>
+    <p>{{ t('web.research.synthesis.empty_body') }}</p>
+  </div>
+  {% endif %}
+</section>

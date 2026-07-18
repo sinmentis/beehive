@@ -1,0 +1,8 @@
+{# One row in the Research Session list -- accepts `row` (research_view.SessionRowView). #}
+<div class="channel-admin-row research-session-row" role="row">
+  <span class="channel-admin-copy" role="cell">
+    <a class="research-session-link" href="{{ row.detail_url }}"><strong>{{ row.question }}</strong></a>
+    <p>{{ row.last_activity_label }}</p>
+  </span>
+  <span class="research-session-status" role="cell">{{ row.status_label }}</span>
+</div>

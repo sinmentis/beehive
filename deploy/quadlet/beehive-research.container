@@ -1,0 +1,21 @@
+[Unit]
+Description=Beehive durable Research worker (bounded research-run + chat-reply pools)
+
+[Container]
+Image=localhost/beehive:latest
+ContainerName=beehive-research
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+Secret=beehive-copilot-github-token,type=env,target=COPILOT_GITHUB_TOKEN
+Exec=-m scripts.run_research_worker
+
+[Service]
+Restart=always
+CPUQuota=200%
+CPUWeight=30
+MemoryHigh=768M
+MemoryMax=1024M
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target
