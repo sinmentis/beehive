@@ -18,8 +18,9 @@ from beehive.db.research_sessions import create_research_session, get_research_s
 from beehive.db.research_sources import create_research_source
 from beehive.db.research_syntheses import create_synthesis
 from beehive.domain.research import (ClaimProvenance, ConversationRole, EvidenceCitation,
-                                      EvidenceQuality, ResearchSourceOrigin, SufficiencyState,
-                                      SynthesisClaim, SynthesisSection)
+                                      EvidenceQuality, ResearchRun, ResearchRunStatus,
+                                      ResearchSourceOrigin, SufficiencyState, SynthesisClaim,
+                                      SynthesisSection)
 from beehive.localization import localizer_for
 from beehive.research.synthesis import build_document
 from beehive.web import research_view
@@ -324,3 +325,27 @@ def test_safe_session_error_message_never_leaks_exception_text(t):
     message = research_view.safe_session_error_message(t, exc)
     assert "42" not in message
     assert "session_id" not in message
+
+
+def _failed_run(error_detail: str | None) -> ResearchRun:
+    return ResearchRun(
+        id=1, session_id=1, status=ResearchRunStatus.FAILED, phase=None, requested_at=T0,
+        completed_at=T0, error_code="synthesis_failed", error_detail=error_detail)
+
+
+def test_build_run_status_view_exposes_captured_error_detail_alongside_generic_message(t):
+    run = _failed_run("StructuredResponseError: no fenced ```json block found in core response")
+    view = research_view.build_run_status_view(run, t)
+    # The friendly, localized copy is unaffected -- error_detail is a separate, additive field.
+    assert view.error_message == t.text("web.research.run_error.generic")
+    assert view.error_detail == (
+        "StructuredResponseError: no fenced ```json block found in core response")
+
+
+def test_build_run_status_view_omits_error_detail_when_none_was_captured(t):
+    # Some failure paths (e.g. a lost claim) never capture a detail -- must degrade to None,
+    # never a placeholder/empty string that would render an empty disclosure.
+    run = _failed_run(None)
+    view = research_view.build_run_status_view(run, t)
+    assert view.error_message == t.text("web.research.run_error.generic")
+    assert view.error_detail is None

@@ -116,10 +116,10 @@ from beehive.domain.research import ConversationMessage, ResearchRunStatus
 from beehive.localization import Localizer, load_localizer, localizer_for
 from beehive.research.conversation import (ConversationClaimLostError, ConversationError,
                                             process_claimed_chat_request)
-from beehive.research.limits import MAX_RUN_DURATION
+from beehive.research.limits import MAX_ERROR_DETAIL_LENGTH, MAX_RUN_DURATION
 from beehive.research.orchestrator import SealedEvidenceOutcome, run_research_orchestration
 
-_ERROR_DETAIL_CAP = 1000
+_ERROR_DETAIL_CAP = MAX_ERROR_DETAIL_LENGTH
 _ENV_PREFIX = "RESEARCH_WORKER_"
 # Once a research run's own deadline_at has been reached, _heartbeat_loop's usual
 # min(heartbeat_interval, seconds-until-deadline) sleep collapses to zero -- fine for a

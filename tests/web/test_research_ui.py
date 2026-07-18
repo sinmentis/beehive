@@ -15,15 +15,15 @@ from beehive.db.connection import connect, init_schema
 from beehive.db.evidence_curation import set_evidence_curation
 from beehive.db.evidence_items import upsert_evidence_item
 from beehive.db.evidence_state import create_evidence_state_revision
-from beehive.db.research_runs import enqueue_research_run
+from beehive.db.research_runs import claim_research_run, complete_research_run, enqueue_research_run
 from beehive.db.research_snapshots import add_snapshot_items, create_snapshot, seal_snapshot
 from beehive.db.research_sessions import create_research_session
 from beehive.db.research_sources import create_research_source
 from beehive.db.research_syntheses import create_synthesis
 from beehive.db.sessions import create_session
 from beehive.domain.research import (ClaimProvenance, EvidenceCitation, EvidenceQuality,
-                                      ResearchSourceOrigin, SufficiencyState, SynthesisClaim,
-                                      SynthesisSection)
+                                      ResearchRunStatus, ResearchSourceOrigin, SufficiencyState,
+                                      SynthesisClaim, SynthesisSection)
 from beehive.localization import SUPPORTED_LANGUAGES, save_language
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
@@ -175,6 +175,35 @@ def test_pending_run_uses_skeleton_not_spinner(authed_client, conn):
     resp = authed_client.get(f"/research/{session_id}/status")
     assert "research-skeleton" in resp.text
     assert "spinner" not in resp.text.lower()
+
+
+def _fail_a_claimed_run(c, session_id: int, *, error_detail: str | None) -> None:
+    run = enqueue_research_run(c, session_id, T0)
+    lease = claim_research_run(c, run.id, T0, lease_seconds=60, deadline_seconds=1200)
+    complete_research_run(
+        c, run.id, lease.run.claim_token, ResearchRunStatus.FAILED, T0,
+        error_code="synthesis_failed", error_detail=error_detail)
+
+
+def test_failed_run_shows_captured_error_detail_as_technical_disclosure(authed_client, conn):
+    _, c = conn
+    session_id = create_research_session(c, "Q", T0).id
+    _fail_a_claimed_run(
+        c, session_id,
+        error_detail="StructuredResponseError: no fenced ```json block found in core response")
+    resp = authed_client.get(f"/research/{session_id}")
+    assert resp.status_code == 200
+    assert "research-error-detail" in resp.text
+    assert "StructuredResponseError" in resp.text
+
+
+def test_failed_run_without_captured_detail_shows_no_disclosure(authed_client, conn):
+    _, c = conn
+    session_id = create_research_session(c, "Q", T0).id
+    _fail_a_claimed_run(c, session_id, error_detail=None)
+    resp = authed_client.get(f"/research/{session_id}")
+    assert resp.status_code == 200
+    assert "research-error-detail" not in resp.text
 
 
 # ============================================================================

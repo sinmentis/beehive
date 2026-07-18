@@ -214,6 +214,8 @@ class ResearchRun:
     claim_token: str | None = None
     cancel_requested: bool = False
     deep_fetch_count: int = 0
+    error_code: str | None = None
+    error_detail: str | None = None
 
     def __post_init__(self) -> None:
         if self.session_id <= 0:
@@ -233,6 +235,8 @@ class ResearchRun:
             ResearchRunStatus.FAILED,
         } and self.completed_at is None:
             raise ValueError("terminal Research Run needs completed_at")
+        if self.error_code is not None and self.status is not ResearchRunStatus.FAILED:
+            raise ValueError("only a failed Research Run can have an error_code")
 
 
 @dataclass(frozen=True)

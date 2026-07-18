@@ -4,12 +4,18 @@ route bodies stay thin and call only into here for anything that turns repositor
 into template-safe data). This module owns every safety-sensitive rendering decision so it lives
 in exactly one place:
 
-1. Templates must NEVER receive a raw stored JSON blob, an Evidence Item's `full_text`, a Research
-   Run's `error_detail`, a worker `claim_token`, or Conversation Memory content -- every function
-   below returns typed, already-validated dataclasses/dicts built from repository rows, and a
-   malformed stored value (a corrupt `plan_json`, an unknown enum) degrades to a localized
-   "unavailable" shape exactly like web/deep_read_view.py's own DeepReadCacheError convention,
-   never a raw exception or the raw stored text.
+1. Templates must NEVER receive a raw stored JSON blob, an Evidence Item's `full_text`, a worker
+   `claim_token`, or Conversation Memory content -- every function below returns typed,
+   already-validated dataclasses/dicts built from repository rows, and a malformed stored value
+   (a corrupt `plan_json`, an unknown enum) degrades to a localized "unavailable" shape exactly
+   like web/deep_read_view.py's own DeepReadCacheError convention, never a raw exception or the
+   raw stored text. The one deliberate exception is a FAILED Research Run's own `error_detail`:
+   `build_run_status_view` exposes it as its own labelled technical/diagnostic field (never
+   folded into `error_message`'s localized copy), because it is already sanitized at the one
+   place it is ever written -- orchestrator.py's synthesis-failure capture and collector/
+   research_worker.py's `_classify_error` both store only the causing exception's own type name
+   and message, capped (`research.limits.MAX_ERROR_DETAIL_LENGTH`), never the Research Question,
+   evidence, or a raw prompt.
 2. Every external citation/source link is built through link_safety.safe_external_href -- an
    invalid scheme degrades to a non-link ("#") rather than ever being rendered as-is.
 3. Conversation Message content is the one place stored text embeds citation markers
@@ -167,6 +173,7 @@ class RunStatusView:
     requested_at_label: str
     can_cancel: bool
     error_message: str | None
+    error_detail: str | None
 
 
 _RUN_ERROR_KEYS = frozenset({
@@ -183,11 +190,24 @@ def _run_error_message(run: ResearchRun, t: Localizer) -> str | None:
     return t.text("web.research.run_error.generic")
 
 
+def _run_error_detail(run: ResearchRun) -> str | None:
+    """The one deliberate reader of `run.error_detail` in this module -- see the module
+    docstring's rule 1 for why this is safe: it is already capped to the causing exception's own
+    type name and message, never the Research Question, evidence, or a raw prompt. Returned only
+    for a FAILED run (matches `domain.research.ResearchRun.__post_init__`'s own invariant that
+    error_code/error_detail are only ever set alongside FAILED), and only when a value was
+    actually captured -- older rows (or a failure path that never captures one, e.g. a lost
+    claim) still show only `error_message`'s generic copy with no technical detail beneath it."""
+    if run.status is not ResearchRunStatus.FAILED:
+        return None
+    return run.error_detail
+
+
 def build_run_status_view(run: ResearchRun | None, t: Localizer) -> RunStatusView:
     if run is None:
         return RunStatusView(
             has_run=False, is_pending=False, status_label="", phase_label=None,
-            requested_at_label="", can_cancel=False, error_message=None)
+            requested_at_label="", can_cancel=False, error_message=None, error_detail=None)
     is_pending = run.status in _NON_TERMINAL_RUN_STATUSES
     return RunStatusView(
         has_run=True,
@@ -198,6 +218,7 @@ def build_run_status_view(run: ResearchRun | None, t: Localizer) -> RunStatusVie
         requested_at_label=relative_time(run.requested_at.isoformat(), t),
         can_cancel=is_pending and not run.cancel_requested,
         error_message=_run_error_message(run, t),
+        error_detail=_run_error_detail(run),
     )
 
 

@@ -2352,6 +2352,28 @@ select{
 .research-status-failed{border-color:rgba(204,112,103,.35)}
 .research-skeleton{display:grid;gap:.5rem}
 
+.research-error-detail{margin:.4rem 0 0;font-size:.72rem}
+.research-error-detail summary{
+  color:var(--muted);
+  cursor:pointer;
+  list-style:none;
+}
+.research-error-detail summary::-webkit-details-marker{display:none}
+.research-error-detail summary:hover{color:var(--accent-strong)}
+.research-error-detail-text{
+  margin:.4rem 0 0;
+  padding:.55rem .7rem;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--bg-soft);
+  color:var(--text-soft);
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:.68rem;
+  line-height:1.5;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+
 .research-tabs{margin-top:.5rem}
 .research-tab-body{padding:1.6rem 0}
 

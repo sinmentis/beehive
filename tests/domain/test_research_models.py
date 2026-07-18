@@ -83,6 +83,34 @@ def test_processing_run_requires_claim_phase_and_deadline():
     assert run.phase is ResearchRunPhase.COLLECTING
 
 
+def test_failed_run_carries_error_code_and_detail():
+    run = ResearchRun(
+        id=1,
+        session_id=1,
+        status=ResearchRunStatus.FAILED,
+        phase=None,
+        requested_at=NOW,
+        completed_at=NOW,
+        error_code="synthesis_failed",
+        error_detail="StructuredResponseError: no fenced ```json block found",
+    )
+    assert run.error_code == "synthesis_failed"
+    assert run.error_detail == "StructuredResponseError: no fenced ```json block found"
+
+
+def test_only_a_failed_run_can_have_an_error_code():
+    with pytest.raises(ValueError, match="only a failed Research Run can have an error_code"):
+        ResearchRun(
+            id=1,
+            session_id=1,
+            status=ResearchRunStatus.COMPLETED,
+            phase=None,
+            requested_at=NOW,
+            completed_at=NOW,
+            error_code="synthesis_failed",
+        )
+
+
 def test_snapshot_sealed_at_matches_status():
     with pytest.raises(ValueError, match="needs sealed_at"):
         EvidenceSnapshot(

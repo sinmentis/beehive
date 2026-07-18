@@ -196,8 +196,8 @@ from beehive.research.collector import Candidate, CollectionOutcome, collect
 from beehive.research.enrichment import (DeepFetchStatus, persist_candidate_snippet,
                                           project_for_prompt, reserve_and_deep_fetch,
                                           select_relevant_candidates)
-from beehive.research.limits import (MAX_DEEP_FETCHES_PER_ROUND, MAX_REVISION_ROUNDS,
-                                      NOVELTY_STOP_ROUNDS)
+from beehive.research.limits import (MAX_DEEP_FETCHES_PER_ROUND, MAX_ERROR_DETAIL_LENGTH,
+                                      MAX_REVISION_ROUNDS, NOVELTY_STOP_ROUNDS)
 from beehive.research.planner import (ResearchPlan, build_initial_plan_prompt,
                                        build_revision_plan_prompt, parse_plan_response)
 from beehive.research.structured_response import StructuredResponseError
@@ -640,7 +640,12 @@ async def _synthesize_and_terminate(
         treated exactly like every other claim loss in this module (STALE_CLAIM, no further
         writes). Any OTHER exception (malformed AI output, a structured-response validation
         failure, an AI-call timeout, or anything else) is caught and turned into a safe, typed
-        stop below.
+        stop below -- its own type name and message (capped to
+        `research.limits.MAX_ERROR_DETAIL_LENGTH`, never the Research Question, evidence, or a
+        raw prompt) are captured as `error_detail` on that same terminal write, exactly like
+        collector/research_worker.py's own `_classify_error` does for a run that instead crashes
+        uncaught, so a synthesis failure is diagnosable from the DB row instead of only a bare
+        `error_code='synthesis_failed'`.
 
     Every terminal write here goes through `complete_research_run_if_claimed` with its
     `honor_cancel=True` default, and the reported `RunOutcomeStatus` is always built from its
@@ -667,6 +672,7 @@ async def _synthesize_and_terminate(
 
     synthesis_id: int | None = None
     synthesis_failed = False
+    synthesis_error_detail: str | None = None
     if existing_synthesis is not None:
         # A prior attempt of this exact run already persisted a synthesis for this exact
         # revision before crashing or losing its claim at the terminal write -- reuse it rather
@@ -713,8 +719,13 @@ async def _synthesize_and_terminate(
                 pass
             except SynthesisClaimLostError:
                 return _stale_outcome(run_id, sufficiency, rounds_completed, source_failures)
-            except Exception:
+            except Exception as exc:
+                # Never the Research Question, evidence, or a raw prompt -- only the exception's
+                # own type name and its own message, capped, matching collector/research_worker.
+                # py's _classify_error convention so both diagnostic paths stay consistent.
                 synthesis_failed = True
+                synthesis_error_detail = (
+                    f"{type(exc).__name__}: {exc}"[:MAX_ERROR_DETAIL_LENGTH])
             else:
                 synthesis_id = synthesis.id
         # else: admission.status is CANCEL_REQUESTED -- it wrote nothing and left the run
@@ -731,7 +742,7 @@ async def _synthesize_and_terminate(
         # never surface as SYNTHESIS_FAILED.
         result = complete_research_run_if_claimed(
             conn, run_id, claim_token, ResearchRunStatus.FAILED, now, now_fn=now_fn,
-            error_code="synthesis_failed")
+            error_code="synthesis_failed", error_detail=synthesis_error_detail)
         if not result.ok:
             return _stale_outcome(run_id, sufficiency, rounds_completed, source_failures)
         if result.committed_status is ResearchRunStatus.CANCELLED:

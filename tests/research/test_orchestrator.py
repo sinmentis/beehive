@@ -972,9 +972,13 @@ async def test_synthesis_failure_preserves_evidence_and_fails_run_with_typed_cod
 
     run_row = get_research_run(conn, run.id)
     assert run_row.status == ResearchRunStatus.FAILED
-    raw_row = conn.execute(
-        "SELECT error_code FROM research_runs WHERE id = ?", (run.id,)).fetchone()
-    assert raw_row["error_code"] == "synthesis_failed"
+    assert run_row.error_code == "synthesis_failed"
+    # The real cause is no longer silently discarded -- the causing exception's own type name
+    # and message are captured, matching collector/research_worker.py's own _classify_error
+    # convention (see orchestrator.py's _synthesize_and_terminate).
+    assert run_row.error_detail is not None
+    assert "StructuredResponseError" in run_row.error_detail
+    assert "fenced" in run_row.error_detail
 
 
 # ============================================================================

@@ -526,6 +526,7 @@ CATALOGS = {
         "web.research.error.evidence_failed": 'This evidence change could not be saved.',
         "web.research.error.message_failed": 'This message could not be sent. Try again shortly.',
         "web.research.run_error.generic": 'This search failed. Try refreshing again.',
+        "web.research.run_error.detail_label": 'Technical detail',
     },
     "zh-CN": {
         "web.nav.skip_link": '跳转到主要内容',
@@ -1039,6 +1040,7 @@ CATALOGS = {
         "web.research.error.evidence_failed": '此证据更改未能保存。',
         "web.research.error.message_failed": '此消息未能发送，请稍后重试。',
         "web.research.run_error.generic": '此次搜索失败，请再次尝试刷新。',
+        "web.research.run_error.detail_label": '技术细节',
     },
     "ja": {
         "web.nav.skip_link": 'メインコンテンツへスキップ',
@@ -1561,6 +1563,7 @@ CATALOGS = {
         "web.research.error.evidence_failed": 'この証拠の変更を保存できませんでした。',
         "web.research.error.message_failed": 'このメッセージを送信できませんでした。しばらくしてからもう一度お試しください。',
         "web.research.run_error.generic": 'この検索は失敗しました。もう一度更新してみてください。',
+        "web.research.run_error.detail_label": '技術詳細',
     },
     "ko": {
         "web.nav.skip_link": '본문으로 건너뛰기',
@@ -2082,6 +2085,7 @@ CATALOGS = {
         "web.research.error.evidence_failed": '이 증거 변경 사항을 저장할 수 없습니다.',
         "web.research.error.message_failed": '이 메시지를 보낼 수 없습니다. 잠시 후 다시 시도하세요.',
         "web.research.run_error.generic": '이 검색이 실패했습니다. 다시 새로고침해 보세요.',
+        "web.research.run_error.detail_label": '기술 세부 정보',
     },
     "es": {
         "web.nav.skip_link": 'Saltar al contenido principal',
@@ -2610,6 +2614,7 @@ CATALOGS = {
         "web.research.error.evidence_failed": 'No se pudo guardar este cambio de evidencia.',
         "web.research.error.message_failed": 'No se pudo enviar este mensaje. Inténtalo de nuevo en breve.',
         "web.research.run_error.generic": 'Esta búsqueda falló. Intenta actualizar de nuevo.',
+        "web.research.run_error.detail_label": 'Detalle técnico',
     },
     "fr": {
         "web.nav.skip_link": 'Aller au contenu principal',
@@ -3139,6 +3144,7 @@ CATALOGS = {
         "web.research.error.evidence_failed": 'Cette modification de preuve n\'a pas pu être enregistrée.',
         "web.research.error.message_failed": 'Ce message n\'a pas pu être envoyé. Réessayez sous peu.',
         "web.research.run_error.generic": 'Cette recherche a échoué. Essayez d\'actualiser à nouveau.',
+        "web.research.run_error.detail_label": 'Détail technique',
     },
     "de": {
         "web.nav.skip_link": 'Zum Hauptinhalt springen',
@@ -3668,5 +3674,6 @@ CATALOGS = {
         "web.research.error.evidence_failed": 'Diese Änderung an den Belegen konnte nicht gespeichert werden.',
         "web.research.error.message_failed": 'Diese Nachricht konnte nicht gesendet werden. Versuchen Sie es in Kürze erneut.',
         "web.research.run_error.generic": 'Diese Suche ist fehlgeschlagen. Versuchen Sie erneut zu aktualisieren.',
+        "web.research.run_error.detail_label": 'Technisches Detail',
     },
 }

@@ -25,6 +25,12 @@
   {% if run_status.error_message %}
   <p class="error">{{ run_status.error_message }}</p>
   {% endif %}
+  {% if run_status.error_detail %}
+  <details class="research-error-detail">
+    <summary>{{ t('web.research.run_error.detail_label') }}</summary>
+    <p class="research-error-detail-text">{{ run_status.error_detail }}</p>
+  </details>
+  {% endif %}
 {% endif %}
 </div>
 {% if not status_fragment_only %}

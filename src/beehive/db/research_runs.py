@@ -193,7 +193,9 @@ def _row_to_run(row: sqlite3.Row) -> ResearchRun:
             datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None),
         claim_token=row["claim_token"],
         cancel_requested=bool(row["cancel_requested"]),
-        deep_fetch_count=row["deep_fetch_count"])
+        deep_fetch_count=row["deep_fetch_count"],
+        error_code=row["error_code"],
+        error_detail=row["error_detail"])
 
 
 def _fetch(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:

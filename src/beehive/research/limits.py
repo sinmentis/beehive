@@ -166,3 +166,11 @@ MAX_SYNTHESIS_CLAIM_TEXT_CHARS_IN_CONVERSATION_PROMPT = 400
 # many chat turns -- this is the one ceiling that keeps a long-running conversation's context
 # bounded once the raw message history itself no longer fits in a prompt.
 MAX_CONVERSATION_MEMORY_LENGTH = 2_000
+
+# --- Diagnostics: capped raw-exception detail persisted on a failed Research Run/task ---
+# Shared by orchestrator.py's own synthesis-failure capture and collector/research_worker.py's
+# _classify_error: the ONLY diagnostic ever persisted for an unexpected failure is the
+# exception's own type name plus its own message, capped to this length -- never the Research
+# Question, evidence, or a raw prompt. One shared number here so neither call site can drift
+# from the other.
+MAX_ERROR_DETAIL_LENGTH = 1_000
