@@ -2276,7 +2276,7 @@ select{
   --border-strong:#2c3126;
 }
 .research-shell,.research-form-shell,.research-detail-shell{width:min(100% - 2rem,64rem)}
-.research-session-row{align-items:center}
+.research-session-row{display:flex;align-items:center;justify-content:space-between;gap:1rem}
 .research-session-link strong{font-family:var(--font-display);font-size:1.05rem;font-weight:550;letter-spacing:-.01em}
 .research-session-status{flex:none;color:var(--muted);font-size:.7rem;font-weight:650;text-transform:uppercase;letter-spacing:.04em}
 .research-list-heading{margin-bottom:1.6rem;align-items:end;gap:2rem}
