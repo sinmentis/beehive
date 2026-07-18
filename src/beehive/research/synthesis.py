@@ -441,9 +441,28 @@ def _pin_prompt_aliases(aliases: Sequence[EvidenceAlias]) -> tuple[EvidenceAlias
     scarce 30 deep-fetch reservations to actually read -- often the only substantive evidence in
     the whole session -- sits at a higher citation_number and is silently never shown to the
     Research Synthesis call at all, no matter how many further rounds run. Prioritizing full_text
-    first fixes that without touching citation_number allocation or stability."""
-    ranked = sorted(aliases, key=lambda a: (a.item.full_text is None or a.item.full_text == "",
-                                             a.item.citation_number))
+    first fixes that without touching citation_number allocation or stability.
+
+    Also collapses aliases that share the same `url` to just the single best-ranked one before
+    bounding: db/evidence_items.py's uniqueness is per (research_source_id, external_key), so the
+    exact same real-world article independently discovered by two different Research Sources
+    (e.g. two overlapping AI-authored search queries) gets two separate citation-numbered
+    Evidence Items for what is substantively one piece of evidence. Letting both compete for the
+    prompt's scarce item budget wastes a slot on redundant content that could otherwise carry
+    genuinely distinct evidence. Every alias still keeps its own stable citation_number and
+    remains independently excludable via evidence_curation.py -- this only narrows what one
+    particular prompt actually shows, the same way the full_text-priority selection above does."""
+    def rank_key(alias: EvidenceAlias) -> tuple[bool, int]:
+        return (alias.item.full_text is None or alias.item.full_text == "",
+                alias.item.citation_number)
+
+    best_per_url: dict[str, EvidenceAlias] = {}
+    for alias in aliases:
+        current = best_per_url.get(alias.item.url)
+        if current is None or rank_key(alias) < rank_key(current):
+            best_per_url[alias.item.url] = alias
+
+    ranked = sorted(best_per_url.values(), key=rank_key)
     bounded = ranked[:MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT]
     return tuple(sorted(bounded, key=lambda a: a.item.citation_number))
 

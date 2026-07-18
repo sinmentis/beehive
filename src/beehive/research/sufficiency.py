@@ -68,12 +68,15 @@ class EvidenceProjection:
     `has_full_text` records whether the underlying Evidence Item carries deep-fetched full text
     rather than only a connector-provided snippet -- `_render_evidence` uses it to prioritize
     genuinely-read articles when bounding to MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT (see that
-    function's docstring). It is not rendered into the prompt itself."""
+    function's docstring). `url` is the same Evidence Item's URL, used only to collapse two
+    citation-numbered items that are the same real-world article (see `_render_evidence`).
+    Neither is rendered into the prompt itself."""
     citation_number: int
     title: str
     quality: EvidenceQuality
     text: str
     has_full_text: bool = False
+    url: str = ""
 
 
 _INJECTION_GUARD = (
@@ -119,8 +122,23 @@ def _render_evidence(evidence: Sequence[EvidenceProjection]) -> str:
     one round). Concretely, without this, the sufficiency assessment can keep seeing the exact
     same earliest-collected, still-thin evidence round after round even as later rounds fetch
     substantive full text, and mistake "no new evidence in view" for "no new evidence exists" --
-    stopping the run on false novelty grounds."""
-    ranked = sorted(evidence, key=lambda item: (not item.has_full_text, item.citation_number))
+    stopping the run on false novelty grounds.
+
+    Also collapses items that share the same `url` to just the single best-ranked one before
+    bounding -- the same real-world article independently discovered by two different Research
+    Sources (e.g. two overlapping AI-authored search queries) otherwise gets counted twice
+    against this budget for what is substantively one piece of evidence, at the cost of a slot
+    that could carry genuinely distinct evidence instead."""
+    def rank_key(item: EvidenceProjection) -> tuple[bool, int]:
+        return (not item.has_full_text, item.citation_number)
+
+    best_per_url: dict[str, EvidenceProjection] = {}
+    for item in evidence:
+        current = best_per_url.get(item.url)
+        if current is None or rank_key(item) < rank_key(current):
+            best_per_url[item.url] = item
+
+    ranked = sorted(best_per_url.values(), key=rank_key)
     bounded = ranked[:MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT]
     bounded = sorted(bounded, key=lambda item: item.citation_number)
     if not bounded:

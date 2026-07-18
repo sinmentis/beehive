@@ -103,6 +103,38 @@ def _seal_evidence_mixed(conn, session_id, run_id, snippet_only_count, full_text
     return snapshot_id, created
 
 
+def _seal_evidence_with_duplicate_url(conn, session_id, run_id, filler_count, duplicate_url):
+    """Seals `filler_count` distinct-URL snippet-only filler items, plus one snippet-only and one
+    full-text item that BOTH share `duplicate_url` from two DIFFERENT Research Sources -- mirrors
+    two overlapping AI-authored search queries independently discovering the exact same
+    real-world article, which db/evidence_items.py's per-(research_source_id, external_key)
+    uniqueness allows."""
+    filler_source_id = create_research_source(
+        conn, session_id, "web_search", {}, ResearchSourceOrigin.OWNER, T0).id
+    dup_source_a = create_research_source(
+        conn, session_id, "web_search", {"query": "a"}, ResearchSourceOrigin.PLAN, T0).id
+    dup_source_b = create_research_source(
+        conn, session_id, "web_search", {"query": "b"}, ResearchSourceOrigin.PLAN, T0).id
+    snapshot_id = create_snapshot(conn, session_id, run_id, T0).id
+    created = []
+    for i in range(filler_count):
+        item = upsert_evidence_item(
+            conn, session_id, filler_source_id, f"filler{i}", f"Filler item {i}",
+            f"https://x/filler{i}", EvidenceQuality.COMMUNITY, T0, snippet=f"teaser {i}")
+        created.append(item)
+    snippet_dup = upsert_evidence_item(
+        conn, session_id, dup_source_a, "dup", "DeepSeek V4 (snippet copy)", duplicate_url,
+        EvidenceQuality.COMMUNITY, T0, snippet="short teaser")
+    created.append(snippet_dup)
+    full_text_dup = upsert_evidence_item(
+        conn, session_id, dup_source_b, "dup", "DeepSeek V4 (full-text copy)", duplicate_url,
+        EvidenceQuality.REPORTING, T0, snippet="short teaser", full_text="Full article body.")
+    created.append(full_text_dup)
+    add_snapshot_items(conn, snapshot_id, [item.id for item in created], T0)
+    seal_snapshot(conn, snapshot_id, T0)
+    return snapshot_id, created
+
+
 def _scenario(conn, n_items=3):
     session_id, run_id, claim_token = _claimed_run(conn)
     items_spec = [
@@ -247,6 +279,28 @@ def test_pin_prompt_aliases_falls_back_to_citation_order_with_no_full_text(conn)
     pinned = synth._pin_prompt_aliases(aliases)
     assert [a.item.citation_number for a in pinned] == list(
         range(1, MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT + 1))
+
+
+def test_pin_prompt_aliases_collapses_items_sharing_the_same_url_to_the_best_one(conn):
+    """Regression test: db/evidence_items.py's uniqueness is per (research_source_id,
+    external_key), so the exact same real-world article independently discovered by two
+    different Research Sources (e.g. two overlapping AI-authored search queries) gets two
+    separate citation-numbered Evidence Items. Both must not compete for the prompt's scarce
+    item budget as if they were distinct evidence -- only the best-ranked one (here, the
+    full-text copy) should count, freeing a slot for genuinely distinct evidence."""
+    session_id, run_id, claim_token = _claimed_run(conn)
+    duplicate_url = "https://example.com/deepseek-v4-coding-breakdown"
+    filler_count = MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT + 5
+    snapshot_id, items = _seal_evidence_with_duplicate_url(
+        conn, session_id, run_id, filler_count, duplicate_url)
+    revision = create_evidence_state_revision(
+        conn, session_id, snapshot_id, [item.id for item in items], T0)
+    _, aliases = synth.pin_evidence_for_synthesis(conn, session_id, revision.id)
+    pinned = synth._pin_prompt_aliases(aliases)
+
+    assert len(pinned) == MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT
+    duplicate_url_titles = [a.item.title for a in pinned if a.item.url == duplicate_url]
+    assert duplicate_url_titles == ["DeepSeek V4 (full-text copy)"]
 
 
 def test_core_prompt_only_renders_the_bounded_pinned_aliases(conn):

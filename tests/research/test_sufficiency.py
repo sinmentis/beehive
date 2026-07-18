@@ -31,10 +31,10 @@ _INJECTION_PAYLOAD = (
 
 
 def _projection(citation_number=1, title="RBNZ raises rates", text="Some evidence text.",
-                 quality=EvidenceQuality.PRIMARY, has_full_text=False):
+                 quality=EvidenceQuality.PRIMARY, has_full_text=False, url=""):
     return EvidenceProjection(
         citation_number=citation_number, title=title, quality=quality, text=text,
-        has_full_text=has_full_text)
+        has_full_text=has_full_text, url=url or f"https://x/{citation_number}")
 
 
 def _good_response(state="partial", new_evidence_changed_conclusions=False):
@@ -129,6 +129,30 @@ def test_prompt_falls_back_to_citation_order_when_no_item_has_full_text():
     assert 'citation="1"' in prompt
     assert f'citation="{MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT}"' in prompt
     assert f'citation="{MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT + 1}"' not in prompt
+
+
+def test_prompt_collapses_items_sharing_the_same_url_to_the_best_one():
+    """Regression test: db/evidence_items.py's uniqueness is per (research_source_id,
+    external_key), so the exact same real-world article independently discovered by two
+    different Research Sources (e.g. two overlapping AI-authored search queries) gets two
+    separate citation-numbered Evidence Items. Both must not compete for the prompt's scarce
+    item budget as if they were distinct evidence -- only the best-ranked one (here, the
+    full-text copy) should count, freeing a slot for genuinely distinct evidence."""
+    duplicate_url = "https://example.com/deepseek-v4-coding-breakdown"
+    snippet_copy = _projection(citation_number=5, title="DeepSeek V4 (snippet copy)",
+                                url=duplicate_url, has_full_text=False)
+    full_text_copy = _projection(citation_number=500, title="DeepSeek V4 (full-text copy)",
+                                  url=duplicate_url, has_full_text=True)
+    other_snippet_only = [
+        _projection(citation_number=i) for i in range(1, MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT + 5)
+        if i != 5
+    ]
+    prompt = build_sufficiency_prompt(
+        "q", other_snippet_only + [snippet_copy, full_text_copy], [], _EN.language)
+    assert prompt.count("<item ") == MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT
+    assert prompt.count("DeepSeek V4") == 1
+    assert "DeepSeek V4 (full-text copy)" in prompt
+    assert "DeepSeek V4 (snippet copy)" not in prompt
 
 
 def test_prompt_bounds_evidence_text_length():
