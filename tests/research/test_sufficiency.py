@@ -31,9 +31,10 @@ _INJECTION_PAYLOAD = (
 
 
 def _projection(citation_number=1, title="RBNZ raises rates", text="Some evidence text.",
-                 quality=EvidenceQuality.PRIMARY):
+                 quality=EvidenceQuality.PRIMARY, has_full_text=False):
     return EvidenceProjection(
-        citation_number=citation_number, title=title, quality=quality, text=text)
+        citation_number=citation_number, title=title, quality=quality, text=text,
+        has_full_text=has_full_text)
 
 
 def _good_response(state="partial", new_evidence_changed_conclusions=False):
@@ -92,6 +93,42 @@ def test_prompt_bounds_evidence_item_count():
     projections = [_projection(citation_number=i) for i in range(1, 100)]
     prompt = build_sufficiency_prompt("q", projections, [], _EN.language)
     assert prompt.count("<item ") <= MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT
+
+
+def test_prompt_prioritizes_full_text_items_over_earlier_snippet_only_items():
+    """Regression test: citation_number reflects collection order, not relevance, and is
+    permanently assigned the instant a candidate is first collected -- long before any
+    deep-fetch decides whether it is actually worth reading. Earlier code took a naive prefix of
+    citation_number order, so once a session accumulated more evidence than the prompt's item
+    budget (routine after just one round), the earliest-collected snippet-only items
+    permanently crowded out every full-text article a later, better-targeted round paid a scarce
+    deep-fetch reservation to actually read, no matter how many further rounds ran."""
+    snippet_only = [
+        _projection(citation_number=i) for i in range(1, MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT + 6)
+    ]
+    full_text_items = [
+        _projection(citation_number=1000, title="DeepSeek V4 benchmark breakdown",
+                    has_full_text=True),
+        _projection(citation_number=1001, title="SWE-bench leaderboard comparison",
+                    has_full_text=True),
+    ]
+    prompt = build_sufficiency_prompt("q", snippet_only + full_text_items, [], _EN.language)
+    assert prompt.count("<item ") == MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT
+    assert 'citation="1000"' in prompt
+    assert 'citation="1001"' in prompt
+    assert "DeepSeek V4 benchmark breakdown" in prompt
+    assert "SWE-bench leaderboard comparison" in prompt
+
+
+def test_prompt_falls_back_to_citation_order_when_no_item_has_full_text():
+    """When no item carries full_text (the common early-session case), selection must degrade
+    to plain citation_number order exactly as before this fix -- the earliest-collected items,
+    not an arbitrary or reversed subset."""
+    projections = [_projection(citation_number=i) for i in range(1, MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT + 10)]
+    prompt = build_sufficiency_prompt("q", projections, [], _EN.language)
+    assert 'citation="1"' in prompt
+    assert f'citation="{MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT}"' in prompt
+    assert f'citation="{MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT + 1}"' not in prompt
 
 
 def test_prompt_bounds_evidence_text_length():

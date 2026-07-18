@@ -76,6 +76,33 @@ def _seal_evidence(conn, session_id, run_id, items):
     return snapshot_id, created
 
 
+def _seal_evidence_mixed(conn, session_id, run_id, snippet_only_count, full_text_titles):
+    """Seals `snippet_only_count` snippet-only items first (lowest citation numbers), followed
+    by one item per `full_text_titles` carrying deep-fetched full_text (highest citation
+    numbers) -- mirrors the real-world shape of the bug this covers: an Owner's/round-1's broad
+    snippet-only sources are collected first and occupy the low end of citation_number, while a
+    later, better-targeted round's successfully deep-fetched full-text articles land at the high
+    end."""
+    source_id = create_research_source(
+        conn, session_id, "web_search", {}, ResearchSourceOrigin.OWNER, T0).id
+    snapshot_id = create_snapshot(conn, session_id, run_id, T0).id
+    created = []
+    for i in range(snippet_only_count):
+        item = upsert_evidence_item(
+            conn, session_id, source_id, f"snip{i}", f"Snippet-only item {i}",
+            f"https://x/snip{i}", EvidenceQuality.COMMUNITY, T0, snippet=f"teaser {i}")
+        created.append(item)
+    for i, title in enumerate(full_text_titles):
+        item = upsert_evidence_item(
+            conn, session_id, source_id, f"full{i}", title, f"https://x/full{i}",
+            EvidenceQuality.REPORTING, T0, snippet="short teaser",
+            full_text=f"Full deep-fetched article body about {title}.")
+        created.append(item)
+    add_snapshot_items(conn, snapshot_id, [item.id for item in created], T0)
+    seal_snapshot(conn, snapshot_id, T0)
+    return snapshot_id, created
+
+
 def _scenario(conn, n_items=3):
     session_id, run_id, claim_token = _claimed_run(conn)
     items_spec = [
@@ -186,6 +213,40 @@ def test_pin_prompt_aliases_bounds_to_prompt_limit(conn):
     assert len(pinned) == MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT
     assert [a.alias for a in pinned] == [
         f"a{i + 1}" for i in range(MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT)]
+
+
+def test_pin_prompt_aliases_prioritizes_full_text_items_over_earlier_snippet_only_items(conn):
+    """Regression test for the bug where the earliest-collected (lowest citation_number)
+    snippet-only items permanently crowded out later, better-targeted, deep-fetched full-text
+    articles the instant a session accumulated more evidence than the prompt's item budget --
+    citation_number is assigned in raw collection order and never reflects relevance."""
+    session_id, run_id, claim_token = _claimed_run(conn)
+    snippet_only_count = MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT + 5
+    full_text_titles = ["DeepSeek V4 benchmark breakdown", "SWE-bench leaderboard comparison"]
+    snapshot_id, items = _seal_evidence_mixed(
+        conn, session_id, run_id, snippet_only_count, full_text_titles)
+    revision = create_evidence_state_revision(
+        conn, session_id, snapshot_id, [item.id for item in items], T0)
+    _, aliases = synth.pin_evidence_for_synthesis(conn, session_id, revision.id)
+    pinned = synth._pin_prompt_aliases(aliases)
+
+    assert len(pinned) == MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT
+    pinned_titles = {a.item.title for a in pinned}
+    assert set(full_text_titles).issubset(pinned_titles)
+    # Still rendered/validated in citation_number ascending order once selected.
+    citation_numbers = [a.item.citation_number for a in pinned]
+    assert citation_numbers == sorted(citation_numbers)
+
+
+def test_pin_prompt_aliases_falls_back_to_citation_order_with_no_full_text(conn):
+    """When no item carries full_text (the common early-session case), selection must degrade
+    to plain citation_number order exactly as before this fix."""
+    n_items = MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT + 5
+    session_id, run_id, claim_token, revision_id, items = _scenario(conn, n_items=n_items)
+    _, aliases = synth.pin_evidence_for_synthesis(conn, session_id, revision_id)
+    pinned = synth._pin_prompt_aliases(aliases)
+    assert [a.item.citation_number for a in pinned] == list(
+        range(1, MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT + 1))
 
 
 def test_core_prompt_only_renders_the_bounded_pinned_aliases(conn):

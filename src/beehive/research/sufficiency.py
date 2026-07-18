@@ -63,11 +63,17 @@ _VALID_STATES = frozenset(state.value for state in SufficiencyState)
 class EvidenceProjection:
     """One Evidence Item's already-bounded projection for this prompt. `text` MUST already be
     the output of enrichment.project_for_prompt (or equally bounded) -- this module re-caps it
-    anyway (defense in depth) but never expands it or reads anything else about the item."""
+    anyway (defense in depth) but never expands it or reads anything else about the item.
+
+    `has_full_text` records whether the underlying Evidence Item carries deep-fetched full text
+    rather than only a connector-provided snippet -- `_render_evidence` uses it to prioritize
+    genuinely-read articles when bounding to MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT (see that
+    function's docstring). It is not rendered into the prompt itself."""
     citation_number: int
     title: str
     quality: EvidenceQuality
     text: str
+    has_full_text: bool = False
 
 
 _INJECTION_GUARD = (
@@ -100,7 +106,23 @@ def _render_research_question(question: str) -> str:
 
 
 def _render_evidence(evidence: Sequence[EvidenceProjection]) -> str:
-    bounded = evidence[:MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT]
+    """Renders AT MOST MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT `<item>` blocks, selected from
+    `evidence` (already in citation_number order) and then RE-SORTED back to citation_number
+    order for rendering.
+
+    Selection prioritizes items with `has_full_text=True` over snippet-only ones, before falling
+    back to citation_number order to fill any remaining budget -- the same rationale as
+    synthesis.py's `_pin_prompt_aliases`: citation_number reflects collection order, not
+    relevance, so a naive prefix permanently starves this sufficiency check of every full-text
+    article a later, better-targeted round paid a scarce deep-fetch reservation to actually read,
+    the instant the session accumulates more than the prompt's item budget (routine after just
+    one round). Concretely, without this, the sufficiency assessment can keep seeing the exact
+    same earliest-collected, still-thin evidence round after round even as later rounds fetch
+    substantive full text, and mistake "no new evidence in view" for "no new evidence exists" --
+    stopping the run on false novelty grounds."""
+    ranked = sorted(evidence, key=lambda item: (not item.has_full_text, item.citation_number))
+    bounded = ranked[:MAX_EVIDENCE_ITEMS_IN_SUFFICIENCY_PROMPT]
+    bounded = sorted(bounded, key=lambda item: item.citation_number)
     if not bounded:
         return "<evidence>\n(none collected yet)\n</evidence>"
     lines = []

@@ -420,14 +420,32 @@ def pin_evidence_for_synthesis(
 
 def _pin_prompt_aliases(aliases: Sequence[EvidenceAlias]) -> tuple[EvidenceAlias, ...]:
     """The single, explicit, bounded alias set a Research Synthesis call actually uses: AT MOST
-    MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT aliases, taken as a prefix of `aliases` (already in
-    citation_number order from `pin_evidence_for_synthesis`). `generate_synthesis` builds this
-    tuple exactly once per call and threads it, unchanged, into BOTH `_render_evidence`
-    (rendering) and `_resolve_core_claims`'s `alias_map` (citation validation) -- see the module
-    docstring's "Aliases, never raw evidence_item_id" section for why validating against a
-    larger, unbounded alias table than what was actually rendered would let a response cite an
-    alias the model was never shown."""
-    return tuple(aliases[:MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT])
+    MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT aliases, selected from `aliases` (already in
+    citation_number order from `pin_evidence_for_synthesis`) and then RE-SORTED back to
+    citation_number order for rendering. `generate_synthesis` builds this tuple exactly once per
+    call and threads it, unchanged, into BOTH `_render_evidence` (rendering) and
+    `_resolve_core_claims`'s `alias_map` (citation validation) -- see the module docstring's
+    "Aliases, never raw evidence_item_id" section for why validating against a larger, unbounded
+    alias table than what was actually rendered would let a response cite an alias the model was
+    never shown.
+
+    Selection prioritizes Evidence Items that carry deep-fetched `full_text` over snippet-only
+    ones, before falling back to citation_number order to fill any remaining budget. A Research
+    Session routinely accumulates far more citation-numbered Evidence Items than the prompt can
+    carry, and citation_number reflects collection order, not relevance -- it is permanently
+    assigned the instant a candidate is first collected (see db/evidence_items.py), long before
+    any deep-fetch decides whether that item is actually worth reading. Naively taking a prefix
+    of citation_number order means the earliest-collected items (typically an Owner's broad seed
+    sources or a first plan revision's initial broad guesses) permanently occupy the prompt's
+    entire budget, while every full-text article a later, better-targeted round paid one of its
+    scarce 30 deep-fetch reservations to actually read -- often the only substantive evidence in
+    the whole session -- sits at a higher citation_number and is silently never shown to the
+    Research Synthesis call at all, no matter how many further rounds run. Prioritizing full_text
+    first fixes that without touching citation_number allocation or stability."""
+    ranked = sorted(aliases, key=lambda a: (a.item.full_text is None or a.item.full_text == "",
+                                             a.item.citation_number))
+    bounded = ranked[:MAX_EVIDENCE_ITEMS_IN_SYNTHESIS_PROMPT]
+    return tuple(sorted(bounded, key=lambda a: a.item.citation_number))
 
 
 # ============================================================================

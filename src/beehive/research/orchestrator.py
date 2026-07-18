@@ -469,7 +469,7 @@ def _project_snapshot_evidence(items_by_id: dict[int, EvidenceItem]) -> list[Evi
     return [
         EvidenceProjection(
             citation_number=item.citation_number, title=item.title, quality=item.quality,
-            text=project_for_prompt(item))
+            text=project_for_prompt(item), has_full_text=bool(item.full_text))
         for item in sorted(items_by_id.values(), key=lambda item: item.citation_number)
     ]
 
