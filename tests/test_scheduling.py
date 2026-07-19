@@ -26,6 +26,23 @@ def test_source_is_due_at_its_interval_boundary():
     assert source_is_due(source, 24, now)
 
 
+def test_source_is_due_within_grace_before_its_interval_boundary():
+    # Regression: a 24h-interval source's due boundary recurs within a couple of seconds of
+    # the fetch timer's own trigger instant every cycle, so run-to-run jitter (container boot
+    # time, or slow AI-ranking for Channels processed earlier in the same cycle) can make `now`
+    # land a hair before `due_at`. Seen in production: due_at trailed `now` by ~1.2s, so the
+    # source was skipped for a full extra day instead of just a few seconds.
+    now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+    source = _source((now - timedelta(hours=24) + timedelta(seconds=2)).isoformat())
+    assert source_is_due(source, 24, now)
+
+
+def test_source_is_not_due_outside_the_grace_window():
+    now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
+    source = _source((now - timedelta(hours=24) + timedelta(minutes=10)).isoformat())
+    assert not source_is_due(source, 24, now)
+
+
 def test_next_channel_fetch_uses_earliest_source_due_slot():
     now = datetime(2026, 7, 13, 9, 59, tzinfo=timezone.utc)
     sources = [
