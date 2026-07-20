@@ -205,6 +205,27 @@
     });
   }
 
+  document.querySelectorAll(".copy-source-btn").forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+    let resetTimer = null;
+    button.addEventListener("click", () => {
+      const value = button.dataset.copyValue || "";
+      const copiedLabel = button.dataset.copiedLabel || button.textContent;
+      const originalLabel = button.dataset.copyLabel || button.textContent;
+      navigator.clipboard.writeText(value).then(() => {
+        window.clearTimeout(resetTimer);
+        button.textContent = copiedLabel;
+        resetTimer = window.setTimeout(() => {
+          button.textContent = originalLabel;
+        }, 1500);
+      }).catch(() => {
+        // Clipboard access can be denied (e.g. insecure context) -- leave the label as-is.
+      });
+    });
+  });
+
   const search = document.querySelector(".dashboard-search input[type='search']");
   const rows = [...document.querySelectorAll(".signal-row")];
   const selectionStatus = document.getElementById("dashboard-selection-status");

@@ -89,10 +89,15 @@
         {% for source in sources %}
         <article class="source-row">
           <span class="source-name">{{ source.icon }} {{ source.label }}</span>
-          <form method="post" action="/admin/sources/{{ source.id }}/delete">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="text-action danger-text" type="submit">{{ t('web.admin.channel_edit.remove_source') }}</button>
-          </form>
+          <div class="row-actions">
+            <button type="button" class="text-action copy-source-btn" data-copy-value="{{ source.copy_value }}"
+                    data-copy-label="{{ t('web.admin.channel_edit.copy_source') }}"
+                    data-copied-label="{{ t('web.admin.channel_edit.copy_source_done') }}">{{ t('web.admin.channel_edit.copy_source') }}</button>
+            <form method="post" action="/admin/sources/{{ source.id }}/delete">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="text-action danger-text" type="submit">{{ t('web.admin.channel_edit.remove_source') }}</button>
+            </form>
+          </div>
         </article>
         {% else %}
         <div class="empty-state compact-empty">

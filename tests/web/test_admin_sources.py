@@ -596,3 +596,42 @@ def test_edit_channel_shows_land_sea_collection_label_and_icon(authed_client, db
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert "land-sea.co.nz/sale" in html
     assert "🌊" in html
+
+
+def test_edit_channel_copy_button_exposes_full_land_sea_filter_url(authed_client, db_path):
+    filtered_url = (
+        "https://www.land-sea.co.nz/outlet/mens-outlet?availability=in-stock&brands=85,97,170,102,169"
+    )
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    create_source(conn, channel_id, "land_sea_collection", {"collection_url": filtered_url})
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
+    # The visible label is still truncated to netloc+path (no query string)...
+    assert "land-sea.co.nz/outlet/mens-outlet" in html
+    assert "availability=in-stock" not in html.split('data-copy-value="')[0]
+    # ...but the copy button's data-copy-value carries the full filtered URL (HTML-escaped).
+    escaped_url = filtered_url.replace("&", "&amp;")
+    assert f'data-copy-value="{escaped_url}"' in html
+
+
+def test_edit_channel_copy_button_exposes_full_shopify_filter_url(authed_client, db_path):
+    filtered_url = "https://arcteryx.co.nz/collections/outlet?vendor=Arc%27teryx"
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    create_source(conn, channel_id, "shopify_collection", {"collection_url": filtered_url})
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
+    assert f'data-copy-value="{filtered_url}"' in html
+
+
+def test_edit_channel_copy_button_falls_back_to_label_for_non_url_sources(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "personalfinancenz"})
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
+    assert 'data-copy-value="r/personalfinancenz"' in html

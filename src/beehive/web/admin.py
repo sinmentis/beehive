@@ -616,6 +616,17 @@ def _admin_source_label(source: dict, t: Localizer) -> str:
     return hackernews_label if hackernews_label is not None else source["type"]
 
 
+def _admin_source_copy_value(source: dict, label: str) -> str:
+    """Full, untruncated value for the "copy" button -- unlike `_admin_source_label`, this
+    keeps any query string/fragment (e.g. Shopify vendor filters) so it can be pasted straight
+    back into a new source. Falls back to the display label for source types that have nothing
+    to truncate in the first place."""
+    if source["type"] in {"shopify_collection", "land_sea_collection"}:
+        config = json.loads(source["config"])
+        return config.get("collection_url") or label
+    return label
+
+
 def _admin_source_icon(source: dict) -> str:
     """Mirrors the icons admin_add_source.html uses for each type, so a source's icon in the
     Channel edit page's source list always matches the icon the admin picked it by."""
@@ -634,14 +645,15 @@ def _render_edit_channel_page(
     status_code: int = 200,
     cleared_count: int | None = None,
 ) -> HTMLResponse:
-    sources = [
-        {
+    sources = []
+    for source in list_sources(conn, channel["id"]):
+        label = _admin_source_label(source, t)
+        sources.append({
             "id": source["id"],
-            "label": _admin_source_label(source, t),
+            "label": label,
             "icon": _admin_source_icon(source),
-        }
-        for source in list_sources(conn, channel["id"])
-    ]
+            "copy_value": _admin_source_copy_value(source, label),
+        })
     default_recipient, default_error = _resolve_default_for_admin(conn, t)
     # The effective hint reflects what a *saved* value would resolve to, so a rejected
     # override (kept only in the display `channel` for the field) must not poison it --
