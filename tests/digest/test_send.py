@@ -280,3 +280,36 @@ def test_stored_summary_text_is_never_translated_or_altered(conn):
     assert "RBNZ 降息" in plain_text  # untouched even though the digest itself is in English
     assert "RBNZ 降息" in html
     assert channel_id
+
+
+def test_monitor_channel_is_excluded_from_digest(conn):
+    """Even a monitor Channel with a (hypothetical) scored item must never reach the digest --
+    it alerts instantly on state changes instead, see run_channel_cycle's ranking skip."""
+    channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(conn, source_id, RawItem(external_id="t1", title="Price drop", url="https://x"))
+    update_ai_ranking(conn, source_id, "t1", score=90, summary="summary", rationale="r")
+
+    notifier = MagicMock()
+    send_daily_digest(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_not_called()
+
+
+def test_monitor_channel_does_not_block_editorial_digest(conn):
+    monitor_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
+    editorial_id = create_channel(conn, "NZ Finance", "profile")
+    _set_channel_email(conn, monitor_id, "shared@example.com")
+    _set_channel_email(conn, editorial_id, "shared@example.com")
+    source_id = create_source(conn, editorial_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(conn, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    update_ai_ranking(conn, source_id, "t1", score=90, summary="RBNZ cuts rates", rationale="r")
+
+    notifier = MagicMock()
+    send_daily_digest(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_called_once()
+    _, plain_text, _html = notifier.send.call_args.args
+    assert "RBNZ cuts rates" in plain_text
+    assert "Arc'teryx Outlet" not in plain_text
+

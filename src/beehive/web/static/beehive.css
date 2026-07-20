@@ -895,7 +895,7 @@ button.deep-read-chip{border-color:var(--border-strong)}
 
 .field{margin-bottom:1.4rem}
 .field-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
-.field label,.source-types legend{
+.field label,.field .field-label-static,.source-types legend,.channel-kind-field legend{
   display:block;
   margin:0 0 .48rem;
   color:var(--text-soft);
@@ -904,6 +904,18 @@ button.deep-read-chip{border-color:var(--border-strong)}
 }
 .source-types{padding:0;border:0}
 .source-types legend{margin-bottom:.7rem}
+.channel-kind-field{padding:0;border:0}
+.channel-kind-field legend{margin-bottom:.7rem}
+.kind-static{margin:0}
+.kind-badge{
+  display:inline-block;
+  padding:.15rem .5rem;
+  border-radius:999px;
+  background:var(--accent-soft);
+  color:var(--accent);
+  font-weight:700;
+  font-size:.72rem;
+}
 input[type="text"],input[type="password"],input[type="email"],input[type="search"],input[type="date"],input[type="number"],textarea,select{
   width:100%;
   min-height:2.8rem;
@@ -1026,6 +1038,10 @@ select{
 .source-form:has(#type-google:checked) .config-google_news_query{display:block}
 .source-form:has(#type-hn-stories:checked) .config-hackernews_stories{display:block}
 .source-form:has(#type-hn-query:checked) .config-hackernews_query{display:block}
+
+.kind-only-monitor{display:none}
+.channel-form:has(#kind-monitor:checked) .kind-only-monitor{display:block}
+.channel-form:has(#kind-monitor:checked) .kind-only-editorial{display:none}
 
 .empty-state{
   display:flex;

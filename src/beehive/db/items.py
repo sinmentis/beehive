@@ -259,6 +259,7 @@ def _dashboard_signal_filters(
     read_state: str,
 ) -> tuple[list[str], list]:
     where = [
+        "channels.kind = 'editorial'",
         "items.ai_summary IS NOT NULL",
         "items.ai_score >= channels.minimum_score",
         "(votes.value IS NULL OR votes.value != -1)",

@@ -31,6 +31,11 @@ _COLUMNS_TO_ENSURE = [
         "minimum_score",
         "INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100)",
     ),
+    (
+        "channels",
+        "kind",
+        "TEXT NOT NULL DEFAULT 'editorial' CHECK (kind IN ('editorial', 'monitor'))",
+    ),
 ]
 
 _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"

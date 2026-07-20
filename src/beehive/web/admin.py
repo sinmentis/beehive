@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -216,6 +217,7 @@ def _build_admin_channel_rows(
         channels.append({
             "id": channel["id"],
             "name": channel["name"],
+            "kind": channel["kind"],
             "source_count": len(sources),
             "fetch_interval_label": _fetch_interval_label(
                 channel["fetch_interval_hours"], t),
@@ -497,6 +499,7 @@ def new_channel_submit(name: str = Form(...), profile: str = Form(...),
                         fetch_interval_hours: int = Form(...),
                         highlight_count: int = Form(8, ge=1, le=50),
                         minimum_score: int = Form(0, ge=0, le=100),
+                        kind: Literal["editorial", "monitor"] = Form("editorial"),
                         csrf_token: str = Form(...),
                         session: dict = Depends(require_admin_session),
                         conn: sqlite3.Connection = Depends(get_db)):
@@ -508,6 +511,7 @@ def new_channel_submit(name: str = Form(...), profile: str = Form(...),
         fetch_interval_hours=fetch_interval_hours,
         highlight_count=highlight_count,
         minimum_score=minimum_score,
+        kind=kind,
     )
     return RedirectResponse(f"/admin/channels/{channel_id}/edit", status_code=303)
 

@@ -128,6 +128,23 @@ def test_channel_drilldown_shows_item_with_source_badge_and_link(conn, client):
     assert resp.text.count(f'href="/items/{item_id}/open"') == 2
 
 
+def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client):
+    """A monitor Channel is never linked from nav, but is still reachable by URL -- its items
+    must render without the vote widget, since voting is an editorial "is this interesting"
+    signal that a deterministic monitor item has no use for."""
+    _, c = conn
+    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(
+        external_id="t1", title="Beta jacket $199", url="https://example.com/t1"))
+
+    resp = authed_client.get(f"/channels/{channel_id}")
+    assert resp.status_code == 200
+    assert "Beta jacket $199" in resp.text
+    assert 'class="votes"' not in resp.text
+    assert "This recommendation was useful" not in resp.text
+
+
 def test_channel_drilldown_shows_google_news_source_label_and_summary(conn, client):
     _, c = conn
     channel_id = create_channel(c, "Tech News", "AI industry news")

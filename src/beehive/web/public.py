@@ -160,7 +160,7 @@ def dashboard(
     for item in highlights:
         _decorate_item(item, t)
     channels = []
-    for channel in list_channels(conn):
+    for channel in list_channels(conn, kind="editorial"):
         items = [
             item
             for item in list_by_channel(conn, channel["id"])
@@ -262,7 +262,7 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "channel_drilldown.html", {
         "channel": channel,
-        "nav_channels": list_channels(conn),
+        "nav_channels": list_channels(conn, kind="editorial"),
         "highlighted": visible_items[:channel["highlight_count"]],
         "folded": visible_items[channel["highlight_count"]:],
         "freshness": freshness_label(sources, t),
@@ -300,19 +300,21 @@ def vote_on_item(item_id: int, request: Request, value: int = Form(...),
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     _decorate_item(item, t)
-    # _item_card.html is only ever rendered from the Channel drill-down (the vote widget's own
-    # host page), so this fragment's origin is always "channel" -- decorate with the item's
-    # ACTUAL owning channel (never trust anything client-supplied; there is no channel_id on
-    # this route at all) so the outerHTML-swapped card keeps its deep-read action/control
-    # instead of silently losing it on every vote.
+    # _item_card.html/_folded_item.html are only ever rendered from the Channel drill-down (the
+    # vote widget's own host page), so this fragment's origin is always "channel" -- decorate
+    # with the item's ACTUAL owning channel (never trust anything client-supplied; there is no
+    # channel_id on this route at all) so the outerHTML-swapped card keeps its deep-read
+    # action/control instead of silently losing it on every vote. The partials also key the vote
+    # widget's visibility off channel.kind, so this same channel is passed into the template.
     channel_id = _item_channel_id(conn, item)
+    channel = get_channel(conn, channel_id) if channel_id is not None else None
     decorate_deep_read_state(
         item, get_deep_read(conn, item_id), True, "channel", channel_id, session["csrf_token"])
 
     templates = request.app.state.templates
     template_name = "_folded_item.html" if origin == "folded" else "_item_card.html"
     return templates.TemplateResponse(request, template_name, {
-        "item": item, "is_admin": True, "csrf_token": session["csrf_token"],
+        "item": item, "channel": channel, "is_admin": True, "csrf_token": session["csrf_token"],
     })
 
 
@@ -367,7 +369,7 @@ def archive(request: Request, channel: str | None = None,
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "archive.html", {
         "groups": _group_by_day(items),
-        "channels": list_channels(conn),
+        "channels": list_channels(conn, kind="editorial"),
         "total": total,
         "page": page,
         "has_prev": page > 1,

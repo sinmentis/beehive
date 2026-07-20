@@ -39,6 +39,21 @@ def test_create_channel_saves_display_settings(conn):
     assert row["minimum_score"] == 72
 
 
+def test_create_channel_defaults_kind_to_editorial(conn):
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    assert get_channel(conn, channel_id)["kind"] == "editorial"
+
+
+def test_create_channel_accepts_monitor_kind(conn):
+    channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
+    assert get_channel(conn, channel_id)["kind"] == "monitor"
+
+
+def test_create_channel_rejects_unknown_kind(conn):
+    with pytest.raises(ValueError):
+        create_channel(conn, "Bad", "profile", kind="subscription")
+
+
 def test_get_channel_missing_returns_none(conn):
     assert get_channel(conn, 999) is None
 
@@ -48,6 +63,29 @@ def test_list_channels(conn):
     create_channel(conn, "B", "profile b")
     names = {row["name"] for row in list_channels(conn)}
     assert names == {"A", "B"}
+
+
+def test_list_channels_unfiltered_includes_both_kinds(conn):
+    create_channel(conn, "News", "profile a", kind="editorial")
+    create_channel(conn, "Outlet", "profile b", kind="monitor")
+    names = {row["name"] for row in list_channels(conn)}
+    assert names == {"News", "Outlet"}
+
+
+def test_list_channels_filters_by_kind(conn):
+    create_channel(conn, "News", "profile a", kind="editorial")
+    create_channel(conn, "Outlet", "profile b", kind="monitor")
+
+    editorial_names = {row["name"] for row in list_channels(conn, kind="editorial")}
+    monitor_names = {row["name"] for row in list_channels(conn, kind="monitor")}
+
+    assert editorial_names == {"News"}
+    assert monitor_names == {"Outlet"}
+
+
+def test_list_channels_rejects_unknown_kind_filter(conn):
+    with pytest.raises(ValueError):
+        list_channels(conn, kind="subscription")
 
 
 def test_update_channel_changes_fields(conn):

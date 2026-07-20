@@ -375,6 +375,20 @@ def test_list_dashboard_highlights_excludes_items_without_a_summary(conn, source
     assert list_dashboard_highlights(conn) == []
 
 
+def test_list_dashboard_highlights_excludes_monitor_channel_items(conn):
+    """Even a monitor Channel with a (hypothetical) scored item must never leak into Home --
+    monitor Channels are excluded from the reading UI entirely, see web/public.py."""
+    monitor_channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops",
+                                        kind="monitor")
+    monitor_source_id = create_source(
+        conn, monitor_channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(conn, monitor_source_id, _raw_item("t1"))
+    update_ai_ranking(conn, monitor_source_id, "t1", score=90.0, summary="s", rationale="r")
+
+    assert list_dashboard_highlights(conn) == []
+    assert count_dashboard_signals(conn) == 0
+
+
 def test_list_dashboard_highlights_excludes_downvoted_items(conn, source_id):
     from beehive.db.votes import upsert_vote
     insert_new(conn, source_id, _raw_item("t1"))

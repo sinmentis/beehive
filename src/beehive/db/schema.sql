@@ -3,10 +3,19 @@
 -- comparable against Python's datetime.isoformat() strings used everywhere else in the app
 -- (e.g. list_new_since's since_iso parameter). Mixing the two formats made same-UTC-day
 -- string comparisons silently invert, permanently dropping same-day items from the digest.
+-- kind discriminates two fundamentally different Channel behaviors: 'editorial' (the
+-- original model -- fetched items are AI-ranked against `profile` and rolled into Home/the
+-- Channel page/the daily digest) vs 'monitor' (deterministic state-change watches, e.g. a
+-- retail page's price -- items are fetched and deduped exactly the same way, but never AI
+-- ranked and never included in the daily digest; see run_channel_cycle and send_daily_digest).
+-- Set once at creation and treated as immutable afterwards -- the two kinds imply different
+-- meanings for highlight_count/minimum_score/profile, so converting an existing channel in
+-- place would leave those fields in a confusing state.
 CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     profile TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'editorial' CHECK (kind IN ('editorial', 'monitor')),
     fetch_interval_hours INTEGER NOT NULL DEFAULT 3,
     highlight_count      INTEGER NOT NULL DEFAULT 8 CHECK (highlight_count BETWEEN 1 AND 50),
     minimum_score        INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100),

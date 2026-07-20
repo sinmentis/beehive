@@ -64,6 +64,20 @@ def test_channels_list_shows_daily_interval_label(authed_client, db_path):
     assert "Once a day" in resp.text
 
 
+def test_channels_list_shows_monitor_badge_for_monitor_channels(authed_client, db_path):
+    conn = connect(db_path)
+    create_channel(conn, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.get("/admin/")
+    assert resp.status_code == 200
+    assert "kind-badge" in resp.text
+    # The badge text ("Monitor") appears once per monitor channel; the editorial channel
+    # ("NZ Finance") does not get one.
+    assert resp.text.count("kind-badge") == 1
+
+
 def test_new_channel_form_requires_session(db_path):
     client = TestClient(create_app(db_path, session_secret="test-secret"),
                          follow_redirects=False)
@@ -76,6 +90,14 @@ def test_new_channel_form_includes_csrf_token(authed_client):
     assert 'name="csrf_token" value="csrf1"' in resp.text
     assert 'name="highlight_count" value="8"' in resp.text
     assert 'name="minimum_score" value="0"' in resp.text
+
+
+def test_new_channel_form_shows_kind_options(authed_client):
+    resp = authed_client.get("/admin/channels/new")
+    assert 'id="kind-editorial"' in resp.text
+    assert 'id="kind-monitor"' in resp.text
+    # Editorial is the default selection.
+    assert 'id="kind-editorial" checked' in resp.text
 
 
 def test_new_channel_form_links_back_to_admin_home(authed_client):
@@ -129,6 +151,42 @@ def test_create_channel_succeeds_with_valid_csrf(authed_client, db_path):
     assert row["minimum_score"] == 72
 
 
+def test_create_channel_defaults_to_editorial_kind(authed_client, db_path):
+    resp = authed_client.post("/admin/channels/new", data={
+        "name": "NZ Finance", "profile": "economic news",
+        "fetch_interval_hours": "3", "csrf_token": "csrf1",
+    })
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE name = 'NZ Finance'").fetchone()
+    assert row["kind"] == "editorial"
+
+
+def test_create_channel_with_monitor_kind(authed_client, db_path):
+    resp = authed_client.post("/admin/channels/new", data={
+        "name": "Arcteryx Outlet", "profile": "watch for price drops",
+        "fetch_interval_hours": "24", "kind": "monitor", "csrf_token": "csrf1",
+    })
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE name = 'Arcteryx Outlet'").fetchone()
+    assert row["kind"] == "monitor"
+
+
+def test_create_channel_rejects_invalid_kind(authed_client, db_path):
+    resp = authed_client.post("/admin/channels/new", data={
+        "name": "NZ Finance", "profile": "economic news",
+        "fetch_interval_hours": "3", "kind": "subscription", "csrf_token": "csrf1",
+    })
+    assert resp.status_code == 422
+
+    conn = connect(db_path)
+    count = conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
+    assert count == 0
+
+
 def test_create_channel_rejects_wrong_csrf_token(authed_client, db_path):
     resp = authed_client.post("/admin/channels/new", data={
         "name": "NZ Finance", "profile": "economic news",
@@ -177,6 +235,55 @@ def test_edit_channel_form_shows_current_values(authed_client, db_path):
     assert 'id="minimum-score"' in resp.text
     assert 'value="70" min="0" max="100"' in resp.text
     assert "r/PersonalFinanceNZ" in resp.text
+
+
+def test_edit_channel_form_shows_editorial_kind_badge_and_display_fields(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert resp.status_code == 200
+    assert "Editorial" in resp.text
+    assert 'id="highlight-count"' in resp.text
+    assert 'id="minimum-score"' in resp.text
+
+
+def test_edit_channel_form_shows_monitor_kind_badge_and_hides_display_fields(
+    authed_client, db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert resp.status_code == 200
+    assert "Monitor" in resp.text
+    assert 'id="highlight-count"' not in resp.text
+    assert 'id="minimum-score"' not in resp.text
+
+
+def test_update_monitor_channel_preserves_display_settings_without_submitting_them(
+    authed_client, db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(
+        conn, "Arcteryx Outlet", "watch for price drops", kind="monitor",
+        highlight_count=5, minimum_score=70,
+    )
+    conn.close()
+
+    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
+        "name": "Arcteryx Outlet", "profile": "watch for price drops",
+        "fetch_interval_hours": "24", "digest_email": "", "csrf_token": "csrf1",
+    })
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    assert row["kind"] == "monitor"
+    assert row["highlight_count"] == 5
+    assert row["minimum_score"] == 70
 
 
 def test_edit_channel_form_shows_google_news_source_label(authed_client, db_path):

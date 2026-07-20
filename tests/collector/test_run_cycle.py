@@ -296,6 +296,24 @@ async def test_happy_path_fetches_persists_and_ranks(conn, channel):
 
 
 @pytest.mark.asyncio
+async def test_monitor_channel_fetches_but_skips_ranking(conn):
+    channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
+    monitor_channel = get_channel(conn, channel_id)
+    register(_StubConnector(items=[
+        RawItem(external_id="t1", title="Beta jacket $199", url="https://x"),
+    ]))
+    create_source(conn, channel_id, "stub_test_source", {})
+
+    with patch("beehive.collector.run_cycle.rank_channel", new=AsyncMock()) as mock_rank:
+        await run_channel_cycle(conn, monitor_channel, LogNotifier(), localizer=_EN_LOCALIZER)
+
+    mock_rank.assert_not_awaited()
+    items = list_by_channel(conn, channel_id)
+    assert len(items) == 1
+    assert items[0]["ai_score"] is None
+
+
+@pytest.mark.asyncio
 async def test_source_failure_is_recorded_and_does_not_raise(conn, channel):
     register(_StubConnector(error=RuntimeError("reddit is down")))
     create_source(conn, channel["id"], "stub_test_source", {})

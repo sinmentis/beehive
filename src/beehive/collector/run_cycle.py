@@ -85,6 +85,13 @@ async def run_channel_cycle(
         record_fetch_success(conn, source["id"], now_iso,
                              raw_count=len(raw_items), new_count=new_count)
 
+    if channel["kind"] != "editorial":
+        # 'monitor' Channels track deterministic state changes (e.g. a price drop), not
+        # subjective "is this interesting" ranking -- fetching/deduping above already stored
+        # whatever a monitor connector produced; there is nothing here for the AI ranker or
+        # best-comment enrichment to do.
+        return
+
     all_items = list_by_channel(conn, channel["id"])
     unscored = [i for i in all_items if i["ai_score"] is None]
     if not unscored:

@@ -46,6 +46,11 @@ def send_daily_digest(conn: sqlite3.Connection, notifier: Notifier,
     failures: list[Exception] = []
 
     for channel in list_channels(conn):
+        if channel["kind"] != "editorial":
+            # 'monitor' Channels alert instantly on a detected state change instead of
+            # batching into a daily digest -- see run_channel_cycle's ranking skip for the
+            # matching half of this design.
+            continue
         if channel["last_digest_date"] == digest_date:
             continue
         try:

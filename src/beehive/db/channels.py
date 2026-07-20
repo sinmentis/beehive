@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
+_KINDS = ("editorial", "monitor")
+
 
 def _validate_display_settings(highlight_count: int, minimum_score: int) -> None:
     if not 1 <= highlight_count <= 50:
@@ -10,15 +12,21 @@ def _validate_display_settings(highlight_count: int, minimum_score: int) -> None
         raise ValueError("minimum_score must be between 0 and 100")
 
 
+def _validate_kind(kind: str) -> None:
+    if kind not in _KINDS:
+        raise ValueError(f"kind must be one of {_KINDS}, got {kind!r}")
+
+
 def create_channel(conn: sqlite3.Connection, name: str, profile: str,
                     fetch_interval_hours: int = 3, highlight_count: int = 8,
-                    minimum_score: int = 0) -> int:
+                    minimum_score: int = 0, kind: str = "editorial") -> int:
     _validate_display_settings(highlight_count, minimum_score)
+    _validate_kind(kind)
     cur = conn.execute(
         "INSERT INTO channels "
-        "(name, profile, fetch_interval_hours, highlight_count, minimum_score) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (name, profile, fetch_interval_hours, highlight_count, minimum_score))
+        "(name, profile, fetch_interval_hours, highlight_count, minimum_score, kind) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (name, profile, fetch_interval_hours, highlight_count, minimum_score, kind))
     conn.commit()
     return cur.lastrowid
 
@@ -28,8 +36,18 @@ def get_channel(conn: sqlite3.Connection, channel_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def list_channels(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute("SELECT * FROM channels ORDER BY id").fetchall()
+def list_channels(conn: sqlite3.Connection, kind: str | None = None) -> list[dict]:
+    """kind=None (the default) returns every Channel regardless of kind -- the collector's
+    fetch loop relies on this to keep polling 'monitor' Channels' sources exactly like
+    'editorial' ones. Reading-oriented views (Home, the Channel nav shelf, Archive) pass
+    kind='editorial' instead, since a 'monitor' Channel has no AI-ranked content to show
+    there -- see run_channel_cycle and web/public.py."""
+    if kind is not None:
+        _validate_kind(kind)
+        rows = conn.execute(
+            "SELECT * FROM channels WHERE kind = ? ORDER BY id", (kind,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM channels ORDER BY id").fetchall()
     return [dict(r) for r in rows]
 
 

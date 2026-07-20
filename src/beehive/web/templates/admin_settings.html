@@ -65,6 +65,7 @@
           </span>
           <span class="channel-admin-name" role="cell">
             <strong>{{ channel.name }}</strong>
+            {% if channel.kind == 'monitor' %}<span class="kind-badge">🔔 {{ t('web.admin.settings.kind_badge_monitor') }}</span>{% endif %}
             <small>{{ channel.fetch_stats_label or t('web.admin.settings.recipient_label', email=(channel.effective_email or t('web.admin.settings.not_configured'))) }}</small>
             {% if triggered == channel.id %}<em class="trigger-flash" role="status">{{ t('web.admin.settings.trigger_flash') }}</em>{% endif %}
           </span>

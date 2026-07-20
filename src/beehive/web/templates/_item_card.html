@@ -7,8 +7,9 @@
       <span class="source-indicator" aria-hidden="true"></span>
       {{ item.source_label }} ·
       <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{% if item.engagement_label %}{{ item.engagement_label }} {% endif %}↗<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
-      · {{ item.ai_rationale }} · <span title="{{ item.exact_time }}">{{ item.age }}</span>
+      {% if item.ai_rationale %}· {{ item.ai_rationale }} {% endif %}· <span title="{{ item.exact_time }}">{{ item.age }}</span>
     </p>
+    {% if channel.kind == 'editorial' %}
     <div class="votes" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}">
       {% if is_admin %}
       <button type="button" aria-label="{{ t('web.item.vote_up_aria') }}"
@@ -31,6 +32,7 @@
       {% if item.vote_value == 1 %}<span class="vote-state up" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>{% elif item.vote_value == -1 %}<span class="vote-state down" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>{% endif %}
       {% endif %}
     </div>
+    {% endif %}
   </div>
   <h3 class="item-title"><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
   {% set deep_read_variant = "card" %}

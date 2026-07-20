@@ -13,16 +13,36 @@
     </div>
   </header>
   <section class="admin-panel">
-    <form method="post" action="/admin/channels/new">
+    <form method="post" action="/admin/channels/new" class="channel-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="field">
         <label for="new-channel-name">{{ t('web.admin.channel_new.name_label') }}</label>
         <input id="new-channel-name" type="text" name="name" placeholder="{{ t('web.admin.channel_new.name_placeholder') }}" required autocomplete="off">
       </div>
+      <fieldset class="field channel-kind-field">
+        <legend>{{ t('web.admin.channel_new.kind_label') }}</legend>
+        <div class="type-options">
+          <label class="type-option">
+            <input type="radio" name="kind" value="editorial" id="kind-editorial" checked>
+            <span class="source-icon" aria-hidden="true">📰</span>
+            <span class="name">{{ t('web.admin.channel_new.kind_editorial_label') }}</span>
+            <span class="option-check" aria-hidden="true"></span>
+          </label>
+          <label class="type-option">
+            <input type="radio" name="kind" value="monitor" id="kind-monitor">
+            <span class="source-icon" aria-hidden="true">🔔</span>
+            <span class="name">{{ t('web.admin.channel_new.kind_monitor_label') }}</span>
+            <span class="option-check" aria-hidden="true"></span>
+          </label>
+        </div>
+        <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.kind_editorial_hint') }}</p>
+        <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.kind_monitor_hint') }}</p>
+      </fieldset>
       <div class="field">
         <label for="new-channel-profile">{{ t('web.admin.channel_new.profile_label') }}</label>
         <textarea id="new-channel-profile" name="profile" placeholder="{{ t('web.admin.channel_new.profile_placeholder') }}" required></textarea>
-        <p class="hint">{{ t('web.admin.channel_new.profile_hint') }}</p>
+        <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.profile_hint') }}</p>
+        <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.profile_hint_monitor') }}</p>
       </div>
       <div class="field">
         <label for="new-fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
@@ -32,7 +52,7 @@
           <option value="24">{{ t('web.fetch_interval.daily') }}</option>
         </select>
       </div>
-      <div class="field-pair">
+      <div class="field-pair kind-only-editorial">
         <div class="field">
           <label for="new-highlight-count">{{ t('web.admin.channel_new.highlight_count_label') }}</label>
           <input id="new-highlight-count" type="number" name="highlight_count" value="8" min="1" max="50" required>
