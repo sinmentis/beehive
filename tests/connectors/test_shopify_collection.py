@@ -250,6 +250,45 @@ def test_fetch_strips_a_trailing_slash_from_the_collection_url():
     assert calls[0].startswith(_COLLECTION_URL + "/products.json")
 
 
+def test_fetch_reaches_the_products_json_endpoint_when_collection_url_has_a_hash_fragment():
+    # A storefront filter widget's "#/filter:vendor:X" fragment copied from the browser bar must
+    # not get folded into the requested path/query -- it needs to still land on /products.json.
+    calls = []
+
+    def fetch_json(url):
+        calls.append(url)
+        return _page([])
+
+    ShopifyCollectionConnector(fetch_json=fetch_json).fetch(
+        {"collection_url": _COLLECTION_URL + "#/filter:vendor:Arcteryx/sort:price-ascending"}
+    )
+
+    assert len(calls) == 1
+    parsed = urlparse(calls[0])
+    assert parsed.path == "/collections/outlet/products.json"
+    assert parse_qs(parsed.query) == {"limit": ["250"], "page": ["1"]}
+
+
+def test_fetch_reaches_the_products_json_endpoint_when_collection_url_has_a_query_string():
+    # A storefront filter widget's own "?pf_v_brand=X" query string must not get appended onto,
+    # rather than merged into, the requested path -- it needs to still land on /products.json.
+    calls = []
+
+    def fetch_json(url):
+        calls.append(url)
+        return _page([])
+
+    ShopifyCollectionConnector(fetch_json=fetch_json).fetch(
+        {"collection_url": _COLLECTION_URL + "?pf_v_brand=Arcteryx&sort=created-descending"}
+    )
+
+    assert len(calls) == 1
+    parsed = urlparse(calls[0])
+    assert parsed.path == "/collections/outlet/products.json"
+    assert parse_qs(parsed.query) == {"limit": ["250"], "page": ["1"]}
+
+
+
 def test_fetch_pages_until_a_short_page_signals_the_last_page():
     full_page = [_product(product_id=i) for i in range(250)]
     short_page = [_product(product_id=1000)]

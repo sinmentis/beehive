@@ -137,14 +137,20 @@ class ShopifyCollectionConnector:
 
     def fetch(self, config: dict) -> list[RawItem]:
         self.validate_config(config)
-        collection_url = config["collection_url"].rstrip("/")
-        parsed = urlparse(collection_url)
+        # Parse rather than string-concatenate: collection_url may carry a storefront filter
+        # widget's query string or #fragment (copied from the browser's address bar the same way
+        # a land_sea_collection filtered URL is), and naively appending "/products.json?..." to
+        # the raw string would fold that suffix into the existing query/fragment instead of
+        # reaching the JSON endpoint. Any such filter params are dropped here rather than merged
+        # in: Shopify's /products.json feed is a fixed, unfiltered dump of the collection that
+        # ignores app-injected filter params regardless, so keeping them would be a no-op at best.
+        parsed = urlparse(config["collection_url"].rstrip("/"))
         store_origin = f"{parsed.scheme}://{parsed.netloc}"
 
         products: list[dict] = []
         for page in range(1, _MAX_PAGES + 1):
             params = urlencode({"limit": _PAGE_SIZE, "page": page})
-            payload = self._fetch_json(f"{collection_url}/products.json?{params}")
+            payload = self._fetch_json(f"{store_origin}{parsed.path}/products.json?{params}")
             if not isinstance(payload, dict) or not isinstance(payload.get("products"), list):
                 raise ValueError("Shopify collection response needs a 'products' list")
             page_products = payload["products"]
