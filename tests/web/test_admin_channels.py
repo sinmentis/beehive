@@ -514,6 +514,74 @@ def test_clear_channel_data_does_not_delete_the_channel_or_sources(authed_client
                          (source_id,)).fetchone()[0] == 1
 
 
+def test_duplicate_channel_requires_session(db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    client = TestClient(create_app(db_path, session_secret="test-secret"),
+                         follow_redirects=False)
+    resp = client.post(f"/admin/channels/{channel_id}/duplicate", data={"csrf_token": "x"})
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/login"
+
+
+def test_duplicate_channel_rejects_wrong_csrf(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.post(f"/admin/channels/{channel_id}/duplicate",
+                               data={"csrf_token": "wrong"})
+    assert resp.status_code == 403
+
+    conn = connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0] == 1
+
+
+def test_duplicate_channel_404_for_missing_channel(authed_client):
+    resp = authed_client.post("/admin/channels/999/duplicate", data={"csrf_token": "csrf1"})
+    assert resp.status_code == 404
+
+
+def test_duplicate_channel_copies_it_and_redirects_to_new_edit_page(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    conn.close()
+
+    resp = authed_client.post(f"/admin/channels/{channel_id}/duplicate",
+                               data={"csrf_token": "csrf1"})
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    rows = conn.execute("SELECT id, name FROM channels ORDER BY id").fetchall()
+    assert len(rows) == 2
+    new_channel_id, new_name = rows[1]["id"], rows[1]["name"]
+    assert new_name == "NZ Finance (copy)"
+    assert resp.headers["location"] == f"/admin/channels/{new_channel_id}/edit"
+    assert conn.execute("SELECT COUNT(*) FROM sources WHERE channel_id = ?",
+                         (new_channel_id,)).fetchone()[0] == 1
+
+
+def test_edit_channel_page_shows_duplicate_button(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert f'/admin/channels/{channel_id}/duplicate' in resp.text
+
+
+def test_channels_list_shows_duplicate_action(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.get("/admin/")
+    assert f'formaction="/admin/channels/{channel_id}/duplicate"' in resp.text
+
+
 def test_edit_channel_page_shows_clear_data_success_flash(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")

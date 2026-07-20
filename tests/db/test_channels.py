@@ -1,11 +1,11 @@
 import pytest
 
 from beehive.connectors.base import RawItem
-from beehive.db.channels import (create_channel, delete_channel, get_channel, list_channels,
-                                     mark_digest_sent, update_channel)
+from beehive.db.channels import (create_channel, delete_channel, duplicate_channel, get_channel,
+                                     list_channels, mark_digest_sent, update_channel)
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import insert_new
-from beehive.db.sources import create_source
+from beehive.db.sources import create_source, list_by_channel
 
 
 @pytest.fixture
@@ -163,3 +163,71 @@ def test_mark_digest_sent_updates_all_channels_in_one_call(conn):
         "2026-07-13T20:00:00+00:00"
     }
     assert {row["last_digest_date"] for row in rows} == {"2026-07-13"}
+
+
+def test_duplicate_channel_copies_settings_with_suffixed_name(conn):
+    channel_id = create_channel(
+        conn, "NZ Finance", "economic news", fetch_interval_hours=6,
+        highlight_count=5, minimum_score=20, kind="editorial")
+    update_channel(
+        conn, channel_id, "NZ Finance", "economic news", fetch_interval_hours=6,
+        digest_email="owner@example.com", highlight_count=5, minimum_score=20)
+
+    new_id = duplicate_channel(conn, channel_id)
+
+    assert new_id != channel_id
+    copy = get_channel(conn, new_id)
+    assert copy["name"] == "NZ Finance (copy)"
+    assert copy["profile"] == "economic news"
+    assert copy["fetch_interval_hours"] == 6
+    assert copy["highlight_count"] == 5
+    assert copy["minimum_score"] == 20
+    assert copy["kind"] == "editorial"
+    assert copy["digest_email"] == "owner@example.com"
+
+
+def test_duplicate_channel_avoids_name_collisions(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    first_copy_id = duplicate_channel(conn, channel_id)
+    second_copy_id = duplicate_channel(conn, channel_id)
+
+    assert get_channel(conn, first_copy_id)["name"] == "NZ Finance (copy)"
+    assert get_channel(conn, second_copy_id)["name"] == "NZ Finance (copy 2)"
+
+
+def test_duplicate_channel_copies_sources_verbatim(conn):
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    create_source(conn, channel_id, "shopify_collection", {
+        "collection_url": "https://bivouac.co.nz/collections/clearance",
+        "vendors": ["Arcteryx", "Patagonia"],
+    })
+    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "nzoutdoors"})
+
+    new_id = duplicate_channel(conn, channel_id)
+
+    original_sources = {s["type"]: s["config"] for s in list_by_channel(conn, channel_id)}
+    copied_sources = {s["type"]: s["config"] for s in list_by_channel(conn, new_id)}
+    assert copied_sources == original_sources
+    assert len(list_by_channel(conn, new_id)) == 2
+
+
+def test_duplicate_channel_does_not_copy_items_or_digest_state(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(conn, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    mark_digest_sent(
+        conn, [channel_id], sent_at="2026-07-13T20:00:00+00:00", digest_date="2026-07-13")
+
+    new_id = duplicate_channel(conn, channel_id)
+
+    copy = get_channel(conn, new_id)
+    assert copy["last_digest_sent_at"] is None
+    assert copy["last_digest_date"] is None
+    new_source_id = list_by_channel(conn, new_id)[0]["id"]
+    rows = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE source_id = ?", (new_source_id,)).fetchone()
+    assert rows[0] == 0
+
+
+def test_duplicate_channel_returns_none_for_missing_channel(conn):
+    assert duplicate_channel(conn, 999) is None

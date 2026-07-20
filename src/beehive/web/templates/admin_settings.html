@@ -72,7 +72,10 @@
           <span role="cell">{{ t('web.admin.settings.source_count', count=channel.source_count) }}</span>
           <span role="cell">{{ channel.fetch_interval_label }}</span>
           <span role="cell" title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>
-          <span class="channel-edit-cell" role="cell"><a class="channel-edit-link" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.settings.edit_channel') }}</a></span>
+          <span class="channel-edit-cell" role="cell">
+            <a class="channel-edit-link" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.settings.edit_channel') }}</a>
+            <button class="text-action" type="submit" formaction="/admin/channels/{{ channel.id }}/duplicate">{{ t('web.admin.channel_edit.duplicate') }}</button>
+          </span>
         </div>
         {% endfor %}
       </div>

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+
+from beehive.db.sources import create_source, list_by_channel
 
 _KINDS = ("editorial", "monitor")
 
@@ -95,3 +98,44 @@ def mark_digest_sent(conn: sqlite3.Connection, channel_ids: list[int],
 def delete_channel(conn: sqlite3.Connection, channel_id: int) -> None:
     conn.execute("DELETE FROM channels WHERE id = ?", (channel_id,))
     conn.commit()
+
+
+def _unique_duplicate_name(conn: sqlite3.Connection, original_name: str) -> str:
+    existing = {
+        row["name"] for row in conn.execute("SELECT name FROM channels").fetchall()
+    }
+    candidate = f"{original_name} (copy)"
+    suffix = 2
+    while candidate in existing:
+        candidate = f"{original_name} (copy {suffix})"
+        suffix += 1
+    return candidate
+
+
+def duplicate_channel(conn: sqlite3.Connection, channel_id: int) -> int | None:
+    """Copies a Channel's own settings and every one of its Sources (config verbatim, so any
+    brand/collection filter survives) into a brand new Channel -- a fresh start for history,
+    though: no Items, votes, or digest/fetch watermarks are copied. Email-group membership is
+    copied too (see db/email_groups.py's duplicate-time hook), so a Channel already enrolled in
+    a periodic digest keeps its duplicate enrolled as well."""
+    original = get_channel(conn, channel_id)
+    if original is None:
+        return None
+    new_name = _unique_duplicate_name(conn, original["name"])
+    new_id = create_channel(
+        conn,
+        new_name,
+        original["profile"],
+        fetch_interval_hours=original["fetch_interval_hours"],
+        highlight_count=original["highlight_count"],
+        minimum_score=original["minimum_score"],
+        kind=original["kind"],
+    )
+    if original["digest_email"]:
+        conn.execute(
+            "UPDATE channels SET digest_email = ? WHERE id = ?",
+            (original["digest_email"], new_id))
+        conn.commit()
+    for source in list_by_channel(conn, channel_id):
+        create_source(conn, new_id, source["type"], json.loads(source["config"]))
+    return new_id

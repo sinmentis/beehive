@@ -37,6 +37,7 @@ from beehive.db.admin_login_attempts import get_most_recent_attempt, record_atte
 from beehive.db.channels import (
     create_channel,
     delete_channel,
+    duplicate_channel,
     get_channel,
     list_channels,
     update_channel,
@@ -739,6 +740,17 @@ def clear_channel_data_submit(channel_id: int, csrf_token: str = Form(...),
         f"/admin/channels/{channel_id}/edit?cleared={cleared_count}",
         status_code=303,
     )
+
+
+@router.post("/channels/{channel_id}/duplicate")
+def duplicate_channel_submit(channel_id: int, csrf_token: str = Form(...),
+                              session: dict = Depends(require_admin_session),
+                              conn: sqlite3.Connection = Depends(get_db)):
+    verify_csrf(session, csrf_token)
+    if get_channel(conn, channel_id) is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    new_channel_id = duplicate_channel(conn, channel_id)
+    return RedirectResponse(f"/admin/channels/{new_channel_id}/edit", status_code=303)
 
 
 @router.post("/channels/{channel_id}/delete")

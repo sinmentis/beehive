@@ -11,6 +11,10 @@
       <h1>{{ t('web.admin.channel_edit.heading', channel=channel.name) }}</h1>
       <p class="page-lede">{{ t('web.admin.channel_edit.lede') }}</p>
     </div>
+    <form method="post" action="/admin/channels/{{ channel.id }}/duplicate">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn ghost" type="submit">{{ t('web.admin.channel_edit.duplicate') }}</button>
+    </form>
   </header>
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
   {% if cleared_count is not none %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.clear_data_success', count=cleared_count) }}</p>{% endif %}
