@@ -249,7 +249,7 @@ def test_edit_channel_form_shows_editorial_kind_badge_and_display_fields(authed_
     assert 'id="minimum-score"' in resp.text
 
 
-def test_edit_channel_form_shows_monitor_kind_badge_and_hides_display_fields(
+def test_edit_channel_form_shows_monitor_kind_badge_and_display_fields(
     authed_client, db_path,
 ):
     conn = connect(db_path)
@@ -259,13 +259,20 @@ def test_edit_channel_form_shows_monitor_kind_badge_and_hides_display_fields(
     resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
     assert resp.status_code == 200
     assert "Monitor" in resp.text
-    assert 'id="highlight-count"' not in resp.text
-    assert 'id="minimum-score"' not in resp.text
+    # highlight_count/minimum_score are meaningful for monitor Channels too now that their
+    # items get a real ai_score from rank_monitor_channel, so the edit form must show them
+    # (with monitor-specific hint copy) instead of hiding them as editorial-only.
+    assert 'id="highlight-count"' in resp.text
+    assert 'id="minimum-score"' in resp.text
 
 
-def test_update_monitor_channel_preserves_display_settings_without_submitting_them(
+def test_update_monitor_channel_preserves_display_settings_when_not_submitted(
     authed_client, db_path,
 ):
+    """Defensive-fallback regression test: even though the edit form now always submits
+    highlight_count/minimum_score for every Channel kind, a request that omits them (e.g. an
+    older client, or a hand-crafted POST) must still leave the existing DB values untouched
+    rather than resetting them to the schema defaults."""
     conn = connect(db_path)
     channel_id = create_channel(
         conn, "Arcteryx Outlet", "watch for price drops", kind="monitor",
@@ -284,6 +291,29 @@ def test_update_monitor_channel_preserves_display_settings_without_submitting_th
     assert row["kind"] == "monitor"
     assert row["highlight_count"] == 5
     assert row["minimum_score"] == 70
+
+
+def test_update_monitor_channel_can_set_display_settings(authed_client, db_path):
+    """Now that the fields are visible for monitor Channels, submitting them must persist,
+    same as it already does for editorial Channels."""
+    conn = connect(db_path)
+    channel_id = create_channel(
+        conn, "Arcteryx Outlet", "watch for price drops", kind="monitor",
+        highlight_count=5, minimum_score=70,
+    )
+    conn.close()
+
+    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
+        "name": "Arcteryx Outlet", "profile": "watch for price drops",
+        "fetch_interval_hours": "24", "digest_email": "", "csrf_token": "csrf1",
+        "highlight_count": "12", "minimum_score": "85",
+    })
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    assert row["highlight_count"] == 12
+    assert row["minimum_score"] == 85
 
 
 def test_edit_channel_form_shows_google_news_source_label(authed_client, db_path):

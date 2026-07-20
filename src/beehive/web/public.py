@@ -10,7 +10,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Literal
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -45,6 +45,10 @@ def _source_label(item: dict, t: Localizer) -> str:
         return f"r/{config['subreddit']}"
     if item["source_type"] == "google_news_query":
         return f'"{config["query"]}"'
+    if item["source_type"] == "shopify_collection":
+        url = config.get("collection_url", "")
+        parsed = urlparse(url)
+        return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
     official_label = official_feed_label(item["source_type"])
     if official_label is not None:
         return official_label
@@ -69,6 +73,17 @@ def _engagement_label(item: dict, t: Localizer) -> str:
         )
     if item["source_type"] in {"rbnz_news", "nz_government_news", "federal_reserve_news"}:
         return item["raw_metadata"].get("category", "")
+    if item["source_type"] == "shopify_collection":
+        metadata = item["raw_metadata"]
+        price = metadata.get("price")
+        compare_at_price = metadata.get("compare_at_price")
+        # Shopify's public collection JSON never exposes a currency code (confirmed against
+        # real stores), so this never hardcodes a currency symbol -- a percent-off figure is
+        # the only currency-agnostic discount signal available.
+        if metadata.get("on_sale") and compare_at_price and price is not None:
+            percent_off = round((compare_at_price - price) / compare_at_price * 100)
+            return t.text("web.engagement.shopify_discount", percent=percent_off)
+        return metadata.get("vendor") or ""
     return ""
 
 
@@ -160,7 +175,7 @@ def dashboard(
     for item in highlights:
         _decorate_item(item, t)
     channels = []
-    for channel in list_channels(conn, kind="editorial"):
+    for channel in list_channels(conn):
         items = [
             item
             for item in list_by_channel(conn, channel["id"])
@@ -262,7 +277,7 @@ def channel_drilldown(channel_id: int, request: Request, show_read: int | None =
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "channel_drilldown.html", {
         "channel": channel,
-        "nav_channels": list_channels(conn, kind="editorial"),
+        "nav_channels": list_channels(conn),
         "highlighted": visible_items[:channel["highlight_count"]],
         "folded": visible_items[channel["highlight_count"]:],
         "freshness": freshness_label(sources, t),
@@ -369,7 +384,7 @@ def archive(request: Request, channel: str | None = None,
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "archive.html", {
         "groups": _group_by_day(items),
-        "channels": list_channels(conn, kind="editorial"),
+        "channels": list_channels(conn),
         "total": total,
         "page": page,
         "has_prev": page > 1,

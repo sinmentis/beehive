@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from beehive.ai.llm_client import run_prompt
 from beehive.ai.model_selection import DEFAULT_MODEL
-from beehive.ai.prompt_builder import ItemCandidate, VoteExample, build_ranking_prompt
+from beehive.ai.prompt_builder import (ItemCandidate, ProductCandidate, VoteExample,
+                                       build_monitor_ranking_prompt, build_ranking_prompt)
 from beehive.ai.response_parser import RankedItem, parse_ranking_response
 from beehive.localization import Language
 
@@ -16,5 +17,16 @@ async def rank_channel(profile: str, votes: list[VoteExample], candidates: list[
     if not candidates:
         return []
     prompt = build_ranking_prompt(profile, votes, candidates, language)
+    raw_response = await run_prompt(prompt, model=model)
+    return parse_ranking_response(raw_response, [c.item_key for c in candidates])
+
+
+async def rank_monitor_channel(profile: str, candidates: list[ProductCandidate],
+                                language: Language, model: str = DEFAULT_MODEL) -> list[RankedItem]:
+    """Same shape as rank_channel, for a 'monitor' Channel's scraped products -- no vote
+    examples exist for these (the vote widget is editorial-only, see _item_card.html)."""
+    if not candidates:
+        return []
+    prompt = build_monitor_ranking_prompt(profile, candidates, language)
     raw_response = await run_prompt(prompt, model=model)
     return parse_ranking_response(raw_response, [c.item_key for c in candidates])

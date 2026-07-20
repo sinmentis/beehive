@@ -52,16 +52,18 @@
           <option value="24">{{ t('web.fetch_interval.daily') }}</option>
         </select>
       </div>
-      <div class="field-pair kind-only-editorial">
+      <div class="field-pair">
         <div class="field">
           <label for="new-highlight-count">{{ t('web.admin.channel_new.highlight_count_label') }}</label>
           <input id="new-highlight-count" type="number" name="highlight_count" value="8" min="1" max="50" required>
-          <p class="hint">{{ t('web.admin.channel_new.highlight_count_hint') }}</p>
+          <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.highlight_count_hint') }}</p>
+          <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.highlight_count_hint_monitor') }}</p>
         </div>
         <div class="field">
           <label for="new-minimum-score">{{ t('web.admin.channel_new.minimum_score_label') }}</label>
           <input id="new-minimum-score" type="number" name="minimum_score" value="0" min="0" max="100" required>
-          <p class="hint">{{ t('web.admin.channel_new.minimum_score_hint') }}</p>
+          <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.minimum_score_hint') }}</p>
+          <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.minimum_score_hint_monitor') }}</p>
         </div>
       </div>
       <div class="actions">

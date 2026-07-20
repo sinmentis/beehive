@@ -129,9 +129,8 @@ def test_channel_drilldown_shows_item_with_source_badge_and_link(conn, client):
 
 
 def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client):
-    """A monitor Channel is never linked from nav, but is still reachable by URL -- its items
-    must render without the vote widget, since voting is an editorial "is this interesting"
-    signal that a deterministic monitor item has no use for."""
+    """A monitor Channel's items still render without the vote widget, since voting is an
+    editorial "is this interesting" signal that a deterministic monitor item has no use for."""
     _, c = conn
     channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -143,6 +142,58 @@ def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client
     assert "Beta jacket $199" in resp.text
     assert 'class="votes"' not in resp.text
     assert "This recommendation was useful" not in resp.text
+
+
+def test_monitor_channel_appears_in_dashboard_and_channel_nav(conn, client):
+    """Monitor Channels are reachable via the same channel-shelf nav as editorial Channels --
+    they are no longer a URL-only, unlinked page."""
+    _, c = conn
+    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+
+    dashboard_resp = client.get("/")
+    assert dashboard_resp.status_code == 200
+    assert f'href="/channels/{channel_id}"' in dashboard_resp.text
+    assert "Arcteryx Outlet" in dashboard_resp.text
+
+    drilldown_resp = client.get(f"/channels/{channel_id}")
+    assert drilldown_resp.status_code == 200
+    assert f'href="/channels/{channel_id}"' in drilldown_resp.text
+
+
+def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    source_id = create_source(c, channel_id, "shopify_collection",
+                               {"collection_url": "https://example.com/collections/outlet/products.json"})
+    insert_new(c, source_id, RawItem(
+        external_id="p1:199.00", title="Beta Jacket", url="https://example.com/products/beta",
+        raw_metadata={"price": 199.0, "compare_at_price": 299.0, "on_sale": True,
+                      "available": True, "vendor": "Arc'teryx", "product_type": "Jackets",
+                      "tags": []}))
+    update_ai_ranking(c, source_id, "p1:199.00", score=91, summary="On sale", rationale="r")
+
+    resp = client.get(f"/channels/{channel_id}")
+    assert resp.status_code == 200
+    assert "example.com/collections/outlet" in resp.text
+    assert "33% off" in resp.text  # round((299-199)/299*100)
+
+
+def test_channel_drilldown_shopify_item_not_on_sale_shows_vendor(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    source_id = create_source(c, channel_id, "shopify_collection",
+                               {"collection_url": "https://example.com/collections/outlet/products.json"})
+    insert_new(c, source_id, RawItem(
+        external_id="p2:60.00", title="Cerium Vest", url="https://example.com/products/cerium",
+        raw_metadata={"price": 60.0, "compare_at_price": None, "on_sale": False,
+                      "available": True, "vendor": "Arc'teryx", "product_type": "Vests",
+                      "tags": []}))
+    update_ai_ranking(c, source_id, "p2:60.00", score=40, summary="Regular price", rationale="r")
+
+    resp = client.get(f"/channels/{channel_id}")
+    assert resp.status_code == 200
+    assert "Arc&#39;teryx" in resp.text or "Arc'teryx" in resp.text
 
 
 def test_channel_drilldown_shows_google_news_source_label_and_summary(conn, client):

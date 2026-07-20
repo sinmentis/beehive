@@ -39,9 +39,12 @@ def get_channel(conn: sqlite3.Connection, channel_id: int) -> dict | None:
 def list_channels(conn: sqlite3.Connection, kind: str | None = None) -> list[dict]:
     """kind=None (the default) returns every Channel regardless of kind -- the collector's
     fetch loop relies on this to keep polling 'monitor' Channels' sources exactly like
-    'editorial' ones. Reading-oriented views (Home, the Channel nav shelf, Archive) pass
-    kind='editorial' instead, since a 'monitor' Channel has no AI-ranked content to show
-    there -- see run_channel_cycle and web/public.py."""
+    'editorial' ones. Reading-oriented views (Home's per-channel nav shelf, the Channel nav
+    shelf, Archive's channel filter) also pass kind=None now, since a 'monitor' Channel gets
+    AI-ranked content on its own page too -- see run_channel_cycle and web/public.py. Only
+    Home's cross-channel highlights feed still restricts to kind='editorial' (see
+    db/items.py's _dashboard_signal_filters), since that feed's "read this" framing doesn't
+    fit a shopping deal the way a channel-scoped page does."""
     if kind is not None:
         _validate_kind(kind)
         rows = conn.execute(

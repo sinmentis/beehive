@@ -73,6 +73,24 @@ def _echo_ranker(scores=None):
     return rank
 
 
+def _echo_monitor_ranker(scores=None):
+    """Same as _echo_ranker but matching rank_monitor_channel's (profile, candidates, language,
+    model) signature -- monitor Channels never pass a votes kwarg."""
+
+    async def rank(profile, candidates, language, model):
+        return [
+            RankedItem(
+                item_key=candidate.item_key,
+                score=scores[index] if scores is not None else 100 - index,
+                summary="s",
+                rationale="r",
+            )
+            for index, candidate in enumerate(candidates)
+        ]
+
+    return rank
+
+
 def _echo_summaries(text):
     """A fake summarize_comments keyed by each candidate's item_key (the opaque collector key),
     matching how the real summarizer echoes back the ids it was given."""
@@ -296,7 +314,7 @@ async def test_happy_path_fetches_persists_and_ranks(conn, channel):
 
 
 @pytest.mark.asyncio
-async def test_monitor_channel_fetches_but_skips_ranking(conn):
+async def test_monitor_channel_gets_ranked_via_rank_monitor_channel(conn):
     channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
     monitor_channel = get_channel(conn, channel_id)
     register(_StubConnector(items=[
@@ -304,13 +322,88 @@ async def test_monitor_channel_fetches_but_skips_ranking(conn):
     ]))
     create_source(conn, channel_id, "stub_test_source", {})
 
-    with patch("beehive.collector.run_cycle.rank_channel", new=AsyncMock()) as mock_rank:
+    fake_result = _echo_monitor_ranker([77])
+    with patch("beehive.collector.run_cycle.rank_monitor_channel",
+               new=AsyncMock(side_effect=fake_result)) as mock_rank, \
+         patch("beehive.collector.run_cycle.rank_channel", new=AsyncMock()) as mock_editorial_rank:
         await run_channel_cycle(conn, monitor_channel, LogNotifier(), localizer=_EN_LOCALIZER)
 
-    mock_rank.assert_not_awaited()
+    mock_rank.assert_awaited_once()
+    mock_editorial_rank.assert_not_awaited()
+    assert "votes" not in mock_rank.call_args.kwargs
     items = list_by_channel(conn, channel_id)
     assert len(items) == 1
-    assert items[0]["ai_score"] is None
+    assert items[0]["ai_score"] == 77
+
+
+@pytest.mark.asyncio
+async def test_monitor_channel_builds_product_candidates_from_raw_metadata(conn):
+    channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
+    monitor_channel = get_channel(conn, channel_id)
+    register(_StubConnector(items=[
+        RawItem(external_id="t1", title="Beta jacket", url="https://x", raw_metadata={
+            "price": 199.0, "compare_at_price": 299.0, "on_sale": True, "available": True,
+            "vendor": "Arc'teryx", "product_type": "Jackets", "tags": ["rain", "women"],
+        }),
+    ]))
+    create_source(conn, channel_id, "stub_test_source", {})
+
+    fake_result = _echo_monitor_ranker([77])
+    with patch("beehive.collector.run_cycle.rank_monitor_channel",
+               new=AsyncMock(side_effect=fake_result)) as mock_rank:
+        await run_channel_cycle(conn, monitor_channel, LogNotifier(), localizer=_EN_LOCALIZER)
+
+    candidate = mock_rank.call_args.kwargs["candidates"][0]
+    assert candidate.title == "Beta jacket"
+    assert candidate.price == 199.0
+    assert candidate.compare_at_price == 299.0
+    assert candidate.on_sale is True
+    assert candidate.available is True
+    assert candidate.vendor == "Arc'teryx"
+    assert candidate.product_type == "Jackets"
+    assert candidate.tags == ["rain", "women"]
+
+
+@pytest.mark.asyncio
+async def test_monitor_channel_defaults_missing_product_fields_safely(conn):
+    channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
+    monitor_channel = get_channel(conn, channel_id)
+    register(_StubConnector(items=[
+        RawItem(external_id="t1", title="Mystery item", url="https://x"),  # no raw_metadata at all
+    ]))
+    create_source(conn, channel_id, "stub_test_source", {})
+
+    fake_result = _echo_monitor_ranker([50])
+    with patch("beehive.collector.run_cycle.rank_monitor_channel",
+               new=AsyncMock(side_effect=fake_result)) as mock_rank:
+        await run_channel_cycle(conn, monitor_channel, LogNotifier(), localizer=_EN_LOCALIZER)
+
+    candidate = mock_rank.call_args.kwargs["candidates"][0]
+    assert candidate.price is None
+    assert candidate.on_sale is False
+    assert candidate.available is False
+    assert candidate.vendor is None
+    assert candidate.tags == []
+
+
+@pytest.mark.asyncio
+async def test_monitor_channel_skips_best_comment_enrichment_even_if_connector_supports_it(conn):
+    channel_id = create_channel(conn, "Arc'teryx Outlet", "watch for price drops", kind="monitor")
+    monitor_channel = get_channel(conn, channel_id)
+    connector = _StubCommentConnector(items=[
+        RawItem(external_id="t1", title="Beta jacket", url="https://x"),
+    ], comments_by_url={"https://x": ["great deal"]})
+    register(connector)
+    create_source(conn, channel_id, "stub_comment_source", {})
+
+    fake_result = _echo_monitor_ranker([90])
+    with patch("beehive.collector.run_cycle.rank_monitor_channel",
+               new=AsyncMock(side_effect=fake_result)), \
+         patch("beehive.collector.run_cycle.summarize_comments", new=AsyncMock()) as mock_summarize:
+        await run_channel_cycle(conn, monitor_channel, LogNotifier(), localizer=_EN_LOCALIZER)
+
+    assert connector.received_targets == []
+    mock_summarize.assert_not_awaited()
 
 
 @pytest.mark.asyncio

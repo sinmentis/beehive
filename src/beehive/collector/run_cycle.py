@@ -4,11 +4,15 @@ recorded (not raised) and the cycle continues with the other Sources; an AI/LLM 
 alerts immediately and aborts only this Channel's ranking step. Ranking always re-queries
 for EVERY currently-unscored item in the Channel (not just this cycle's fresh fetches), so
 an item stranded unscored by a past LLM failure gets retried automatically on the next
-cycle instead of staying stuck forever. After ranking, a best-comment step fetches and
-judges a top comment for this cycle's top 3 ranked items (connectors that don't support
-fetch_comments are skipped) -- unlike the ranking failure path, any failure here is caught
-and printed, never alerted, since a missing best-comment enrichment is cosmetic, not a break
-in the core pipeline."""
+cycle instead of staying stuck forever. An 'editorial' Channel builds ItemCandidates (with
+community-engagement score/num_comments and past votes) and calls rank_channel; a 'monitor'
+Channel (e.g. a Shopify clearance watch) builds ProductCandidates (price/discount/vendor,
+no votes) and calls rank_monitor_channel instead -- both share this same chunking/retry/
+persistence loop. After ranking, a best-comment step fetches and judges a top comment for
+this cycle's top 3 ranked items, but only for 'editorial' Channels (connectors that don't
+support fetch_comments are skipped too; a product listing has no discussion thread) --
+unlike the ranking failure path, any failure here is caught and printed, never alerted,
+since a missing best-comment enrichment is cosmetic, not a break in the core pipeline."""
 from __future__ import annotations
 
 import asyncio
@@ -18,8 +22,8 @@ from datetime import datetime, timezone
 
 from beehive.ai.comment_summarizer import CommentCandidate, summarize_comments
 from beehive.ai.model_selection import DEFAULT_MODEL
-from beehive.ai.prompt_builder import ItemCandidate, VoteExample
-from beehive.ai.ranker import rank_channel
+from beehive.ai.prompt_builder import ItemCandidate, ProductCandidate, VoteExample
+from beehive.ai.ranker import rank_channel, rank_monitor_channel
 from beehive.ai.response_parser import RankedItem
 from beehive.connectors.base import CommentFetchTarget
 from beehive.connectors.registry import get as get_connector
@@ -85,12 +89,7 @@ async def run_channel_cycle(
         record_fetch_success(conn, source["id"], now_iso,
                              raw_count=len(raw_items), new_count=new_count)
 
-    if channel["kind"] != "editorial":
-        # 'monitor' Channels track deterministic state changes (e.g. a price drop), not
-        # subjective "is this interesting" ranking -- fetching/deduping above already stored
-        # whatever a monitor connector produced; there is nothing here for the AI ranker or
-        # best-comment enrichment to do.
-        return
+    is_editorial = channel["kind"] == "editorial"
 
     all_items = list_by_channel(conn, channel["id"])
     unscored = [i for i in all_items if i["ai_score"] is None]
@@ -98,15 +97,34 @@ async def run_channel_cycle(
         return
 
     items_by_key = {str(item["id"]): item for item in unscored}
-    candidates = [
-        ItemCandidate(item_key=str(item["id"]), title=item["title"], body=item["body"],
-                      score=item["raw_metadata"].get("score", 0),
-                      num_comments=item["raw_metadata"].get("num_comments", 0))
-        for item in unscored
-    ]
-
-    vote_examples = [VoteExample(title=v["title"], value=v["value"], reason=v["reason"])
-                      for v in get_vote_examples_for_channel(conn, channel["id"])]
+    if is_editorial:
+        candidates = [
+            ItemCandidate(item_key=str(item["id"]), title=item["title"], body=item["body"],
+                          score=item["raw_metadata"].get("score", 0),
+                          num_comments=item["raw_metadata"].get("num_comments", 0))
+            for item in unscored
+        ]
+        vote_examples = [VoteExample(title=v["title"], value=v["value"], reason=v["reason"])
+                          for v in get_vote_examples_for_channel(conn, channel["id"])]
+    else:
+        # 'monitor' Channels (e.g. a Shopify clearance watch) score their scraped products
+        # against the owner's shopping profile instead of a news-interest profile, and never
+        # accrue votes (the vote widget is editorial-only, see _item_card.html), so there is
+        # no vote-example query to run here.
+        candidates = [
+            ProductCandidate(
+                item_key=str(item["id"]), title=item["title"],
+                price=item["raw_metadata"].get("price"),
+                compare_at_price=item["raw_metadata"].get("compare_at_price"),
+                on_sale=bool(item["raw_metadata"].get("on_sale")),
+                available=bool(item["raw_metadata"].get("available")),
+                vendor=item["raw_metadata"].get("vendor"),
+                product_type=item["raw_metadata"].get("product_type"),
+                tags=item["raw_metadata"].get("tags") or [],
+            )
+            for item in unscored
+        ]
+        vote_examples = []
 
     ranked: list[RankedItem] = []
     for start in range(0, len(candidates), _RANKING_CHUNK_SIZE):
@@ -115,9 +133,14 @@ async def run_channel_cycle(
         last_exc: Exception | None = None
         for _attempt in range(_CHUNK_ATTEMPTS):
             try:
-                chunk_ranked = await rank_channel(profile=channel["profile"], votes=vote_examples,
-                                                   candidates=chunk, language=localizer.language,
-                                                   model=model)
+                if is_editorial:
+                    chunk_ranked = await rank_channel(
+                        profile=channel["profile"], votes=vote_examples,
+                        candidates=chunk, language=localizer.language, model=model)
+                else:
+                    chunk_ranked = await rank_monitor_channel(
+                        profile=channel["profile"], candidates=chunk,
+                        language=localizer.language, model=model)
                 break
             except Exception as exc:
                 last_exc = exc
@@ -133,7 +156,10 @@ async def run_channel_cycle(
                 rationale=ranked_item.rationale)
         ranked.extend(chunk_ranked)
 
-    if not ranked:
+    if not ranked or not is_editorial:
+        # Best-comment enrichment is an editorial-only nicety -- a product listing has no
+        # discussion thread for a monitor connector's fetch_comments to fetch from, so a
+        # 'monitor' Channel is done as soon as its items are scored.
         return
 
     top_ranked = sorted(ranked, key=lambda r: r.score, reverse=True)[:_COMMENT_FETCH_COUNT]
