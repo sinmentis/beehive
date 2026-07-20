@@ -399,6 +399,7 @@ def test_new_source_form_lists_shopify_collection_option(authed_client, db_path)
     assert "Shopify — Collection watch" in html
     assert "🛍️" in html
     assert 'id="shopify-collection-url"' in html
+    assert 'id="shopify-collection-vendors"' in html
 
 
 def test_create_shopify_collection_source_succeeds_and_redirects(authed_client, db_path):
@@ -422,6 +423,30 @@ def test_create_shopify_collection_source_succeeds_and_redirects(authed_client, 
     assert row["type"] == "shopify_collection"
     assert json.loads(row["config"]) == {
         "collection_url": "https://arcteryx.co.nz/collections/outlet",
+    }
+
+
+def test_create_shopify_collection_source_persists_vendor_list(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    conn.close()
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={
+            "type": "shopify_collection",
+            "shopify_collection_url": "https://arcteryx.co.nz/collections/outlet",
+            "shopify_collection_vendors": "Arc'teryx,  Patagonia ,,Salomon",
+            "csrf_token": "csrf1",
+        },
+    )
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    assert json.loads(row["config"]) == {
+        "collection_url": "https://arcteryx.co.nz/collections/outlet",
+        "vendors": ["Arc'teryx", "Patagonia", "Salomon"],
     }
 
 

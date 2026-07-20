@@ -785,6 +785,7 @@ def _source_config_from_form(
     hn_query: str,
     hn_sort: str,
     shopify_collection_url: str,
+    shopify_collection_vendors: str,
     land_sea_collection_url: str,
 ) -> dict:
     if source_type == "reddit_subreddit":
@@ -796,7 +797,12 @@ def _source_config_from_form(
     if source_type == "hackernews_query":
         return {"query": hn_query, "sort": hn_sort}
     if source_type == "shopify_collection":
-        return {"collection_url": shopify_collection_url}
+        config: dict = {"collection_url": shopify_collection_url}
+        vendors = [vendor.strip() for vendor in shopify_collection_vendors.split(",")
+                   if vendor.strip()]
+        if vendors:
+            config["vendors"] = vendors
+        return config
     if source_type == "land_sea_collection":
         return {"collection_url": land_sea_collection_url}
     if source_type in {"rbnz_news", "nz_government_news", "federal_reserve_news"}:
@@ -822,6 +828,7 @@ def _render_new_source_page(
         "hn_query": "",
         "hn_sort": "relevance",
         "shopify_collection_url": "",
+        "shopify_collection_vendors": "",
         "land_sea_collection_url": "",
         **(form_values or {}),
     }
@@ -858,6 +865,7 @@ def new_source_submit(channel_id: int, request: Request, type: str = Form(...),
                        hn_feed: str = Form("top"), hn_query: str = Form(""),
                        hn_sort: str = Form("relevance"),
                        shopify_collection_url: str = Form(""),
+                       shopify_collection_vendors: str = Form(""),
                        land_sea_collection_url: str = Form(""),
                        csrf_token: str = Form(...),
                        session: dict = Depends(require_admin_session),
@@ -874,6 +882,7 @@ def new_source_submit(channel_id: int, request: Request, type: str = Form(...),
         "hn_query": hn_query,
         "hn_sort": hn_sort,
         "shopify_collection_url": shopify_collection_url,
+        "shopify_collection_vendors": shopify_collection_vendors,
         "land_sea_collection_url": land_sea_collection_url,
     }
     try:

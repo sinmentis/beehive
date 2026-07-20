@@ -16,6 +16,13 @@ every other connector. Downstream alerting on top of that (e.g. "tell me when a 
 with on_sale=True") is intentionally left for a later step -- this connector's only job is
 fetch-and-normalize.
 
+Optional config key 'vendors': a list of brand names to keep, matched case-insensitively
+against each product's 'vendor' field. This filtering happens locally, AFTER fetching every
+page of the collection: Shopify's public products.json feed has no server-side vendor/
+product_type/tag filter of its own (confirmed empirically -- storefront filter-widget query
+params and #fragments the shopper's browser understands are silently ignored by this endpoint,
+which only recognises 'limit'/'page'), so there is no URL to build that would filter upstream.
+
 Tests inject a fake fetch_json and never touch the network."""
 from __future__ import annotations
 
@@ -134,6 +141,15 @@ class ShopifyCollectionConnector:
             raise ValueError(
                 "shopify_collection config needs 'collection_url' to be a valid http(s) URL"
             )
+        vendors = config.get("vendors")
+        if vendors is not None and (
+            not isinstance(vendors, list)
+            or not all(isinstance(vendor, str) and vendor.strip() for vendor in vendors)
+        ):
+            raise ValueError(
+                "shopify_collection config's 'vendors', if present, must be a list of "
+                "non-empty brand name strings"
+            )
 
     def fetch(self, config: dict) -> list[RawItem]:
         self.validate_config(config)
@@ -159,6 +175,19 @@ class ShopifyCollectionConnector:
             products.extend(page_products)
             if len(page_products) < _PAGE_SIZE:
                 break
+
+        # Applied once, after every page is in hand, so pagination above still sees the true,
+        # unfiltered page sizes -- filtering per-page would make a partial last page look short
+        # for the wrong reason and could stop pagination early.
+        vendors = config.get("vendors")
+        if vendors:
+            allowed = {vendor.strip().casefold() for vendor in vendors}
+            products = [
+                product
+                for product in products
+                if isinstance(product, dict)
+                and str(product.get("vendor") or "").strip().casefold() in allowed
+            ]
 
         items = []
         for index, product in enumerate(products):

@@ -79,6 +79,29 @@ def test_validate_config_accepts_a_valid_http_s_url():
     )
 
 
+@pytest.mark.parametrize(
+    "vendors",
+    [
+        "Arc'teryx",
+        123,
+        [""],
+        ["  "],
+        [123],
+        ["Arc'teryx", ""],
+    ],
+)
+def test_validate_config_rejects_a_malformed_vendors_list(vendors):
+    connector = ShopifyCollectionConnector(fetch_json=lambda url: _page([]))
+    with pytest.raises(ValueError):
+        connector.validate_config({"collection_url": _COLLECTION_URL, "vendors": vendors})
+
+
+def test_validate_config_accepts_a_missing_or_valid_vendors_list():
+    connector = ShopifyCollectionConnector(fetch_json=lambda url: _page([]))
+    connector.validate_config({"collection_url": _COLLECTION_URL})
+    connector.validate_config({"collection_url": _COLLECTION_URL, "vendors": ["Arc'teryx"]})
+
+
 def test_fetch_maps_product_fields_and_metadata():
     connector = ShopifyCollectionConnector(fetch_json=lambda url: _page([_product()]))
     item = connector.fetch({"collection_url": _COLLECTION_URL})[0]
@@ -288,6 +311,52 @@ def test_fetch_reaches_the_products_json_endpoint_when_collection_url_has_a_quer
     assert parse_qs(parsed.query) == {"limit": ["250"], "page": ["1"]}
 
 
+def test_fetch_keeps_only_products_whose_vendor_is_in_the_configured_list():
+    products = [
+        _product(product_id=1, handle="a", vendor="Arc'teryx"),
+        _product(product_id=2, handle="b", vendor="Patagonia"),
+        _product(product_id=3, handle="c", vendor="Generic Brand"),
+    ]
+    connector = ShopifyCollectionConnector(fetch_json=lambda url: _page(products))
+
+    items = connector.fetch(
+        {"collection_url": _COLLECTION_URL, "vendors": ["Arc'teryx", "Patagonia"]}
+    )
+
+    assert {item.raw_metadata["vendor"] for item in items} == {"Arc'teryx", "Patagonia"}
+
+
+def test_fetch_matches_configured_vendors_case_insensitively_and_trims_whitespace():
+    products = [_product(product_id=1, handle="a", vendor="Arc'teryx")]
+    connector = ShopifyCollectionConnector(fetch_json=lambda url: _page(products))
+
+    items = connector.fetch(
+        {"collection_url": _COLLECTION_URL, "vendors": ["  ARC\'TERYX  "]}
+    )
+
+    assert len(items) == 1
+
+
+def test_fetch_returns_no_items_when_no_product_matches_the_configured_vendors():
+    products = [_product(product_id=1, handle="a", vendor="Generic Brand")]
+    connector = ShopifyCollectionConnector(fetch_json=lambda url: _page(products))
+
+    items = connector.fetch({"collection_url": _COLLECTION_URL, "vendors": ["Arc'teryx"]})
+
+    assert items == []
+
+
+def test_fetch_does_not_filter_when_vendors_is_absent_or_empty():
+    products = [_product(product_id=1, handle="a", vendor="Generic Brand")]
+
+    for config in (
+        {"collection_url": _COLLECTION_URL},
+        {"collection_url": _COLLECTION_URL, "vendors": []},
+    ):
+        connector = ShopifyCollectionConnector(fetch_json=lambda url: _page(products))
+        items = connector.fetch(config)
+        assert len(items) == 1
+
 
 def test_fetch_pages_until_a_short_page_signals_the_last_page():
     full_page = [_product(product_id=i) for i in range(250)]
@@ -305,6 +374,29 @@ def test_fetch_pages_until_a_short_page_signals_the_last_page():
     )
     assert calls == [1, 2]
     assert len(items) == 251
+
+
+def test_fetch_still_pages_by_the_true_page_size_when_a_vendor_filter_would_shrink_a_page():
+    # A vendor filter must be applied only after every page is collected -- applying it per-page
+    # could make an early, full page look short once filtered and stop pagination too soon.
+    full_page = [
+        _product(product_id=i, vendor="Arc'teryx" if i == 0 else "Other")
+        for i in range(250)
+    ]
+    short_page = [_product(product_id=1000, vendor="Arc'teryx")]
+    pages = {1: full_page, 2: short_page}
+    calls = []
+
+    def fetch_json(url):
+        page = int(parse_qs(urlparse(url).query)["page"][0])
+        calls.append(page)
+        return _page(pages.get(page, []))
+
+    items = ShopifyCollectionConnector(fetch_json=fetch_json).fetch(
+        {"collection_url": _COLLECTION_URL, "vendors": ["Arc'teryx"]}
+    )
+    assert calls == [1, 2]
+    assert len(items) == 2
 
 
 def test_fetch_stops_at_an_empty_page_without_requesting_further_pages():
