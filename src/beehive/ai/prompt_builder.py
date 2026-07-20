@@ -106,8 +106,10 @@ concrete finding, decision, change, number, or consequence -- never a topic desc
 opinion, or allegation rather than a settled fact, attribute it to its source (e.g. "X
 predicts...", "Y alleges...") instead of stating it as fact. If the title and body give too
 little evidence to support a firm claim, say so plainly (e.g. "unconfirmed" or "unclear from
-the report") rather than inventing specifics. rationale is <= 15 words in {language.llm_name}
-explaining the score.
+the report") rather than inventing specifics. If the profile above prescribes its own required
+output format for the summary instead (e.g. labeled fields, bracket markers like "【brand】", a
+fixed template), follow that format exactly in place of the conclusion-first-sentence default.
+rationale is <= 15 words in {language.llm_name} explaining the score.
 
 ```json
 {{
@@ -175,8 +177,12 @@ number exactly; every position number must appear exactly once. score is 0-100. 
 concise, conclusion-first sentence in {language.llm_name} (<= 300 chars) that states the
 concrete price and, if on sale, the discount (e.g. "60 (was 149.99, 60% off), in stock.")
 using only the numbers given -- never invent a currency symbol or a discount that isn't
-stated. rationale is <= 15 words in {language.llm_name} explaining how well it matches the
-request.
+stated. If the shopping request above prescribes its own required output format for the
+summary instead (e.g. labeled fields, bracket markers like "【brand】", a fixed template),
+follow that format exactly in place of the conclusion-first-sentence default, still using
+only the numbers/facts given and never inventing a currency symbol, discount, or detail that
+isn't stated. rationale is <= 15 words in {language.llm_name} explaining how well it matches
+the request.
 
 ```json
 {{

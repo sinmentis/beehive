@@ -71,6 +71,13 @@ def test_prompt_requires_one_conclusion_first_summary_sentence_in_english():
     assert "This article discusses" in prompt  # named as the banned phrasing
 
 
+def test_prompt_lets_profile_override_summary_format():
+    prompt = build_ranking_prompt("profile", [], [], _EN)
+    normalized = " ".join(prompt.split())
+    assert "prescribes its own required output format for the summary" in normalized
+    assert "follow that format exactly" in normalized
+
+
 def test_prompt_requires_attribution_for_forecasts_opinions_allegations():
     prompt = build_ranking_prompt("profile", [], [], _EN)
     assert "forecast" in prompt.lower() and "allegation" in prompt.lower()
@@ -153,6 +160,13 @@ def test_monitor_prompt_reaches_every_supported_language_llm_name():
     for language in SUPPORTED_LANGUAGES:
         prompt = build_monitor_ranking_prompt("profile", [], language)
         assert language.llm_name in prompt
+
+
+def test_monitor_prompt_lets_shopping_request_override_summary_format():
+    prompt = build_monitor_ranking_prompt("profile", [], _EN)
+    normalized = " ".join(prompt.split())
+    assert "prescribes its own required output format for the summary" in normalized
+    assert "follow that format exactly" in normalized
 
 
 def test_monitor_prompt_formats_prices_without_scientific_notation():
