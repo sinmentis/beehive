@@ -67,7 +67,7 @@
           <span class="channel-admin-name" role="cell">
             <strong>{{ channel.name }}</strong>
             {% if channel.kind == 'monitor' %}<span class="kind-badge">🔔 {{ t('web.admin.settings.kind_badge_monitor') }}</span>{% endif %}
-            <small>{{ channel.fetch_stats_label or t('web.admin.settings.recipient_label', email=(channel.effective_email or t('web.admin.settings.not_configured'))) }}</small>
+            <small>{{ channel.fetch_stats_label }}</small>
             {% if triggered == channel.id %}<em class="trigger-flash" role="status">{{ t('web.admin.settings.trigger_flash') }}</em>{% endif %}
           </span>
           <span role="cell">{{ t('web.admin.settings.source_count', count=channel.source_count) }}</span>
@@ -75,7 +75,6 @@
           <span role="cell" title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>
           <span class="channel-edit-cell" role="cell">
             <a class="channel-edit-link" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.settings.edit_channel') }}</a>
-            <button class="text-action" type="submit" formaction="/admin/channels/{{ channel.id }}/duplicate">{{ t('web.admin.channel_edit.duplicate') }}</button>
           </span>
         </div>
         {% endfor %}

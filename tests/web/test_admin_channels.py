@@ -600,13 +600,13 @@ def test_edit_channel_page_shows_duplicate_button(authed_client, db_path):
     assert f'/admin/channels/{channel_id}/duplicate' in resp.text
 
 
-def test_channels_list_shows_duplicate_action(authed_client, db_path):
+def test_channels_list_does_not_show_duplicate_action(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
     resp = authed_client.get("/admin/")
-    assert f'formaction="/admin/channels/{channel_id}/duplicate"' in resp.text
+    assert f'formaction="/admin/channels/{channel_id}/duplicate"' not in resp.text
 
 
 def test_edit_channel_page_shows_clear_data_success_flash(authed_client, db_path):
@@ -819,7 +819,7 @@ def test_admin_channels_list_shows_fetch_stats(authed_client, db_path):
     assert "50" in resp.text and "20" in resp.text and "40%" in resp.text
 
 
-def test_channels_list_shows_effective_recipient(
+def test_channels_list_does_not_show_effective_recipient(
     authed_client, db_path, monkeypatch,
 ):
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
@@ -834,8 +834,8 @@ def test_channels_list_shows_effective_recipient(
 
     response = authed_client.get("/admin/")
     assert response.status_code == 200
-    assert "fallback@example.com" in response.text
-    assert "channel@example.com" in response.text
+    assert "fallback@example.com" not in response.text
+    assert "channel@example.com" not in response.text
 
 
 def test_edit_channel_form_shows_override_and_effective_recipient(

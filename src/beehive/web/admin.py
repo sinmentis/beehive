@@ -230,16 +230,11 @@ def _resolve_default_for_admin(
 
 def _build_admin_channel_rows(
     conn: sqlite3.Connection,
-    default_recipient: ResolvedRecipient,
     t: Localizer,
 ) -> list[dict]:
     channels = []
     for channel in list_channels(conn):
         sources = list_sources(conn, channel["id"])
-        try:
-            recipient = resolve_channel_email(channel, default_recipient).address
-        except EmailConfigurationError:
-            recipient = None
         channels.append({
             "id": channel["id"],
             "name": channel["name"],
@@ -250,7 +245,6 @@ def _build_admin_channel_rows(
             "freshness_label": freshness_label(sources, t),
             "freshness_exact_label": freshness_exact_time(sources),
             "fetch_stats_label": fetch_stats_label(sources, t),
-            "effective_email": recipient,
         })
     return channels
 
@@ -351,7 +345,7 @@ def _render_admin_home_page(
             "default_error": default_error,
             "saved": saved,
             "triggered": triggered,
-            "channels": _build_admin_channel_rows(conn, effective, t),
+            "channels": _build_admin_channel_rows(conn, t),
             "email_groups": _build_admin_email_group_rows(conn, effective, t),
             "languages": SUPPORTED_LANGUAGES,
             "current_language": t.code,

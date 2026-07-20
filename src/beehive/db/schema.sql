@@ -4,13 +4,19 @@
 -- (e.g. list_new_since's since_iso parameter). Mixing the two formats made same-UTC-day
 -- string comparisons silently invert, permanently dropping same-day items from the digest.
 -- kind discriminates two fundamentally different Channel behaviors: 'editorial' (the
--- original model -- fetched items are AI-ranked against `profile` and rolled into Home/the
--- Channel page/the daily digest) vs 'monitor' (deterministic state-change watches, e.g. a
--- retail page's price -- items are fetched and deduped exactly the same way, but never AI
--- ranked and never included in the daily digest; see run_channel_cycle and send_daily_digest).
+-- original model -- fetched items are AI-ranked against `profile`, a news-interest profile,
+-- and rolled into Home/the Channel page) vs 'monitor' (deterministic state-change watches,
+-- e.g. a retail page's price -- items are fetched and deduped exactly the same way, and are
+-- still AI-ranked, just against a shopping profile via rank_monitor_channel instead of
+-- rank_channel, and never accrue votes; see run_channel_cycle). Either kind's items can be
+-- included in a periodic digest once its Channel is assigned to an email_groups group (see
+-- below) -- kind does not gate digest inclusion, only how ranking is done.
 -- Set once at creation and treated as immutable afterwards -- the two kinds imply different
 -- meanings for highlight_count/minimum_score/profile, so converting an existing channel in
 -- place would leave those fields in a confusing state.
+-- digest_email only overrides the recipient for this channel's own fetch/AI-ranking failure
+-- alert emails (see run_channel_cycle); periodic digest recipients are controlled entirely by
+-- email_groups.recipient_email instead (see below), independent of this column.
 CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
