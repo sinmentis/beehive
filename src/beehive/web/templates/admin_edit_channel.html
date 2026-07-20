@@ -13,6 +13,7 @@
     </div>
   </header>
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
+  {% if cleared_count is not none %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.clear_data_success', count=cleared_count) }}</p>{% endif %}
 
   <div class="editor-grid">
     <section class="admin-panel">
@@ -98,6 +99,29 @@
       </div>
     </aside>
   </div>
+
+  <section class="danger-zone" aria-labelledby="clear-data-title">
+    <div>
+      <p class="section-kicker" lang="en">Danger zone</p>
+      <h2 id="clear-data-title">{{ t('web.admin.channel_edit.clear_data_heading') }}</h2>
+      <p>{{ t('web.admin.channel_edit.clear_data_warning', channel=channel.name) }}</p>
+    </div>
+    <details class="delete-confirm">
+      <summary class="btn danger">
+        <span class="closed-label">{{ t('web.admin.channel_edit.clear_data_action') }}</span>
+        <span class="open-label">{{ t('web.admin.channel_edit.clear_data_cancel') }}</span>
+      </summary>
+      <div class="confirm">
+        <p>{{ t('web.admin.channel_edit.clear_data_confirm', channel=channel.name) }}</p>
+        <div class="confirm-actions">
+          <form method="post" action="/admin/channels/{{ channel.id }}/clear-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.clear_data_confirm_action') }}</button>
+          </form>
+        </div>
+      </div>
+    </details>
+  </section>
 
   <section class="danger-zone" aria-labelledby="danger-title">
     <div>

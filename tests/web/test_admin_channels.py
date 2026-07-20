@@ -5,10 +5,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
+from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
+from beehive.db.items import insert_new
 from beehive.db.sessions import create_session
-from beehive.db.sources import create_source
+from beehive.db.sources import create_source, record_fetch_success
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
 from scripts.set_admin_password import set_admin_password
@@ -433,6 +435,101 @@ def test_delete_channel_rejects_wrong_csrf(authed_client, db_path):
     conn = connect(db_path)
     assert conn.execute("SELECT COUNT(*) FROM channels WHERE id = ?",
                          (channel_id,)).fetchone()[0] == 1
+
+
+def test_clear_channel_data_requires_session(db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    client = TestClient(create_app(db_path, session_secret="test-secret"),
+                         follow_redirects=False)
+    resp = client.post(f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "x"})
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin/login"
+
+
+def test_clear_channel_data_rejects_wrong_csrf(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.post(f"/admin/channels/{channel_id}/clear-data",
+                               data={"csrf_token": "wrong"})
+    assert resp.status_code == 403
+
+
+def test_clear_channel_data_404_for_missing_channel(authed_client):
+    resp = authed_client.post("/admin/channels/999/clear-data", data={"csrf_token": "csrf1"})
+    assert resp.status_code == 404
+
+
+def test_clear_channel_data_deletes_items_and_redirects(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(conn, source_id, RawItem(external_id="t1", title="One", url="https://x/1"))
+    insert_new(conn, source_id, RawItem(external_id="t2", title="Two", url="https://x/2"))
+    conn.close()
+
+    resp = authed_client.post(f"/admin/channels/{channel_id}/clear-data",
+                               data={"csrf_token": "csrf1"})
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit?cleared=2"
+
+    conn = connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+
+
+def test_clear_channel_data_resets_source_fetch_bookkeeping(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_success(conn, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20)
+    conn.close()
+
+    authed_client.post(f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"})
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
+    assert row["last_fetch_at"] is None
+    assert row["last_fetch_raw_count"] is None
+    assert row["last_fetch_new_count"] is None
+
+
+def test_clear_channel_data_does_not_delete_the_channel_or_sources(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(conn, source_id, RawItem(external_id="t1", title="One", url="https://x/1"))
+    conn.close()
+
+    authed_client.post(f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"})
+
+    conn = connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM channels WHERE id = ?",
+                         (channel_id,)).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM sources WHERE id = ?",
+                         (source_id,)).fetchone()[0] == 1
+
+
+def test_edit_channel_page_shows_clear_data_success_flash(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit?cleared=3")
+    assert "Cleared 3 items." in resp.text
+
+
+def test_edit_channel_page_no_flash_without_cleared_param(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert "Cleared" not in resp.text
 
 
 def test_trigger_fetch_requires_session(db_path):

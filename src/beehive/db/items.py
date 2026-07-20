@@ -152,6 +152,19 @@ def mark_channel_read(conn: sqlite3.Connection, channel_id: int) -> None:
     conn.commit()
 
 
+def delete_by_channel(conn: sqlite3.Connection, channel_id: int) -> int:
+    """Wipes every item fetched under this Channel (e.g. so an admin can re-test a changed
+    ranking profile against a clean slate). Votes, deep-read state, and summary-rewrite log
+    rows all cascade away with their parent item via ON DELETE CASCADE. Returns the number of
+    items removed so the caller can surface it in a confirmation message."""
+    cur = conn.execute(
+        "DELETE FROM items WHERE source_id IN "
+        "(SELECT id FROM sources WHERE channel_id = ?)",
+        (channel_id,))
+    conn.commit()
+    return cur.rowcount
+
+
 def list_archive(conn: sqlite3.Connection, channel_id: int | None = None,
                   date_from: str | None = None, date_to: str | None = None,
                   read_state: str | None = None, search: str | None = None, page: int = 1,

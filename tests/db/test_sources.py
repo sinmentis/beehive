@@ -7,7 +7,8 @@ from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import insert_new
 from beehive.db.sources import (create_source, delete_source, get_source, list_by_channel,
-                                    record_fetch_error, record_fetch_success)
+                                    record_fetch_error, record_fetch_success,
+                                    reset_fetch_state_by_channel)
 
 
 @pytest.fixture
@@ -79,3 +80,31 @@ def test_record_fetch_success_stores_raw_and_new_counts(conn, channel_id):
     row = list_by_channel(conn, channel_id)[0]
     assert row["last_fetch_raw_count"] == 50
     assert row["last_fetch_new_count"] == 20
+
+
+def test_reset_fetch_state_by_channel_clears_all_fetch_bookkeeping(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_success(conn, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20)
+    record_fetch_error(conn, source_id, "boom", "2026-07-09T06:00:00")
+
+    reset_fetch_state_by_channel(conn, channel_id)
+
+    row = list_by_channel(conn, channel_id)[0]
+    assert row["last_fetch_at"] is None
+    assert row["last_fetch_error"] is None
+    assert row["last_fetch_raw_count"] is None
+    assert row["last_fetch_new_count"] is None
+
+
+def test_reset_fetch_state_by_channel_does_not_affect_other_channels(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_success(conn, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20)
+    other_channel_id = create_channel(conn, "Other Channel", "profile")
+    other_source_id = create_source(conn, other_channel_id, "reddit_subreddit", {"subreddit": "y"})
+    record_fetch_success(conn, other_source_id, "2026-07-09T03:00:00", raw_count=5, new_count=1)
+
+    reset_fetch_state_by_channel(conn, channel_id)
+
+    other_row = list_by_channel(conn, other_channel_id)[0]
+    assert other_row["last_fetch_at"] == "2026-07-09T03:00:00"
+    assert other_row["last_fetch_raw_count"] == 5

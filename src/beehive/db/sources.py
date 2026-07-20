@@ -5,7 +5,9 @@ record_fetch_success, left untouched on failure) and back the per-fetch stats li
 last_fetch_error is set by
 record_fetch_error and cleared by the next successful fetch, and is what the digest reads
 to render the "this source is currently failing" warning line (per the per-Source failure
-isolation in ADR-0002 — a failure never touches last_fetch_at)."""
+isolation in ADR-0002 — a failure never touches last_fetch_at). The one deliberate exception
+to all of the above is reset_fetch_state_by_channel, which blanks every one of these fields
+at once as part of the admin "clear channel data" action."""
 from __future__ import annotations
 
 import json
@@ -48,4 +50,16 @@ def record_fetch_error(conn: sqlite3.Connection, source_id: int, error: str,
 
 def delete_source(conn: sqlite3.Connection, source_id: int) -> None:
     conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+    conn.commit()
+
+
+def reset_fetch_state_by_channel(conn: sqlite3.Connection, channel_id: int) -> None:
+    """Clears every Source's fetch bookkeeping for this Channel, pairing with
+    items.delete_by_channel so a "clear channel data" admin action leaves no stale
+    last_fetch_*/error/count fields behind -- the next fetch (manual or scheduled) starts as
+    if the Sources were freshly added."""
+    conn.execute(
+        "UPDATE sources SET last_fetch_at = NULL, last_fetch_error = NULL, "
+        "last_fetch_raw_count = NULL, last_fetch_new_count = NULL WHERE channel_id = ?",
+        (channel_id,))
     conn.commit()

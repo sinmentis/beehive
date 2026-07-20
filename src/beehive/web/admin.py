@@ -41,12 +41,14 @@ from beehive.db.channels import (
     list_channels,
     update_channel,
 )
+from beehive.db.items import delete_by_channel as delete_items_by_channel
 from beehive.db.sessions import create_session, delete_session
 from beehive.db.sources import (
     create_source,
     delete_source,
     get_source,
     list_by_channel as list_sources,
+    reset_fetch_state_by_channel,
 )
 from beehive.email_routing import (
     EmailConfigurationError,
@@ -629,6 +631,7 @@ def _render_edit_channel_page(
     effective_channel: dict | None = None,
     error: str | None = None,
     status_code: int = 200,
+    cleared_count: int | None = None,
 ) -> HTMLResponse:
     sources = [
         {
@@ -658,20 +661,21 @@ def _render_edit_channel_page(
             "effective_email": effective,
             "error": error,
             "default_error": default_error,
+            "cleared_count": cleared_count,
         },
         status_code=status_code,
     )
 
 
 @router.get("/channels/{channel_id}/edit", response_class=HTMLResponse)
-def edit_channel_form(channel_id: int, request: Request,
+def edit_channel_form(channel_id: int, request: Request, cleared: int | None = None,
                        session: dict = Depends(require_admin_session),
                        conn: sqlite3.Connection = Depends(get_db),
                        t: Localizer = Depends(get_localizer)):
     channel = get_channel(conn, channel_id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-    return _render_edit_channel_page(request, conn, session, channel, t)
+    return _render_edit_channel_page(request, conn, session, channel, t, cleared_count=cleared)
 
 
 @router.post("/channels/{channel_id}/edit")
@@ -720,6 +724,21 @@ def edit_channel_submit(channel_id: int, request: Request,
         minimum_score=minimum_score,
     )
     return RedirectResponse(f"/admin/channels/{channel_id}/edit", status_code=303)
+
+
+@router.post("/channels/{channel_id}/clear-data")
+def clear_channel_data_submit(channel_id: int, csrf_token: str = Form(...),
+                               session: dict = Depends(require_admin_session),
+                               conn: sqlite3.Connection = Depends(get_db)):
+    verify_csrf(session, csrf_token)
+    if get_channel(conn, channel_id) is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    cleared_count = delete_items_by_channel(conn, channel_id)
+    reset_fetch_state_by_channel(conn, channel_id)
+    return RedirectResponse(
+        f"/admin/channels/{channel_id}/edit?cleared={cleared_count}",
+        status_code=303,
+    )
 
 
 @router.post("/channels/{channel_id}/delete")

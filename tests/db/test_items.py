@@ -5,12 +5,14 @@ import pytest
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
-from beehive.db.items import (count_dashboard_signals, get_item, insert_new, list_archive,
-                                  list_by_channel, list_dashboard_highlights, list_new_since,
-                                  list_unread_rewrite_candidates, mark_channel_read,
-                                  mark_item_opened, mark_read, revert_ai_summary_if_unchanged,
-                                  update_ai_ranking, update_ai_ranking_by_id, update_best_comment)
+from beehive.db.items import (count_dashboard_signals, delete_by_channel, get_item, insert_new,
+                                  list_archive, list_by_channel, list_dashboard_highlights,
+                                  list_new_since, list_unread_rewrite_candidates,
+                                  mark_channel_read, mark_item_opened, mark_read,
+                                  revert_ai_summary_if_unchanged, update_ai_ranking,
+                                  update_ai_ranking_by_id, update_best_comment)
 from beehive.db.sources import create_source
+from beehive.db.votes import upsert_vote
 
 
 @pytest.fixture
@@ -610,3 +612,48 @@ def test_revert_ai_summary_if_unchanged_is_a_noop_when_value_changed_since(conn,
 
     assert reverted is False
     assert get_item(conn, item_id)["ai_summary"] == "someone else's edit"
+
+
+def test_delete_by_channel_removes_every_item_in_channel(conn, source_id):
+    insert_new(conn, source_id, _raw_item("t1"))
+    insert_new(conn, source_id, _raw_item("t2"))
+    channel_id = conn.execute(
+        "SELECT channel_id FROM sources WHERE id=?", (source_id,)).fetchone()[0]
+
+    deleted = delete_by_channel(conn, channel_id)
+
+    assert deleted == 2
+    assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+
+
+def test_delete_by_channel_does_not_affect_other_channels(conn, source_id):
+    other_channel_id = create_channel(conn, "Other Channel", "profile")
+    other_source_id = create_source(conn, other_channel_id, "reddit_subreddit", {"subreddit": "y"})
+    insert_new(conn, source_id, _raw_item("t1"))
+    insert_new(conn, other_source_id, _raw_item("t2"))
+    channel_id = conn.execute(
+        "SELECT channel_id FROM sources WHERE id=?", (source_id,)).fetchone()[0]
+
+    delete_by_channel(conn, channel_id)
+
+    remaining = conn.execute("SELECT external_id FROM items").fetchall()
+    assert [r["external_id"] for r in remaining] == ["t2"]
+
+
+def test_delete_by_channel_returns_zero_when_channel_has_no_items(conn, source_id):
+    channel_id = conn.execute(
+        "SELECT channel_id FROM sources WHERE id=?", (source_id,)).fetchone()[0]
+
+    assert delete_by_channel(conn, channel_id) == 0
+
+
+def test_delete_by_channel_cascades_to_votes(conn, source_id):
+    insert_new(conn, source_id, _raw_item("t1"))
+    item_id = conn.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+    upsert_vote(conn, item_id, 1)
+    channel_id = conn.execute(
+        "SELECT channel_id FROM sources WHERE id=?", (source_id,)).fetchone()[0]
+
+    delete_by_channel(conn, channel_id)
+
+    assert conn.execute("SELECT COUNT(*) FROM votes").fetchone()[0] == 0
