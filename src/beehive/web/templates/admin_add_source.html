@@ -77,6 +77,12 @@
           <option value="recent" {{ "selected" if hn_sort == "recent" else "" }}>{{ t('web.admin.source_new.sort_recent') }}</option>
         </select>
       </div>
+      <div class="field config-shopify_collection">
+        <label for="shopify-collection-url">{{ t('web.admin.source_new.shopify_collection_url_label') }}</label>
+        <input id="shopify-collection-url" type="url" name="shopify_collection_url"
+               value="{{ shopify_collection_url }}" placeholder="https://arcteryx.co.nz/collections/outlet">
+        <p class="hint">{{ t('web.admin.source_new.shopify_collection_url_hint') }}</p>
+      </div>
       <div class="actions">
         <button class="btn primary" type="submit">{{ t('web.admin.source_new.submit') }}</button>
         <a class="btn ghost" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.channel_new.cancel') }}</a>

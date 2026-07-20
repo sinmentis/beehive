@@ -15,7 +15,13 @@ import json
 import os
 from dataclasses import asdict
 
-from beehive.connectors import google_news, hackernews, official_feeds, reddit  # noqa: F401  (registers the connectors)
+from beehive.connectors import (  # noqa: F401  (registers the connectors)
+    google_news,
+    hackernews,
+    official_feeds,
+    reddit,
+    shopify_collection,
+)
 from beehive.db.channels import get_channel, list_channels
 from beehive.db.connection import connect, init_schema
 from beehive.collector.manual_trigger import consume_pending_manual_triggers
