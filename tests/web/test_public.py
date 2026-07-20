@@ -196,6 +196,43 @@ def test_channel_drilldown_shopify_item_not_on_sale_shows_vendor(conn, client):
     assert "Arc&#39;teryx" in resp.text or "Arc'teryx" in resp.text
 
 
+def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Land Sea Sale", "watch for price drops", kind="monitor")
+    source_id = create_source(c, channel_id, "land_sea_collection",
+                               {"collection_url": "https://www.land-sea.co.nz/sale"})
+    insert_new(c, source_id, RawItem(
+        external_id="1001:152.00", title="Teva Women's Tirra",
+        url="https://www.land-sea.co.nz/product/1001/teva-womens-tirra",
+        raw_metadata={"price": 152.0, "compare_at_price": 189.0, "on_sale": True,
+                      "available": True, "vendor": "Teva", "product_type": None,
+                      "tags": []}))
+    update_ai_ranking(c, source_id, "1001:152.00", score=91, summary="On sale", rationale="r")
+
+    resp = client.get(f"/channels/{channel_id}")
+    assert resp.status_code == 200
+    assert "land-sea.co.nz/sale" in resp.text
+    assert "20% off" in resp.text  # round((189-152)/189*100)
+
+
+def test_channel_drilldown_land_sea_collection_item_not_on_sale_shows_vendor(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Land Sea Sale", "watch for price drops", kind="monitor")
+    source_id = create_source(c, channel_id, "land_sea_collection",
+                               {"collection_url": "https://www.land-sea.co.nz/sale"})
+    insert_new(c, source_id, RawItem(
+        external_id="1002:60.00", title="Teva Sandal",
+        url="https://www.land-sea.co.nz/product/1002/teva-sandal",
+        raw_metadata={"price": 60.0, "compare_at_price": None, "on_sale": False,
+                      "available": True, "vendor": "Teva", "product_type": None,
+                      "tags": []}))
+    update_ai_ranking(c, source_id, "1002:60.00", score=40, summary="Regular price", rationale="r")
+
+    resp = client.get(f"/channels/{channel_id}")
+    assert resp.status_code == 200
+    assert "Teva" in resp.text
+
+
 def test_channel_drilldown_shows_google_news_source_label_and_summary(conn, client):
     _, c = conn
     channel_id = create_channel(c, "Tech News", "AI industry news")

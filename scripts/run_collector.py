@@ -18,6 +18,7 @@ from dataclasses import asdict
 from beehive.connectors import (  # noqa: F401  (registers the connectors)
     google_news,
     hackernews,
+    land_sea_collection,
     official_feeds,
     reddit,
     shopify_collection,

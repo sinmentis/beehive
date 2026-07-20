@@ -45,7 +45,8 @@ def _source_label(item: dict, t: Localizer) -> str:
         return f"r/{config['subreddit']}"
     if item["source_type"] == "google_news_query":
         return f'"{config["query"]}"'
-    if item["source_type"] == "shopify_collection":
+    if item["source_type"] in {"shopify_collection", "land_sea_collection"}:
+        # Both connectors store the same {"collection_url": ...} config shape.
         url = config.get("collection_url", "")
         parsed = urlparse(url)
         return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
@@ -73,12 +74,12 @@ def _engagement_label(item: dict, t: Localizer) -> str:
         )
     if item["source_type"] in {"rbnz_news", "nz_government_news", "federal_reserve_news"}:
         return item["raw_metadata"].get("category", "")
-    if item["source_type"] == "shopify_collection":
+    if item["source_type"] in {"shopify_collection", "land_sea_collection"}:
         metadata = item["raw_metadata"]
         price = metadata.get("price")
         compare_at_price = metadata.get("compare_at_price")
-        # Shopify's public collection JSON never exposes a currency code (confirmed against
-        # real stores), so this never hardcodes a currency symbol -- a percent-off figure is
+        # Neither connector's product data exposes a currency code (confirmed against real
+        # stores), so this never hardcodes a currency symbol -- a percent-off figure is
         # the only currency-agnostic discount signal available.
         if metadata.get("on_sale") and compare_at_price and price is not None:
             percent_off = round((compare_at_price - price) / compare_at_price * 100)

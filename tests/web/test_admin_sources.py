@@ -479,3 +479,95 @@ def test_edit_channel_shows_shopify_collection_label_and_icon(authed_client, db_
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert "arcteryx.co.nz/collections/outlet" in html
     assert "🛍️" in html
+
+
+def test_new_source_form_lists_land_sea_collection_option(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
+    assert 'value="land_sea_collection"' in html
+    assert "Land &amp; Sea — Listing watch" in html
+    assert "🌊" in html
+    assert 'id="land-sea-collection-url"' in html
+
+
+def test_create_land_sea_collection_source_succeeds_and_redirects(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    conn.close()
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={
+            "type": "land_sea_collection",
+            "land_sea_collection_url": "https://www.land-sea.co.nz/sale",
+            "csrf_token": "csrf1",
+        },
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit"
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    assert row["type"] == "land_sea_collection"
+    assert json.loads(row["config"]) == {
+        "collection_url": "https://www.land-sea.co.nz/sale",
+    }
+
+
+def test_create_land_sea_collection_source_rejects_empty_url(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    conn.close()
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "land_sea_collection", "land_sea_collection_url": "", "csrf_token": "csrf1"},
+    )
+    assert resp.status_code == 400
+    assert "Please enter a listing URL" in resp.text
+
+    conn = connect(db_path)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()[0] == 0
+
+
+def test_create_land_sea_collection_source_rejects_invalid_url(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    conn.close()
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={
+            "type": "land_sea_collection",
+            "land_sea_collection_url": "not-a-url",
+            "csrf_token": "csrf1",
+        },
+    )
+    assert resp.status_code == 400
+    assert "Please enter a valid http(s) URL" in resp.text
+
+    conn = connect(db_path)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()[0] == 0
+
+
+def test_edit_channel_shows_land_sea_collection_label_and_icon(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
+    create_source(
+        conn,
+        channel_id,
+        "land_sea_collection",
+        {"collection_url": "https://www.land-sea.co.nz/sale"},
+    )
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
+    assert "land-sea.co.nz/sale" in html
+    assert "🌊" in html

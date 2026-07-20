@@ -26,6 +26,7 @@ from beehive.collector.manual_trigger import request_channel_fetch, request_chan
 from beehive.connectors import (  # noqa: F401 (registers the connectors)
     google_news,
     hackernews,
+    land_sea_collection,
     official_feeds,
     reddit,
     shopify_collection,
@@ -527,6 +528,7 @@ _SOURCE_TYPE_ICONS = {
     "nz_government_news": official_feed_icon("nz_government_news"),
     "federal_reserve_news": official_feed_icon("federal_reserve_news"),
     "shopify_collection": "🛍️",
+    "land_sea_collection": "🌊",
 }
 
 
@@ -584,6 +586,12 @@ def _source_type_options(t: Localizer) -> tuple[dict, ...]:
             "icon": _SOURCE_TYPE_ICONS["shopify_collection"],
             "label": t.text("web.source_type.shopify_collection"),
         },
+        {
+            "type_key": "land_sea_collection",
+            "input_id": "type-land-sea",
+            "icon": _SOURCE_TYPE_ICONS["land_sea_collection"],
+            "label": t.text("web.source_type.land_sea_collection"),
+        },
     )
 
 
@@ -593,7 +601,8 @@ def _admin_source_label(source: dict, t: Localizer) -> str:
         return f"r/{config['subreddit']}"
     if source["type"] == "google_news_query":
         return f'"{config["query"]}"'
-    if source["type"] == "shopify_collection":
+    if source["type"] in {"shopify_collection", "land_sea_collection"}:
+        # Both connectors store the same {"collection_url": ...} config shape.
         url = config.get("collection_url", "")
         parsed = urlparse(url)
         return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
@@ -731,6 +740,10 @@ _SOURCE_ERROR_KEYS = {
         "web.source_error.shopify_collection_url_required",
     "shopify_collection config needs 'collection_url' to be a valid http(s) URL":
         "web.source_error.shopify_collection_url_invalid",
+    "land_sea_collection config needs a non-empty 'collection_url' key":
+        "web.source_error.land_sea_collection_url_required",
+    "land_sea_collection config needs 'collection_url' to be a valid http(s) URL":
+        "web.source_error.land_sea_collection_url_invalid",
 }
 
 
@@ -753,6 +766,7 @@ def _source_config_from_form(
     hn_query: str,
     hn_sort: str,
     shopify_collection_url: str,
+    land_sea_collection_url: str,
 ) -> dict:
     if source_type == "reddit_subreddit":
         return {"subreddit": subreddit}
@@ -764,6 +778,8 @@ def _source_config_from_form(
         return {"query": hn_query, "sort": hn_sort}
     if source_type == "shopify_collection":
         return {"collection_url": shopify_collection_url}
+    if source_type == "land_sea_collection":
+        return {"collection_url": land_sea_collection_url}
     if source_type in {"rbnz_news", "nz_government_news", "federal_reserve_news"}:
         return {}
     raise ValueError(f"unknown Source type: {source_type!r}")
@@ -787,6 +803,7 @@ def _render_new_source_page(
         "hn_query": "",
         "hn_sort": "relevance",
         "shopify_collection_url": "",
+        "land_sea_collection_url": "",
         **(form_values or {}),
     }
     templates = request.app.state.templates
@@ -822,6 +839,7 @@ def new_source_submit(channel_id: int, request: Request, type: str = Form(...),
                        hn_feed: str = Form("top"), hn_query: str = Form(""),
                        hn_sort: str = Form("relevance"),
                        shopify_collection_url: str = Form(""),
+                       land_sea_collection_url: str = Form(""),
                        csrf_token: str = Form(...),
                        session: dict = Depends(require_admin_session),
                        conn: sqlite3.Connection = Depends(get_db),
@@ -837,6 +855,7 @@ def new_source_submit(channel_id: int, request: Request, type: str = Form(...),
         "hn_query": hn_query,
         "hn_sort": hn_sort,
         "shopify_collection_url": shopify_collection_url,
+        "land_sea_collection_url": land_sea_collection_url,
     }
     try:
         config = _source_config_from_form(type, **form_values)

@@ -1028,18 +1028,20 @@ select{
 }
 .input-with-prefix{display:flex}
 .input-with-prefix input,.input-with-prefix select{border-radius:0 var(--radius-sm) var(--radius-sm) 0}
-.config-google_news_query,.config-hackernews_stories,.config-hackernews_query,.config-shopify_collection{display:none}
+.config-google_news_query,.config-hackernews_stories,.config-hackernews_query,.config-shopify_collection,.config-land_sea_collection{display:none}
 .source-form:has(#type-google:checked) .config-reddit_subreddit,
 .source-form:has(#type-hn-stories:checked) .config-reddit_subreddit,
 .source-form:has(#type-hn-query:checked) .config-reddit_subreddit,
 .source-form:has(#type-rbnz:checked) .config-reddit_subreddit,
 .source-form:has(#type-nz-gov:checked) .config-reddit_subreddit,
 .source-form:has(#type-fed:checked) .config-reddit_subreddit,
-.source-form:has(#type-shopify:checked) .config-reddit_subreddit{display:none}
+.source-form:has(#type-shopify:checked) .config-reddit_subreddit,
+.source-form:has(#type-land-sea:checked) .config-reddit_subreddit{display:none}
 .source-form:has(#type-google:checked) .config-google_news_query{display:block}
 .source-form:has(#type-hn-stories:checked) .config-hackernews_stories{display:block}
 .source-form:has(#type-hn-query:checked) .config-hackernews_query{display:block}
 .source-form:has(#type-shopify:checked) .config-shopify_collection{display:block}
+.source-form:has(#type-land-sea:checked) .config-land_sea_collection{display:block}
 
 .kind-only-monitor{display:none}
 .channel-form:has(#kind-monitor:checked) .kind-only-monitor{display:block}
