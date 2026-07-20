@@ -4,6 +4,8 @@ from beehive.connectors.base import RawItem
 from beehive.db.channels import (create_channel, delete_channel, duplicate_channel, get_channel,
                                      list_channels, mark_digest_sent, update_channel)
 from beehive.db.connection import connect, init_schema
+from beehive.db.email_groups import (assign_channel, create_email_group, get_channel_group,
+                                      list_member_channels)
 from beehive.db.items import insert_new
 from beehive.db.sources import create_source, list_by_channel
 
@@ -231,3 +233,22 @@ def test_duplicate_channel_does_not_copy_items_or_digest_state(conn):
 
 def test_duplicate_channel_returns_none_for_missing_channel(conn):
     assert duplicate_channel(conn, 999) is None
+
+
+def test_duplicate_channel_copies_email_group_membership(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    group_id = create_email_group(conn, "Weekly roundup")
+    assign_channel(conn, group_id, channel_id)
+
+    new_id = duplicate_channel(conn, channel_id)
+
+    assert get_channel_group(conn, new_id)["id"] == group_id
+    assert {c["id"] for c in list_member_channels(conn, group_id)} == {channel_id, new_id}
+
+
+def test_duplicate_channel_without_a_group_leaves_the_copy_ungrouped(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+
+    new_id = duplicate_channel(conn, channel_id)
+
+    assert get_channel_group(conn, new_id) is None

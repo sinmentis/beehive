@@ -2300,6 +2300,17 @@ select{
 .research-session-link strong{font-family:var(--font-display);font-size:1.05rem;font-weight:550;letter-spacing:-.01em}
 .research-session-status{flex:none;color:var(--muted);font-size:.7rem;font-weight:650;text-transform:uppercase;letter-spacing:.04em}
 .research-list-heading{margin-bottom:1.6rem;align-items:end;gap:2rem}
+.email-group-row{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.group-channel-row{
+  display:flex;
+  align-items:center;
+  gap:.6rem;
+  padding:.5rem 0;
+  border-bottom:1px solid var(--border);
+  font-size:.78rem;
+}
+.group-channel-row:last-child{border-bottom:0}
+.group-channel-name{display:flex;align-items:center;gap:.5rem}
 .research-list-heading h1{
   max-width:none;
   font-family:var(--font-sans);

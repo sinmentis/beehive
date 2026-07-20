@@ -1,9 +1,9 @@
 # deploy/quadlet/beehive-digest.timer
 [Unit]
-Description=Send the Beehive daily digest at 08:00 (Pacific/Auckland, host tz)
+Description=Evaluate Beehive email groups hourly (host tz); each group's own send interval decides whether it actually sends
 
 [Timer]
-OnCalendar=*-*-* 08:00:00
+OnCalendar=hourly
 Persistent=true
 Unit=beehive-digest.service
 

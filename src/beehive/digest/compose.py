@@ -1,7 +1,9 @@
-"""Exactly one digest per day regardless of fetch frequency; "new since last
-digest" is decided by the caller (Task 16), which only passes items fetched after the last
-successful send. A Channel with nothing new still renders a reassuring line, never silence —
-this is the direct anti-FOMO mechanism, not filler. render_digest_email (plain text) is a pure
+"""One digest per email-group send, regardless of how often the group's Channels' sources are
+fetched; "new since last digest" is decided by the caller (send_email_group_digests), which only
+passes items fetched after each Channel's own last successful send. A Channel with nothing new
+still renders a reassuring line, never silence — this is the direct anti-FOMO mechanism, not
+filler. The subject is always supplied by the caller (an email group's own subject_template,
+already formatted) rather than derived here. render_digest_email (plain text) is a pure
 function; render_digest_email_html reads the digest_email.html template file from disk via a
 module-level Jinja2 Environment, the one exception to "no I/O" in this module."""
 from __future__ import annotations
@@ -39,9 +41,7 @@ def compose_channel_digest(channel_name: str, new_items: list[dict], source_warn
 
 
 def render_digest_email(channel_digests: list[ChannelDigest], today_iso: str,
-                        localizer: Localizer) -> tuple[str, str]:
-    product = localizer.text("common.product_name")
-    subject = localizer.text("background.digest_title", product=product, date=today_iso)
+                        localizer: Localizer, subject: str) -> tuple[str, str]:
     empty_state = localizer.text("background.digest_empty_state")
     lines = []
     for cd in channel_digests:
@@ -58,14 +58,14 @@ def render_digest_email(channel_digests: list[ChannelDigest], today_iso: str,
 
 
 def render_digest_email_html(channel_digests: list[ChannelDigest], today_iso: str,
-                             localizer: Localizer) -> str:
+                             localizer: Localizer, subject: str) -> str:
     template = _env.get_template("digest_email.html")
     product = localizer.text("common.product_name")
     return template.render(
         channel_digests=channel_digests,
         today_iso=today_iso,
         lang=localizer.html_lang,
-        page_title=localizer.text("background.digest_title", product=product, date=today_iso),
+        page_title=subject,
         header_text=localizer.text("background.digest_header", product=product),
         empty_state_text=localizer.text("background.digest_empty_state"),
     )

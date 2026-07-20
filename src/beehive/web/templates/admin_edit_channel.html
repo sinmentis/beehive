@@ -63,6 +63,15 @@
           </div>
         </div>
         <div class="field">
+          <span class="field-label-static">{{ t('web.admin.channel_edit.group_label') }}</span>
+          {% if current_group %}
+          <p class="kind-static"><a class="channel-edit-link" href="/admin/email-groups/{{ current_group.id }}/edit">📨 {{ current_group.name }}</a></p>
+          {% else %}
+          <p class="hint">{{ t('web.admin.channel_edit.group_none') }} <a class="channel-edit-link" href="/admin/?tab=groups">{{ t('web.admin.channel_edit.manage_groups_link') }}</a></p>
+          {% endif %}
+          <p class="hint">{{ t('web.admin.channel_edit.group_hint') }}</p>
+        </div>
+        <div class="field">
           <label for="digest-email">{{ t('web.admin.channel_edit.email_label') }}</label>
           <input id="digest-email" type="text" inputmode="email" name="digest_email"
                  value="{{ channel.digest_email or '' }}"

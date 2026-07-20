@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from beehive.db.email_groups import assign_channel, get_channel_group
 from beehive.db.sources import create_source, list_by_channel
 
 _KINDS = ("editorial", "monitor")
@@ -138,4 +139,7 @@ def duplicate_channel(conn: sqlite3.Connection, channel_id: int) -> int | None:
         conn.commit()
     for source in list_by_channel(conn, channel_id):
         create_source(conn, new_id, source["type"], json.loads(source["config"]))
+    original_group = get_channel_group(conn, channel_id)
+    if original_group is not None:
+        assign_channel(conn, original_group["id"], new_id)
     return new_id

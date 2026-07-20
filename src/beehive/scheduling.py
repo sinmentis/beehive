@@ -40,6 +40,19 @@ def source_is_due(source: dict, interval_hours: int, now: datetime) -> bool:
     return due_at - _DUE_GRACE <= now.astimezone(timezone.utc)
 
 
+def email_group_is_due(group: dict, now: datetime) -> bool:
+    """Mirrors source_is_due's interval-hours-since-last-run + jitter-absorbing grace window,
+    but for an email group's own send_interval_hours/last_sent_at instead of a source's fetch
+    cadence -- see send_email_group_digests, which calls this once per group on every run of the
+    (now hourly) digest timer to decide whether that group's interval has actually elapsed."""
+    _require_aware(now)
+    last_sent_at = group.get("last_sent_at")
+    if not last_sent_at:
+        return True
+    due_at = _as_aware_utc(last_sent_at) + timedelta(hours=group["send_interval_hours"])
+    return due_at - _DUE_GRACE <= now.astimezone(timezone.utc)
+
+
 def _next_timer_slot_at_or_after(
     target: datetime,
     *,

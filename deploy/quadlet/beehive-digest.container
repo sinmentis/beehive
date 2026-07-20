@@ -1,5 +1,5 @@
 [Unit]
-Description=Beehive daily digest email
+Description=Beehive periodic email group digest
 
 [Container]
 Image=localhost/beehive:latest

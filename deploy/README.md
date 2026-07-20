@@ -5,7 +5,7 @@ process selects its role through a Quadlet unit's `Exec=`:
 
 - an always-on public web app (Dashboard, Channel drill-down, and `/admin/*`),
 - a timer-triggered fetch/AI-rank cycle, and
-- a once-daily digest email job,
+- an hourly-evaluated periodic email group digest job,
 - a queued, owner-triggered article deep-read worker, and
 - an always-on durable Research worker (Research Runs + Research Chat replies, ADR-0009), backed
   by a periodic reconciliation timer.
@@ -29,7 +29,7 @@ the reverse proxy.
 | `quadlet/beehive-web.container` | Always-on web app — `PublishPort=127.0.0.1:8095:8000`, `Restart=always` |
 | `quadlet/beehive-fetch.container` + `.timer` | Fetch → dedup → AI-rank cycle, every 3 hours |
 | `quadlet/beehive-fetch-manual.container` + `.path` | Manual per-Channel trigger — started only when the admin UI writes a trigger marker, never on a timer |
-| `quadlet/beehive-digest.container` + `.timer` | Once-daily digest email, 08:00 Pacific/Auckland |
+| `quadlet/beehive-digest.container` + `.timer` | Hourly evaluation of every custom email group; each group's own send interval decides whether it actually sends that run |
 | `quadlet/beehive-deep-read.container` + `.path` + `.timer` | Bounded article brief worker; the path provides low-latency wakeup and the timer reconciles missed wakeups |
 | `quadlet/beehive-research.container` | Always-on durable Research worker — bounded Research Run + Research Chat pools (ADR-0009), `Restart=always` |
 | `quadlet/beehive-research-reconcile.container` + `.timer` | Oneshot expired-lease recovery sweep, every 5 minutes — backstops the always-on worker after a crash/restart; claims/executes nothing |

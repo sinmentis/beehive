@@ -3,7 +3,7 @@
 
 Every mode shares one image and selects its role through ``--mode``. ``fetch`` runs the scheduled
 per-Channel fetch and AI-rank cycle; ``fetch-channel`` handles one admin-triggered Channel;
-``digest`` sends the daily email; ``deep-read`` drains queued article briefs; the rewrite modes
+``digest`` sends any due periodic email groups; ``deep-read`` drains queued article briefs; the rewrite modes
 migrate or restore existing unread summaries. Connector imports register source adapters before any
 Channel is processed. Every mode initializes the idempotent SQLite schema on startup.
 """
@@ -35,7 +35,7 @@ from beehive.collector.summary_rewrite import (
 from beehive.collector.deep_read_worker import process_deep_read_queue
 from beehive.collector.run_cycle import run_channel_cycle
 from beehive.ai.model_selection import load_model
-from beehive.digest.send import send_daily_digest
+from beehive.digest.send import send_email_group_digests
 from beehive.email_routing import (
     EmailConfigurationError,
     ResolvedRecipient,
@@ -141,7 +141,7 @@ def run_digest(db_path: str) -> None:
     try:
         localizer = load_localizer(conn)
         notifier, default_recipient = _build_delivery_context(conn)
-        send_daily_digest(conn, notifier, default_recipient, localizer)
+        send_email_group_digests(conn, notifier, default_recipient, localizer)
     finally:
         conn.close()
 

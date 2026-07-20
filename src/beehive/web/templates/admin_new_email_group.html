@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.email_group_new', product=t('common.product_name')) }}{% endblock %}
+{% block body_class %}page-admin page-editor{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell form-shell">
+  <p class="crumb"><a href="/admin/?tab=groups">{{ t('web.admin.channel_list_crumb') }}</a></p>
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow" lang="en">Periodic email</p>
+      <h1>{{ t('web.admin.email_group.new_heading') }}</h1>
+      <p class="page-lede">{{ t('web.admin.email_group.new_lede') }}</p>
+    </div>
+  </header>
+  {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
+  <section class="admin-panel">
+    <form method="post" action="/admin/email-groups/new">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field">
+        <label for="new-group-name">{{ t('web.admin.email_group.name_label') }}</label>
+        <input id="new-group-name" type="text" name="name" value="{{ name }}" placeholder="{{ t('web.admin.email_group.name_placeholder') }}" required autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="new-group-subject">{{ t('web.admin.email_group.subject_label') }}</label>
+        <input id="new-group-subject" type="text" name="subject_template" value="{{ subject_template }}" placeholder="{{ t('web.admin.email_group.subject_placeholder') }}" required autocomplete="off">
+        <p class="hint">{{ t('web.admin.email_group.subject_hint') }}</p>
+      </div>
+      <div class="field">
+        <label for="new-group-interval">{{ t('web.admin.email_group.interval_label') }}</label>
+        <input id="new-group-interval" type="number" name="send_interval_hours" value="{{ send_interval_hours }}" min="1" required>
+        <p class="hint">{{ t('web.admin.email_group.interval_hint') }}</p>
+      </div>
+      <div class="field">
+        <label for="new-group-email">{{ t('web.admin.email_group.recipient_label') }}</label>
+        <input id="new-group-email" type="text" inputmode="email" name="recipient_email"
+               value="{{ recipient_email }}"
+               placeholder="{{ effective_email or 'owner@example.com' }}"
+               autocomplete="email">
+        <p class="hint">{{ t('web.admin.email_group.recipient_hint', email=(effective_email or t('web.admin.settings.not_configured'))) }}</p>
+        {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+      </div>
+      <fieldset class="field channel-kind-field">
+        <legend>{{ t('web.admin.email_group.channels_heading') }}</legend>
+        <p class="hint">{{ t('web.admin.email_group.channels_hint') }}</p>
+        {% if channel_rows %}
+        <div class="channel-admin-list">
+          {% for row in channel_rows %}
+          <label class="group-channel-row">
+            <input class="channel-checkbox" type="checkbox" name="channel_ids" value="{{ row.id }}" {{ "checked" if row.is_member else "" }}>
+            <span class="group-channel-name">
+              {{ row.name }}
+              {% if row.kind == 'monitor' %}<span class="kind-badge">🔔 {{ t('web.admin.settings.kind_badge_monitor') }}</span>{% endif %}
+            </span>
+            {% if row.other_group_name %}<span class="hint">{{ t('web.admin.email_group.channel_other_group_note', group=row.other_group_name) }}</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="hint">{{ t('web.admin.email_group.no_channels_yet') }}</p>
+        {% endif %}
+      </fieldset>
+      <div class="actions">
+        <button class="btn primary" type="submit">{{ t('web.admin.email_group.submit') }}</button>
+        <a class="btn ghost" href="/admin/?tab=groups">{{ t('web.admin.channel_new.cancel') }}</a>
+      </div>
+    </form>
+  </section>
+</main>
+{% endblock %}

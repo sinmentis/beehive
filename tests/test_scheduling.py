@@ -2,11 +2,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from beehive.scheduling import next_channel_fetch_at, source_is_due
+from beehive.scheduling import email_group_is_due, next_channel_fetch_at, source_is_due
 
 
 def _source(last_fetch_at):
     return {"last_fetch_at": last_fetch_at}
+
+
+def _group(last_sent_at, send_interval_hours=24):
+    return {"last_sent_at": last_sent_at, "send_interval_hours": send_interval_hours}
 
 
 def test_never_fetched_source_is_due():
@@ -41,6 +45,37 @@ def test_source_is_not_due_outside_the_grace_window():
     now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
     source = _source((now - timedelta(hours=24) + timedelta(minutes=10)).isoformat())
     assert not source_is_due(source, 24, now)
+
+
+def test_never_sent_email_group_is_due():
+    now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
+    assert email_group_is_due(_group(None), now)
+
+
+def test_recently_sent_email_group_is_not_due():
+    now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
+    group = _group((now - timedelta(hours=23)).isoformat(), send_interval_hours=24)
+    assert not email_group_is_due(group, now)
+
+
+def test_email_group_is_due_at_its_interval_boundary():
+    now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
+    group = _group((now - timedelta(hours=6)).isoformat(), send_interval_hours=6)
+    assert email_group_is_due(group, now)
+
+
+def test_email_group_is_due_within_grace_before_its_interval_boundary():
+    now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+    group = _group(
+        (now - timedelta(hours=24) + timedelta(seconds=2)).isoformat(), send_interval_hours=24)
+    assert email_group_is_due(group, now)
+
+
+def test_email_group_is_not_due_outside_the_grace_window():
+    now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
+    group = _group(
+        (now - timedelta(hours=24) + timedelta(minutes=10)).isoformat(), send_interval_hours=24)
+    assert not email_group_is_due(group, now)
 
 
 def test_next_channel_fetch_uses_earliest_source_due_slot():

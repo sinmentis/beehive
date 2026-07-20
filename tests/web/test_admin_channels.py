@@ -8,6 +8,7 @@ from beehive.auth.tokens import sign_session_id
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
+from beehive.db.email_groups import assign_channel, create_email_group
 from beehive.db.items import insert_new
 from beehive.db.sessions import create_session
 from beehive.db.sources import create_source, record_fetch_success
@@ -237,6 +238,32 @@ def test_edit_channel_form_shows_current_values(authed_client, db_path):
     assert 'id="minimum-score"' in resp.text
     assert 'value="70" min="0" max="100"' in resp.text
     assert "r/PersonalFinanceNZ" in resp.text
+
+
+def test_edit_channel_form_shows_no_group_message_when_unassigned(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert resp.status_code == 200
+    assert "Not in any email group yet" in resp.text
+    assert 'href="/admin/?tab=groups"' in resp.text
+    assert "Manage email groups" in resp.text
+
+
+def test_edit_channel_form_shows_current_group_with_link_when_assigned(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    group_id = create_email_group(conn, "Weekly Roundup")
+    assign_channel(conn, group_id, channel_id)
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert resp.status_code == 200
+    assert "Weekly Roundup" in resp.text
+    assert f'href="/admin/email-groups/{group_id}/edit"' in resp.text
+    assert "Not in any email group yet" not in resp.text
 
 
 def test_edit_channel_form_shows_editorial_kind_badge_and_display_fields(authed_client, db_path):

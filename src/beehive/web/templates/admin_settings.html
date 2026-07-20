@@ -8,6 +8,7 @@
     <a href="/admin/?tab=ai"{% if active_tab == "ai" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.ai_language') }}</a>
     <a href="/admin/?tab=delivery"{% if active_tab == "delivery" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.delivery') }}</a>
     <a href="/admin/?tab=system"{% if active_tab == "system" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.system') }}</a>
+    <a href="/admin/?tab=groups"{% if active_tab == "groups" %} aria-current="page"{% endif %}>{{ t('web.admin.tabs.groups') }}</a>
   </nav>
 {% endblock %}
 {% block content %}
@@ -162,6 +163,40 @@
         </div>
       </form>
     </section>
+  </section>
+
+  {% elif active_tab == "groups" %}
+  <section class="admin-tab-panel" aria-labelledby="admin-groups-title">
+    <header class="admin-section-heading">
+      <div>
+        <h2 id="admin-groups-title">{{ t('web.admin.settings.groups_heading') }}</h2>
+        <p>{{ t('web.admin.settings.groups_lede') }}</p>
+      </div>
+      <a class="text-action" href="/admin/email-groups/new">{{ t('web.admin.settings.new_group') }}</a>
+    </header>
+
+    {% if email_groups %}
+    <div class="channel-admin-list">
+      {% for group in email_groups %}
+      <div class="channel-admin-row email-group-row" role="row">
+        <span class="channel-admin-copy" role="cell">
+          <strong>{{ group.name }}</strong>
+          <p>{{ t('web.admin.settings.group_subject_label', subject=group.subject_template) }} · {{ group.frequency_label }} · {{ t('web.admin.settings.group_member_count', count=group.member_count) }}</p>
+          <p class="recipient">{{ group.effective_email or t('web.admin.settings.group_recipient_default') }}</p>
+        </span>
+        <span class="channel-edit-cell" role="cell">
+          <a class="channel-edit-link" href="/admin/email-groups/{{ group.id }}/edit">{{ t('web.admin.settings.edit_group') }}</a>
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <h3>{{ t('web.admin.settings.empty_groups_heading') }}</h3>
+      <p>{{ t('web.admin.settings.empty_groups_body') }}</p>
+      <a class="btn primary" href="/admin/email-groups/new">{{ t('web.admin.settings.new_group') }}</a>
+    </div>
+    {% endif %}
   </section>
 
   {% else %}

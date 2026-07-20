@@ -42,6 +42,17 @@ from beehive.db.channels import (
     list_channels,
     update_channel,
 )
+from beehive.db.email_groups import (
+    assign_channel,
+    create_email_group,
+    delete_email_group,
+    get_channel_group,
+    get_email_group,
+    list_email_groups,
+    list_member_channels,
+    unassign_channel,
+    update_email_group,
+)
 from beehive.db.items import delete_by_channel as delete_items_by_channel
 from beehive.db.sessions import create_session, delete_session
 from beehive.db.sources import (
@@ -57,6 +68,7 @@ from beehive.email_routing import (
     get_stored_default_email,
     resolve_channel_email,
     resolve_default_email,
+    resolve_group_email,
     set_stored_default_email,
     validate_email,
 )
@@ -82,7 +94,7 @@ router = APIRouter(prefix="/admin")
 
 _PASSWORD_HASH_KEY = "admin_password_hash"
 _SESSION_LIFETIME_DAYS = 90
-_ADMIN_TABS = frozenset({"channels", "ai", "delivery", "system"})
+_ADMIN_TABS = frozenset({"channels", "ai", "delivery", "system", "groups"})
 
 _CLEAR_DEFAULT_WITHOUT_ENV_ERROR = (
     "Cannot clear default recipient because DIGEST_EMAIL_TO is not configured")
@@ -195,6 +207,14 @@ def _fetch_interval_label(hours: int, t: Localizer) -> str:
             else t.text("web.fetch_interval.every_n_hours", hours=hours))
 
 
+def _email_group_frequency_label(hours: int, t: Localizer) -> str:
+    """Unlike _fetch_interval_label above (a fixed {3, 6, 24} dropdown where "24+" is always
+    "daily"), a group's send_interval_hours is a free-form number -- only exactly 24 should read
+    as "Once a day"; anything else (including 48, 168, etc.) must show its actual hour count."""
+    return (t.text("web.fetch_interval.daily") if hours == 24
+            else t.text("web.fetch_interval.every_n_hours", hours=hours))
+
+
 def _resolve_default_for_admin(
     conn: sqlite3.Connection, t: Localizer,
 ) -> tuple[ResolvedRecipient, str | None]:
@@ -233,6 +253,63 @@ def _build_admin_channel_rows(
             "effective_email": recipient,
         })
     return channels
+
+
+def _build_admin_email_group_rows(
+    conn: sqlite3.Connection,
+    default_recipient: ResolvedRecipient,
+    t: Localizer,
+) -> list[dict]:
+    groups = []
+    for group in list_email_groups(conn):
+        try:
+            recipient = (
+                resolve_group_email(group, default_recipient).address)
+        except EmailConfigurationError:
+            recipient = None
+        groups.append({
+            "id": group["id"],
+            "name": group["name"],
+            "subject_template": group["subject_template"],
+            "frequency_label": _email_group_frequency_label(
+                group["send_interval_hours"], t),
+            "member_count": len(list_member_channels(conn, group["id"])),
+            "effective_email": recipient,
+        })
+    return groups
+
+
+def _build_group_channel_rows(
+    conn: sqlite3.Connection,
+    *,
+    group_id: int | None,
+    selected_ids: set[int] | None = None,
+) -> list[dict]:
+    """Powers the channel-assignment checklist on both the new and edit group pages. When
+    selected_ids is given (re-rendering after a validation error) it reflects the user's
+    just-submitted, not-yet-saved checkbox state instead of the DB's current membership --
+    group_id is still used to decide whether a channel's *other* group membership should be
+    flagged (a channel already in *this* group is never "other")."""
+    if selected_ids is not None:
+        member_ids = selected_ids
+    elif group_id is not None:
+        member_ids = {c["id"] for c in list_member_channels(conn, group_id)}
+    else:
+        member_ids = set()
+    rows = []
+    for channel in list_channels(conn):
+        other_group = get_channel_group(conn, channel["id"])
+        other_group_name = None
+        if other_group is not None and other_group["id"] != group_id:
+            other_group_name = other_group["name"]
+        rows.append({
+            "id": channel["id"],
+            "name": channel["name"],
+            "kind": channel["kind"],
+            "is_member": channel["id"] in member_ids,
+            "other_group_name": other_group_name,
+        })
+    return rows
 
 
 def _render_admin_home_page(
@@ -275,6 +352,7 @@ def _render_admin_home_page(
             "saved": saved,
             "triggered": triggered,
             "channels": _build_admin_channel_rows(conn, effective, t),
+            "email_groups": _build_admin_email_group_rows(conn, effective, t),
             "languages": SUPPORTED_LANGUAGES,
             "current_language": t.code,
             "language_saved": language_saved,
@@ -675,6 +753,7 @@ def _render_edit_channel_page(
             "error": error,
             "default_error": default_error,
             "cleared_count": cleared_count,
+            "current_group": get_channel_group(conn, channel["id"]),
         },
         status_code=status_code,
     )
@@ -772,6 +851,193 @@ def delete_channel_submit(channel_id: int, csrf_token: str = Form(...),
     verify_csrf(session, csrf_token)
     delete_channel(conn, channel_id)
     return RedirectResponse("/admin/", status_code=303)
+
+
+def _render_new_email_group_page(
+    request: Request,
+    conn: sqlite3.Connection,
+    session: dict,
+    t: Localizer,
+    *,
+    name: str = "",
+    subject_template: str = "",
+    recipient_email: str = "",
+    send_interval_hours: int = 24,
+    selected_channel_ids: set[int] | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    default_recipient, default_error = _resolve_default_for_admin(conn, t)
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "admin_new_email_group.html",
+        {
+            "csrf_token": session["csrf_token"],
+            "name": name,
+            "subject_template": subject_template,
+            "recipient_email": recipient_email,
+            "send_interval_hours": send_interval_hours,
+            "effective_email": default_recipient.address,
+            "default_error": default_error,
+            "error": error,
+            "channel_rows": _build_group_channel_rows(
+                conn, group_id=None, selected_ids=selected_channel_ids),
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/email-groups/new", response_class=HTMLResponse)
+def new_email_group_form(
+    request: Request,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    return _render_new_email_group_page(request, conn, session, t)
+
+
+@router.post("/email-groups/new")
+def new_email_group_submit(
+    request: Request,
+    name: str = Form(...),
+    subject_template: str = Form(...),
+    recipient_email: str = Form(""),
+    send_interval_hours: int = Form(24, ge=1),
+    channel_ids: list[int] | None = Form(None),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    submitted_email = recipient_email.strip()
+    try:
+        normalized_email = validate_email(submitted_email) if submitted_email else None
+    except EmailConfigurationError as exc:
+        return _render_new_email_group_page(
+            request, conn, session, t,
+            name=name, subject_template=subject_template,
+            recipient_email=recipient_email,
+            send_interval_hours=send_interval_hours,
+            selected_channel_ids=set(channel_ids or []),
+            error=_email_error_message(exc, t),
+            status_code=400,
+        )
+    group_id = create_email_group(
+        conn, name, subject_template, normalized_email, send_interval_hours)
+    for channel_id in dict.fromkeys(channel_ids or []):
+        assign_channel(conn, group_id, channel_id)
+    return RedirectResponse(f"/admin/email-groups/{group_id}/edit", status_code=303)
+
+
+def _render_edit_email_group_page(
+    request: Request,
+    conn: sqlite3.Connection,
+    session: dict,
+    group: dict,
+    t: Localizer,
+    *,
+    name: str | None = None,
+    subject_template: str | None = None,
+    recipient_email: str | None = None,
+    send_interval_hours: int | None = None,
+    selected_channel_ids: set[int] | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    default_recipient, default_error = _resolve_default_for_admin(conn, t)
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "admin_edit_email_group.html",
+        {
+            "group": group,
+            "csrf_token": session["csrf_token"],
+            "name": group["name"] if name is None else name,
+            "subject_template": (
+                group["subject_template"] if subject_template is None else subject_template),
+            "recipient_email": (
+                (group["recipient_email"] or "") if recipient_email is None else recipient_email),
+            "send_interval_hours": (
+                group["send_interval_hours"] if send_interval_hours is None
+                else send_interval_hours),
+            "effective_email": default_recipient.address,
+            "default_error": default_error,
+            "error": error,
+            "channel_rows": _build_group_channel_rows(
+                conn, group_id=group["id"], selected_ids=selected_channel_ids),
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/email-groups/{group_id}/edit", response_class=HTMLResponse)
+def edit_email_group_form(
+    group_id: int, request: Request,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    group = get_email_group(conn, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Email group not found")
+    return _render_edit_email_group_page(request, conn, session, group, t)
+
+
+@router.post("/email-groups/{group_id}/edit")
+def edit_email_group_submit(
+    group_id: int, request: Request,
+    name: str = Form(...),
+    subject_template: str = Form(...),
+    recipient_email: str = Form(""),
+    send_interval_hours: int = Form(..., ge=1),
+    channel_ids: list[int] | None = Form(None),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    group = get_email_group(conn, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Email group not found")
+    submitted_email = recipient_email.strip()
+    try:
+        normalized_email = validate_email(submitted_email) if submitted_email else None
+    except EmailConfigurationError as exc:
+        return _render_edit_email_group_page(
+            request, conn, session, group, t,
+            name=name, subject_template=subject_template,
+            recipient_email=recipient_email,
+            send_interval_hours=send_interval_hours,
+            selected_channel_ids=set(channel_ids or []),
+            error=_email_error_message(exc, t),
+            status_code=400,
+        )
+    update_email_group(
+        conn, group_id, name, subject_template, normalized_email, send_interval_hours)
+    selected_ids = set(dict.fromkeys(channel_ids or []))
+    current_member_ids = {c["id"] for c in list_member_channels(conn, group_id)}
+    for channel_id in selected_ids - current_member_ids:
+        assign_channel(conn, group_id, channel_id)
+    for channel_id in current_member_ids - selected_ids:
+        unassign_channel(conn, channel_id)
+    return RedirectResponse(f"/admin/email-groups/{group_id}/edit", status_code=303)
+
+
+@router.post("/email-groups/{group_id}/delete")
+def delete_email_group_submit(
+    group_id: int, csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    if get_email_group(conn, group_id) is None:
+        raise HTTPException(status_code=404, detail="Email group not found")
+    delete_email_group(conn, group_id)
+    return RedirectResponse("/admin/?tab=groups", status_code=303)
 
 
 # Every value here is a translations/web.py key, not display text -- see _EMAIL_ERROR_KEYS above.

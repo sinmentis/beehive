@@ -312,7 +312,7 @@ async def test_run_fetch_bootstraps_schema_on_fresh_db(tmp_path, monkeypatch):
 
 
 def test_run_digest_bootstraps_schema_on_fresh_db(tmp_path, monkeypatch):
-    """Same regression, for the digest path: send_daily_digest must not crash on a DB
+    """Same regression, for the digest path: send_email_group_digests must not crash on a DB
     that's never had init_schema called on it (it needs the channels table to exist)."""
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
@@ -427,7 +427,7 @@ def test_run_digest_loads_and_passes_the_stored_platform_language(tmp_path, monk
     save_language(conn, "fr")
     conn.close()
 
-    with patch("scripts.run_collector.send_daily_digest") as mock_send:
+    with patch("scripts.run_collector.send_email_group_digests") as mock_send:
         run_digest(db_path)
 
     localizer = mock_send.call_args.args[-1]

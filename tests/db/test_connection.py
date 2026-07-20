@@ -186,6 +186,63 @@ def test_existing_channels_receive_legacy_digest_checkpoint_once(tmp_path):
     assert later["last_digest_date"] is None
 
 
+def test_new_database_creates_an_empty_default_email_group(tmp_path):
+    conn = connect(str(tmp_path / "fresh.db"))
+    init_schema(conn)
+
+    groups = conn.execute("SELECT * FROM email_groups").fetchall()
+    assert len(groups) == 1
+    assert groups[0]["name"] == "Default"
+    assert groups[0]["send_interval_hours"] == 24
+    assert conn.execute("SELECT COUNT(*) FROM email_group_channels").fetchone()[0] == 0
+
+
+def test_existing_editorial_channels_join_default_email_group_once(tmp_path):
+    path = str(tmp_path / "legacy.db")
+    conn = connect(path)
+    conn.execute(
+        "CREATE TABLE channels ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "name TEXT NOT NULL UNIQUE, "
+        "profile TEXT NOT NULL DEFAULT '', "
+        "fetch_interval_hours INTEGER NOT NULL DEFAULT 3, "
+        "created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))"
+        ")")
+    conn.execute("CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT INTO channels (name, profile) VALUES ('Existing Editorial', 'profile')")
+    conn.commit()
+
+    init_schema(conn)
+
+    # kind defaults to 'editorial' once _ensure_column backfills the column, so this
+    # pre-existing Channel is swept into the auto-created Default group.
+    groups = conn.execute("SELECT * FROM email_groups").fetchall()
+    assert len(groups) == 1
+    default_group = groups[0]
+    assert default_group["name"] == "Default"
+
+    def _member_names():
+        rows = conn.execute(
+            "SELECT channels.name FROM channels "
+            "JOIN email_group_channels ON email_group_channels.channel_id = channels.id "
+            "WHERE email_group_channels.email_group_id = ?", (default_group["id"],)).fetchall()
+        return [row["name"] for row in rows]
+
+    assert _member_names() == ["Existing Editorial"]
+
+    conn.execute(
+        "INSERT INTO channels (name, profile, kind) VALUES (?, 'p', 'monitor')",
+        ("New Monitor Channel",))
+    conn.commit()
+    init_schema(conn)
+
+    # Re-running init_schema is a no-op for this migration: no second Default group is created,
+    # and a Channel added after the migration already ran is not retroactively enrolled.
+    groups_after = conn.execute("SELECT * FROM email_groups").fetchall()
+    assert len(groups_after) == 1
+    assert _member_names() == ["Existing Editorial"]
+
+
 def _insert_item(conn) -> int:
     conn.execute("INSERT INTO channels (name, profile) VALUES ('Test', 'x')")
     channel_id = conn.execute("SELECT id FROM channels").fetchone()[0]

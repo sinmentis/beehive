@@ -2,7 +2,6 @@ from __future__ import annotations
 
 CATALOGS = {
     "en": {
-        "background.digest_title": "{product} Daily Digest \u00b7 {date}",
         "background.digest_header": "{product} Daily Digest",
         "background.digest_empty_state": "No new items today \u2014 already checked.",
         "background.source_fetch_warning": "{source_type} source fetch failed: {error}",
@@ -13,7 +12,6 @@ CATALOGS = {
         ),
     },
     "zh-CN": {
-        "background.digest_title": "{product}每日摘要 · {date}",
         "background.digest_header": "{product}每日摘要",
         "background.digest_empty_state": "今天没有新内容，已确认检查过。",
         "background.source_fetch_warning": "{source_type} 信源抓取失败：{error}",
@@ -24,7 +22,6 @@ CATALOGS = {
         ),
     },
     "ja": {
-        "background.digest_title": "{product}デイリーダイジェスト · {date}",
         "background.digest_header": "{product}デイリーダイジェスト",
         "background.digest_empty_state": "本日新着はありません。確認済みです。",
         "background.source_fetch_warning": "{source_type} ソースの取得に失敗しました：{error}",
@@ -36,7 +33,6 @@ CATALOGS = {
         ),
     },
     "ko": {
-        "background.digest_title": "{product} 일일 다이제스트 · {date}",
         "background.digest_header": "{product} 일일 다이제스트",
         "background.digest_empty_state": "오늘은 새로운 항목이 없습니다. 이미 확인했습니다.",
         "background.source_fetch_warning": "{source_type} 소스 수집 실패: {error}",
@@ -47,7 +43,6 @@ CATALOGS = {
         ),
     },
     "es": {
-        "background.digest_title": "Resumen diario de {product} \u00b7 {date}",
         "background.digest_header": "Resumen diario de {product}",
         "background.digest_empty_state": "Hoy no hay contenido nuevo, ya se ha comprobado.",
         "background.source_fetch_warning": "Error al obtener la fuente {source_type}: {error}",
@@ -61,7 +56,6 @@ CATALOGS = {
         ),
     },
     "fr": {
-        "background.digest_title": "R\u00e9sum\u00e9 quotidien {product} \u00b7 {date}",
         "background.digest_header": "R\u00e9sum\u00e9 quotidien {product}",
         "background.digest_empty_state": (
             "Rien de nouveau aujourd'hui, d\u00e9j\u00e0 v\u00e9rifi\u00e9."
@@ -79,7 +73,6 @@ CATALOGS = {
         ),
     },
     "de": {
-        "background.digest_title": "{product} Tages\u00fcberblick \u00b7 {date}",
         "background.digest_header": "{product} Tages\u00fcberblick",
         "background.digest_empty_state": "Heute keine neuen Inhalte, bereits gepr\u00fcft.",
         "background.source_fetch_warning": (

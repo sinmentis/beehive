@@ -16,7 +16,7 @@ class EmailConfigurationError(ValueError):
 @dataclass(frozen=True)
 class ResolvedRecipient:
     address: str | None
-    source: Literal["database", "environment", "channel", "missing"]
+    source: Literal["database", "environment", "channel", "group", "missing"]
 
 
 def validate_email(value: str) -> str:
@@ -66,4 +66,16 @@ def resolve_channel_email(channel: dict,
     override = channel.get("digest_email")
     if override:
         return ResolvedRecipient(validate_email(override), "channel")
+    return default
+
+
+def resolve_group_email(group: dict,
+                        default: ResolvedRecipient) -> ResolvedRecipient:
+    """An email group's own recipient_email (if set) takes priority; otherwise falls back to
+    the same global default every other recipient path uses. Note this supersedes
+    resolve_channel_email for the group-based send path -- a Channel's own digest_email
+    override is no longer consulted once it belongs to a group (see digest/send.py)."""
+    override = group.get("recipient_email")
+    if override:
+        return ResolvedRecipient(validate_email(override), "group")
     return default

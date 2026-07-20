@@ -25,6 +25,35 @@ CREATE TABLE IF NOT EXISTS channels (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
 
+-- A channel's periodic digest email is sent as part of at most one email_groups "group" (see
+-- email_group_channels below), not per-channel -- this replaced the old fixed once-daily digest.
+-- subject_template is formatted with .format(date=...) at send time (see digest/compose.py);
+-- send_interval_hours + last_sent_at drive scheduling.email_group_is_due exactly like
+-- sources.last_fetch_at drives source_is_due. recipient_email is optional: a blank/NULL value
+-- falls back to the same global-default resolver channels already use
+-- (email_routing.resolve_default_email) -- see digest/send.py.
+CREATE TABLE IF NOT EXISTS email_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    subject_template TEXT NOT NULL DEFAULT '',
+    recipient_email TEXT,
+    send_interval_hours INTEGER NOT NULL DEFAULT 24,
+    last_sent_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+);
+
+-- channel_id is UNIQUE so a channel can only ever belong to one email group at a time --
+-- db/email_groups.py's assign_channel() enforces "moving" a channel between groups by deleting
+-- any existing membership row before inserting the new one, rather than a true many-to-many
+-- join. This table has no fetch/digest state of its own -- send_email_group_digests derives
+-- "what's new" per channel from channels.last_digest_sent_at exactly as it did before groups
+-- existed, and only the group's own last_sent_at tracks when *this group's* email last went out.
+CREATE TABLE IF NOT EXISTS email_group_channels (
+    email_group_id INTEGER NOT NULL REFERENCES email_groups(id) ON DELETE CASCADE,
+    channel_id INTEGER NOT NULL UNIQUE REFERENCES channels(id) ON DELETE CASCADE,
+    PRIMARY KEY (email_group_id, channel_id)
+);
+
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,

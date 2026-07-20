@@ -40,6 +40,20 @@ _COLUMNS_TO_ENSURE = [
 
 _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"
 
+# Runs once, ever (guarded by the app_state marker below), the first time init_schema() is
+# called against a database that predates custom email groups (Task N+1). Without this, every
+# 'editorial' Channel that used to get the old fixed once-daily digest would silently stop
+# receiving any email at all the moment send_email_group_digests replaces send_daily_digest,
+# since sending now happens per-group instead of per-Channel. 'monitor' Channels are left out of
+# the auto-created group -- they never emailed before this feature existed, so there is nothing
+# to preserve for them; an admin opts them into a group manually. Deliberately not folded into
+# _migrate_channel_digest_watermarks: that migration only ever touches existing rows in place
+# (idempotent even if re-run), whereas this one inserts a brand new email_groups row, so it needs
+# its own marker to avoid a duplicate "Default" group if init_schema() ran again.
+_DEFAULT_EMAIL_GROUP_MIGRATION_KEY = "default_email_group_migrated_v1"
+_DEFAULT_EMAIL_GROUP_NAME = "Default"
+_DEFAULT_EMAIL_GROUP_SUBJECT = "Beehive Daily Digest \u00b7 {date}"
+
 
 def connect(db_path: str) -> sqlite3.Connection:
     # FastAPI may enter, use, and finalize one sync dependency on different worker threads.
@@ -79,9 +93,31 @@ def _migrate_channel_digest_watermarks(conn: sqlite3.Connection) -> None:
         (_CHANNEL_DIGEST_MIGRATION_KEY,))
 
 
+def _migrate_default_email_group(conn: sqlite3.Connection) -> None:
+    marker = conn.execute(
+        "SELECT value FROM app_state WHERE key = ?",
+        (_DEFAULT_EMAIL_GROUP_MIGRATION_KEY,)).fetchone()
+    if marker is not None:
+        return
+
+    group_id = conn.execute(
+        "INSERT INTO email_groups (name, subject_template, send_interval_hours) "
+        "VALUES (?, ?, 24)",
+        (_DEFAULT_EMAIL_GROUP_NAME, _DEFAULT_EMAIL_GROUP_SUBJECT)).lastrowid
+    conn.execute(
+        "INSERT INTO email_group_channels (email_group_id, channel_id) "
+        "SELECT ?, id FROM channels WHERE kind = 'editorial'",
+        (group_id,))
+
+    conn.execute(
+        "INSERT OR IGNORE INTO app_state (key, value) VALUES (?, '1')",
+        (_DEFAULT_EMAIL_GROUP_MIGRATION_KEY,))
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_PATH.read_text())
     for table, column, column_type in _COLUMNS_TO_ENSURE:
         _ensure_column(conn, table, column, column_type)
     _migrate_channel_digest_watermarks(conn)
+    _migrate_default_email_group(conn)
     conn.commit()
