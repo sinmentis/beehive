@@ -4,18 +4,44 @@ The admin web route atomically writes one or more Channel ids to the watched mar
 The beehive-fetch-manual entrypoint reads the ALREADY-renamed .inflight file -- systemd's
 ExecStartPre= moves the watched marker there, host-side, before the container starts, so a
 container-boot failure cannot leave the watched path around to loop-retrigger the .path unit.
-This module never touches the watched path from the read side or performs the rename itself.
+The admin UI reads both paths non-destructively to show queued/running state. This module never
+performs the watched-to-inflight rename itself.
 """
+
 from __future__ import annotations
 
 import os
 import tempfile
+import time
 
 _MARKER_NAME = "fetch_trigger_channel_id"
+MANUAL_FETCH_STALE_SECONDS = 65 * 60
+
+
+def _marker_path(data_dir: str, *, inflight: bool = False) -> str:
+    suffix = ".inflight" if inflight else ""
+    return os.path.join(data_dir, f"{_MARKER_NAME}{suffix}")
+
+
+def _read_channel_ids(path: str) -> list[int] | None:
+    try:
+        with open(path) as f:
+            content = f.read().strip()
+    except FileNotFoundError:
+        return None
+    if not content:
+        return None
+    try:
+        channel_ids = [int(value) for value in content.splitlines()]
+    except ValueError:
+        return None
+    if any(channel_id <= 0 for channel_id in channel_ids):
+        return None
+    return list(dict.fromkeys(channel_ids))
 
 
 def _write_channel_ids(data_dir: str, channel_ids: list[int]) -> None:
-    marker_path = os.path.join(data_dir, _MARKER_NAME)
+    marker_path = _marker_path(data_dir)
     fd, tmp_path = tempfile.mkstemp(dir=data_dir, prefix=f".{_MARKER_NAME}.tmp-")
     try:
         with os.fdopen(fd, "w") as f:
@@ -44,24 +70,52 @@ def request_channel_fetch_batch(data_dir: str, channel_ids: list[int]) -> None:
 def consume_pending_manual_triggers(data_dir: str) -> list[int] | None:
     """Consumes the inflight marker and returns every valid requested Channel id.
 
+    A valid marker remains in place while the worker runs so the admin UI can report that the
+    request is in progress. The worker removes it with complete_pending_manual_triggers().
     A missing or malformed marker is a clean no-op, never a fallback to the all-Channels sweep.
     """
-    inflight_path = os.path.join(data_dir, f"{_MARKER_NAME}.inflight")
+    inflight_path = _marker_path(data_dir, inflight=True)
+    channel_ids = _read_channel_ids(inflight_path)
+    if channel_ids is None:
+        try:
+            os.remove(inflight_path)
+        except FileNotFoundError:
+            pass
+    return channel_ids
+
+
+def complete_pending_manual_triggers(data_dir: str) -> None:
+    """Clears the running marker after the worker finishes or fails."""
     try:
-        with open(inflight_path) as f:
-            content = f.read().strip()
+        os.remove(_marker_path(data_dir, inflight=True))
     except FileNotFoundError:
-        return None
-    os.remove(inflight_path)
-    if not content:
-        return None
-    try:
-        channel_ids = [int(value) for value in content.splitlines()]
-    except ValueError:
-        return None
-    if any(channel_id <= 0 for channel_id in channel_ids):
-        return None
-    return list(dict.fromkeys(channel_ids))
+        pass
+
+
+def list_manual_trigger_states(
+    data_dir: str,
+    *,
+    now: float | None = None,
+) -> dict[int, str]:
+    """Returns queued/running/stale state without consuming either marker."""
+    states: dict[int, str] = {}
+    inflight_path = _marker_path(data_dir, inflight=True)
+    inflight_ids = _read_channel_ids(inflight_path) or []
+    if inflight_ids:
+        try:
+            age_seconds = (time.time() if now is None else now) - os.path.getmtime(
+                inflight_path
+            )
+        except FileNotFoundError:
+            inflight_ids = []
+        else:
+            state = "stale" if age_seconds > MANUAL_FETCH_STALE_SECONDS else "running"
+            states.update(dict.fromkeys(inflight_ids, state))
+
+    for channel_id in _read_channel_ids(_marker_path(data_dir)) or []:
+        if states.get(channel_id) != "running":
+            states[channel_id] = "queued"
+    return states
 
 
 def consume_pending_manual_trigger(data_dir: str) -> int | None:

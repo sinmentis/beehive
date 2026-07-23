@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.channel', product=t('common.product_name'), channel=page.channel_name) }}{% endblock %}
+{% block body_class %}page-channel page-channel-tracker{% endblock %}
+{% block secondary_navigation %}
+  {% set active_channel_id = page.channel_id %}
+  {% set channel_navigation_all_active = false %}
+  {% include "_channel_shelf.html" %}
+{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell channel-shell tracker-shell">
+  <header class="channel-toolbar channel-toolbar--tracker">
+    <a class="channel-back" href="/">{{ t('web.channel.back_home') }}</a>
+    <div class="channel-heading">
+      <p class="channel-workflow">{{ t('web.channel.tracker_label') }}</p>
+      <h1 class="channel-title">{{ page.channel_name }}</h1>
+      <p class="channel-statline"><span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
+    </div>
+    <p class="channel-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
+    {% if is_owner %}<a class="channel-panel-action" href="/watchlist">{{ t('web.nav.watchlist') }}</a>{% endif %}
+    <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
+  </header>
+
+  {% if page.watched %}
+  <section class="tracker-section tracker-section--watched" aria-labelledby="tracker-watched-title">
+    <header class="tracker-section-heading">
+      <div>
+        <p class="section-kicker">{{ t('web.tracker.watched_kicker') }}</p>
+        <h2 id="tracker-watched-title">{{ t('web.tracker.watched_heading') }}</h2>
+        <p>{{ t('web.tracker.watched_body') }}</p>
+      </div>
+      <span>{{ t('web.channel.folded_count', count=page.watched|length) }}</span>
+    </header>
+    <div class="tracker-list">
+      {% for item in page.watched %}
+      {% set tracker_item_history = false %}
+      {% include "_tracker_item.html" %}
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if page.ending_pagination.total %}
+  <section class="tracker-section tracker-section--urgent" aria-labelledby="tracker-ending-title">
+    <header class="tracker-section-heading">
+      <div>
+        <p class="section-kicker">{{ t('web.tracker.ending_kicker') }}</p>
+        <h2 id="tracker-ending-title">{{ t('web.tracker.ending_heading') }}</h2>
+        <p>{{ t('web.tracker.ending_body') }}</p>
+      </div>
+      <span>{{ t('web.channel.folded_count', count=page.ending_pagination.total) }}</span>
+    </header>
+    <div class="tracker-list">
+      {% for item in page.ending_soon %}
+      {% set tracker_item_history = false %}
+      {% include "_tracker_item.html" %}
+      {% endfor %}
+    </div>
+    {% set pagination = page.ending_pagination %}
+    {% set previous_url = tracker_ending_previous_url %}
+    {% set next_url = tracker_ending_next_url %}
+    {% set pagination_aria = t('web.tracker.pagination_aria') %}
+    {% include "_channel_pagination.html" %}
+  </section>
+  {% endif %}
+
+  {% if page.upcoming_pagination.total %}
+  <section class="tracker-section" aria-labelledby="tracker-upcoming-title">
+    <header class="tracker-section-heading">
+      <div>
+        <p class="section-kicker">{{ t('web.channel.tracker_label') }}</p>
+        <h2 id="tracker-upcoming-title">{{ t('web.tracker.upcoming_heading') }}</h2>
+        <p>{{ t('web.tracker.upcoming_body') }}</p>
+      </div>
+      <span>{{ t('web.channel.folded_count', count=page.upcoming_pagination.total) }}</span>
+    </header>
+    <div class="tracker-list">
+      {% for item in page.upcoming %}
+      {% set tracker_item_history = false %}
+      {% include "_tracker_item.html" %}
+      {% endfor %}
+    </div>
+    {% set pagination = page.upcoming_pagination %}
+    {% set previous_url = tracker_upcoming_previous_url %}
+    {% set next_url = tracker_upcoming_next_url %}
+    {% set pagination_aria = t('web.tracker.pagination_aria') %}
+    {% include "_channel_pagination.html" %}
+  </section>
+  {% endif %}
+
+  {% if not page.watched and not page.ending_pagination.total and not page.upcoming_pagination.total %}
+  <section class="channel-panel-empty tracker-empty">
+    <h2>{{ t('web.tracker.empty_heading') }}</h2>
+    <p>{{ t('web.tracker.empty_body') }}</p>
+  </section>
+  {% endif %}
+
+  {% if page.history_pagination.total %}
+  <details class="tracker-history"{% if page.history_pagination.page > 1 %} open{% endif %}>
+    <summary>
+      <span>
+        <strong>{{ t('web.tracker.history_heading') }}</strong>
+        <small>{{ t('web.tracker.history_body') }}</small>
+      </span>
+      <span>{{ t('web.channel.folded_count', count=page.history_pagination.total) }}</span>
+    </summary>
+    <div class="tracker-list tracker-list--history">
+      {% for item in page.history %}
+      {% set tracker_item_history = true %}
+      {% include "_tracker_item.html" %}
+      {% endfor %}
+    </div>
+    {% set pagination = page.history_pagination %}
+    {% set previous_url = tracker_history_previous_url %}
+    {% set next_url = tracker_history_next_url %}
+    {% set pagination_aria = t('web.tracker.pagination_aria') %}
+    {% include "_channel_pagination.html" %}
+  </details>
+  {% endif %}
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
+{% endblock %}

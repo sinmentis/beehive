@@ -1,0 +1,20 @@
+[Unit]
+Description=Beehive Tracker follow-up reminders (auction adapter)
+
+[Container]
+Image=localhost/beehive:latest
+ContainerName=beehive-auction-reminders
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+Environment=DIGEST_EMAIL_TO=you@example.com
+Environment=DIGEST_EMAIL_FROM=beehive@example.com
+Secret=beehive-acs-connection,type=env,target=ACS_CONNECTION_STRING
+Exec=-m scripts.run_collector --mode auction-reminders
+
+[Service]
+Type=oneshot
+CPUQuota=50%
+CPUWeight=20
+MemoryHigh=192M
+MemoryMax=256M
+TimeoutStartSec=120

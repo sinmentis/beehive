@@ -11,7 +11,7 @@ from beehive.db.connection import connect, init_schema
 from beehive.db.email_groups import assign_channel, create_email_group
 from beehive.db.items import insert_new
 from beehive.db.sessions import create_session
-from beehive.db.sources import create_source, record_fetch_success
+from beehive.db.sources import create_source, record_fetch_error, record_fetch_success
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
 from scripts.set_admin_password import set_admin_password
@@ -32,8 +32,9 @@ def authed_client(db_path):
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
     client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
     return client
 
@@ -46,8 +47,12 @@ def test_removed_channels_list_returns_404_for_authenticated_owner(authed_client
 
 def test_channels_list_shows_name_source_count_and_interval(authed_client, db_path):
     conn = connect(db_path)
-    channel_id = create_channel(conn, "NZ Finance", "economic news", fetch_interval_hours=3)
-    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
+    channel_id = create_channel(
+        conn, "NZ Finance", "economic news", fetch_interval_hours=3
+    )
+    create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
     conn.close()
 
     resp = authed_client.get("/admin/")
@@ -82,8 +87,9 @@ def test_channels_list_shows_monitor_badge_for_monitor_channels(authed_client, d
 
 
 def test_new_channel_form_requires_session(db_path):
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
     resp = client.get("/admin/channels/new")
     assert resp.status_code == 303
 
@@ -111,7 +117,8 @@ def test_new_channel_form_links_back_to_admin_home(authed_client):
 
 
 def test_edit_channel_form_links_back_to_admin_home(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
@@ -123,7 +130,8 @@ def test_edit_channel_form_links_back_to_admin_home(
 
 
 def test_delete_channel_confirmation_uses_keyboard_accessible_details(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
@@ -137,11 +145,17 @@ def test_delete_channel_confirmation_uses_keyboard_accessible_details(
 
 
 def test_create_channel_succeeds_with_valid_csrf(authed_client, db_path):
-    resp = authed_client.post("/admin/channels/new", data={
-        "name": "NZ Finance", "profile": "economic news",
-        "fetch_interval_hours": "3", "highlight_count": "5",
-        "minimum_score": "72", "csrf_token": "csrf1",
-    })
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "highlight_count": "5",
+            "minimum_score": "72",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 303
     assert resp.headers["location"].startswith("/admin/channels/")
     assert resp.headers["location"].endswith("/edit")
@@ -155,10 +169,15 @@ def test_create_channel_succeeds_with_valid_csrf(authed_client, db_path):
 
 
 def test_create_channel_defaults_to_editorial_kind(authed_client, db_path):
-    resp = authed_client.post("/admin/channels/new", data={
-        "name": "NZ Finance", "profile": "economic news",
-        "fetch_interval_hours": "3", "csrf_token": "csrf1",
-    })
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 303
 
     conn = connect(db_path)
@@ -166,23 +185,78 @@ def test_create_channel_defaults_to_editorial_kind(authed_client, db_path):
     assert row["kind"] == "editorial"
 
 
-def test_create_channel_with_monitor_kind(authed_client, db_path):
-    resp = authed_client.post("/admin/channels/new", data={
-        "name": "Arcteryx Outlet", "profile": "watch for price drops",
-        "fetch_interval_hours": "24", "kind": "monitor", "csrf_token": "csrf1",
-    })
+def test_new_channel_form_shows_all_three_kind_options(authed_client):
+    resp = authed_client.get("/admin/channels/new")
+    assert 'id="kind-editorial"' in resp.text
+    assert 'id="kind-monitor"' in resp.text
+    assert 'id="kind-tracker"' in resp.text
+    # Editorial is the default selection; the tracker hint is rendered for live toggling.
+    assert 'id="kind-editorial" checked' in resp.text
+    assert "kind-only-tracker" in resp.text
+
+
+def test_create_channel_with_tracker_kind(authed_client, db_path):
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "Auction watch",
+            "profile": "Makita cordless tools",
+            "fetch_interval_hours": "24",
+            "kind": "tracker",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 303
 
     conn = connect(db_path)
-    row = conn.execute("SELECT * FROM channels WHERE name = 'Arcteryx Outlet'").fetchone()
+    row = conn.execute(
+        "SELECT * FROM channels WHERE name = 'Auction watch'"
+    ).fetchone()
+    assert row["kind"] == "tracker"
+
+
+def test_edit_tracker_channel_shows_tracker_badge(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Auction watch", "Makita tools", kind="tracker")
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert resp.status_code == 200
+    assert "Tracker" in resp.text
+    assert 'id="highlight-count"' in resp.text
+
+
+def test_create_channel_with_monitor_kind(authed_client, db_path):
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "Arcteryx Outlet",
+            "profile": "watch for price drops",
+            "fetch_interval_hours": "24",
+            "kind": "monitor",
+            "csrf_token": "csrf1",
+        },
+    )
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute(
+        "SELECT * FROM channels WHERE name = 'Arcteryx Outlet'"
+    ).fetchone()
     assert row["kind"] == "monitor"
 
 
 def test_create_channel_rejects_invalid_kind(authed_client, db_path):
-    resp = authed_client.post("/admin/channels/new", data={
-        "name": "NZ Finance", "profile": "economic news",
-        "fetch_interval_hours": "3", "kind": "subscription", "csrf_token": "csrf1",
-    })
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "kind": "subscription",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 422
 
     conn = connect(db_path)
@@ -191,10 +265,15 @@ def test_create_channel_rejects_invalid_kind(authed_client, db_path):
 
 
 def test_create_channel_rejects_wrong_csrf_token(authed_client, db_path):
-    resp = authed_client.post("/admin/channels/new", data={
-        "name": "NZ Finance", "profile": "economic news",
-        "fetch_interval_hours": "3", "csrf_token": "wrong-token",
-    })
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "csrf_token": "wrong-token",
+        },
+    )
     assert resp.status_code == 403
 
     conn = connect(db_path)
@@ -205,10 +284,15 @@ def test_create_channel_rejects_wrong_csrf_token(authed_client, db_path):
 def test_create_channel_rejects_non_ascii_csrf_token(authed_client, db_path):
     """Regression guard: hmac.compare_digest raises TypeError on a non-ASCII str csrf_token, which
     would surface as an unhandled 500 instead of a clean 403. Comparing as bytes avoids this."""
-    resp = authed_client.post("/admin/channels/new", data={
-        "name": "NZ Finance", "profile": "economic news",
-        "fetch_interval_hours": "3", "csrf_token": "caf\u00e9\u2122",
-    })
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "csrf_token": "caf\u00e9\u2122",
+        },
+    )
     assert resp.status_code == 403
 
     conn = connect(db_path)
@@ -226,7 +310,9 @@ def test_edit_channel_form_shows_current_values(authed_client, db_path):
         highlight_count=6,
         minimum_score=70,
     )
-    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
+    create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
     conn.close()
 
     resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
@@ -240,7 +326,9 @@ def test_edit_channel_form_shows_current_values(authed_client, db_path):
     assert "r/PersonalFinanceNZ" in resp.text
 
 
-def test_edit_channel_form_shows_no_group_message_when_unassigned(authed_client, db_path):
+def test_edit_channel_form_shows_no_group_message_when_unassigned(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
@@ -252,7 +340,9 @@ def test_edit_channel_form_shows_no_group_message_when_unassigned(authed_client,
     assert "Manage email groups" in resp.text
 
 
-def test_edit_channel_form_shows_current_group_with_link_when_assigned(authed_client, db_path):
+def test_edit_channel_form_shows_current_group_with_link_when_assigned(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     group_id = create_email_group(conn, "Weekly Roundup")
@@ -266,7 +356,9 @@ def test_edit_channel_form_shows_current_group_with_link_when_assigned(authed_cl
     assert "Not in any email group yet" not in resp.text
 
 
-def test_edit_channel_form_shows_editorial_kind_badge_and_display_fields(authed_client, db_path):
+def test_edit_channel_form_shows_editorial_kind_badge_and_display_fields(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
@@ -279,10 +371,13 @@ def test_edit_channel_form_shows_editorial_kind_badge_and_display_fields(authed_
 
 
 def test_edit_channel_form_shows_monitor_kind_badge_and_display_fields(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     conn = connect(db_path)
-    channel_id = create_channel(conn, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    channel_id = create_channel(
+        conn, "Arcteryx Outlet", "watch for price drops", kind="monitor"
+    )
     conn.close()
 
     resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
@@ -296,7 +391,8 @@ def test_edit_channel_form_shows_monitor_kind_badge_and_display_fields(
 
 
 def test_update_monitor_channel_preserves_display_settings_when_not_submitted(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     """Defensive-fallback regression test: even though the edit form now always submits
     highlight_count/minimum_score for every Channel kind, a request that omits them (e.g. an
@@ -304,15 +400,25 @@ def test_update_monitor_channel_preserves_display_settings_when_not_submitted(
     rather than resetting them to the schema defaults."""
     conn = connect(db_path)
     channel_id = create_channel(
-        conn, "Arcteryx Outlet", "watch for price drops", kind="monitor",
-        highlight_count=5, minimum_score=70,
+        conn,
+        "Arcteryx Outlet",
+        "watch for price drops",
+        kind="monitor",
+        highlight_count=5,
+        minimum_score=70,
     )
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
-        "name": "Arcteryx Outlet", "profile": "watch for price drops",
-        "fetch_interval_hours": "24", "digest_email": "", "csrf_token": "csrf1",
-    })
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/edit",
+        data={
+            "name": "Arcteryx Outlet",
+            "profile": "watch for price drops",
+            "fetch_interval_hours": "24",
+            "digest_email": "",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 303
 
     conn = connect(db_path)
@@ -327,16 +433,27 @@ def test_update_monitor_channel_can_set_display_settings(authed_client, db_path)
     same as it already does for editorial Channels."""
     conn = connect(db_path)
     channel_id = create_channel(
-        conn, "Arcteryx Outlet", "watch for price drops", kind="monitor",
-        highlight_count=5, minimum_score=70,
+        conn,
+        "Arcteryx Outlet",
+        "watch for price drops",
+        kind="monitor",
+        highlight_count=5,
+        minimum_score=70,
     )
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
-        "name": "Arcteryx Outlet", "profile": "watch for price drops",
-        "fetch_interval_hours": "24", "digest_email": "", "csrf_token": "csrf1",
-        "highlight_count": "12", "minimum_score": "85",
-    })
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/edit",
+        data={
+            "name": "Arcteryx Outlet",
+            "profile": "watch for price drops",
+            "fetch_interval_hours": "24",
+            "digest_email": "",
+            "csrf_token": "csrf1",
+            "highlight_count": "12",
+            "minimum_score": "85",
+        },
+    )
     assert resp.status_code == 303
 
     conn = connect(db_path)
@@ -360,7 +477,9 @@ def test_edit_channel_form_shows_google_news_source_label(authed_client, db_path
 def test_edit_channel_form_shows_distinct_icons_per_source_type(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Mixed Sources", "everything")
-    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
+    create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
     create_source(conn, channel_id, "google_news_query", {"query": "OpenAI"})
     conn.close()
 
@@ -380,11 +499,18 @@ def test_update_channel_saves_changes(authed_client, db_path):
     channel_id = create_channel(conn, "Old", "old profile", fetch_interval_hours=3)
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
-        "name": "New Name", "profile": "new profile",
-        "fetch_interval_hours": "6", "highlight_count": "4",
-        "minimum_score": "65", "digest_email": "", "csrf_token": "csrf1",
-    })
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/edit",
+        data={
+            "name": "New Name",
+            "profile": "new profile",
+            "fetch_interval_hours": "6",
+            "highlight_count": "4",
+            "minimum_score": "65",
+            "digest_email": "",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 303
 
     conn = connect(db_path)
@@ -396,7 +522,8 @@ def test_update_channel_saves_changes(authed_client, db_path):
 
 
 def test_update_channel_preserves_display_settings_when_fields_are_omitted(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     conn = connect(db_path)
     channel_id = create_channel(
@@ -408,13 +535,16 @@ def test_update_channel_preserves_display_settings_when_fields_are_omitted(
     )
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
-        "name": "New Name",
-        "profile": "new profile",
-        "fetch_interval_hours": "6",
-        "digest_email": "",
-        "csrf_token": "csrf1",
-    })
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/edit",
+        data={
+            "name": "New Name",
+            "profile": "new profile",
+            "fetch_interval_hours": "6",
+            "digest_email": "",
+            "csrf_token": "csrf1",
+        },
+    )
 
     assert resp.status_code == 303
     conn = connect(db_path)
@@ -428,10 +558,16 @@ def test_update_channel_rejects_wrong_csrf(authed_client, db_path):
     channel_id = create_channel(conn, "Old", "old profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/edit", data={
-        "name": "New Name", "profile": "new profile",
-        "fetch_interval_hours": "6", "digest_email": "", "csrf_token": "wrong",
-    })
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/edit",
+        data={
+            "name": "New Name",
+            "profile": "new profile",
+            "fetch_interval_hours": "6",
+            "digest_email": "",
+            "csrf_token": "wrong",
+        },
+    )
     assert resp.status_code == 403
 
 
@@ -440,14 +576,19 @@ def test_delete_channel_removes_it_and_redirects(authed_client, db_path):
     channel_id = create_channel(conn, "To Delete", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/delete",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/delete", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == "/admin/"
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM channels WHERE id = ?",
-                         (channel_id,)).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM channels WHERE id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_delete_channel_rejects_wrong_csrf(authed_client, db_path):
@@ -455,13 +596,18 @@ def test_delete_channel_rejects_wrong_csrf(authed_client, db_path):
     channel_id = create_channel(conn, "To Delete", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/delete",
-                               data={"csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/delete", data={"csrf_token": "wrong"}
+    )
     assert resp.status_code == 403
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM channels WHERE id = ?",
-                         (channel_id,)).fetchone()[0] == 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM channels WHERE id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_clear_channel_data_requires_session(db_path):
@@ -469,9 +615,12 @@ def test_clear_channel_data_requires_session(db_path):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
-    resp = client.post(f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "x"})
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
+    resp = client.post(
+        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "x"}
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == "/admin/login"
 
@@ -481,13 +630,16 @@ def test_clear_channel_data_rejects_wrong_csrf(authed_client, db_path):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/clear-data",
-                               data={"csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "wrong"}
+    )
     assert resp.status_code == 403
 
 
 def test_clear_channel_data_404_for_missing_channel(authed_client):
-    resp = authed_client.post("/admin/channels/999/clear-data", data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        "/admin/channels/999/clear-data", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 404
 
 
@@ -495,12 +647,17 @@ def test_clear_channel_data_deletes_items_and_redirects(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(conn, source_id, RawItem(external_id="t1", title="One", url="https://x/1"))
-    insert_new(conn, source_id, RawItem(external_id="t2", title="Two", url="https://x/2"))
+    insert_new(
+        conn, source_id, RawItem(external_id="t1", title="One", url="https://x/1")
+    )
+    insert_new(
+        conn, source_id, RawItem(external_id="t2", title="Two", url="https://x/2")
+    )
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/clear-data",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"}
+    )
 
     assert resp.status_code == 303
     assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit?cleared=2"
@@ -513,10 +670,14 @@ def test_clear_channel_data_resets_source_fetch_bookkeeping(authed_client, db_pa
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    record_fetch_success(conn, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20)
+    record_fetch_success(
+        conn, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20
+    )
     conn.close()
 
-    authed_client.post(f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"})
+    authed_client.post(
+        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"}
+    )
 
     conn = connect(db_path)
     row = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
@@ -525,20 +686,34 @@ def test_clear_channel_data_resets_source_fetch_bookkeeping(authed_client, db_pa
     assert row["last_fetch_new_count"] is None
 
 
-def test_clear_channel_data_does_not_delete_the_channel_or_sources(authed_client, db_path):
+def test_clear_channel_data_does_not_delete_the_channel_or_sources(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(conn, source_id, RawItem(external_id="t1", title="One", url="https://x/1"))
+    insert_new(
+        conn, source_id, RawItem(external_id="t1", title="One", url="https://x/1")
+    )
     conn.close()
 
-    authed_client.post(f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"})
+    authed_client.post(
+        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"}
+    )
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM channels WHERE id = ?",
-                         (channel_id,)).fetchone()[0] == 1
-    assert conn.execute("SELECT COUNT(*) FROM sources WHERE id = ?",
-                         (source_id,)).fetchone()[0] == 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM channels WHERE id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 1
+    )
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_duplicate_channel_requires_session(db_path):
@@ -546,9 +721,12 @@ def test_duplicate_channel_requires_session(db_path):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
-    resp = client.post(f"/admin/channels/{channel_id}/duplicate", data={"csrf_token": "x"})
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
+    resp = client.post(
+        f"/admin/channels/{channel_id}/duplicate", data={"csrf_token": "x"}
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == "/admin/login"
 
@@ -558,8 +736,9 @@ def test_duplicate_channel_rejects_wrong_csrf(authed_client, db_path):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/duplicate",
-                               data={"csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/duplicate", data={"csrf_token": "wrong"}
+    )
     assert resp.status_code == 403
 
     conn = connect(db_path)
@@ -567,18 +746,23 @@ def test_duplicate_channel_rejects_wrong_csrf(authed_client, db_path):
 
 
 def test_duplicate_channel_404_for_missing_channel(authed_client):
-    resp = authed_client.post("/admin/channels/999/duplicate", data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        "/admin/channels/999/duplicate", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 404
 
 
-def test_duplicate_channel_copies_it_and_redirects_to_new_edit_page(authed_client, db_path):
+def test_duplicate_channel_copies_it_and_redirects_to_new_edit_page(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/duplicate",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/duplicate", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 303
 
     conn = connect(db_path)
@@ -587,8 +771,12 @@ def test_duplicate_channel_copies_it_and_redirects_to_new_edit_page(authed_clien
     new_channel_id, new_name = rows[1]["id"], rows[1]["name"]
     assert new_name == "NZ Finance (copy)"
     assert resp.headers["location"] == f"/admin/channels/{new_channel_id}/edit"
-    assert conn.execute("SELECT COUNT(*) FROM sources WHERE channel_id = ?",
-                         (new_channel_id,)).fetchone()[0] == 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (new_channel_id,)
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_edit_channel_page_shows_duplicate_button(authed_client, db_path):
@@ -597,7 +785,7 @@ def test_edit_channel_page_shows_duplicate_button(authed_client, db_path):
     conn.close()
 
     resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
-    assert f'/admin/channels/{channel_id}/duplicate' in resp.text
+    assert f"/admin/channels/{channel_id}/duplicate" in resp.text
 
 
 def test_channels_list_does_not_show_duplicate_action(authed_client, db_path):
@@ -632,9 +820,12 @@ def test_trigger_fetch_requires_session(db_path):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
-    resp = client.post(f"/admin/channels/{channel_id}/trigger-fetch", data={"csrf_token": "x"})
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
+    resp = client.post(
+        f"/admin/channels/{channel_id}/trigger-fetch", data={"csrf_token": "x"}
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == "/admin/login"
 
@@ -644,13 +835,16 @@ def test_trigger_fetch_rejects_wrong_csrf(authed_client, db_path):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/trigger-fetch",
-                               data={"csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/trigger-fetch", data={"csrf_token": "wrong"}
+    )
     assert resp.status_code == 403
 
 
 def test_trigger_fetch_404_for_missing_channel(authed_client):
-    resp = authed_client.post("/admin/channels/999/trigger-fetch", data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        "/admin/channels/999/trigger-fetch", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 404
 
 
@@ -659,8 +853,9 @@ def test_trigger_fetch_writes_marker_and_redirects(authed_client, db_path):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/trigger-fetch",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/trigger-fetch", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == f"/admin/?tab=channels&triggered={channel_id}"
 
@@ -770,13 +965,82 @@ def test_bulk_fetch_rejects_missing_channel(authed_client, db_path):
     assert not os.path.exists(marker_path)
 
 
-def test_channels_list_shows_flash_message_when_triggered_param_matches(authed_client, db_path):
+def test_channels_list_shows_flash_message_when_triggered_param_matches(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
 
     resp = authed_client.get(f"/admin/?triggered={channel_id}")
     assert "Fetch request submitted" in resp.text
+
+
+def test_channels_list_shows_queued_and_running_manual_fetch_status(
+    authed_client, db_path
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+    data_dir = os.path.dirname(db_path)
+    marker_path = os.path.join(data_dir, "fetch_trigger_channel_id")
+    inflight_path = f"{marker_path}.inflight"
+    with open(marker_path, "w") as marker:
+        marker.write(str(channel_id))
+
+    queued = authed_client.get("/admin/")
+
+    assert "Fetch queued" in queued.text
+
+    os.replace(marker_path, inflight_path)
+    running = authed_client.get("/admin/")
+
+    assert "Fetch in progress" in running.text
+
+
+def test_channels_list_shows_the_latest_source_fetch_error(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    record_fetch_error(
+        conn,
+        source_id,
+        "HTTP Error 404: Not Found",
+        "2026-07-22T04:32:02+00:00",
+    )
+    conn.close()
+
+    response = authed_client.get("/admin/")
+
+    assert "Last fetch failed: HTTP Error 404: Not Found" in response.text
+
+
+def test_channels_list_keeps_the_last_error_visible_while_a_retry_runs(
+    authed_client, db_path
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    record_fetch_error(
+        conn,
+        source_id,
+        "HTTP Error 404: Not Found",
+        "2026-07-22T04:32:02+00:00",
+    )
+    conn.close()
+    data_dir = os.path.dirname(db_path)
+    inflight_path = os.path.join(data_dir, "fetch_trigger_channel_id.inflight")
+    with open(inflight_path, "w") as marker:
+        marker.write(str(channel_id))
+
+    response = authed_client.get("/admin/")
+
+    assert "Fetch in progress" in response.text
+    assert "Last fetch failed: HTTP Error 404: Not Found" in response.text
 
 
 def test_channels_list_no_flash_message_without_triggered_param(authed_client, db_path):
@@ -797,6 +1061,7 @@ def test_admin_channels_logo_links_to_dashboard(authed_client, db_path):
 
 def test_channels_list_freshness_has_exact_time_tooltip(authed_client, db_path):
     from beehive.db.sources import record_fetch_success
+
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -809,10 +1074,13 @@ def test_channels_list_freshness_has_exact_time_tooltip(authed_client, db_path):
 
 def test_admin_channels_list_shows_fetch_stats(authed_client, db_path):
     from beehive.db.sources import record_fetch_success
+
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    record_fetch_success(conn, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20)
+    record_fetch_success(
+        conn, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20
+    )
     conn.close()
 
     resp = authed_client.get("/admin/")
@@ -820,7 +1088,9 @@ def test_admin_channels_list_shows_fetch_stats(authed_client, db_path):
 
 
 def test_channels_list_does_not_show_effective_recipient(
-    authed_client, db_path, monkeypatch,
+    authed_client,
+    db_path,
+    monkeypatch,
 ):
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     conn = connect(db_path)
@@ -828,7 +1098,8 @@ def test_channels_list_does_not_show_effective_recipient(
     overridden = create_channel(conn, "Overridden", "profile")
     conn.execute(
         "UPDATE channels SET digest_email = ? WHERE id = ?",
-        ("channel@example.com", overridden))
+        ("channel@example.com", overridden),
+    )
     conn.commit()
     conn.close()
 
@@ -839,26 +1110,29 @@ def test_channels_list_does_not_show_effective_recipient(
 
 
 def test_edit_channel_form_shows_override_and_effective_recipient(
-    authed_client, db_path, monkeypatch,
+    authed_client,
+    db_path,
+    monkeypatch,
 ):
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     conn = connect(db_path)
     channel_id = create_channel(conn, "Email Channel", "profile")
     conn.execute(
         "UPDATE channels SET digest_email = ? WHERE id = ?",
-        ("channel@example.com", channel_id))
+        ("channel@example.com", channel_id),
+    )
     conn.commit()
     conn.close()
 
-    response = authed_client.get(
-        f"/admin/channels/{channel_id}/edit")
+    response = authed_client.get(f"/admin/channels/{channel_id}/edit")
     assert 'name="digest_email"' in response.text
     assert 'value="channel@example.com"' in response.text
     assert "Currently in effect: channel@example.com" in response.text
 
 
 def test_update_channel_saves_recipient_override(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Email Channel", "profile")
@@ -872,23 +1146,26 @@ def test_update_channel_saves_recipient_override(
             "fetch_interval_hours": "3",
             "digest_email": " channel@example.com ",
             "csrf_token": "csrf1",
-        })
+        },
+    )
     assert response.status_code == 303
     conn = connect(db_path)
     channel = conn.execute(
-        "SELECT digest_email FROM channels WHERE id = ?",
-        (channel_id,)).fetchone()
+        "SELECT digest_email FROM channels WHERE id = ?", (channel_id,)
+    ).fetchone()
     assert channel["digest_email"] == "channel@example.com"
 
 
 def test_update_channel_blank_recipient_restores_inheritance(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Email Channel", "profile")
     conn.execute(
         "UPDATE channels SET digest_email = 'channel@example.com' WHERE id = ?",
-        (channel_id,))
+        (channel_id,),
+    )
     conn.commit()
     conn.close()
 
@@ -900,17 +1177,19 @@ def test_update_channel_blank_recipient_restores_inheritance(
             "fetch_interval_hours": "3",
             "digest_email": "",
             "csrf_token": "csrf1",
-        })
+        },
+    )
     assert response.status_code == 303
     conn = connect(db_path)
     channel = conn.execute(
-        "SELECT digest_email FROM channels WHERE id = ?",
-        (channel_id,)).fetchone()
+        "SELECT digest_email FROM channels WHERE id = ?", (channel_id,)
+    ).fetchone()
     assert channel["digest_email"] is None
 
 
 def test_invalid_channel_recipient_rerenders_without_writing(
-    authed_client, db_path,
+    authed_client,
+    db_path,
 ):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Email Channel", "profile")
@@ -924,18 +1203,21 @@ def test_invalid_channel_recipient_rerenders_without_writing(
             "fetch_interval_hours": "3",
             "digest_email": "one@example.com,two@example.com",
             "csrf_token": "csrf1",
-        })
+        },
+    )
     assert response.status_code == 400
     assert "Only one email address is supported" in response.text
     conn = connect(db_path)
     channel = conn.execute(
-        "SELECT digest_email FROM channels WHERE id = ?",
-        (channel_id,)).fetchone()
+        "SELECT digest_email FROM channels WHERE id = ?", (channel_id,)
+    ).fetchone()
     assert channel["digest_email"] is None
 
 
 def test_invalid_channel_override_rerender_shows_inherited_effective_default(
-    authed_client, db_path, monkeypatch,
+    authed_client,
+    db_path,
+    monkeypatch,
 ):
     """On a rejected override the field keeps the raw submitted value, but the effective
     hint is resolved from the unmodified row so it shows the inherited default, not 未配置."""
@@ -952,7 +1234,8 @@ def test_invalid_channel_override_rerender_shows_inherited_effective_default(
             "fetch_interval_hours": "3",
             "digest_email": "one@example.com,two@example.com",
             "csrf_token": "csrf1",
-        })
+        },
+    )
     assert response.status_code == 400
     assert 'value="one@example.com,two@example.com"' in response.text
     assert "Currently in effect: fallback@example.com" in response.text
@@ -960,7 +1243,9 @@ def test_invalid_channel_override_rerender_shows_inherited_effective_default(
 
 
 def test_edit_channel_shows_page_banner_for_invalid_global_default(
-    authed_client, db_path, monkeypatch,
+    authed_client,
+    db_path,
+    monkeypatch,
 ):
     """An invalid deployment-wide default surfaces in a page-level banner on the edit page,
     separate from the per-Channel field error slot."""
@@ -976,7 +1261,9 @@ def test_edit_channel_shows_page_banner_for_invalid_global_default(
 
 
 def test_channels_list_shows_page_banner_for_invalid_global_default(
-    authed_client, db_path, monkeypatch,
+    authed_client,
+    db_path,
+    monkeypatch,
 ):
     """The same invalid deployment-wide default must not silently vanish on the list page."""
     monkeypatch.setenv("DIGEST_EMAIL_TO", "one@example.com,two@example.com")
@@ -990,7 +1277,9 @@ def test_channels_list_shows_page_banner_for_invalid_global_default(
     assert "Only one email address is supported" in response.text
 
 
-def test_edit_channel_shows_hackernews_icons_and_prefixed_labels(authed_client, db_path):
+def test_edit_channel_shows_hackernews_icons_and_prefixed_labels(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Tech", "profile")
     create_source(conn, channel_id, "hackernews_stories", {"feed": "top"})

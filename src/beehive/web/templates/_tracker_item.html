@@ -1,0 +1,38 @@
+<article class="tracker-card{{ ' tracker-card--history' if tracker_item_history else '' }}" id="tracker-item-{{ item.id }}">
+  <a class="tracker-card-media" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">
+    {% if item.image_url %}
+    <img src="{{ item.image_url }}" alt="" width="320" height="240" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+    {% else %}
+    <span class="tracker-image-placeholder" aria-hidden="true"></span>
+    {% endif %}
+    <span class="sr-only">{{ t('web.item.opens_new_window') }}</span>
+  </a>
+  <div class="tracker-card-main">
+    <div class="tracker-card-kicker">
+      <span>{{ item.context }}</span>
+      <span class="listing-status{{ ' listing-status--available' if item.is_active else ' listing-status--removed' }}">{{ t('web.tracker.status_active' if item.is_active else 'web.tracker.status_closed') }}</span>
+    </div>
+    <h3><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
+    {% if item.pricing_facts %}
+    <p class="tracker-pricing">
+      {% for fact in item.pricing_facts %}<span>{{ fact }}</span>{% endfor %}
+    </p>
+    {% endif %}
+  </div>
+  <div class="tracker-card-deadline">
+    {% if item.deadline_relative_label %}<strong>{{ item.deadline_relative_label }}</strong>{% endif %}
+    {% if item.deadline_label %}
+    <time datetime="{{ item.deadline }}">{{ t('web.tracker.closed_at' if not item.is_active else 'web.tracker.closes_at', time=item.deadline_label) }}</time>
+    {% else %}
+    <span>{{ t('web.tracker.no_deadline') }}</span>
+    {% endif %}
+    {% if item.ai_score is not none %}<small>{{ t('web.tracker.match_score', score=item.ai_score) }}</small>{% endif %}
+  </div>
+  <div class="tracker-card-action">
+    {% set watch_origin = "channel" %}
+    {% set watch_target = "this" %}
+    {% set watch_swap = "outerHTML" %}
+    {% set watch_remove_mode = false %}
+    {% include "_tracker_watch_control.html" %}
+  </div>
+</article>

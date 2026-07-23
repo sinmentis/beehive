@@ -23,6 +23,7 @@ def _tile(
     price_was=None,
     is_available=True,
     brand_name="Acme Outdoor",
+    image_url="/media/1001.jpg",
 ):
     tile = {
         "id": tile_id,
@@ -34,6 +35,8 @@ def _tile(
     }
     if price_was is not None:
         tile["priceWas"] = price_was
+    if image_url is not None:
+        tile["imageUrl"] = image_url
     return tile
 
 
@@ -77,7 +80,7 @@ def test_fetch_maps_product_fields_and_metadata():
     connector = LandSeaCollectionConnector(fetch_html=lambda url: _page_html([_tile()]))
     item = connector.fetch({"collection_url": _COLLECTION_URL})[0]
 
-    assert item.external_id == "1001:49.99"
+    assert item.external_id == "1001"
     assert item.title == "Alpha Jacket"
     assert item.url == "https://www.land-sea.co.nz/product/1001/alpha-jacket"
     assert item.body == ""
@@ -91,7 +94,41 @@ def test_fetch_maps_product_fields_and_metadata():
         "vendor": "Acme Outdoor",
         "product_type": None,
         "tags": [],
+        "image_url": "https://www.land-sea.co.nz/media/1001.jpg",
     }
+
+
+def test_fetch_uses_the_stable_product_id_regardless_of_price():
+    cheap = LandSeaCollectionConnector(
+        fetch_html=lambda url: _page_html([_tile(price=10.00)])
+    ).fetch({"collection_url": _COLLECTION_URL})[0]
+    dear = LandSeaCollectionConnector(
+        fetch_html=lambda url: _page_html([_tile(price=99.00)])
+    ).fetch({"collection_url": _COLLECTION_URL})[0]
+    assert cheap.external_id == "1001"
+    assert dear.external_id == "1001"
+
+
+def test_fetch_resolves_a_relative_or_object_image_field_defensively():
+    object_tile = _tile(image_url=None)
+    object_tile["image"] = {"src": "https://cdn.land-sea.co.nz/abc.jpg"}
+    object_item = LandSeaCollectionConnector(
+        fetch_html=lambda url: _page_html([object_tile])
+    ).fetch({"collection_url": _COLLECTION_URL})[0]
+    assert object_item.raw_metadata["image_url"] == "https://cdn.land-sea.co.nz/abc.jpg"
+
+    relative_item = LandSeaCollectionConnector(
+        fetch_html=lambda url: _page_html([_tile(image_url="/media/rel.jpg")])
+    ).fetch({"collection_url": _COLLECTION_URL})[0]
+    assert relative_item.raw_metadata["image_url"] == "https://www.land-sea.co.nz/media/rel.jpg"
+
+
+def test_fetch_leaves_image_url_none_when_no_image_field_is_present():
+    connector = LandSeaCollectionConnector(
+        fetch_html=lambda url: _page_html([_tile(image_url=None)])
+    )
+    item = connector.fetch({"collection_url": _COLLECTION_URL})[0]
+    assert item.raw_metadata["image_url"] is None
 
 
 def test_fetch_flags_on_sale_when_price_was_exceeds_price():
@@ -101,7 +138,7 @@ def test_fetch_flags_on_sale_when_price_was_exceeds_price():
     item = connector.fetch({"collection_url": _COLLECTION_URL})[0]
     assert item.raw_metadata["on_sale"] is True
     assert item.raw_metadata["compare_at_price"] == 50.00
-    assert item.external_id == "1001:30.00"
+    assert item.external_id == "1001"
 
 
 def test_fetch_ignores_price_was_that_does_not_exceed_price():
@@ -129,7 +166,7 @@ def test_fetch_skips_a_tile_with_no_usable_price_and_keeps_the_rest(capsys):
     )
     items = connector.fetch({"collection_url": _COLLECTION_URL})
 
-    assert [item.external_id for item in items] == ["2:49.99"]
+    assert [item.external_id for item in items] == ["2"]
     assert "skipping product index=0" in capsys.readouterr().out
 
 
@@ -142,7 +179,7 @@ def test_fetch_skips_a_tile_missing_id_producturl_or_name(capsys):
     )
     items = connector.fetch({"collection_url": _COLLECTION_URL})
 
-    assert [item.external_id for item in items] == ["2:49.99"]
+    assert [item.external_id for item in items] == ["2"]
     assert "skipping product index=0" in capsys.readouterr().out
 
 
@@ -151,7 +188,7 @@ def test_fetch_skips_a_non_dict_tile_entry(capsys):
         fetch_html=lambda url: _page_html(["not-a-tile", _tile()])
     )
     items = connector.fetch({"collection_url": _COLLECTION_URL})
-    assert [item.external_id for item in items] == ["1001:49.99"]
+    assert [item.external_id for item in items] == ["1001"]
     assert "skipping product index=0" in capsys.readouterr().out
 
 

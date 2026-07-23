@@ -32,8 +32,9 @@ def _product(
     tags=None,
     published_at="2026-05-05T11:12:16+10:00",
     created_at="2026-01-01T00:00:00+00:00",
+    images=None,
 ):
-    return {
+    product = {
         "id": product_id,
         "handle": handle,
         "title": title,
@@ -44,6 +45,11 @@ def _product(
         "published_at": published_at,
         "created_at": created_at,
     }
+    if images is not None:
+        product["images"] = images
+    else:
+        product["images"] = [{"src": "https://cdn.example-store.com/alpha-1.jpg"}]
+    return product
 
 
 def _page(products):
@@ -106,7 +112,7 @@ def test_fetch_maps_product_fields_and_metadata():
     connector = ShopifyCollectionConnector(fetch_json=lambda url: _page([_product()]))
     item = connector.fetch({"collection_url": _COLLECTION_URL})[0]
 
-    assert item.external_id == "1001:49.99"
+    assert item.external_id == "1001"
     assert item.title == "Alpha Jacket"
     assert item.url == "https://example-store.com/products/alpha-jacket"
     assert item.body == ""
@@ -119,7 +125,60 @@ def test_fetch_maps_product_fields_and_metadata():
         "vendor": "Acme Outdoor",
         "product_type": "Jacket",
         "tags": ["clearance"],
+        "image_url": "https://cdn.example-store.com/alpha-1.jpg",
     }
+
+
+def test_fetch_uses_the_stable_product_id_regardless_of_price():
+    # external_id must not encode price any more: a price move keeps the same stable id so the
+    # mutable-snapshot path refreshes one row instead of accreting a new one per price.
+    cheap = _product(variants=[_variant(price="10.00")])
+    dear = _product(variants=[_variant(price="99.00")])
+    cheap_item = ShopifyCollectionConnector(fetch_json=lambda url: _page([cheap])).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )[0]
+    dear_item = ShopifyCollectionConnector(fetch_json=lambda url: _page([dear])).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )[0]
+    assert cheap_item.external_id == "1001"
+    assert dear_item.external_id == "1001"
+
+
+def test_fetch_extracts_image_url_from_the_first_images_entry():
+    product = _product(
+        images=[
+            {"src": "https://cdn.example-store.com/first.jpg"},
+            {"src": "https://cdn.example-store.com/second.jpg"},
+        ]
+    )
+    connector = ShopifyCollectionConnector(fetch_json=lambda url: _page([product]))
+    item = connector.fetch({"collection_url": _COLLECTION_URL})[0]
+    assert item.raw_metadata["image_url"] == "https://cdn.example-store.com/first.jpg"
+
+
+def test_fetch_extracts_image_url_from_a_single_image_object_or_string():
+    without_images = _product(images=[])
+    with_object = dict(without_images)
+    with_object["image"] = {"src": "https://cdn.example-store.com/featured.jpg"}
+    with_string = dict(without_images)
+    with_string["image"] = "https://cdn.example-store.com/bare.jpg"
+
+    object_item = ShopifyCollectionConnector(
+        fetch_json=lambda url: _page([with_object])
+    ).fetch({"collection_url": _COLLECTION_URL})[0]
+    string_item = ShopifyCollectionConnector(
+        fetch_json=lambda url: _page([with_string])
+    ).fetch({"collection_url": _COLLECTION_URL})[0]
+
+    assert object_item.raw_metadata["image_url"] == "https://cdn.example-store.com/featured.jpg"
+    assert string_item.raw_metadata["image_url"] == "https://cdn.example-store.com/bare.jpg"
+
+
+def test_fetch_leaves_image_url_none_when_no_usable_image_is_present():
+    product = _product(images=[{"alt": "no src here"}, "   "])
+    connector = ShopifyCollectionConnector(fetch_json=lambda url: _page([product]))
+    item = connector.fetch({"collection_url": _COLLECTION_URL})[0]
+    assert item.raw_metadata["image_url"] is None
 
 
 def test_fetch_falls_back_to_created_at_when_published_at_is_missing():
@@ -151,7 +210,7 @@ def test_fetch_flags_on_sale_using_the_highest_qualifying_compare_at_price():
     assert item.raw_metadata["price"] == 20.00
     assert item.raw_metadata["compare_at_price"] == 50.00
     assert item.raw_metadata["on_sale"] is True
-    assert item.external_id == "1001:20.00"
+    assert item.external_id == "1001"
 
 
 def test_fetch_ignores_compare_at_price_that_does_not_exceed_price():
@@ -189,7 +248,7 @@ def test_fetch_skips_a_product_with_no_usable_variant_price_and_keeps_the_rest(c
     )
     items = connector.fetch({"collection_url": _COLLECTION_URL})
 
-    assert [item.external_id for item in items] == ["2:49.99"]
+    assert [item.external_id for item in items] == ["2"]
     assert "skipping product index=0" in capsys.readouterr().out
 
 
@@ -202,7 +261,7 @@ def test_fetch_skips_a_product_with_no_variants_field_at_all(capsys):
     )
     items = connector.fetch({"collection_url": _COLLECTION_URL})
 
-    assert [item.external_id for item in items] == ["2:49.99"]
+    assert [item.external_id for item in items] == ["2"]
     assert "skipping product index=0" in capsys.readouterr().out
 
 
@@ -215,7 +274,7 @@ def test_fetch_skips_a_product_missing_id_handle_or_title(capsys):
     )
     items = connector.fetch({"collection_url": _COLLECTION_URL})
 
-    assert [item.external_id for item in items] == ["2:49.99"]
+    assert [item.external_id for item in items] == ["2"]
     assert "skipping product index=0" in capsys.readouterr().out
 
 
@@ -224,7 +283,7 @@ def test_fetch_skips_a_non_dict_product_entry(capsys):
         fetch_json=lambda url: _page(["not-a-product", _product()])
     )
     items = connector.fetch({"collection_url": _COLLECTION_URL})
-    assert [item.external_id for item in items] == ["1001:49.99"]
+    assert [item.external_id for item in items] == ["1001"]
     assert "skipping product index=0" in capsys.readouterr().out
 
 

@@ -23,7 +23,7 @@ CPUQuota=100%
 CPUWeight=20
 MemoryHigh=384M
 MemoryMax=512M
-TimeoutStartSec=600
+TimeoutStartSec=3600
 
 # No [Install]: this is started only by beehive-fetch-manual.path, never at boot and never on
 # a timer.

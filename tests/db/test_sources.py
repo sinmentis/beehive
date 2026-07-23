@@ -23,12 +23,47 @@ def channel_id(conn):
     return create_channel(conn, "NZ Finance", "economic news")
 
 
+def test_create_source_rejects_a_type_incompatible_with_the_channel_kind(conn):
+    """The persistence safety seam: an editorial-only Source type cannot be attached to a
+    non-editorial Channel, and nothing is inserted when it is refused."""
+    monitor_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    with pytest.raises(ValueError, match="not compatible with a 'monitor' Channel"):
+        create_source(conn, monitor_id, "reddit_subreddit", {"subreddit": "x"})
+    assert list_by_channel(conn, monitor_id) == []
+
+
+def test_create_source_rejects_a_monitor_type_on_an_editorial_channel(conn, channel_id):
+    with pytest.raises(ValueError, match="not compatible with a 'editorial' Channel"):
+        create_source(
+            conn, channel_id, "shopify_collection",
+            {"collection_url": "https://a/collections/x"})
+    assert list_by_channel(conn, channel_id) == []
+
+
+def test_create_source_accepts_a_tracker_type_on_a_tracker_channel(conn):
+    tracker_id = create_channel(conn, "Auctions", "lots", kind="tracker")
+    create_source(conn, tracker_id, "all_about_auctions", {})
+    assert [s["type"] for s in list_by_channel(conn, tracker_id)] == ["all_about_auctions"]
+
+
+def test_create_source_raises_for_a_missing_channel(conn):
+    with pytest.raises(ValueError, match="Channel 9999 does not exist"):
+        create_source(conn, 9999, "reddit_subreddit", {"subreddit": "x"})
+
+
+def test_create_source_raises_for_an_unknown_source_type(conn, channel_id):
+    with pytest.raises(ValueError, match="unknown Source type"):
+        create_source(conn, channel_id, "bogus_type", {})
+    assert list_by_channel(conn, channel_id) == []
+
+
 def test_create_and_list_source(conn, channel_id):
     create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
     sources = list_by_channel(conn, channel_id)
     assert len(sources) == 1
     assert sources[0]["type"] == "reddit_subreddit"
     assert json.loads(sources[0]["config"])["subreddit"] == "PersonalFinanceNZ"
+
 
 
 def test_record_fetch_success_clears_error(conn, channel_id):

@@ -1,0 +1,7 @@
+{% if pagination.page_count > 1 or pagination.page > 1 %}
+<nav class="channel-pagination" aria-label="{{ pagination_aria }}">
+  {% if previous_url %}<a href="{{ previous_url }}">{{ t('web.channel.pagination_previous') }}</a>{% else %}<span></span>{% endif %}
+  <span>{{ t('web.channel.page_label', page=pagination.page, pages=pagination.page_count) }}</span>
+  {% if next_url %}<a href="{{ next_url }}">{{ t('web.channel.pagination_next') }}</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}

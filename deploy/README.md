@@ -4,8 +4,9 @@ Beehive runs on a single rootless-Podman host as one shared image (`../Container
 process selects its role through a Quadlet unit's `Exec=`:
 
 - an always-on public web app (Dashboard, Channel drill-down, and `/admin/*`),
-- a timer-triggered fetch/AI-rank cycle, and
+- a timer-triggered fetch/AI-rank cycle,
 - an hourly-evaluated periodic email group digest job,
+- a five-minute Tracker reminder job, currently backed by the auction adapter,
 - a queued, owner-triggered article deep-read worker, and
 - an always-on durable Research worker (Research Runs + Research Chat replies, ADR-0009), backed
   by a periodic reconciliation timer.
@@ -30,6 +31,7 @@ the reverse proxy.
 | `quadlet/beehive-fetch.container` + `.timer` | Fetch → dedup → AI-rank cycle, every 3 hours |
 | `quadlet/beehive-fetch-manual.container` + `.path` | Manual per-Channel trigger — started only when the admin UI writes a trigger marker, never on a timer |
 | `quadlet/beehive-digest.container` + `.timer` | Hourly evaluation of every custom email group; each group's own send interval decides whether it actually sends that run |
+| `quadlet/beehive-auction-reminders.container` + `.timer` | Runs the generic Tracker reminder worker every 5 minutes; the current auction adapter claims watched lots inside the one-hour closing window |
 | `quadlet/beehive-deep-read.container` + `.path` + `.timer` | Bounded article brief worker; the path provides low-latency wakeup and the timer reconciles missed wakeups |
 | `quadlet/beehive-research.container` | Always-on durable Research worker — bounded Research Run + Research Chat pools (ADR-0009), `Restart=always` |
 | `quadlet/beehive-research-reconcile.container` + `.timer` | Oneshot expired-lease recovery sweep, every 5 minutes — backstops the always-on worker after a crash/restart; claims/executes nothing |
@@ -64,9 +66,9 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
   sufficiency/synthesis/chat AI calls, all via `ai/llm_client.py`). The web container and the
   Research reconcile-sweep container do not receive this secret — reconciliation only recovers
   expired leases, it never calls the AI.
-- `beehive-acs-connection` → `ACS_CONNECTION_STRING` (the digest container's alert/digest email
-  delivery, paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM` `Environment=` values on
-  `beehive-digest.container`). Omit this secret to skip email; the app falls back to logging.
+- `beehive-acs-connection` → `ACS_CONNECTION_STRING` (digest and Tracker-reminder email delivery,
+  paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM` `Environment=` values on those
+  containers). Omit this secret to skip email; the app falls back to logging.
 
 No Reddit credential is needed: the fetch container's Reddit connector reads Reddit's public,
 unauthenticated Atom RSS feed (`https://www.reddit.com/r/<subreddit>/hot/.rss`), not the OAuth
@@ -101,6 +103,7 @@ systemctl --user start beehive-web.service
 # persist across reboots, same as any regular unit file.
 systemctl --user enable --now beehive-fetch.timer
 systemctl --user enable --now beehive-digest.timer
+systemctl --user enable --now beehive-auction-reminders.timer
 systemctl --user enable --now beehive-fetch-manual.path
 systemctl --user enable --now beehive-deep-read.path
 systemctl --user enable --now beehive-deep-read.timer

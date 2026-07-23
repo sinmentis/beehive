@@ -30,11 +30,13 @@
             <span class="option-check" aria-hidden="true"></span>
           </label>
           {% endfor %}
+          {% if show_twitter_soon %}
           <div class="type-option disabled">
             <span class="source-icon">X</span>
             <span class="name">{{ t('web.source_type.twitter_x') }}</span>
             <span class="soon">Phase 3</span>
           </div>
+          {% endif %}
         </div>
       </fieldset>
       <div class="field config-reddit_subreddit">

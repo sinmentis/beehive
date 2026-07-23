@@ -4,8 +4,7 @@
      title="{{ item.exact_time }}">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   {% if item.engagement_label %}<span class="folded-engagement">{{ item.engagement_label }}</span>{% endif %}
   <div class="folded-actions">
-    {% if channel.kind == 'editorial' %}
-    {% if is_admin %}
+    {% if is_owner %}
     <div class="folded-votes" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}">
       <button type="button" aria-label="{{ t('web.item.vote_up_aria') }}"
               aria-pressed="{{ 'true' if item.vote_value == 1 else 'false' }}"
@@ -28,7 +27,6 @@
     <span class="folded-vote-state up" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>
     {% elif item.vote_value == -1 %}
     <span class="folded-vote-state down" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>
-    {% endif %}
     {% endif %}
     {% set deep_read_variant = "dense" %}
     {% include "_deep_read_action.html" %}

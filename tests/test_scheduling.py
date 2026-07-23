@@ -9,8 +9,12 @@ def _source(last_fetch_at):
     return {"last_fetch_at": last_fetch_at}
 
 
-def _group(last_sent_at, send_interval_hours=24):
-    return {"last_sent_at": last_sent_at, "send_interval_hours": send_interval_hours}
+def _group(last_sent_at, send_interval_hours=24, last_checked_at=None):
+    return {
+        "last_sent_at": last_sent_at,
+        "last_checked_at": last_checked_at,
+        "send_interval_hours": send_interval_hours,
+    }
 
 
 def test_never_fetched_source_is_due():
@@ -75,6 +79,17 @@ def test_email_group_is_not_due_outside_the_grace_window():
     now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
     group = _group(
         (now - timedelta(hours=24) + timedelta(minutes=10)).isoformat(), send_interval_hours=24)
+    assert not email_group_is_due(group, now)
+
+
+def test_recent_empty_email_group_check_controls_the_next_due_time():
+    now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
+    group = _group(
+        (now - timedelta(days=2)).isoformat(),
+        send_interval_hours=24,
+        last_checked_at=(now - timedelta(hours=1)).isoformat(),
+    )
+
     assert not email_group_is_due(group, now)
 
 

@@ -4,7 +4,7 @@ from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.email_groups import (assign_channel, create_email_group, delete_email_group,
                                       get_channel_group, get_email_group, list_email_groups,
-                                      list_member_channels, mark_sent, unassign_channel,
+                                      list_member_channels, mark_checked, mark_sent, unassign_channel,
                                       update_email_group)
 
 
@@ -135,4 +135,16 @@ def test_deleting_a_channel_removes_its_group_membership(conn):
 def test_mark_sent_updates_last_sent_at(conn):
     group_id = create_email_group(conn, "Weekly roundup")
     mark_sent(conn, group_id, "2026-07-13T20:00:00+00:00")
-    assert get_email_group(conn, group_id)["last_sent_at"] == "2026-07-13T20:00:00+00:00"
+    group = get_email_group(conn, group_id)
+    assert group["last_sent_at"] == "2026-07-13T20:00:00+00:00"
+    assert group["last_checked_at"] == "2026-07-13T20:00:00+00:00"
+
+
+def test_mark_checked_does_not_claim_an_email_was_sent(conn):
+    group_id = create_email_group(conn, "Weekly roundup")
+
+    mark_checked(conn, group_id, "2026-07-13T20:00:00+00:00")
+
+    group = get_email_group(conn, group_id)
+    assert group["last_checked_at"] == "2026-07-13T20:00:00+00:00"
+    assert group["last_sent_at"] is None

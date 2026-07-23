@@ -28,9 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   summaries, summary rewrites, and article briefs.
 - Per-channel highlight-count and minimum-score settings for Channel pages and daily digests.
 - Home-dashboard read/unread views, counts, and owner voting controls.
+- All About Auctions upcoming-lot monitoring with public bids, descriptions, estimates,
+  seller-stated RRP, fee-inclusive cost, stable-lot refreshes, and Tracker AI ranking.
+- Immutable Editorial, Monitor, and Tracker Channel workflows with definition-driven ranking,
+  persistence, lifecycle, events, navigation, and notification behavior.
+- Dedicated Channel panels: Editorial reading and feedback, Monitor catalogue search and changes,
+  and Tracker watched, ending-soon, upcoming, and permanent-history sections.
+- Strict Source compatibility declarations enforced by admin forms, persistence, collection, and
+  startup contract tests.
+- Generic Tracker Watches and follow-up reminders, with All About Auctions as the first adapter and
+  compatibility-preserving auction reminder storage and deployment names.
 
 ### Changed
 
+- Email Groups now consume actionable Channel events and may render mixed Editorial, Monitor, and
+  Tracker sections without sending empty scheduled messages.
 - New ranking summaries state the strongest evidence-supported conclusion in one sentence instead
   of only describing the article topic.
 - Failed article briefs now identify the failing stage, explain whether the LLM ran, and provide a

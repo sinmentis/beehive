@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
+from beehive.domain.channels import ChannelKind
+
 
 @dataclass(frozen=True)
 class RawItem:
@@ -27,6 +29,12 @@ class CommentFetchTarget:
 
 class SourceConnector(Protocol):
     type_key: str
+    # The Channel kinds this connector's Source type may be attached to. This is a required,
+    # non-empty declaration: the Source/Channel compatibility policy (channels/source_policy.py)
+    # fails closed if it is missing or empty, so a new connector cannot be silently attachable to
+    # every kind or to none. An editorial feed declares {EDITORIAL}, a storefront watch declares
+    # {MONITOR}, an auction-lot tracker declares {TRACKER}.
+    supported_channel_kinds: frozenset[ChannelKind]
 
     def validate_config(self, config: dict) -> None:
         ...

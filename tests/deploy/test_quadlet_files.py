@@ -2,14 +2,24 @@
 """Static syntax validation for deploy/quadlet/*.container and *.timer — catches the
 "Quadlet silently generates nothing" class of bug (e.g. a [Service]-only key placed under
 [Container]) without needing a real Podman/systemd host."""
+
 from __future__ import annotations
 
 import configparser
 from pathlib import Path
 
 _QUADLET_DIR = Path(__file__).parent.parent.parent / "deploy" / "quadlet"
-_SERVICE_ONLY_KEYS = {"CPUQuota", "CPUWeight", "MemoryHigh", "MemoryMax", "TimeoutStartSec",
-                      "TimeoutStopSec", "ExecStartPre", "Type", "Restart"}
+_SERVICE_ONLY_KEYS = {
+    "CPUQuota",
+    "CPUWeight",
+    "MemoryHigh",
+    "MemoryMax",
+    "TimeoutStartSec",
+    "TimeoutStopSec",
+    "ExecStartPre",
+    "Type",
+    "Restart",
+}
 
 
 def _parser() -> configparser.ConfigParser:
@@ -25,9 +35,15 @@ def _parser() -> configparser.ConfigParser:
 
 def test_expected_container_files_exist():
     names = {f.name for f in _QUADLET_DIR.glob("*.container")}
-    assert {"beehive-web.container", "beehive-fetch.container",
-            "beehive-digest.container", "beehive-deep-read.container",
-            "beehive-research.container", "beehive-research-reconcile.container"} <= names
+    assert {
+        "beehive-web.container",
+        "beehive-fetch.container",
+        "beehive-digest.container",
+        "beehive-auction-reminders.container",
+        "beehive-deep-read.container",
+        "beehive-research.container",
+        "beehive-research-reconcile.container",
+    } <= names
 
 
 def test_expected_volume_files_exist():
@@ -58,19 +74,24 @@ def test_container_files_are_valid_ini_with_no_service_keys_under_container():
         parser.read(path)
         assert "Container" in parser, f"{path.name}: missing [Container] section"
         leaked = _SERVICE_ONLY_KEYS & set(parser["Container"].keys())
-        assert not leaked, f"{path.name}: [Service]-only keys under [Container]: {leaked}"
+        assert not leaked, (
+            f"{path.name}: [Service]-only keys under [Container]: {leaked}"
+        )
 
 
 def test_oneshot_containers_have_no_install_section():
     for name in (
         "beehive-fetch.container",
         "beehive-digest.container",
+        "beehive-auction-reminders.container",
         "beehive-deep-read.container",
         "beehive-research-reconcile.container",
     ):
         parser = _parser()
         parser.read(_QUADLET_DIR / name)
-        assert "Install" not in parser, f"{name}: oneshot units are timer-started, not boot-started"
+        assert "Install" not in parser, (
+            f"{name}: oneshot units are timer-started, not boot-started"
+        )
 
 
 def test_timer_files_are_valid_ini_and_reference_a_unit():
@@ -92,7 +113,9 @@ def test_timer_files_reference_a_service_with_a_matching_container_file():
         parser = _parser()
         parser.read(path)
         unit = parser["Timer"]["Unit"]
-        assert unit.endswith(".service"), f"{path.name}: Unit= '{unit}' should end in .service"
+        assert unit.endswith(".service"), (
+            f"{path.name}: Unit= '{unit}' should end in .service"
+        )
         stem = unit.removesuffix(".service")
         assert stem in container_stems, (
             f"{path.name}: Unit={unit} has no matching {stem}.container file"
@@ -128,6 +151,43 @@ def test_manual_fetch_container_has_the_copilot_secret_and_db_path():
     parser.read(_QUADLET_DIR / "beehive-fetch-manual.container")
     assert "target=COPILOT_GITHUB_TOKEN" in parser["Container"]["Secret"]
     assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
+
+
+def test_manual_fetch_timeout_covers_large_monitor_backlogs():
+    from beehive.collector.manual_trigger import MANUAL_FETCH_STALE_SECONDS
+
+    parser = _parser()
+    parser.read(_QUADLET_DIR / "beehive-fetch-manual.container")
+    timeout_seconds = int(parser["Service"]["TimeoutStartSec"])
+
+    assert timeout_seconds == 3600
+    assert MANUAL_FETCH_STALE_SECONDS > timeout_seconds
+
+
+def test_scheduled_fetch_timeout_covers_auction_refreshes():
+    parser = _parser()
+    parser.read(_QUADLET_DIR / "beehive-fetch.container")
+
+    assert parser["Service"]["TimeoutStartSec"] == "3600"
+
+
+def test_auction_reminder_worker_runs_every_five_minutes_with_email_secret():
+    parser = _parser()
+    container_path = _QUADLET_DIR / "beehive-auction-reminders.container"
+    parser.read(container_path)
+    assert "Environment=DB_PATH=/data/beehive.db" in container_path.read_text()
+    assert "target=ACS_CONNECTION_STRING" in parser["Container"]["Secret"]
+    assert (
+        parser["Container"]["Exec"]
+        == "-m scripts.run_collector --mode auction-reminders"
+    )
+    assert parser["Service"]["TimeoutStartSec"] == "120"
+
+    timer = _parser()
+    timer.read(_QUADLET_DIR / "beehive-auction-reminders.timer")
+    assert timer["Timer"]["OnCalendar"] == "*:0/5"
+    assert timer["Timer"]["Persistent"] == "true"
+    assert timer["Timer"]["Unit"] == "beehive-auction-reminders.service"
 
 
 def test_manual_fetch_container_execstartpre_consumes_the_correct_marker():
@@ -185,7 +245,9 @@ def test_research_reconcile_container_is_oneshot_without_copilot_secret():
     parser = _parser()
     parser.read(_QUADLET_DIR / "beehive-research-reconcile.container")
 
-    assert parser["Container"]["Exec"] == "-m scripts.run_research_worker --reconcile-once"
+    assert (
+        parser["Container"]["Exec"] == "-m scripts.run_research_worker --reconcile-once"
+    )
     assert parser["Container"]["Volume"] == "beehive-data.volume:/data"
     assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
     # Reconciliation only recovers expired leases -- it never calls the AI, so it does not need

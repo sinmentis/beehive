@@ -5,16 +5,14 @@ Shopify exposes every collection's contents as JSON for free at
 <collection_url>/products.json -- no scraping, no headless browser, no API key.
 
 Unlike editorial connectors (each fetched item is either new-to-us or already-seen), a price
-monitor's interesting signal IS a state change on an already-seen product. Rather than adding a
-second table to track that, external_id encodes the product's *current lowest variant price*
-(f"{product_id}:{price}") -- so insert_new's existing UNIQUE(source_id, external_id) dedup
-already gives us exactly the semantics run_cycle.py's monitor-kind skip comment describes
-("track deterministic state changes"): a product entering the collection for the first time,
-OR an already-seen product's price moving to a value we haven't recorded before, both look like
-a fresh row; a re-fetch at an unchanged price is silently ignored, same as it already is for
-every other connector. Downstream alerting on top of that (e.g. "tell me when a NEW row lands
-with on_sale=True") is intentionally left for a later step -- this connector's only job is
-fetch-and-normalize.
+monitor's interesting signal IS a state change on an already-seen product. external_id is the
+product's stable Shopify id, so the same listing keeps one Item row across cycles; its current
+price/availability live in raw_metadata and are refreshed in place by the mutable-snapshot
+persistence path (db/items.py's upsert_mutable_item), which is also where a price move or a
+return to stock is turned into a deliverable event. This connector's only job is
+fetch-and-normalize -- it does not itself decide what changed. The lowest current variant price,
+whether it is on sale, and whether any variant is available are captured for that downstream
+comparison, along with a best-effort image_url for presentation.
 
 Optional config key 'vendors': a list of brand names to keep, matched case-insensitively
 against each product's 'vendor' field. This filtering happens locally, AFTER fetching every
@@ -34,6 +32,7 @@ from urllib.parse import urlencode, urlparse
 
 from beehive.connectors.base import RawItem
 from beehive.connectors.registry import register
+from beehive.domain.channels import ChannelKind
 
 _USER_AGENT = "beehive/0.1 (personal information hub)"
 _REQUEST_TIMEOUT_SECONDS = 20
@@ -98,6 +97,34 @@ def _variant_summary(variants: list) -> dict[str, Any]:
     }
 
 
+def _image_url_from_candidate(value: Any) -> str | None:
+    """A usable image URL from one Shopify image shape, or None. Shopify returns images either as
+    objects carrying a 'src' URL or, in some feeds, as a bare URL string; anything else yields
+    None rather than a guessed URL."""
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    if isinstance(value, dict):
+        src = value.get("src")
+        if isinstance(src, str) and src.strip():
+            return src.strip()
+    return None
+
+
+def _extract_image_url(product: dict) -> str | None:
+    images = product.get("images")
+    if isinstance(images, list):
+        for image in images:
+            url = _image_url_from_candidate(image)
+            if url:
+                return url
+    for key in ("image", "featured_image"):
+        url = _image_url_from_candidate(product.get(key))
+        if url:
+            return url
+    return None
+
+
 def _to_raw_item(product: dict, store_origin: str) -> RawItem:
     if not isinstance(product, dict):
         raise ValueError("product entry must be an object")
@@ -109,7 +136,7 @@ def _to_raw_item(product: dict, store_origin: str) -> RawItem:
     summary = _variant_summary(product.get("variants"))
     tags = product.get("tags")
     return RawItem(
-        external_id=f"{product_id}:{summary['price']:.2f}",
+        external_id=str(product_id),
         title=title,
         url=f"{store_origin}/products/{handle}",
         body="",
@@ -122,12 +149,14 @@ def _to_raw_item(product: dict, store_origin: str) -> RawItem:
             "vendor": product.get("vendor"),
             "product_type": product.get("product_type"),
             "tags": tags if isinstance(tags, list) else [],
+            "image_url": _extract_image_url(product),
         },
     )
 
 
 class ShopifyCollectionConnector:
     type_key = "shopify_collection"
+    supported_channel_kinds = frozenset({ChannelKind.MONITOR})
 
     def __init__(self, fetch_json: JsonFetcher = _default_fetch_json):
         self._fetch_json = fetch_json

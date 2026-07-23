@@ -103,14 +103,22 @@ def test_dashboard_matches_selected_a2_pixel_contract():
 
 def test_secondary_navigation_is_scoped_to_each_product_area():
     dashboard = (_TEMPLATES_DIR / "dashboard.html").read_text()
-    channel = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+    channels = [
+        (_TEMPLATES_DIR / template_name).read_text()
+        for template_name in (
+            "channel_editorial.html",
+            "channel_monitor.html",
+            "channel_tracker.html",
+        )
+    ]
     archive = (_TEMPLATES_DIR / "archive.html").read_text()
     admin = (_TEMPLATES_DIR / "admin_settings.html").read_text()
 
     assert "{% block secondary_navigation %}" in dashboard
-    assert "{% block secondary_navigation %}" in channel
     assert '{% include "_channel_shelf.html" %}' in dashboard
-    assert '{% include "_channel_shelf.html" %}' in channel
+    for channel in channels:
+        assert "{% block secondary_navigation %}" in channel
+        assert '{% include "_channel_shelf.html" %}' in channel
 
     assert "{% block secondary_navigation %}" not in archive
     assert '{% include "_channel_shelf.html" %}' not in archive
@@ -147,9 +155,9 @@ def test_dashboard_typography_is_readable_at_default_zoom():
         assert f"font-size:{font_size}" in declaration.group(1)
 
 
-def test_channel_matches_dashboard_dense_visual_contract():
+def test_editorial_channel_keeps_dense_visual_contract():
     css = (_STATIC_DIR / "beehive.css").read_text()
-    template = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+    template = (_TEMPLATES_DIR / "channel_editorial.html").read_text()
 
     assert "--header-height:5.65rem" in css
     assert "--muted:#8b9085" in css
@@ -166,8 +174,8 @@ def test_channel_matches_dashboard_dense_visual_contract():
 
     toolbar = re.search(r"\.channel-toolbar\{([^}]*)\}", css)
     assert toolbar is not None
-    assert "min-height:3rem" in toolbar.group(1)
-    assert "padding:.375rem .6875rem" in toolbar.group(1)
+    assert "min-height:3.75rem" in toolbar.group(1)
+    assert "padding:.45rem .6875rem" in toolbar.group(1)
 
     expected_sizes = {
         r"\.channel-title": "1rem",
@@ -182,16 +190,32 @@ def test_channel_matches_dashboard_dense_visual_contract():
         assert declaration is not None
         assert f"font-size:{font_size}" in declaration.group(1)
 
-    assert '{% block body_class %}page-channel{% endblock %}' in template
+    assert "{% block body_class %}page-channel page-channel-editorial{% endblock %}" in template
     assert '{% include "_channel_shelf.html" %}' in template
     assert 'class="channel-toolbar"' in template
     assert 'class="channel-section-heading"' in template
+    assert "channel.kind" not in template
+
+
+def test_monitor_and_tracker_have_dedicated_typed_templates():
+    monitor = (_TEMPLATES_DIR / "channel_monitor.html").read_text()
+    tracker = (_TEMPLATES_DIR / "channel_tracker.html").read_text()
+    monitor_item = (_TEMPLATES_DIR / "_monitor_item.html").read_text()
+    tracker_item = (_TEMPLATES_DIR / "_tracker_item.html").read_text()
+
+    assert '{% include "_monitor_item.html" %}' in monitor
+    assert '{% include "_tracker_item.html" %}' in tracker
+    assert '{% include "_tracker_watch_control.html" %}' in tracker_item
+    for content in (monitor, tracker, monitor_item, tracker_item):
+        assert "raw_metadata" not in content
+        assert "channel.kind" not in content
 
 
 def test_channel_scripts_use_the_static_asset_fingerprint():
-    content = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
-    assert 'src="/static/htmx.min.js?v={{ asset_version }}"' in content
-    assert 'src="/static/beehive.js?v={{ asset_version }}"' in content
+    for template_name in ("channel_editorial.html", "channel_tracker.html"):
+        content = (_TEMPLATES_DIR / template_name).read_text()
+        assert 'src="/static/htmx.min.js?v={{ asset_version }}"' in content
+        assert 'src="/static/beehive.js?v={{ asset_version }}"' in content
 
 
 def test_dashboard_script_implements_displayed_keyboard_shortcuts():
@@ -261,7 +285,7 @@ def test_htmx_helpers_restore_focus_and_announce_feedback():
 
 
 def test_channel_template_marks_english_count_and_reason_focus_target():
-    content = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+    content = (_TEMPLATES_DIR / "channel_editorial.html").read_text()
     item_content = (_TEMPLATES_DIR / "_item_card.html").read_text()
     assert '<span lang="en">Top</span>' in content
     assert 'data-focus-key="item-{{ item.id }}-reason"' in item_content

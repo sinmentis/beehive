@@ -3,15 +3,17 @@
 -- comparable against Python's datetime.isoformat() strings used everywhere else in the app
 -- (e.g. list_new_since's since_iso parameter). Mixing the two formats made same-UTC-day
 -- string comparisons silently invert, permanently dropping same-day items from the digest.
--- kind discriminates two fundamentally different Channel behaviors: 'editorial' (the
--- original model -- fetched items are AI-ranked against `profile`, a news-interest profile,
--- and rolled into Home/the Channel page) vs 'monitor' (deterministic state-change watches,
--- e.g. a retail page's price -- items are fetched and deduped exactly the same way, and are
--- still AI-ranked, just against a shopping profile via rank_monitor_channel instead of
--- rank_channel, and never accrue votes; see run_channel_cycle). Either kind's items can be
+-- kind discriminates three Channel behaviors: 'editorial' (fetched items are AI-ranked against
+-- `profile`, a news-interest profile, and rolled into Home/the Channel page), 'monitor'
+-- (deterministic state-change watches, e.g. a retail page's price -- items are fetched and
+-- deduped exactly the same way, still AI-ranked but against a shopping profile via
+-- rank_monitor_channel, and never accrue votes), and 'tracker' (time-bounded auction lots that
+-- are refreshed in place as their live state changes; ranked like a monitor). See
+-- run_channel_cycle and beehive.channels for the per-kind behavior, which is data-driven from
+-- the ChannelDefinition registry rather than these SQL comments. Either kind's items can be
 -- included in a periodic digest once its Channel is assigned to an email_groups group (see
 -- below) -- kind does not gate digest inclusion, only how ranking is done.
--- Set once at creation and treated as immutable afterwards -- the two kinds imply different
+-- Set once at creation and treated as immutable afterwards -- the kinds imply different
 -- meanings for highlight_count/minimum_score/profile, so converting an existing channel in
 -- place would leave those fields in a confusing state.
 -- digest_email only overrides the recipient for this channel's own fetch/AI-ranking failure
@@ -21,7 +23,7 @@ CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     profile TEXT NOT NULL DEFAULT '',
-    kind TEXT NOT NULL DEFAULT 'editorial' CHECK (kind IN ('editorial', 'monitor')),
+    kind TEXT NOT NULL DEFAULT 'editorial' CHECK (kind IN ('editorial', 'monitor', 'tracker')),
     fetch_interval_hours INTEGER NOT NULL DEFAULT 3,
     highlight_count      INTEGER NOT NULL DEFAULT 8 CHECK (highlight_count BETWEEN 1 AND 50),
     minimum_score        INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100),
@@ -37,7 +39,11 @@ CREATE TABLE IF NOT EXISTS channels (
 -- send_interval_hours + last_sent_at drive scheduling.email_group_is_due exactly like
 -- sources.last_fetch_at drives source_is_due. recipient_email is optional: a blank/NULL value
 -- falls back to the same global-default resolver channels already use
--- (email_routing.resolve_default_email) -- see digest/send.py.
+-- (email_routing.resolve_default_email) -- see digest/send.py. last_checked_at is a separate
+-- watermark for the mutable-item event path (item_events): it records when this group last
+-- scanned its Channels for deliverable events, independent of last_sent_at (a scan can find
+-- nothing ready and send no email), so the editorial per-Channel digest watermark is never reused
+-- to mean two different things.
 CREATE TABLE IF NOT EXISTS email_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -45,6 +51,7 @@ CREATE TABLE IF NOT EXISTS email_groups (
     recipient_email TEXT,
     send_interval_hours INTEGER NOT NULL DEFAULT 24,
     last_sent_at TEXT,
+    last_checked_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
 
@@ -71,6 +78,18 @@ CREATE TABLE IF NOT EXISTS sources (
     last_fetch_new_count INTEGER
 );
 
+-- external_id is the connector's stable identity for a listing. For an editorial (APPEND) feed
+-- every fetched item is either new or an already-seen duplicate, so a row is inserted once and
+-- never mutated. For a monitor/tracker (MUTABLE_SNAPSHOT) Source the same external_id is refetched
+-- every cycle and its current row is refreshed in place (see db/items.py's upsert_mutable_item):
+--   last_seen_at  -- last successful snapshot that still contained this listing.
+--   inactive_at   -- set when a complete snapshot no longer lists it (out of stock / delisted /
+--                    auction ended). Cleared again if it reappears. Never deletes the row.
+--   superseded_at -- set only by the stable-id compaction migration when an older duplicate row is
+--                    collapsed into a surviving current row. A superseded row is history: it keeps
+--                    its id (so dependent rows like votes/deep_reads/auction_watches never cascade
+--                    away) but is excluded from every normal current-item query by default.
+-- All three are NULL for a plain editorial item, so the APPEND path is unchanged.
 CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -87,8 +106,20 @@ CREATE TABLE IF NOT EXISTS items (
     raw_metadata TEXT NOT NULL DEFAULT '{}',
     opened_at TEXT,
     best_comment_summary TEXT,
+    last_seen_at TEXT,
+    inactive_at TEXT,
+    superseded_at TEXT,
     UNIQUE(source_id, external_id)
 );
+
+-- Current-item lookups (Channel page, collector ranking backlog, digest "new since") and the
+-- snapshot-reconciliation scan all filter to superseded_at IS NULL within one Source, and the
+-- active/history split (tracker) further filters on inactive_at. The composite index that covers
+-- both -- idx_items_source_lifecycle(source_id, superseded_at, inactive_at) -- is created by
+-- db/connection.py AFTER init_schema backfills these columns, not here: an existing database that
+-- predates the columns runs this file's CREATE statements before the column backfill, so building
+-- the index inline would fail on the not-yet-added columns. It never disturbs the
+-- UNIQUE(source_id, external_id) dedup index above.
 
 CREATE TABLE IF NOT EXISTS votes (
     item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
@@ -96,6 +127,84 @@ CREATE TABLE IF NOT EXISTS votes (
     reason TEXT,
     voted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
+
+-- Deliverable state changes on a monitor/tracker Item, staged for a regular Email Group (the
+-- APPEND/editorial digest never uses this table -- it derives "what's new" straight from
+-- channels.last_digest_sent_at). One row is the pending or delivered record of a single
+-- observed event on one Item:
+--   event_type   -- 'discovered' (first time we surfaced this listing), 'price_drop' (current
+--                   price fell below what we last recorded), 'back_in_stock' (a listing that had
+--                   gone inactive is available again). Mirrors domain/channels.py EmailEventType.
+--   payload      -- JSON snapshot of the numbers that make the event legible in an email (e.g.
+--                   old_price/new_price), decoded by db/item_events.py, never parsed in SQL.
+--   observed_at  -- when the collector detected this event (caller-supplied, like deep_reads).
+--   ready_at     -- set once AI scoring keeps the Item; a NULL ready_at event is still pending
+--                   and must not be delivered. suppressed_at is the opposite verdict.
+--   suppressed_at-- set when AI scoring drops the Item, so the pending event is never delivered.
+--   delivered_at -- set when the event has actually gone out in a group email.
+-- The partial unique index below allows at most ONE undelivered, unsuppressed event per
+-- (item_id, event_type). db/item_events.py coalesces a fresh observation into that single open
+-- row (refreshing its payload) instead of inserting a duplicate, so a listing whose price ticks
+-- down three times between two emails still delivers one up-to-date price_drop, and a delivered
+-- event never blocks a later, genuinely new one of the same type.
+CREATE TABLE IF NOT EXISTS item_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL
+        CHECK (event_type IN ('discovered', 'price_drop', 'back_in_stock')),
+    payload TEXT NOT NULL DEFAULT '{}',
+    observed_at TEXT NOT NULL,
+    ready_at TEXT,
+    suppressed_at TEXT,
+    delivered_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_item_events_open_unique
+    ON item_events(item_id, event_type)
+    WHERE delivered_at IS NULL AND suppressed_at IS NULL;
+
+-- Delivery scan: "ready, not yet suppressed, not yet delivered" events for a set of Channels.
+CREATE INDEX IF NOT EXISTS idx_item_events_deliverable
+    ON item_events(item_id, ready_at, suppressed_at, delivered_at);
+
+
+-- Legacy physical name retained for a zero-copy production upgrade. The table now backs generic
+-- Tracker watches; connector-specific lifecycle and reminder rules live behind TrackerAdapter.
+CREATE TABLE IF NOT EXISTS auction_watches (
+    item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+    watched_at TEXT NOT NULL,
+    reminder_sent_for_closing_at TEXT,
+    reminder_sent_at TEXT,
+    claim_token TEXT,
+    claim_closing_at TEXT,
+    claim_expires_at TEXT,
+    last_error TEXT,
+    CHECK (
+        (
+            claim_token IS NULL
+            AND claim_closing_at IS NULL
+            AND claim_expires_at IS NULL
+        )
+        OR (
+            claim_token IS NOT NULL
+            AND claim_closing_at IS NOT NULL
+            AND claim_expires_at IS NOT NULL
+        )
+    ),
+    CHECK (
+        (
+            reminder_sent_for_closing_at IS NULL
+            AND reminder_sent_at IS NULL
+        )
+        OR (
+            reminder_sent_for_closing_at IS NOT NULL
+            AND reminder_sent_at IS NOT NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_auction_watches_claim
+    ON auction_watches(claim_token, claim_expires_at);
 
 CREATE TABLE IF NOT EXISTS admin_login_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

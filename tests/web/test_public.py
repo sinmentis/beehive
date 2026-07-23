@@ -1,6 +1,6 @@
 import html
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -44,17 +44,71 @@ def authed_client(db_path, conn):
     _, c = conn
     set_admin_password(db_path, "correct-password")
     create_session(c, "sess1", "csrf1", "2099-01-01T00:00:00")
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
     client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
     return client
+
+
+def _create_auction_item(c, *, external_id="lot-1", closes_in_hours=2):
+    channel = c.execute(
+        "SELECT id FROM channels WHERE name = 'Auctions'",
+    ).fetchone()
+    channel_id = (
+        channel["id"]
+        if channel is not None
+        else create_channel(
+            c,
+            "Auctions",
+            "interesting auction lots",
+            kind="tracker",
+        )
+    )
+    source = c.execute(
+        """
+        SELECT id
+        FROM sources
+        WHERE channel_id = ? AND type = 'all_about_auctions'
+        """,
+        (channel_id,),
+    ).fetchone()
+    source_id = (
+        source["id"]
+        if source is not None
+        else create_source(c, channel_id, "all_about_auctions", {})
+    )
+    closes_at = datetime.now(timezone.utc) + timedelta(hours=closes_in_hours)
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id=external_id,
+            title="Vintage camera",
+            url="https://auctions.allaboutauctions.co.nz/lot/1",
+            raw_metadata={
+                "auction_title": "Weekly auction",
+                "closing_at": closes_at.isoformat(),
+                "currency_code": "NZD",
+                "current_bid": 50.0,
+            },
+        ),
+    )
+    return c.execute(
+        "SELECT id FROM items WHERE external_id = ?",
+        (external_id,),
+    ).fetchone()[0]
 
 
 def test_dashboard_channel_tab_has_no_secondary_popup_action(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
     record_fetch_success(c, source_id, "2026-07-09T00:00:00+00:00")
 
@@ -73,6 +127,11 @@ def test_dashboard_renders_fingerprinted_static_assets(client):
     match = re.search(r'href="/static/beehive\.css\?v=([0-9a-f]{12})"', resp.text)
     assert match is not None
     assert f'src="/static/beehive.js?v={match.group(1)}"' in resp.text
+
+
+def test_public_pages_allow_https_listing_images(client):
+    response = client.get("/")
+    assert "img-src 'self' data: https:" in response.headers["content-security-policy"]
 
 
 def test_dashboard_shows_unread_count(conn, client):
@@ -111,11 +170,22 @@ def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
 def test_channel_drilldown_shows_item_with_source_badge_and_link(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(
-        external_id="t1", title="Rates fall", url="https://reddit.com/r/x/comments/t1",
-        raw_metadata={"score": 412, "num_comments": 189}))
-    update_ai_ranking(c, source_id, "t1", score=91, summary="RBNZ 降息", rationale="匹配利率变化")
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1",
+            title="Rates fall",
+            url="https://reddit.com/r/x/comments/t1",
+            raw_metadata={"score": 412, "num_comments": 189},
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "t1", score=91, summary="RBNZ 降息", rationale="匹配利率变化"
+    )
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
@@ -132,10 +202,19 @@ def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client
     """A monitor Channel's items still render without the vote widget, since voting is an
     editorial "is this interesting" signal that a deterministic monitor item has no use for."""
     _, c = conn
-    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(
-        external_id="t1", title="Beta jacket $199", url="https://example.com/t1"))
+    channel_id = create_channel(
+        c, "Arcteryx Outlet", "watch for price drops", kind="monitor"
+    )
+    source_id = create_source(
+        c, channel_id, "shopify_collection",
+        {"collection_url": "https://arcteryx.co.nz/collections/outlet"})
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1", title="Beta jacket $199", url="https://example.com/t1"
+        ),
+    )
 
     resp = authed_client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
@@ -148,30 +227,58 @@ def test_monitor_channel_appears_in_dashboard_and_channel_nav(conn, client):
     """Monitor Channels are reachable via the same channel-shelf nav as editorial Channels --
     they are no longer a URL-only, unlinked page."""
     _, c = conn
-    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
-    create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    channel_id = create_channel(
+        c, "Arcteryx Outlet", "watch for price drops", kind="monitor"
+    )
+    create_source(
+        c, channel_id, "shopify_collection",
+        {"collection_url": "https://arcteryx.co.nz/collections/outlet"})
 
     dashboard_resp = client.get("/")
     assert dashboard_resp.status_code == 200
     assert f'href="/channels/{channel_id}"' in dashboard_resp.text
     assert "Arcteryx Outlet" in dashboard_resp.text
+    assert 'aria-label="Arcteryx Outlet,' not in dashboard_resp.text
 
     drilldown_resp = client.get(f"/channels/{channel_id}")
     assert drilldown_resp.status_code == 200
     assert f'href="/channels/{channel_id}"' in drilldown_resp.text
 
 
-def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(conn, client):
+def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(
+    conn, client
+):
     _, c = conn
-    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
-    source_id = create_source(c, channel_id, "shopify_collection",
-                               {"collection_url": "https://example.com/collections/outlet/products.json"})
-    insert_new(c, source_id, RawItem(
-        external_id="p1:199.00", title="Beta Jacket", url="https://example.com/products/beta",
-        raw_metadata={"price": 199.0, "compare_at_price": 299.0, "on_sale": True,
-                      "available": True, "vendor": "Arc'teryx", "product_type": "Jackets",
-                      "tags": []}))
-    update_ai_ranking(c, source_id, "p1:199.00", score=91, summary="On sale", rationale="r")
+    channel_id = create_channel(
+        c, "Arcteryx Outlet", "watch for price drops", kind="monitor"
+    )
+    source_id = create_source(
+        c,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet/products.json"},
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="p1:199.00",
+            title="Beta Jacket",
+            url="https://example.com/products/beta",
+            raw_metadata={
+                "price": 199.0,
+                "compare_at_price": 299.0,
+                "on_sale": True,
+                "available": True,
+                "vendor": "Arc'teryx",
+                "product_type": "Jackets",
+                "tags": [],
+            },
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "p1:199.00", score=91, summary="On sale", rationale="r"
+    )
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
@@ -181,33 +288,76 @@ def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(co
 
 def test_channel_drilldown_shopify_item_not_on_sale_shows_vendor(conn, client):
     _, c = conn
-    channel_id = create_channel(c, "Arcteryx Outlet", "watch for price drops", kind="monitor")
-    source_id = create_source(c, channel_id, "shopify_collection",
-                               {"collection_url": "https://example.com/collections/outlet/products.json"})
-    insert_new(c, source_id, RawItem(
-        external_id="p2:60.00", title="Cerium Vest", url="https://example.com/products/cerium",
-        raw_metadata={"price": 60.0, "compare_at_price": None, "on_sale": False,
-                      "available": True, "vendor": "Arc'teryx", "product_type": "Vests",
-                      "tags": []}))
-    update_ai_ranking(c, source_id, "p2:60.00", score=40, summary="Regular price", rationale="r")
+    channel_id = create_channel(
+        c, "Arcteryx Outlet", "watch for price drops", kind="monitor"
+    )
+    source_id = create_source(
+        c,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet/products.json"},
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="p2:60.00",
+            title="Cerium Vest",
+            url="https://example.com/products/cerium",
+            raw_metadata={
+                "price": 60.0,
+                "compare_at_price": None,
+                "on_sale": False,
+                "available": True,
+                "vendor": "Arc'teryx",
+                "product_type": "Vests",
+                "tags": [],
+            },
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "p2:60.00", score=40, summary="Regular price", rationale="r"
+    )
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "Arc&#39;teryx" in resp.text or "Arc'teryx" in resp.text
 
 
-def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(conn, client):
+def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(
+    conn, client
+):
     _, c = conn
-    channel_id = create_channel(c, "Land Sea Sale", "watch for price drops", kind="monitor")
-    source_id = create_source(c, channel_id, "land_sea_collection",
-                               {"collection_url": "https://www.land-sea.co.nz/sale"})
-    insert_new(c, source_id, RawItem(
-        external_id="1001:152.00", title="Teva Women's Tirra",
-        url="https://www.land-sea.co.nz/product/1001/teva-womens-tirra",
-        raw_metadata={"price": 152.0, "compare_at_price": 189.0, "on_sale": True,
-                      "available": True, "vendor": "Teva", "product_type": None,
-                      "tags": []}))
-    update_ai_ranking(c, source_id, "1001:152.00", score=91, summary="On sale", rationale="r")
+    channel_id = create_channel(
+        c, "Land Sea Sale", "watch for price drops", kind="monitor"
+    )
+    source_id = create_source(
+        c,
+        channel_id,
+        "land_sea_collection",
+        {"collection_url": "https://www.land-sea.co.nz/sale"},
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="1001",
+            title="Teva Women's Tirra",
+            url="https://www.land-sea.co.nz/product/1001/teva-womens-tirra",
+            raw_metadata={
+                "price": 152.0,
+                "compare_at_price": 189.0,
+                "on_sale": True,
+                "available": True,
+                "vendor": "Teva",
+                "product_type": None,
+                "tags": [],
+            },
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "1001", score=91, summary="On sale", rationale="r"
+    )
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
@@ -215,30 +365,130 @@ def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(c
     assert "20% off" in resp.text  # round((189-152)/189*100)
 
 
-def test_channel_drilldown_land_sea_collection_item_not_on_sale_shows_vendor(conn, client):
+def test_channel_drilldown_land_sea_collection_item_not_on_sale_shows_vendor(
+    conn, client
+):
     _, c = conn
-    channel_id = create_channel(c, "Land Sea Sale", "watch for price drops", kind="monitor")
-    source_id = create_source(c, channel_id, "land_sea_collection",
-                               {"collection_url": "https://www.land-sea.co.nz/sale"})
-    insert_new(c, source_id, RawItem(
-        external_id="1002:60.00", title="Teva Sandal",
-        url="https://www.land-sea.co.nz/product/1002/teva-sandal",
-        raw_metadata={"price": 60.0, "compare_at_price": None, "on_sale": False,
-                      "available": True, "vendor": "Teva", "product_type": None,
-                      "tags": []}))
-    update_ai_ranking(c, source_id, "1002:60.00", score=40, summary="Regular price", rationale="r")
+    channel_id = create_channel(
+        c, "Land Sea Sale", "watch for price drops", kind="monitor"
+    )
+    source_id = create_source(
+        c,
+        channel_id,
+        "land_sea_collection",
+        {"collection_url": "https://www.land-sea.co.nz/sale"},
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="1002",
+            title="Teva Sandal",
+            url="https://www.land-sea.co.nz/product/1002/teva-sandal",
+            raw_metadata={
+                "price": 60.0,
+                "compare_at_price": None,
+                "on_sale": False,
+                "available": True,
+                "vendor": "Teva",
+                "product_type": None,
+                "tags": [],
+            },
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "1002", score=40, summary="Regular price", rationale="r"
+    )
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "Teva" in resp.text
 
 
+def test_channel_drilldown_shows_all_about_auctions_context(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Auction watch", "Makita tools", kind="tracker")
+    source_id = create_source(c, channel_id, "all_about_auctions", {})
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="1-LOT",
+            title="MAKITA BL CORDLESS HEDGE TRIMMER",
+            url="https://auctions.allaboutauctions.co.nz/lots/view/1-LOT/makita-trimmer",
+            raw_metadata={
+                "available": True,
+                "listing_kind": "auction_lot",
+                "auction_title": "Timed Online Only General Goods Auction",
+                "currency_code": "NZD",
+                "current_bid": 500.0,
+                "buyer_premium_rate": 0.17,
+                "estimated_cost": 585.0,
+                "rrp": 1040.0,
+                "rrp_excludes_gst": True,
+                "estimate_low": 700.0,
+                "estimate_high": 900.0,
+            },
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "1-LOT", score=91, summary="Strong match", rationale="r"
+    )
+
+    resp = client.get(f"/channels/{channel_id}")
+
+    assert resp.status_code == 200
+    assert "All About Auctions" in resp.text
+    assert "Timed Online Only General Goods Auction" in resp.text
+    assert "Current bid: NZD 500" in resp.text
+    assert "Est. with 17% premium: NZD 585" in resp.text
+    assert "Seller RRP: NZD 1,040 + GST" in resp.text
+    assert "Estimate: NZD 700–NZD 900" in resp.text
+
+
+def test_channel_drilldown_distinguishes_no_public_auction_bid_from_zero(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Auction watch", "Makita tools", kind="tracker")
+    source_id = create_source(c, channel_id, "all_about_auctions", {})
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="1-NOBID",
+            title="No-bid auction lot",
+            url="https://auctions.allaboutauctions.co.nz/lots/view/1-NOBID",
+            raw_metadata={
+                "listing_kind": "auction_lot",
+                "currency_code": "NZD",
+                "current_bid": None,
+                "buyer_premium_rate": 0.17,
+            },
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "1-NOBID", score=80, summary="No-bid lot", rationale="r"
+    )
+
+    resp = client.get(f"/channels/{channel_id}")
+
+    assert resp.status_code == 200
+    assert "No public bid" in resp.text
+    assert "Current bid: NZD 0" not in resp.text
+
+
 def test_channel_drilldown_shows_google_news_source_label_and_summary(conn, client):
     _, c = conn
     channel_id = create_channel(c, "Tech News", "AI industry news")
     source_id = create_source(c, channel_id, "google_news_query", {"query": "OpenAI"})
-    insert_new(c, source_id, RawItem(external_id="g1", title="A story",
-                                      url="https://news.google.com/rss/articles/abc?oc=5"))
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="g1",
+            title="A story",
+            url="https://news.google.com/rss/articles/abc?oc=5",
+        ),
+    )
     update_ai_ranking(c, source_id, "g1", score=91, summary="摘要", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
@@ -247,15 +497,25 @@ def test_channel_drilldown_shows_google_news_source_label_and_summary(conn, clie
     assert '"OpenAI"' in html.unescape(resp.text)
 
 
-def test_channel_drilldown_shows_google_news_item_with_publisher_engagement_label(conn, client):
+def test_channel_drilldown_shows_google_news_item_with_publisher_engagement_label(
+    conn, client
+):
     _, c = conn
     channel_id = create_channel(c, "Tech News", "AI industry news")
     source_id = create_source(c, channel_id, "google_news_query", {"query": "OpenAI"})
-    insert_new(c, source_id, RawItem(
-        external_id="g1", title="Apple sues OpenAI - BBC",
-        url="https://news.google.com/rss/articles/abc123?oc=5",
-        raw_metadata={"source_name": "Reuters"}))
-    update_ai_ranking(c, source_id, "g1", score=91, summary="苹果起诉OpenAI", rationale="重大科技新闻")
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="g1",
+            title="Apple sues OpenAI - BBC",
+            url="https://news.google.com/rss/articles/abc123?oc=5",
+            raw_metadata={"source_name": "Reuters"},
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "g1", score=91, summary="苹果起诉OpenAI", rationale="重大科技新闻"
+    )
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
@@ -263,13 +523,22 @@ def test_channel_drilldown_shows_google_news_item_with_publisher_engagement_labe
     assert "0 upvotes · 0 comments" not in resp.text
 
 
-def test_channel_drilldown_google_news_item_with_no_source_name_shows_no_engagement_label(conn, client):
+def test_channel_drilldown_google_news_item_with_no_source_name_shows_no_engagement_label(
+    conn, client
+):
     _, c = conn
     channel_id = create_channel(c, "Tech News", "AI industry news")
     source_id = create_source(c, channel_id, "google_news_query", {"query": "OpenAI"})
-    insert_new(c, source_id, RawItem(
-        external_id="g1", title="Some story", url="https://news.google.com/rss/articles/abc?oc=5",
-        raw_metadata={}))
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="g1",
+            title="Some story",
+            url="https://news.google.com/rss/articles/abc?oc=5",
+            raw_metadata={},
+        ),
+    )
     update_ai_ranking(c, source_id, "g1", score=91, summary="摘要", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
@@ -280,15 +549,29 @@ def test_channel_drilldown_google_news_item_with_no_source_name_shows_no_engagem
 def test_channel_drilldown_splits_highlighted_and_folded(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
     for i in range(10):
-        insert_new(c, source_id, RawItem(external_id=f"t{i}", title=f"Item {i}",
-                                          url=f"https://x/{i}", raw_metadata={}))
-        update_ai_ranking(c, source_id, f"t{i}", score=100 - i, summary=f"summary {i}", rationale="r")
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=f"t{i}",
+                title=f"Item {i}",
+                url=f"https://x/{i}",
+                raw_metadata={},
+            ),
+        )
+        update_ai_ranking(
+            c, source_id, f"t{i}", score=100 - i, summary=f"summary {i}", rationale="r"
+        )
 
     resp = client.get(f"/channels/{channel_id}")
     assert "summary 0" in resp.text  # rank 0 is in the highlighted tier
-    assert "summary 9" in resp.text  # rank 9 is folded but still rendered as a one-liner
+    assert (
+        "summary 9" in resp.text
+    )  # rank 9 is folded but still rendered as a one-liner
 
 
 def test_channel_drilldown_uses_configured_highlight_count(conn, client):
@@ -317,8 +600,8 @@ def test_channel_drilldown_uses_configured_highlight_count(conn, client):
 
     resp = client.get(f"/channels/{channel_id}")
 
-    assert len(resp.context["highlighted"]) == 2
-    assert len(resp.context["folded"]) == 1
+    assert len(resp.context["page"].highlighted) == 2
+    assert len(resp.context["page"].folded) == 1
 
 
 def test_channel_drilldown_hides_items_below_configured_minimum_score(conn, client):
@@ -334,7 +617,11 @@ def test_channel_drilldown_hides_items_below_configured_minimum_score(conn, clie
         insert_new(
             c,
             source_id,
-            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+            RawItem(
+                external_id=external_id,
+                title=external_id,
+                url=f"https://x/{external_id}",
+            ),
         )
         update_ai_ranking(
             c,
@@ -351,21 +638,38 @@ def test_channel_drilldown_hides_items_below_configured_minimum_score(conn, clie
     assert "low summary" not in resp.text
 
 
-def test_channel_drilldown_folded_item_links_to_the_original_post_in_a_new_tab(conn, client):
+def test_channel_drilldown_folded_item_links_to_the_original_post_in_a_new_tab(
+    conn, client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
     for i in range(10):
-        insert_new(c, source_id, RawItem(external_id=f"t{i}", title=f"Item {i}",
-                                          url=f"https://reddit.com/{i}", raw_metadata={}))
-        update_ai_ranking(c, source_id, f"t{i}", score=100 - i, summary=f"summary {i}", rationale="r")
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=f"t{i}",
+                title=f"Item {i}",
+                url=f"https://reddit.com/{i}",
+                raw_metadata={},
+            ),
+        )
+        update_ai_ranking(
+            c, source_id, f"t{i}", score=100 - i, summary=f"summary {i}", rationale="r"
+        )
 
     resp = client.get(f"/channels/{channel_id}")
     # Rank 9 (score 91) is in the folded tier because the default Channel setting caps highlights
     # at the top 8. Its summary text must link out to the original post like every other post's
     # title/summary does since sub-project B, not stay plain unlinked text.
     item_id = c.execute("SELECT id FROM items WHERE external_id='t9'").fetchone()[0]
-    assert f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
+    assert (
+        f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"'
+        in resp.text
+    )
 
 
 def test_folded_items_show_vote_controls_only_to_owner(conn, client, authed_client):
@@ -382,7 +686,9 @@ def test_folded_items_show_vote_controls_only_to_owner(conn, client, authed_clie
         insert_new(
             c,
             source_id,
-            RawItem(external_id=external_id, title=external_id, url=f"https://x/{index}"),
+            RawItem(
+                external_id=external_id, title=external_id, url=f"https://x/{index}"
+            ),
         )
         update_ai_ranking(
             c,
@@ -392,9 +698,7 @@ def test_folded_items_show_vote_controls_only_to_owner(conn, client, authed_clie
             summary=f"summary {index}",
             rationale="r",
         )
-    folded_id = c.execute(
-        "SELECT id FROM items WHERE external_id = 't1'"
-    ).fetchone()[0]
+    folded_id = c.execute("SELECT id FROM items WHERE external_id = 't1'").fetchone()[0]
 
     anonymous_response = client.get(f"/channels/{channel_id}")
     owner_response = authed_client.get(f"/channels/{channel_id}")
@@ -406,13 +710,17 @@ def test_folded_items_show_vote_controls_only_to_owner(conn, client, authed_clie
 
 
 def test_folded_vote_returns_folded_fragment_and_persists(
-    conn, authed_client, db_path,
+    conn,
+    authed_client,
+    db_path,
 ):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     insert_new(c, source_id, RawItem(external_id="t1", title="Signal", url="https://x"))
-    update_ai_ranking(c, source_id, "t1", score=70, summary="folded summary", rationale="r")
+    update_ai_ranking(
+        c, source_id, "t1", score=70, summary="folded summary", rationale="r"
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id = 't1'").fetchone()[0]
 
     response = authed_client.post(
@@ -426,22 +734,35 @@ def test_folded_vote_returns_folded_fragment_and_persists(
     assert 'aria-pressed="true"' in response.text
     assert 'class="item' not in response.text
     conn2 = connect(db_path)
-    assert conn2.execute(
-        "SELECT value FROM votes WHERE item_id = ?",
-        (item_id,),
-    ).fetchone()["value"] == 1
+    assert (
+        conn2.execute(
+            "SELECT value FROM votes WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()["value"]
+        == 1
+    )
 
 
-def test_channel_drilldown_folded_google_news_item_shows_publisher_not_zero_score(conn, client):
+def test_channel_drilldown_folded_google_news_item_shows_publisher_not_zero_score(
+    conn, client
+):
     _, c = conn
     channel_id = create_channel(c, "Tech News", "AI industry news")
     source_id = create_source(c, channel_id, "google_news_query", {"query": "OpenAI"})
     for i in range(10):
-        insert_new(c, source_id, RawItem(
-            external_id=f"g{i}", title=f"Story {i}",
-            url=f"https://news.google.com/rss/articles/{i}?oc=5",
-            raw_metadata={"source_name": "Reuters"} if i == 9 else {}))
-        update_ai_ranking(c, source_id, f"g{i}", score=100 - i, summary=f"summary {i}", rationale="r")
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=f"g{i}",
+                title=f"Story {i}",
+                url=f"https://news.google.com/rss/articles/{i}?oc=5",
+                raw_metadata={"source_name": "Reuters"} if i == 9 else {},
+            ),
+        )
+        update_ai_ranking(
+            c, source_id, f"g{i}", score=100 - i, summary=f"summary {i}", rationale="r"
+        )
 
     resp = client.get(f"/channels/{channel_id}")
     # Rank 9 (score 91) lands in the folded tier because the default Channel setting caps highlights
@@ -452,7 +773,9 @@ def test_channel_drilldown_folded_google_news_item_shows_publisher_not_zero_scor
     assert "(0 upvotes)" not in resp.text
 
 
-def test_channel_drilldown_shows_hackernews_feed_label_summary_and_engagement(conn, client):
+def test_channel_drilldown_shows_hackernews_feed_label_summary_and_engagement(
+    conn, client
+):
     _, c = conn
     channel_id = create_channel(c, "Tech", "developer news")
     source_id = create_source(c, channel_id, "hackernews_stories", {"feed": "top"})
@@ -466,7 +789,9 @@ def test_channel_drilldown_shows_hackernews_feed_label_summary_and_engagement(co
             raw_metadata={"score": 321, "num_comments": 87, "hn_id": 48888193},
         ),
     )
-    update_ai_ranking(c, source_id, "48888193", score=91, summary="中文摘要", rationale="重要")
+    update_ai_ranking(
+        c, source_id, "48888193", score=91, summary="中文摘要", rationale="重要"
+    )
 
     resp = client.get(f"/channels/{channel_id}")
 
@@ -479,7 +804,9 @@ def test_channel_drilldown_shows_hackernews_feed_label_summary_and_engagement(co
 def test_channel_drilldown_shows_unknown_hackernews_feed_after_prefix(conn, client):
     _, c = conn
     channel_id = create_channel(c, "Tech", "developer news")
-    source_id = create_source(c, channel_id, "hackernews_stories", {"feed": "front_page"})
+    source_id = create_source(
+        c, channel_id, "hackernews_stories", {"feed": "front_page"}
+    )
     insert_new(
         c,
         source_id,
@@ -562,8 +889,12 @@ def test_folded_hackernews_item_keeps_point_and_comment_engagement(conn, client)
 def test_channel_drilldown_shows_unread_count_and_source_summary(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="RBNZ 降息", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
@@ -602,7 +933,9 @@ def test_response_includes_security_headers(client):
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert resp.headers["x-frame-options"] == "DENY"
     assert resp.headers["cache-control"] == "private, no-store"
-    assert "cookie" in {value.strip().lower() for value in resp.headers["vary"].split(",")}
+    assert "cookie" in {
+        value.strip().lower() for value in resp.headers["vary"].split(",")
+    }
 
 
 def test_response_disallows_search_indexing(client):
@@ -619,8 +952,11 @@ def test_channel_drilldown_link_has_noopener_and_validated_scheme(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(
-        external_id="t1", title="Rates fall", url="javascript:alert(1)"))
+    insert_new(
+        c,
+        source_id,
+        RawItem(external_id="t1", title="Rates fall", url="javascript:alert(1)"),
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
@@ -640,25 +976,31 @@ def test_csp_allows_self_hosted_scripts(client):
     assert "script-src 'none'" not in resp.headers["content-security-policy"]
 
 
-def test_drilldown_shows_interactive_vote_buttons_when_authenticated(conn, authed_client):
+def test_drilldown_shows_interactive_vote_buttons_when_authenticated(
+    conn, authed_client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
 
     resp = authed_client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "hx-post=" in resp.text
     assert "csrf_token" in resp.text
-    assert '/static/htmx.min.js' in resp.text
+    assert "/static/htmx.min.js" in resp.text
 
 
 def test_drilldown_shows_static_vote_state_when_anonymous(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
     upsert_vote(c, item_id, 1)
@@ -673,7 +1015,9 @@ def test_vote_controls_restore_focus_and_announce_status(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
@@ -693,7 +1037,9 @@ def test_drilldown_hides_vote_reason_when_anonymous(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
     upsert_vote(c, item_id, -1, "this is a private reason nobody else should see")
@@ -709,20 +1055,56 @@ def test_vote_route_requires_session(conn, client):
     insert_new(c, source_id, RawItem(external_id="t1", title="T", url="https://x"))
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
-    resp = client.post(f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "x"},
-                        follow_redirects=False)
+    resp = client.post(
+        f"/items/{item_id}/vote",
+        data={"value": "1", "csrf_token": "x"},
+        follow_redirects=False,
+    )
     assert resp.status_code == 303
+
+
+def test_vote_route_rejects_monitor_item(conn, authed_client):
+    _, c = conn
+    channel_id = create_channel(c, "Outlet", "deals", kind="monitor")
+    source_id = create_source(
+        c,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(external_id="product-1", title="Listing", url="https://example.com/p"),
+    )
+    item_id = c.execute(
+        "SELECT id FROM items WHERE external_id = 'product-1'"
+    ).fetchone()[0]
+
+    response = authed_client.post(
+        f"/items/{item_id}/vote",
+        data={"value": "1", "csrf_token": "csrf1"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "This action is only available for Editorial items"
+    }
+    assert c.execute("SELECT 1 FROM votes WHERE item_id = ?", (item_id,)).fetchone() is None
 
 
 def test_vote_route_casts_upvote_and_returns_fragment(conn, authed_client, db_path):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
-    resp = authed_client.post(f"/items/{item_id}/vote",
-                               data={"value": "1", "csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"}
+    )
     assert resp.status_code == 200
     assert 'class="up"' in resp.text
     assert 'aria-pressed="true"' in resp.text
@@ -736,27 +1118,42 @@ def test_vote_route_clicking_same_polarity_again_unvotes(conn, authed_client, db
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
-    authed_client.post(f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"})
-    resp = authed_client.post(f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"})
+    authed_client.post(
+        f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"}
+    )
+    resp = authed_client.post(
+        f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"}
+    )
     assert resp.status_code == 200
 
     conn2 = connect(db_path)
-    assert conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone() is None
+    assert (
+        conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone()
+        is None
+    )
 
 
 def test_vote_route_reason_update_keeps_polarity(conn, authed_client, db_path):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
-    authed_client.post(f"/items/{item_id}/vote", data={"value": "-1", "csrf_token": "csrf1"})
-    resp = authed_client.post(f"/items/{item_id}/vote",
-                               data={"value": "-1", "reason": "too niche", "csrf_token": "csrf1"})
+    authed_client.post(
+        f"/items/{item_id}/vote", data={"value": "-1", "csrf_token": "csrf1"}
+    )
+    resp = authed_client.post(
+        f"/items/{item_id}/vote",
+        data={"value": "-1", "reason": "too niche", "csrf_token": "csrf1"},
+    )
     assert resp.status_code == 200
 
     conn2 = connect(db_path)
@@ -772,33 +1169,47 @@ def test_vote_route_rejects_wrong_csrf(conn, authed_client, db_path):
     insert_new(c, source_id, RawItem(external_id="t1", title="T", url="https://x"))
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
-    resp = authed_client.post(f"/items/{item_id}/vote",
-                               data={"value": "1", "csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "wrong"}
+    )
     assert resp.status_code == 403
 
     conn2 = connect(db_path)
-    assert conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone() is None
+    assert (
+        conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone()
+        is None
+    )
 
 
-def test_viewing_drilldown_as_owner_marks_items_read_for_next_visit(conn, authed_client):
+def test_viewing_drilldown_as_owner_marks_items_read_for_next_visit(
+    conn, authed_client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
 
     first = authed_client.get(f"/channels/{channel_id}")
-    assert "1 new item" in first.text  # THIS render still shows the pre-visit unread count
+    assert (
+        "1 new item" in first.text
+    )  # THIS render still shows the pre-visit unread count
 
     second = authed_client.get(f"/channels/{channel_id}")
-    assert "0 new items" in second.text  # the NEXT render reflects last visit's mark-read
+    assert (
+        "0 new items" in second.text
+    )  # the NEXT render reflects last visit's mark-read
 
 
 def test_viewing_drilldown_anonymously_does_not_mark_items_read(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
 
     client.get(f"/channels/{channel_id}")
@@ -808,14 +1219,51 @@ def test_viewing_drilldown_anonymously_does_not_mark_items_read(conn, client):
     assert item["is_read"] == 0
 
 
+@pytest.mark.parametrize(
+    ("kind", "source_type", "config"),
+    [
+        (
+            "monitor",
+            "shopify_collection",
+            {"collection_url": "https://example.com/collections/outlet"},
+        ),
+        ("tracker", "all_about_auctions", {}),
+    ],
+)
+def test_viewing_snapshot_channel_as_owner_does_not_mark_items_read(
+    conn, authed_client, kind, source_type, config
+):
+    _, c = conn
+    channel_id = create_channel(c, f"{kind} Channel", "profile", kind=kind)
+    source_id = create_source(c, channel_id, source_type, config)
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id=f"{kind}-item",
+            title="Listing",
+            url="https://example.com/listing",
+        ),
+    )
+
+    response = authed_client.get(f"/channels/{channel_id}")
+
+    assert response.status_code == 200
+    item = c.execute(
+        "SELECT is_read FROM items WHERE external_id = ?", (f"{kind}-item",)
+    ).fetchone()
+    assert item["is_read"] == 0
+
+
 def test_mark_all_read_route_marks_channel_and_redirects(conn, authed_client, db_path):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     insert_new(c, source_id, RawItem(external_id="t1", title="T", url="https://x"))
 
-    resp = authed_client.post(f"/channels/{channel_id}/mark-all-read",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/channels/{channel_id}/mark-all-read", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == f"/channels/{channel_id}"
 
@@ -824,11 +1272,27 @@ def test_mark_all_read_route_marks_channel_and_redirects(conn, authed_client, db
     assert item["is_read"] == 1
 
 
+def test_mark_all_read_route_rejects_snapshot_channel(conn, authed_client):
+    _, c = conn
+    channel_id = create_channel(c, "Outlet", "deals", kind="monitor")
+
+    response = authed_client.post(
+        f"/channels/{channel_id}/mark-all-read",
+        data={"csrf_token": "csrf1"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "This Channel does not use read state"}
+
+
 def test_mark_all_read_route_requires_session(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    resp = client.post(f"/channels/{channel_id}/mark-all-read",
-                        data={"csrf_token": "x"}, follow_redirects=False)
+    resp = client.post(
+        f"/channels/{channel_id}/mark-all-read",
+        data={"csrf_token": "x"},
+        follow_redirects=False,
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == "/admin/login"
 
@@ -837,8 +1301,12 @@ def test_archive_shows_items_across_channels_grouped_by_day(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
-    c.execute("UPDATE items SET fetched_at = '2026-07-05T08:00:00' WHERE external_id='t1'")
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
+    c.execute(
+        "UPDATE items SET fetched_at = '2026-07-05T08:00:00' WHERE external_id='t1'"
+    )
     c.commit()
 
     resp = client.get("/archive")
@@ -855,19 +1323,65 @@ def test_archive_filters_by_channel_query_param(conn, client):
     other_id = create_channel(c, "Other Channel", "profile")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     other_source_id = create_source(c, other_id, "reddit_subreddit", {"subreddit": "y"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates news", url="https://x"))
-    insert_new(c, other_source_id, RawItem(external_id="t2", title="Other news", url="https://y"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates news", url="https://x")
+    )
+    insert_new(
+        c,
+        other_source_id,
+        RawItem(external_id="t2", title="Other news", url="https://y"),
+    )
 
     resp = client.get(f"/archive?channel={channel_id}")
     assert "Rates news" in resp.text
     assert "Other news" not in resp.text
 
 
+def test_archive_excludes_monitor_and_tracker_items_and_filters(conn, client):
+    _, c = conn
+    monitor_id = create_channel(c, "Outlet", "deals", kind="monitor")
+    monitor_source = create_source(
+        c,
+        monitor_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    insert_new(
+        c,
+        monitor_source,
+        RawItem(
+            external_id="product-1",
+            title="Monitor listing",
+            url="https://example.com/product",
+        ),
+    )
+    tracker_id = create_channel(c, "Auctions", "lots", kind="tracker")
+    tracker_source = create_source(c, tracker_id, "all_about_auctions", {})
+    insert_new(
+        c,
+        tracker_source,
+        RawItem(
+            external_id="lot-1",
+            title="Tracker listing",
+            url="https://example.com/lot",
+        ),
+    )
+
+    response = client.get("/archive")
+
+    assert response.status_code == 200
+    assert "Monitor listing" not in response.text
+    assert "Tracker listing" not in response.text
+    assert all(channel["kind"] == "editorial" for channel in response.context["channels"])
+
+
 def test_archive_never_marks_anything_read(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
 
     client.get("/archive")
 
@@ -880,9 +1394,15 @@ def test_archive_paginates_with_page_query_param(conn, client):
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     for i in range(35):
-        insert_new(c, source_id, RawItem(external_id=f"t{i}", title=f"Title {i}", url="https://x"))
-        c.execute("UPDATE items SET fetched_at = ? WHERE external_id = ?",
-                   (f"2026-07-{(i % 28) + 1:02d}T00:00:00", f"t{i}"))
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=f"t{i}", title=f"Title {i}", url="https://x"),
+        )
+        c.execute(
+            "UPDATE items SET fetched_at = ? WHERE external_id = ?",
+            (f"2026-07-{(i % 28) + 1:02d}T00:00:00", f"t{i}"),
+        )
     c.commit()
 
     first_page = client.get("/archive")
@@ -900,7 +1420,9 @@ def test_archive_strips_vote_reason_from_render_context(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
     upsert_vote(c, item_id, -1, "this is a private reason nobody else should see")
 
@@ -920,24 +1442,40 @@ def test_dashboard_header_links_to_archive_and_admin_login(conn, client):
 def test_dashboard_teaser_links_to_the_original_post_in_a_new_tab(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall",
-                                      url="https://reddit.com/r/x/comments/t1"))
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1",
+            title="Rates fall",
+            url="https://reddit.com/r/x/comments/t1",
+        ),
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
     resp = client.get("/")
     assert resp.status_code == 200
-    assert f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
+    assert (
+        f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"'
+        in resp.text
+    )
     assert "RBNZ 降息" in resp.text
 
 
 def test_dashboard_card_link_goes_to_the_channel_not_the_post(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get("/")
@@ -951,14 +1489,24 @@ def test_archive_title_links_to_the_original_post_in_a_new_tab(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall",
-                                      url="https://reddit.com/r/x/comments/t1"))
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1",
+            title="Rates fall",
+            url="https://reddit.com/r/x/comments/t1",
+        ),
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
     resp = client.get("/archive")
-    assert f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
+    assert (
+        f'href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"'
+        in resp.text
+    )
     assert "RBNZ 降息" in resp.text
 
 
@@ -966,8 +1514,16 @@ def test_archive_filters_by_search_query_param(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Interest rates rise", url="https://x"))
-    insert_new(c, source_id, RawItem(external_id="t2", title="Housing market update", url="https://y"))
+    insert_new(
+        c,
+        source_id,
+        RawItem(external_id="t1", title="Interest rates rise", url="https://x"),
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(external_id="t2", title="Housing market update", url="https://y"),
+    )
 
     resp = client.get("/archive?q=rates")
     assert "Interest rates rise" in resp.text
@@ -1003,10 +1559,21 @@ def test_interaction_helper_is_served(client):
 def test_dashboard_shows_ranked_signal_table(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall",
-                                      url="https://reddit.com/r/x/comments/t1"))
-    update_ai_ranking(c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r")
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1",
+            title="Rates fall",
+            url="https://reddit.com/r/x/comments/t1",
+        ),
+    )
+    update_ai_ranking(
+        c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r"
+    )
 
     resp = client.get("/")
     assert resp.status_code == 200
@@ -1021,7 +1588,10 @@ def test_dashboard_shows_ranked_signal_table(conn, client):
     assert 'class="signal-row is-unread"' in resp.text
     assert f'class="signal-channel" href="/channels/{channel_id}"' in resp.text
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    assert f'class="signal-summary" href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"' in resp.text
+    assert (
+        f'class="signal-summary" href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"'
+        in resp.text
+    )
     assert "RBNZ 大幅降息" in resp.text
 
 
@@ -1035,7 +1605,9 @@ def test_home_channel_shelf_labels_the_aggregate_view_featured(client):
 
 
 def test_dashboard_default_featured_window_includes_three_calendar_days(
-    conn, client, monkeypatch,
+    conn,
+    client,
+    monkeypatch,
 ):
     class FixedDatetime(datetime):
         @classmethod
@@ -1055,7 +1627,11 @@ def test_dashboard_default_featured_window_includes_three_calendar_days(
         insert_new(
             c,
             source_id,
-            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+            RawItem(
+                external_id=external_id,
+                title=external_id,
+                url=f"https://x/{external_id}",
+            ),
         )
         update_ai_ranking(
             c,
@@ -1097,7 +1673,11 @@ def test_dashboard_uses_configured_featured_window(conn, client, monkeypatch):
         insert_new(
             c,
             source_id,
-            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+            RawItem(
+                external_id=external_id,
+                title=external_id,
+                url=f"https://x/{external_id}",
+            ),
         )
         update_ai_ranking(
             c,
@@ -1120,7 +1700,9 @@ def test_dashboard_uses_configured_featured_window(conn, client, monkeypatch):
 
 
 def test_dashboard_excludes_old_publication_fetched_within_featured_window(
-    conn, client, monkeypatch,
+    conn,
+    client,
+    monkeypatch,
 ):
     class FixedDatetime(datetime):
         @classmethod
@@ -1177,23 +1759,39 @@ def test_dashboard_excludes_items_outside_featured_window(conn, client, monkeypa
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(
-        external_id="old",
-        title="Old high score",
-        url="https://example.com/old",
-    ))
-    insert_new(c, source_id, RawItem(
-        external_id="today",
-        title="Recent lower score",
-        url="https://example.com/today",
-    ))
-    update_ai_ranking(
-        c, source_id, "old", score=99,
-        summary="Old high score signal", rationale="old",
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="old",
+            title="Old high score",
+            url="https://example.com/old",
+        ),
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="today",
+            title="Recent lower score",
+            url="https://example.com/today",
+        ),
     )
     update_ai_ranking(
-        c, source_id, "today", score=80,
-        summary="Recent lower score signal", rationale="recent",
+        c,
+        source_id,
+        "old",
+        score=99,
+        summary="Old high score signal",
+        rationale="old",
+    )
+    update_ai_ranking(
+        c,
+        source_id,
+        "today",
+        score=80,
+        summary="Recent lower score signal",
+        rationale="recent",
     )
     c.execute(
         "UPDATE items SET fetched_at = '2026-05-01T00:00:00' WHERE external_id = 'old'"
@@ -1224,15 +1822,24 @@ def test_dashboard_respects_each_channels_minimum_score(conn, client):
         "profile",
         minimum_score=0,
     )
-    strict_source = create_source(c, strict_channel, "reddit_subreddit", {"subreddit": "strict"})
+    strict_source = create_source(
+        c, strict_channel, "reddit_subreddit", {"subreddit": "strict"}
+    )
     permissive_source = create_source(
         c,
         permissive_channel,
         "reddit_subreddit",
         {"subreddit": "permissive"},
     )
-    for source_id, external_id in ((strict_source, "strict"), (permissive_source, "permissive")):
-        insert_new(c, source_id, RawItem(external_id=external_id, title=external_id, url="https://x"))
+    for source_id, external_id in (
+        (strict_source, "strict"),
+        (permissive_source, "permissive"),
+    ):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url="https://x"),
+        )
         update_ai_ranking(
             c,
             source_id,
@@ -1256,9 +1863,15 @@ def test_dashboard_channel_tab_count_excludes_subthreshold_items(conn, client):
         "profile",
         minimum_score=80,
     )
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "strict"})
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "strict"}
+    )
     for external_id, score in (("hidden", 79), ("visible", 80)):
-        insert_new(c, source_id, RawItem(external_id=external_id, title=external_id, url="https://x"))
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url="https://x"),
+        )
         update_ai_ranking(
             c,
             source_id,
@@ -1282,7 +1895,11 @@ def test_dashboard_filters_and_counts_read_state(conn, client):
         insert_new(
             c,
             source_id,
-            RawItem(external_id=external_id, title=external_id, url=f"https://x/{external_id}"),
+            RawItem(
+                external_id=external_id,
+                title=external_id,
+                url=f"https://x/{external_id}",
+            ),
         )
         update_ai_ranking(
             c,
@@ -1339,11 +1956,15 @@ def test_dashboard_requests_twenty_four_ranked_signals(conn, client):
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     for index in range(25):
         external_id = f"signal-{index}"
-        insert_new(c, source_id, RawItem(
-            external_id=external_id,
-            title=f"Signal {index}",
-            url=f"https://example.com/{index}",
-        ))
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=external_id,
+                title=f"Signal {index}",
+                url=f"https://example.com/{index}",
+            ),
+        )
         update_ai_ranking(
             c,
             source_id,
@@ -1370,11 +1991,15 @@ def test_dashboard_counts_all_pending_high_priority_signals(conn, client):
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     for index in range(25):
         external_id = f"signal-{index}"
-        insert_new(c, source_id, RawItem(
-            external_id=external_id,
-            title=f"Signal {index}",
-            url=f"https://example.com/{index}",
-        ))
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=external_id,
+                title=f"Signal {index}",
+                url=f"https://example.com/{index}",
+            ),
+        )
         update_ai_ranking(
             c,
             source_id,
@@ -1400,11 +2025,15 @@ def test_dashboard_high_priority_tab_filters_signals(conn, client):
         ("low", 89, "低分摘要"),
         ("high", 90, "高分摘要"),
     ):
-        insert_new(c, source_id, RawItem(
-            external_id=external_id,
-            title=external_id,
-            url=f"https://example.com/{external_id}",
-        ))
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=external_id,
+                title=external_id,
+                url=f"https://example.com/{external_id}",
+            ),
+        )
         update_ai_ranking(
             c,
             source_id,
@@ -1429,7 +2058,9 @@ def test_archive_treats_empty_channel_query_param_as_no_filter(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
 
     # An HTML <select> with an empty-value "全部" (all) option submits channel="" when that
     # option is chosen, not an omitted param -- this must behave like "no channel filter",
@@ -1443,7 +2074,9 @@ def test_archive_treats_non_numeric_channel_query_param_as_no_filter(conn, clien
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
 
     # A hand-crafted non-numeric value (never produced by the <select>, whose only non-empty
     # options are real channel ids) must not 500 -- treat it the same as "no filter".
@@ -1456,7 +2089,9 @@ def test_archive_treats_empty_date_query_params_as_no_filter(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
 
     # An unfilled <input type="date"> submits from=/to="" (empty string), not an omitted
     # param -- this must behave like "no date filter", not silently exclude every row
@@ -1476,9 +2111,19 @@ def test_dashboard_teaser_carries_an_exact_time_tooltip(conn, client, monkeypatc
     monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x",
-                                      created_at=datetime(2026, 7, 9, 0, 0, tzinfo=timezone.utc)))
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1",
+            title="Rates fall",
+            url="https://x",
+            created_at=datetime(2026, 7, 9, 0, 0, tzinfo=timezone.utc),
+        ),
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get("/")
@@ -1510,7 +2155,9 @@ def test_dashboard_shows_each_channels_own_next_fetch_countdown(
         "profile",
         fetch_interval_hours=24,
     )
-    daily_source = create_source(c, daily_id, "reddit_subreddit", {"subreddit": "daily"})
+    daily_source = create_source(
+        c, daily_id, "reddit_subreddit", {"subreddit": "daily"}
+    )
     create_source(c, new_id, "reddit_subreddit", {"subreddit": "new"})
     record_fetch_success(c, daily_source, "2026-07-13T07:00:00+00:00")
 
@@ -1566,17 +2213,66 @@ def test_open_item_route_redirects_to_the_real_url_and_marks_it_read(conn, clien
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall",
-                                      url="https://reddit.com/r/x/comments/t1"))
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1",
+            title="Rates fall",
+            url="https://reddit.com/r/x/comments/t1",
+        ),
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
     resp = client.get(f"/items/{item_id}/open", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "https://reddit.com/r/x/comments/t1"
 
-    row = c.execute("SELECT opened_at, is_read FROM items WHERE id = ?", (item_id,)).fetchone()
+    row = c.execute(
+        "SELECT opened_at, is_read FROM items WHERE id = ?", (item_id,)
+    ).fetchone()
     assert row["opened_at"] is not None
     assert row["is_read"] == 1
+
+
+@pytest.mark.parametrize(
+    ("kind", "source_type", "config"),
+    [
+        (
+            "monitor",
+            "shopify_collection",
+            {"collection_url": "https://example.com/collections/outlet"},
+        ),
+        ("tracker", "all_about_auctions", {}),
+    ],
+)
+def test_open_item_records_snapshot_open_without_marking_it_read(
+    conn, client, kind, source_type, config
+):
+    _, c = conn
+    channel_id = create_channel(c, f"{kind} Channel", "profile", kind=kind)
+    source_id = create_source(c, channel_id, source_type, config)
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id=f"{kind}-1",
+            title="Listing",
+            url="https://example.com/listing",
+        ),
+    )
+    item_id = c.execute(
+        "SELECT id FROM items WHERE external_id = ?", (f"{kind}-1",)
+    ).fetchone()[0]
+
+    response = client.get(f"/items/{item_id}/open", follow_redirects=False)
+
+    assert response.status_code == 302
+    row = c.execute(
+        "SELECT opened_at, is_read FROM items WHERE id = ?", (item_id,)
+    ).fetchone()
+    assert row["opened_at"] is not None
+    assert row["is_read"] == 0
 
 
 def test_open_item_route_404s_for_a_missing_item(client):
@@ -1587,21 +2283,29 @@ def test_open_item_route_404s_for_a_missing_item(client):
 def test_dashboard_teaser_link_goes_through_the_open_tracking_route(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
-    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    source_id = create_source(
+        c, channel_id, "reddit_subreddit", {"subreddit": "PersonalFinanceNZ"}
+    )
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
     resp = client.get("/")
     assert f'href="/items/{item_id}/open"' in resp.text
-    assert 'href="https://x" target="_blank"' not in resp.text  # no longer a direct link
+    assert (
+        'href="https://x" target="_blank"' not in resp.text
+    )  # no longer a direct link
 
 
 def test_dashboard_shows_fetch_stats(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    record_fetch_success(c, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20)
+    record_fetch_success(
+        c, source_id, "2026-07-09T03:00:00", raw_count=50, new_count=20
+    )
 
     resp = client.get("/")
     assert "50" in resp.text and "20" in resp.text and "40%" in resp.text
@@ -1611,8 +2315,12 @@ def test_channel_drilldown_hides_read_items_by_default(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x"))
-    insert_new(c, source_id, RawItem(external_id="t2", title="Read item", url="https://y"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x")
+    )
+    insert_new(
+        c, source_id, RawItem(external_id="t2", title="Read item", url="https://y")
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t2'").fetchone()[0]
     c.execute("UPDATE items SET is_read = 1 WHERE id = ?", (item_id,))
     c.commit()
@@ -1628,8 +2336,12 @@ def test_channel_drilldown_shows_read_items_when_show_read_param_present(conn, c
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x"))
-    insert_new(c, source_id, RawItem(external_id="t2", title="Read item", url="https://y"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x")
+    )
+    insert_new(
+        c, source_id, RawItem(external_id="t2", title="Read item", url="https://y")
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t2'").fetchone()[0]
     c.execute("UPDATE items SET is_read = 1 WHERE id = ?", (item_id,))
     c.commit()
@@ -1643,7 +2355,9 @@ def test_channel_drilldown_no_reveal_line_when_nothing_is_read(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x")
+    )
 
     resp = client.get(f"/channels/{channel_id}")
     assert 'class="channel-read-link"' not in resp.text
@@ -1653,11 +2367,15 @@ def test_channel_drilldown_shows_best_comment_summary_when_present(conn, client)
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    c.execute("UPDATE items SET best_comment_summary = ? WHERE id = ?",
-              ("有人指出实际数字不同", item_id))
+    c.execute(
+        "UPDATE items SET best_comment_summary = ? WHERE id = ?",
+        ("有人指出实际数字不同", item_id),
+    )
     c.commit()
 
     resp = client.get(f"/channels/{channel_id}")
@@ -1665,11 +2383,15 @@ def test_channel_drilldown_shows_best_comment_summary_when_present(conn, client)
     assert "有人指出实际数字不同" in resp.text
 
 
-def test_channel_drilldown_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
+def test_channel_drilldown_shows_nothing_extra_when_best_comment_summary_is_absent(
+    conn, client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
@@ -1680,11 +2402,17 @@ def test_dashboard_signal_shows_best_comment_summary_when_present(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
-    update_ai_ranking(c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r")
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
+    update_ai_ranking(
+        c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r"
+    )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    c.execute("UPDATE items SET best_comment_summary = ? WHERE id = ?",
-              ("有人指出实际数字不同", item_id))
+    c.execute(
+        "UPDATE items SET best_comment_summary = ? WHERE id = ?",
+        ("有人指出实际数字不同", item_id),
+    )
     c.commit()
 
     resp = client.get("/")
@@ -1693,12 +2421,18 @@ def test_dashboard_signal_shows_best_comment_summary_when_present(conn, client):
     assert "有人指出实际数字不同" in resp.text
 
 
-def test_dashboard_signal_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
+def test_dashboard_signal_shows_nothing_extra_when_best_comment_summary_is_absent(
+    conn, client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
-    update_ai_ranking(c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r")
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
+    update_ai_ranking(
+        c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r"
+    )
 
     resp = client.get("/")
     assert 'class="signal-comment"' not in resp.text
@@ -1708,11 +2442,15 @@ def test_archive_shows_best_comment_summary_when_present(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    c.execute("UPDATE items SET best_comment_summary = ? WHERE id = ?",
-              ("有人指出实际数字不同", item_id))
+    c.execute(
+        "UPDATE items SET best_comment_summary = ? WHERE id = ?",
+        ("有人指出实际数字不同", item_id),
+    )
     c.commit()
 
     resp = client.get("/archive")
@@ -1724,7 +2462,9 @@ def test_archive_shows_nothing_extra_when_best_comment_summary_is_absent(conn, c
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    insert_new(
+        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
+    )
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get("/archive")
@@ -1773,3 +2513,177 @@ def test_official_source_summary_uses_public_label():
 
     sources = [{"type": "nz_government_news", "config": "{}"}]
     assert _source_summary(sources, localizer_for("en")) == "NZ Government"
+
+
+def test_owner_can_toggle_auction_watch_from_channel(conn, authed_client, db_path):
+    _, c = conn
+    item_id = _create_auction_item(c)
+    channel_id = c.execute(
+        """
+        SELECT sources.channel_id
+        FROM items
+        JOIN sources ON sources.id = items.source_id
+        WHERE items.id = ?
+        """,
+        (item_id,),
+    ).fetchone()[0]
+
+    page = authed_client.get(f"/channels/{channel_id}")
+    assert page.status_code == 200
+    assert f'hx-post="/items/{item_id}/watch"' in page.text
+    assert 'aria-pressed="false"' in page.text
+
+    watched = authed_client.post(
+        f"/items/{item_id}/watch",
+        data={
+            "csrf_token": "csrf1",
+            "origin": "channel",
+            "channel_id": str(channel_id),
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert watched.status_code == 200
+    assert 'aria-pressed="true"' in watched.text
+    assert "Watching" in watched.text
+
+    conn2 = connect(db_path)
+    assert (
+        conn2.execute(
+            "SELECT 1 FROM auction_watches WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+        is not None
+    )
+
+    unwatched = authed_client.post(
+        f"/items/{item_id}/watch",
+        data={
+            "csrf_token": "csrf1",
+            "origin": "channel",
+            "channel_id": str(channel_id),
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert unwatched.status_code == 200
+    assert 'aria-pressed="false"' in unwatched.text
+
+
+def test_auction_watch_controls_are_owner_only(conn, client):
+    _, c = conn
+    item_id = _create_auction_item(c)
+    channel_id = c.execute(
+        """
+        SELECT sources.channel_id
+        FROM items
+        JOIN sources ON sources.id = items.source_id
+        WHERE items.id = ?
+        """,
+        (item_id,),
+    ).fetchone()[0]
+
+    page = client.get(f"/channels/{channel_id}")
+    assert page.status_code == 200
+    assert f"/items/{item_id}/watch" not in page.text
+
+    response = client.post(
+        f"/items/{item_id}/watch",
+        data={"csrf_token": "csrf1"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+
+def test_auction_watch_rejects_wrong_csrf(conn, authed_client):
+    _, c = conn
+    item_id = _create_auction_item(c)
+
+    response = authed_client.post(
+        f"/items/{item_id}/watch",
+        data={"csrf_token": "wrong"},
+    )
+
+    assert response.status_code == 403
+    assert (
+        c.execute(
+            "SELECT 1 FROM auction_watches WHERE item_id = ?",
+            (item_id,),
+        ).fetchone()
+        is None
+    )
+
+
+def test_auction_watch_rejects_closed_or_non_auction_items(conn, authed_client):
+    _, c = conn
+    closed_item_id = _create_auction_item(
+        c,
+        external_id="closed-lot",
+        closes_in_hours=-1,
+    )
+
+    channel_id = create_channel(c, "News", "news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(
+        c,
+        source_id,
+        RawItem(external_id="story", title="Story", url="https://example.com/story"),
+    )
+    story_id = c.execute(
+        "SELECT id FROM items WHERE external_id = 'story'",
+    ).fetchone()[0]
+
+    closed = authed_client.post(
+        f"/items/{closed_item_id}/watch",
+        data={"csrf_token": "csrf1"},
+    )
+    not_auction = authed_client.post(
+        f"/items/{story_id}/watch",
+        data={"csrf_token": "csrf1"},
+    )
+
+    assert closed.status_code == 422
+    assert not_auction.status_code == 422
+
+
+def test_watchlist_is_owner_only_and_orders_lots_by_closing_time(
+    conn,
+    authed_client,
+    client,
+):
+    _, c = conn
+    later_id = _create_auction_item(
+        c,
+        external_id="later-lot",
+        closes_in_hours=4,
+    )
+    earlier_id = _create_auction_item(
+        c,
+        external_id="earlier-lot",
+        closes_in_hours=2,
+    )
+    for item_id in (later_id, earlier_id):
+        response = authed_client.post(
+            f"/items/{item_id}/watch",
+            data={"csrf_token": "csrf1"},
+        )
+        assert response.status_code == 303
+
+    anonymous = client.get("/watchlist", follow_redirects=False)
+    assert anonymous.status_code == 303
+
+    page = authed_client.get("/watchlist")
+    assert page.status_code == 200
+    assert "Watch List" in page.text
+    assert "Vintage camera" in page.text
+    assert "Current bid: NZD 50" in page.text
+    assert page.text.index(f"watchlist-item-{earlier_id}") < page.text.index(
+        f"watchlist-item-{later_id}"
+    )
+    assert 'href="/admin/settings"' in page.text
+    assert f'hx-post="/items/{earlier_id}/watch"' in page.text
+
+
+def test_owner_navigation_links_to_watchlist(client, authed_client):
+    assert 'href="/watchlist"' not in client.get("/").text
+    owner_page = authed_client.get("/")
+    assert 'href="/watchlist"' in owner_page.text
+    assert ">Watch List</a>" in owner_page.text

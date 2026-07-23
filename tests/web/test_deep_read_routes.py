@@ -138,6 +138,40 @@ def test_deep_read_route_rejects_unranked_item(conn, authed_client):
     assert get_deep_read(c, item_id) is None
 
 
+def test_deep_read_routes_reject_monitor_item(conn, authed_client, client):
+    _, c = conn
+    channel_id = create_channel(c, "Outlet", "deals", kind="monitor")
+    source_id = create_source(
+        c,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    insert_new(
+        c,
+        source_id,
+        RawItem(external_id="product-1", title="Listing", url="https://example.com/p"),
+    )
+    update_ai_ranking(
+        c, source_id, "product-1", score=90, summary="s", rationale="r"
+    )
+    item_id = c.execute(
+        "SELECT id FROM items WHERE external_id = 'product-1'"
+    ).fetchone()[0]
+
+    request_response = authed_client.post(
+        f"/items/{item_id}/deep-read",
+        data={"csrf_token": "csrf1", "origin": "channel", "channel_id": channel_id},
+    )
+    brief_response = client.get(f"/items/{item_id}/brief")
+    status_response = client.get(f"/items/{item_id}/brief/status")
+
+    assert request_response.status_code == 422
+    assert brief_response.status_code == 422
+    assert status_response.status_code == 422
+    assert get_deep_read(c, item_id) is None
+
+
 @pytest.mark.parametrize("origin", ["dashboard", "archive", "channel"])
 def test_deep_read_route_accepts_allowlisted_origins_and_builds_matching_redirect(
     conn, authed_client, origin,
@@ -772,11 +806,11 @@ def test_channel_decorates_ranked_items_with_deep_read_state(conn, client):
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
-    highlighted = resp.context["highlighted"]
-    assert highlighted[0]["deep_read"]["status"] == "ready"
-    assert highlighted[0]["deep_read"]["is_ready"] is True
+    highlighted = resp.context["page"].highlighted
+    assert highlighted[0].deep_read.status == "ready"
+    assert highlighted[0].deep_read.is_ready is True
     assert f"/items/{item_id}/brief?origin=channel&channel_id={channel_id}" == (
-        highlighted[0]["deep_read"]["brief_url"])
+        highlighted[0].deep_read.brief_url)
 
 
 def test_archive_decorates_ranked_items_with_deep_read_state(conn, client):
@@ -823,12 +857,12 @@ def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origi
     resp = authed_client.post(f"/items/{item_id}/vote",
                                data={"value": "1", "csrf_token": "csrf1"})
     assert resp.status_code == 200
-    dr = resp.context["item"]["deep_read"]
-    assert dr["status"] == "not_requested"
-    assert dr["can_start"] is True
-    assert dr["origin"] == "channel"
-    assert dr["channel_id"] == channel_id
-    assert dr["csrf_token"] == "csrf1"
+    dr = resp.context["item"].deep_read
+    assert dr.status == "not_requested"
+    assert dr.can_start is True
+    assert dr.origin == "channel"
+    assert dr.channel_id == channel_id
+    assert dr.csrf_token == "csrf1"
     assert "deep-read-chip-start" in resp.text
     assert 'name="origin" value="channel"' in resp.text
     assert f'name="channel_id" value="{channel_id}"' in resp.text
@@ -838,11 +872,11 @@ def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origi
     resp = authed_client.post(f"/items/{item_id}/vote",
                                data={"value": "1", "csrf_token": "csrf1"})
     assert resp.status_code == 200
-    dr = resp.context["item"]["deep_read"]
-    assert dr["status"] == "pending"
-    assert dr["is_pending"] is True
-    assert dr["origin"] == "channel"
-    assert dr["channel_id"] == channel_id
+    dr = resp.context["item"].deep_read
+    assert dr.status == "pending"
+    assert dr.is_pending is True
+    assert dr.origin == "channel"
+    assert dr.channel_id == channel_id
     assert "deep-read-chip-pending" in resp.text
     assert f'href="/items/{item_id}/brief?origin=channel' in resp.text
     assert f'channel_id={channel_id}"' in resp.text
@@ -852,11 +886,11 @@ def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origi
     resp = authed_client.post(f"/items/{item_id}/vote",
                                data={"value": "1", "csrf_token": "csrf1"})
     assert resp.status_code == 200
-    dr = resp.context["item"]["deep_read"]
-    assert dr["status"] == "ready"
-    assert dr["is_ready"] is True
-    assert dr["origin"] == "channel"
-    assert dr["channel_id"] == channel_id
+    dr = resp.context["item"].deep_read
+    assert dr.status == "ready"
+    assert dr.is_ready is True
+    assert dr.origin == "channel"
+    assert dr.channel_id == channel_id
     assert "deep-read-chip-open" in resp.text
     assert f'href="/items/{item_id}/brief?origin=channel' in resp.text
     assert f'channel_id={channel_id}"' in resp.text
@@ -867,12 +901,12 @@ def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origi
     resp = authed_client.post(f"/items/{item_id}/vote",
                                data={"value": "1", "csrf_token": "csrf1"})
     assert resp.status_code == 200
-    dr = resp.context["item"]["deep_read"]
-    assert dr["status"] == "failed"
-    assert dr["is_failed"] is True
-    assert dr["can_regenerate"] is True
-    assert dr["origin"] == "channel"
-    assert dr["channel_id"] == channel_id
+    dr = resp.context["item"].deep_read
+    assert dr.status == "failed"
+    assert dr.is_failed is True
+    assert dr.can_regenerate is True
+    assert dr.origin == "channel"
+    assert dr.channel_id == channel_id
     assert "deep-read-chip-retry" in resp.text
     assert 'name="regenerate" value="true"' in resp.text
     assert 'name="origin" value="channel"' in resp.text
@@ -890,6 +924,6 @@ def test_vote_route_derives_the_item_actual_channel_not_any_channel(conn, authed
     resp = authed_client.post(f"/items/{item_id}/vote",
                                data={"value": "1", "csrf_token": "csrf1"})
     assert resp.status_code == 200
-    dr = resp.context["item"]["deep_read"]
-    assert dr["channel_id"] == channel_id
-    assert dr["channel_id"] != other_channel_id
+    dr = resp.context["item"].deep_read
+    assert dr.channel_id == channel_id
+    assert dr.channel_id != other_channel_id

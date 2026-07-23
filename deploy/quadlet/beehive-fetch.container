@@ -19,4 +19,4 @@ CPUQuota=100%
 CPUWeight=20
 MemoryHigh=384M
 MemoryMax=512M
-TimeoutStartSec=600
+TimeoutStartSec=3600

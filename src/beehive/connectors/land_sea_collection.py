@@ -38,6 +38,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from beehive.connectors.base import RawItem
 from beehive.connectors.registry import register
+from beehive.domain.channels import ChannelKind
 
 _USER_AGENT = "beehive/0.1 (personal information hub)"
 _REQUEST_TIMEOUT_SECONDS = 20
@@ -48,6 +49,19 @@ _MAX_PAGES = 10
 
 _PRODUCT_TILES_RE = re.compile(r"window\.page\.productTiles\s*=\s*(\[.*?\]);", re.DOTALL)
 _TOTAL_PAGES_RE = re.compile(r"window\.page\.totalPagesJs\s*=\s*(\d+)")
+# N2 ERP is not documented, so scan the tile fields most likely to hold an image, accepting either
+# a URL string or an object carrying one under a common sub-key. A missing/foreign shape yields
+# None -- no URL is ever fabricated.
+_IMAGE_KEYS = (
+    "imageUrl",
+    "image",
+    "imageSrc",
+    "thumbnailUrl",
+    "thumbnail",
+    "mainImage",
+    "mainImageUrl",
+    "img",
+)
 
 HtmlFetcher = Callable[[str], str]
 
@@ -74,6 +88,25 @@ def _parse_page(html: str) -> tuple[list[dict], int | None]:
     return tiles, total_pages
 
 
+def _tile_image_url(tile: dict, store_origin: str) -> str | None:
+    for key in _IMAGE_KEYS:
+        raw = tile.get(key)
+        candidate: str | None = None
+        if isinstance(raw, str) and raw.strip():
+            candidate = raw.strip()
+        elif isinstance(raw, dict):
+            for sub_key in ("src", "url", "href"):
+                value = raw.get(sub_key)
+                if isinstance(value, str) and value.strip():
+                    candidate = value.strip()
+                    break
+        if candidate:
+            # A tile URL may be relative (like productUrl); absolute URLs pass through urljoin
+            # unchanged, so this never invents a host.
+            return urljoin(store_origin, candidate)
+    return None
+
+
 def _to_raw_item(tile: dict, store_origin: str) -> RawItem:
     if not isinstance(tile, dict):
         raise ValueError("product tile entry must be an object")
@@ -92,7 +125,7 @@ def _to_raw_item(tile: dict, store_origin: str) -> RawItem:
         price_was = 0.0
     compare_at_price = price_was if price_was > price else None
     return RawItem(
-        external_id=f"{product_id}:{price:.2f}",
+        external_id=str(product_id),
         title=name,
         url=urljoin(store_origin, product_url),
         body="",
@@ -107,12 +140,14 @@ def _to_raw_item(tile: dict, store_origin: str) -> RawItem:
             "vendor": tile.get("brandName") or None,
             "product_type": None,
             "tags": [],
+            "image_url": _tile_image_url(tile, store_origin),
         },
     )
 
 
 class LandSeaCollectionConnector:
     type_key = "land_sea_collection"
+    supported_channel_kinds = frozenset({ChannelKind.MONITOR})
 
     def __init__(self, fetch_html: HtmlFetcher = _default_fetch_html):
         self._fetch_html = fetch_html

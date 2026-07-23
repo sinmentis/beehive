@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from beehive.connectors.registry import register
+from beehive.domain.channels import ChannelKind
 
 
 def _close_coroutine(coroutine):
@@ -15,11 +16,13 @@ def _close_coroutine_returning(result):
     def close(coroutine):
         coroutine.close()
         return result
+
     return close
 
 
 def _rewrite_result(*, failed=0):
     from beehive.collector.summary_rewrite import SummaryRewriteRunResult
+
     return SummaryRewriteRunResult(
         run_id="rewrite-1",
         dry_run=False,
@@ -34,6 +37,7 @@ def _rewrite_result(*, failed=0):
 
 def _rollback_result(*, changed_since=0):
     from beehive.collector.summary_rewrite import SummaryRewriteRollbackResult
+
     return SummaryRewriteRollbackResult(
         run_id="rewrite-1",
         entries_found=1,
@@ -43,10 +47,14 @@ def _rollback_result(*, changed_since=0):
 
 
 def test_fetch_mode_invokes_asyncio_run(monkeypatch, tmp_path):
-    monkeypatch.setattr(sys, "argv",
-                         ["prog", "--mode", "fetch", "--db-path", str(tmp_path / "t.db")])
-    with patch("scripts.run_collector.asyncio.run", side_effect=_close_coroutine) as mock_run:
+    monkeypatch.setattr(
+        sys, "argv", ["prog", "--mode", "fetch", "--db-path", str(tmp_path / "t.db")]
+    )
+    with patch(
+        "scripts.run_collector.asyncio.run", side_effect=_close_coroutine
+    ) as mock_run:
         from scripts.run_collector import main
+
         main()
     mock_run.assert_called_once()
 
@@ -56,8 +64,37 @@ def test_digest_mode_invokes_run_digest(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["prog", "--mode", "digest", "--db-path", db_path])
     with patch("scripts.run_collector.run_digest") as mock_digest:
         from scripts.run_collector import main
+
         main()
     mock_digest.assert_called_once_with(db_path)
+
+
+def test_auction_reminders_mode_invokes_worker(monkeypatch, tmp_path):
+    db_path = str(tmp_path / "t.db")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["prog", "--mode", "auction-reminders", "--db-path", db_path],
+    )
+    with patch("scripts.run_collector.run_auction_reminders") as mock_reminders:
+        from scripts.run_collector import main
+
+        main()
+    mock_reminders.assert_called_once_with(db_path)
+
+
+def test_tracker_reminders_mode_invokes_worker(monkeypatch, tmp_path):
+    db_path = str(tmp_path / "t.db")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["prog", "--mode", "tracker-reminders", "--db-path", db_path],
+    )
+    with patch("scripts.run_collector.run_tracker_reminders") as mock_reminders:
+        from scripts.run_collector import main
+
+        main()
+    mock_reminders.assert_called_once_with(db_path)
 
 
 def test_deep_read_mode_invokes_asyncio_run(monkeypatch, tmp_path):
@@ -66,8 +103,11 @@ def test_deep_read_mode_invokes_asyncio_run(monkeypatch, tmp_path):
         "argv",
         ["prog", "--mode", "deep-read", "--db-path", str(tmp_path / "t.db")],
     )
-    with patch("scripts.run_collector.asyncio.run", side_effect=_close_coroutine) as mock_run:
+    with patch(
+        "scripts.run_collector.asyncio.run", side_effect=_close_coroutine
+    ) as mock_run:
         from scripts.run_collector import main
+
         main()
     mock_run.assert_called_once()
 
@@ -94,6 +134,7 @@ def test_summary_rewrite_dry_run_mode_invokes_asyncio_run(monkeypatch, tmp_path)
         side_effect=_close_coroutine_returning(_rewrite_result()),
     ) as mock_run:
         from scripts.run_collector import main
+
         main()
     mock_run.assert_called_once()
 
@@ -175,6 +216,7 @@ def test_summary_rollback_mode_calls_rollback(monkeypatch, tmp_path):
     with patch("scripts.run_collector.run_unread_summary_rollback") as mock_rollback:
         mock_rollback.return_value = _rollback_result()
         from scripts.run_collector import main
+
         main()
 
     mock_rollback.assert_called_once_with(db_path, run_id="rewrite-1")
@@ -203,6 +245,7 @@ def test_summary_rewrite_mode_exits_nonzero_when_any_item_failed(monkeypatch, tm
         side_effect=_close_coroutine_returning(_rewrite_result(failed=1)),
     ):
         from scripts.run_collector import main
+
         with pytest.raises(SystemExit) as exc_info:
             main()
 
@@ -229,6 +272,7 @@ def test_summary_rollback_mode_exits_nonzero_when_entries_remain(monkeypatch, tm
         return_value=_rollback_result(changed_since=1),
     ):
         from scripts.run_collector import main
+
         with pytest.raises(SystemExit) as exc_info:
             main()
 
@@ -278,6 +322,7 @@ async def test_run_unread_summary_rewrite_loads_language_and_prints_result(
         new=AsyncMock(),
     ) as mock_rewrite:
         from beehive.collector.summary_rewrite import SummaryRewriteRunResult
+
         mock_rewrite.return_value = SummaryRewriteRunResult(
             run_id="rewrite-1",
             dry_run=True,
@@ -308,6 +353,7 @@ async def test_run_fetch_bootstraps_schema_on_fresh_db(tmp_path, monkeypatch):
     file that has never been initialized."""
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     from scripts.run_collector import run_fetch
+
     await run_fetch(str(tmp_path / "brand_new.db"))
 
 
@@ -317,11 +363,14 @@ def test_run_digest_bootstraps_schema_on_fresh_db(tmp_path, monkeypatch):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from scripts.run_collector import run_digest
+
     run_digest(str(tmp_path / "brand_new.db"))
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_loads_and_passes_the_stored_platform_language(tmp_path, monkeypatch):
+async def test_run_fetch_loads_and_passes_the_stored_platform_language(
+    tmp_path, monkeypatch
+):
     """The Localizer is loaded once, right after init_schema, and passed explicitly into
     run_channel_cycle -- never read from a process-global."""
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
@@ -353,7 +402,9 @@ async def test_run_fetch_loads_and_passes_the_stored_platform_language(tmp_path,
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_defaults_to_english_when_no_language_is_stored(tmp_path, monkeypatch):
+async def test_run_fetch_defaults_to_english_when_no_language_is_stored(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from beehive.db.channels import create_channel
@@ -380,7 +431,8 @@ async def test_run_fetch_defaults_to_english_when_no_language_is_stored(tmp_path
 
 @pytest.mark.asyncio
 async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from beehive.collector.manual_trigger import request_channel_fetch
@@ -399,8 +451,10 @@ async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
     conn.close()
 
     request_channel_fetch(str(tmp_path), channel_id)
-    os.replace(str(tmp_path / "fetch_trigger_channel_id"),
-               str(tmp_path / "fetch_trigger_channel_id.inflight"))
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
 
     with patch(
         "scripts.run_collector.run_channel_cycle",
@@ -414,7 +468,9 @@ async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
     assert mock_cycle.await_args.kwargs["force_fetch"] is True
 
 
-def test_run_digest_loads_and_passes_the_stored_platform_language(tmp_path, monkeypatch):
+def test_run_digest_loads_and_passes_the_stored_platform_language(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from beehive.db.connection import connect, init_schema
@@ -436,6 +492,7 @@ def test_run_digest_loads_and_passes_the_stored_platform_language(tmp_path, monk
 
 class _ManualTriggerStubConnector:
     type_key = "manual_trigger_stub"
+    supported_channel_kinds = frozenset(ChannelKind)
 
     def validate_config(self, config):
         pass
@@ -445,16 +502,24 @@ class _ManualTriggerStubConnector:
 
 
 def test_fetch_channel_mode_invokes_asyncio_run(monkeypatch, tmp_path):
-    monkeypatch.setattr(sys, "argv",
-                         ["prog", "--mode", "fetch-channel", "--db-path", str(tmp_path / "t.db")])
-    with patch("scripts.run_collector.asyncio.run", side_effect=_close_coroutine) as mock_run:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["prog", "--mode", "fetch-channel", "--db-path", str(tmp_path / "t.db")],
+    )
+    with patch(
+        "scripts.run_collector.asyncio.run", side_effect=_close_coroutine
+    ) as mock_run:
         from scripts.run_collector import main
+
         main()
     mock_run.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_channel_processes_only_the_requested_channel(tmp_path, monkeypatch):
+async def test_run_fetch_channel_processes_only_the_requested_channel(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     from beehive.collector.manual_trigger import request_channel_fetch
     from beehive.db.channels import create_channel
@@ -482,8 +547,10 @@ async def test_run_fetch_channel_processes_only_the_requested_channel(tmp_path, 
     conn.close()
 
     request_channel_fetch(str(tmp_path), target_id)
-    os.replace(str(tmp_path / "fetch_trigger_channel_id"),
-               str(tmp_path / "fetch_trigger_channel_id.inflight"))
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
 
     await run_fetch_channel(db_path)
 
@@ -493,7 +560,9 @@ async def test_run_fetch_channel_processes_only_the_requested_channel(tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_channel_processes_every_channel_in_a_batch(tmp_path, monkeypatch):
+async def test_run_fetch_channel_processes_every_channel_in_a_batch(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from beehive.collector.manual_trigger import request_channel_fetch_batch
@@ -524,11 +593,85 @@ async def test_run_fetch_channel_processes_every_channel_in_a_batch(tmp_path, mo
         first_id,
         second_id,
     ]
-    assert all(call.kwargs["force_fetch"] is True for call in mock_cycle.await_args_list)
+    assert all(
+        call.kwargs["force_fetch"] is True for call in mock_cycle.await_args_list
+    )
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_channel_is_a_noop_with_no_marker_present(tmp_path, monkeypatch):
+async def test_run_fetch_channel_keeps_inflight_status_until_work_finishes(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from beehive.collector.manual_trigger import request_channel_fetch
+    from beehive.db.channels import create_channel
+    from beehive.db.connection import connect, init_schema
+    from scripts.run_collector import run_fetch_channel
+
+    db_path = str(tmp_path / "t.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    channel_id = create_channel(conn, "Manual Channel", "profile")
+    conn.close()
+    request_channel_fetch(str(tmp_path), channel_id)
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
+    inflight_path = tmp_path / "fetch_trigger_channel_id.inflight"
+
+    async def assert_running(*args, **kwargs):
+        assert inflight_path.read_text() == str(channel_id)
+
+    with patch(
+        "scripts.run_collector.run_channel_cycle",
+        side_effect=assert_running,
+    ):
+        await run_fetch_channel(db_path)
+
+    assert not inflight_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_fetch_channel_clears_inflight_status_after_an_unexpected_failure(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from beehive.collector.manual_trigger import request_channel_fetch
+    from beehive.db.channels import create_channel
+    from beehive.db.connection import connect, init_schema
+    from scripts.run_collector import run_fetch_channel
+
+    db_path = str(tmp_path / "t.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    channel_id = create_channel(conn, "Manual Channel", "profile")
+    conn.close()
+    request_channel_fetch(str(tmp_path), channel_id)
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
+    inflight_path = tmp_path / "fetch_trigger_channel_id.inflight"
+
+    with (
+        patch(
+            "scripts.run_collector.run_channel_cycle",
+            new=AsyncMock(side_effect=RuntimeError("ranking failed")),
+        ),
+        pytest.raises(RuntimeError, match="ranking failed"),
+    ):
+        await run_fetch_channel(db_path)
+
+    assert not inflight_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_fetch_channel_is_a_noop_with_no_marker_present(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     from beehive.db.channels import create_channel
     from beehive.db.connection import connect, init_schema
@@ -544,7 +687,9 @@ async def test_run_fetch_channel_is_a_noop_with_no_marker_present(tmp_path, monk
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_channel_is_a_noop_when_the_channel_no_longer_exists(tmp_path, monkeypatch):
+async def test_run_fetch_channel_is_a_noop_when_the_channel_no_longer_exists(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     from beehive.collector.manual_trigger import request_channel_fetch
     from beehive.db.connection import connect, init_schema
@@ -556,14 +701,18 @@ async def test_run_fetch_channel_is_a_noop_when_the_channel_no_longer_exists(tmp
     conn.close()
 
     request_channel_fetch(str(tmp_path), 999)  # no Channel 999 exists
-    os.replace(str(tmp_path / "fetch_trigger_channel_id"),
-               str(tmp_path / "fetch_trigger_channel_id.inflight"))
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
 
     await run_fetch_channel(db_path)  # must not raise
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_passes_each_channels_effective_recipient(tmp_path, monkeypatch):
+async def test_run_fetch_passes_each_channels_effective_recipient(
+    tmp_path, monkeypatch
+):
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
     monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
     from beehive.db import app_state
@@ -578,8 +727,13 @@ async def test_run_fetch_passes_each_channels_effective_recipient(tmp_path, monk
     inherited = create_channel(conn, "Inherited", "profile")
     overridden = create_channel(conn, "Overridden", "profile")
     update_channel(
-        conn, overridden, "Overridden", "profile",
-        fetch_interval_hours=3, digest_email="channel@example.com")
+        conn,
+        overridden,
+        "Overridden",
+        "profile",
+        fetch_interval_hours=3,
+        digest_email="channel@example.com",
+    )
     conn.close()
 
     with patch(
@@ -609,7 +763,8 @@ async def test_run_fetch_passes_each_channels_effective_recipient(tmp_path, monk
 
 @pytest.mark.asyncio
 async def test_run_fetch_skips_channel_with_invalid_override_and_continues(
-        tmp_path, monkeypatch, capsys):
+    tmp_path, monkeypatch, capsys
+):
     """A single Channel with a malformed override must not abort the whole fetch run:
     other Channels still get processed and the bad one is logged and skipped."""
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
@@ -625,7 +780,8 @@ async def test_run_fetch_skips_channel_with_invalid_override_and_continues(
     bad = create_channel(conn, "Bad Channel", "profile")
     conn.execute(
         "UPDATE channels SET digest_email = ? WHERE id = ?",
-        ("one@example.com,two@example.com", bad))
+        ("one@example.com,two@example.com", bad),
+    )
     conn.commit()
     conn.close()
 
@@ -642,7 +798,8 @@ async def test_run_fetch_skips_channel_with_invalid_override_and_continues(
 
 @pytest.mark.asyncio
 async def test_run_fetch_isolates_alert_delivery_config_error_and_still_raises(
-        tmp_path, monkeypatch, capsys):
+    tmp_path, monkeypatch, capsys
+):
     """An EmailConfigurationError raised by run_channel_cycle (e.g. an LLM-failure alert
     with no recipient configured) must not abort the whole run: later Channels are still
     attempted, and the run still fails afterwards with an ExceptionGroup carrying the error."""
@@ -681,7 +838,8 @@ async def test_run_fetch_isolates_alert_delivery_config_error_and_still_raises(
 
 @pytest.mark.asyncio
 async def test_run_fetch_channel_logs_and_reraises_alert_delivery_config_error(
-        tmp_path, monkeypatch, capsys):
+    tmp_path, monkeypatch, capsys
+):
     """The manual single-Channel path must surface an alert-delivery configuration error:
     log the Channel and re-raise so the fetch-channel unit fails explicitly."""
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
@@ -699,8 +857,10 @@ async def test_run_fetch_channel_logs_and_reraises_alert_delivery_config_error(
     conn.close()
 
     request_channel_fetch(str(tmp_path), channel_id)
-    os.replace(str(tmp_path / "fetch_trigger_channel_id"),
-               str(tmp_path / "fetch_trigger_channel_id.inflight"))
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
 
     config_error = EmailConfigurationError("No email recipient is configured")
 
@@ -729,7 +889,8 @@ async def test_run_fetch_channel_logs_and_reraises_alert_delivery_config_error(
 
 @pytest.mark.asyncio
 async def test_run_fetch_channel_skips_invalid_override_without_raising(
-        tmp_path, monkeypatch, capsys):
+    tmp_path, monkeypatch, capsys
+):
     """The manual single-Channel path must log and return on a malformed override rather
     than crashing the fetch-channel unit."""
     monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
@@ -745,13 +906,16 @@ async def test_run_fetch_channel_skips_invalid_override_without_raising(
     channel_id = create_channel(conn, "Bad Channel", "profile")
     conn.execute(
         "UPDATE channels SET digest_email = ? WHERE id = ?",
-        ("one@example.com,two@example.com", channel_id))
+        ("one@example.com,two@example.com", channel_id),
+    )
     conn.commit()
     conn.close()
 
     request_channel_fetch(str(tmp_path), channel_id)
-    os.replace(str(tmp_path / "fetch_trigger_channel_id"),
-               str(tmp_path / "fetch_trigger_channel_id.inflight"))
+    os.replace(
+        str(tmp_path / "fetch_trigger_channel_id"),
+        str(tmp_path / "fetch_trigger_channel_id.inflight"),
+    )
 
     with patch(
         "scripts.run_collector.run_channel_cycle",

@@ -4,8 +4,11 @@ import os
 import pytest
 
 from beehive.collector.manual_trigger import (
+    MANUAL_FETCH_STALE_SECONDS,
+    complete_pending_manual_triggers,
     consume_pending_manual_trigger,
     consume_pending_manual_triggers,
+    list_manual_trigger_states,
     request_channel_fetch,
     request_channel_fetch_batch,
 )
@@ -30,7 +33,9 @@ def test_request_writes_the_watched_marker_with_the_channel_id(tmp_path):
 
 def test_request_leaves_no_leftover_temp_file(tmp_path):
     request_channel_fetch(str(tmp_path), 7)
-    leftovers = [p for p in os.listdir(tmp_path) if p.startswith(f".{_MARKER_NAME}.tmp-")]
+    leftovers = [
+        p for p in os.listdir(tmp_path) if p.startswith(f".{_MARKER_NAME}.tmp-")
+    ]
     assert leftovers == []
 
 
@@ -50,6 +55,10 @@ def test_full_round_trip_via_the_execstartpre_rename(tmp_path):
     _simulate_execstartpre_rename(str(tmp_path))
     assert consume_pending_manual_trigger(str(tmp_path)) == 42
     inflight_path = tmp_path / f"{_MARKER_NAME}.inflight"
+    assert inflight_path.exists()
+
+    complete_pending_manual_triggers(str(tmp_path))
+
     assert not inflight_path.exists()
 
 
@@ -68,3 +77,25 @@ def test_consume_returns_none_for_malformed_content_and_still_deletes_it(tmp_pat
     inflight_path.write_text("not-a-number")
     assert consume_pending_manual_trigger(str(tmp_path)) is None
     assert not inflight_path.exists()
+
+
+def test_manual_trigger_states_distinguish_queued_and_running_requests(tmp_path):
+    request_channel_fetch(str(tmp_path), 42)
+
+    assert list_manual_trigger_states(str(tmp_path)) == {42: "queued"}
+
+    _simulate_execstartpre_rename(str(tmp_path))
+
+    assert list_manual_trigger_states(str(tmp_path)) == {42: "running"}
+
+
+def test_manual_trigger_states_marks_old_inflight_requests_as_stale(tmp_path):
+    request_channel_fetch(str(tmp_path), 42)
+    _simulate_execstartpre_rename(str(tmp_path))
+    inflight_path = tmp_path / f"{_MARKER_NAME}.inflight"
+    os.utime(inflight_path, (100, 100))
+
+    assert list_manual_trigger_states(
+        str(tmp_path),
+        now=100 + MANUAL_FETCH_STALE_SECONDS + 1,
+    ) == {42: "stale"}

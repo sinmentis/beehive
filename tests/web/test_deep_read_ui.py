@@ -93,7 +93,7 @@ def _fail(c, item_id):
 def test_shared_action_partial_is_wired_into_every_ranked_item_surface():
     dashboard = (_TEMPLATES_DIR / "dashboard.html").read_text()
     item_card = (_TEMPLATES_DIR / "_item_card.html").read_text()
-    channel = (_TEMPLATES_DIR / "channel_drilldown.html").read_text()
+    channel = (_TEMPLATES_DIR / "channel_editorial.html").read_text()
     folded_item = (_TEMPLATES_DIR / "_folded_item.html").read_text()
     archive = (_TEMPLATES_DIR / "archive.html").read_text()
 

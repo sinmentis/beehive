@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 from beehive.connectors.base import RawItem
 from beehive.connectors.registry import register
+from beehive.domain.channels import ChannelKind
 
 _BODY_CHAR_CAP = 1500
 _FETCH_LIMIT = 50
@@ -100,6 +101,8 @@ def _to_raw_item(item, publisher: str) -> RawItem:
 
 
 class OfficialFeedConnector:
+    supported_channel_kinds = frozenset({ChannelKind.EDITORIAL})
+
     def __init__(
         self,
         definition: FeedDefinition,

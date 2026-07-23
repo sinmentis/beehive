@@ -3,6 +3,7 @@
 Read pages use optional sessions to expose feedback and deep-read controls to the owner. Mutations
 still require an authenticated session and CSRF validation.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,20 +16,69 @@ from urllib.parse import urlencode, urlparse
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from beehive.channels import get_definition, require_channel_kind
+from beehive.channels.tracker import adapter_for_source
+from beehive.channels.views import (
+    EditorialPage,
+    EditorialItemView,
+    MonitorPage,
+    MonitorQuery,
+    MonitorSort,
+    TrackerPage,
+    TrackerQuery,
+    build_channel_page,
+    build_tracker_item_view,
+    build_watchlist_page,
+)
 from beehive.collector.deep_read_trigger import request_deep_read_worker
+from beehive.db.tracker_watches import (
+    add_tracker_watch,
+    get_watched_item_ids,
+    remove_tracker_watch,
+)
+from beehive.email_routing import resolve_default_email
 from beehive.db.channels import get_channel, list_channels
-from beehive.db.deep_reads import get_deep_read, get_deep_reads_for_items, request_deep_read
-from beehive.db.items import (count_dashboard_signals, get_item, list_archive, list_by_channel,
-                              list_dashboard_highlights, mark_channel_read, mark_item_opened,
-                              mark_read)
+from beehive.db.deep_reads import (
+    get_deep_read,
+    get_deep_reads_for_items,
+    request_deep_read,
+)
+from beehive.db.items import (
+    count_dashboard_signals,
+    get_item,
+    list_archive,
+    list_by_channel,
+    list_dashboard_highlights,
+    mark_channel_read,
+    mark_item_opened,
+    mark_read,
+)
 from beehive.db.sources import get_source, list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.featured import featured_utc_bounds, load_featured_window_days
+from beehive.domain.channels import ReadModel
 from beehive.localization import Localizer
-from beehive.web.deep_read_view import (ALLOWED_ORIGINS, brief_url, build_brief_context,
-                                        decorate_deep_read_state)
-from beehive.web.deps import get_db, get_localizer, get_optional_session, require_admin_session, verify_csrf
-from beehive.web.formatting import fetch_stats_label, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time
+from beehive.web.deep_read_view import (
+    ALLOWED_ORIGINS,
+    brief_url,
+    build_brief_context,
+    decorate_deep_read_state,
+)
+from beehive.web.deps import (
+    get_db,
+    get_localizer,
+    get_optional_session,
+    require_admin_session,
+    verify_csrf,
+)
+from beehive.web.formatting import (
+    fetch_stats_label,
+    freshness_exact_time,
+    freshness_label,
+    host_local_time_label,
+    next_fetch_countdown,
+    relative_time,
+)
 from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.link_safety import safe_external_href
 from beehive.web.official_feed_labels import official_feed_label
@@ -45,6 +95,8 @@ def _source_label(item: dict, t: Localizer) -> str:
         return f"r/{config['subreddit']}"
     if item["source_type"] == "google_news_query":
         return f'"{config["query"]}"'
+    if item["source_type"] == "all_about_auctions":
+        return "All About Auctions"
     if item["source_type"] in {"shopify_collection", "land_sea_collection"}:
         # Both connectors store the same {"collection_url": ...} config shape.
         url = config.get("collection_url", "")
@@ -72,7 +124,11 @@ def _engagement_label(item: dict, t: Localizer) -> str:
             score=item["raw_metadata"].get("score", 0),
             comments=item["raw_metadata"].get("num_comments", 0),
         )
-    if item["source_type"] in {"rbnz_news", "nz_government_news", "federal_reserve_news"}:
+    if item["source_type"] in {
+        "rbnz_news",
+        "nz_government_news",
+        "federal_reserve_news",
+    }:
         return item["raw_metadata"].get("category", "")
     if item["source_type"] in {"shopify_collection", "land_sea_collection"}:
         metadata = item["raw_metadata"]
@@ -85,16 +141,42 @@ def _engagement_label(item: dict, t: Localizer) -> str:
             percent_off = round((compare_at_price - price) / compare_at_price * 100)
             return t.text("web.engagement.shopify_discount", percent=percent_off)
         return metadata.get("vendor") or ""
+    if item["source_type"] == "all_about_auctions":
+        return adapter_for_source(item["source_type"]).display_facts(
+            item["raw_metadata"], t
+        ).context
     return ""
+
+
+def _auction_pricing_facts(item: dict, t: Localizer) -> list[str]:
+    if item["source_type"] != "all_about_auctions":
+        return []
+    return list(
+        adapter_for_source(item["source_type"])
+        .display_facts(item["raw_metadata"], t)
+        .details
+    )
 
 
 def _decorate_item(item: dict, t: Localizer) -> None:
     item["source_label"] = _source_label(item, t)
     item["engagement_label"] = _engagement_label(item, t)
+    item["auction_pricing_facts"] = _auction_pricing_facts(item, t)
     item["age"] = relative_time(item["created_at"], t) if item["created_at"] else ""
-    item["exact_time"] = host_local_time_label(item["created_at"]) if item["created_at"] else ""
+    item["exact_time"] = (
+        host_local_time_label(item["created_at"]) if item["created_at"] else ""
+    )
     item["safe_url"] = safe_external_href(item["url"])
     item["open_url"] = f"/items/{item['id']}/open" if item["safe_url"] != "#" else "#"
+
+
+def _require_editorial_item(item: dict) -> None:
+    definition = get_definition(require_channel_kind(item["channel_kind"]))
+    if definition.read_model is not ReadModel.TRACKED:
+        raise HTTPException(
+            status_code=422,
+            detail="This action is only available for Editorial items",
+        )
 
 
 def _source_summary(sources: list[dict], t: Localizer) -> str:
@@ -109,12 +191,71 @@ def _source_summary(sources: list[dict], t: Localizer) -> str:
             labels.append(f"r/{config['subreddit']}")
         elif s["type"] == "google_news_query":
             labels.append(f'"{config["query"]}"')
+        elif s["type"] == "all_about_auctions":
+            labels.append("All About Auctions")
+        elif s["type"] in {"shopify_collection", "land_sea_collection"}:
+            collection_url = config.get("collection_url", "")
+            parsed = urlparse(collection_url)
+            labels.append(
+                f"{parsed.netloc}{parsed.path}" if parsed.netloc else collection_url
+            )
         elif official_feed_label(s["type"]) is not None:
             labels.append(official_feed_label(s["type"]))
         else:
             hackernews_label = hackernews_source_label(s["type"], config, t)
-            labels.append(hackernews_label if hackernews_label is not None else s["type"])
+            labels.append(
+                hackernews_label if hackernews_label is not None else s["type"]
+            )
     return t.text("web.channel.source_list_separator").join(labels)
+
+
+def _monitor_page_url(page: MonitorPage, page_number: int) -> str:
+    params: dict[str, str] = {"sort": page.sort.value}
+    if page_number != 1:
+        params["page"] = str(page_number)
+    if page.on_sale_only:
+        params["on_sale"] = "1"
+    if page.vendor:
+        params["vendor"] = page.vendor
+    if page.source:
+        params["source"] = page.source
+    if page.search:
+        params["q"] = page.search
+    return f"/channels/{page.channel_id}?{urlencode(params)}"
+
+
+def _editorial_item_from_page(
+    page: EditorialPage, item_id: int
+) -> EditorialItemView | None:
+    for item in (*page.highlighted, *page.folded):
+        if item.id == item_id:
+            return item
+    return None
+
+
+def _tracker_page_url(
+    page: TrackerPage,
+    *,
+    ending_page: int | None = None,
+    upcoming_page: int | None = None,
+    history_page: int | None = None,
+) -> str:
+    pages = {
+        "ending_page": (
+            ending_page if ending_page is not None else page.ending_pagination.page
+        ),
+        "upcoming_page": (
+            upcoming_page
+            if upcoming_page is not None
+            else page.upcoming_pagination.page
+        ),
+        "history_page": (
+            history_page if history_page is not None else page.history_pagination.page
+        ),
+    }
+    params = {key: str(value) for key, value in pages.items() if value != 1}
+    query = urlencode(params)
+    return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
 
 
 def _group_by_day(items: list[dict]) -> list[tuple[str, list[dict]]]:
@@ -177,16 +318,16 @@ def dashboard(
         _decorate_item(item, t)
     channels = []
     for channel in list_channels(conn):
+        definition = get_definition(require_channel_kind(channel["kind"]))
         items = [
             item
             for item in list_by_channel(conn, channel["id"])
             if item["ai_score"] is None or item["ai_score"] >= channel["minimum_score"]
         ]
-        unread_count = sum(1 for i in items if not i["is_read"])
         sources = list_sources(conn, channel["id"])
-        channels.append({
-            "id": channel["id"], "name": channel["name"],
-            "unread_count": unread_count,
+        nav_channel = {
+            "id": channel["id"],
+            "name": channel["name"],
             "freshness": freshness_label(sources, t),
             "freshness_exact": freshness_exact_time(sources),
             "next_fetch": next_fetch_countdown(
@@ -196,42 +337,51 @@ def dashboard(
                 t,
             ),
             "fetch_stats": fetch_stats_label(sources, t),
-        })
+        }
+        if definition.read_model is ReadModel.TRACKED:
+            nav_channel["unread_count"] = sum(1 for item in items if not item["is_read"])
+        channels.append(nav_channel)
 
     is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
     deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in highlights])
     for item in highlights:
         decorate_deep_read_state(
-            item, deep_reads.get(item["id"]), is_admin, "dashboard", None, csrf_token)
+            item, deep_reads.get(item["id"]), is_admin, "dashboard", None, csrf_token
+        )
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(request, "dashboard.html", {
-        "channels": channels,
-        "highlights": highlights,
-        "has_more_signals": has_more_signals,
-        "high_priority_count": count_dashboard_signals(
-            conn,
-            minimum_score=90,
-            read_state="all",
-            **day_filters,
-        ),
-        "pending_signal_count": pending_signal_count,
-        "all_signal_count": signal_counts["all"],
-        "unread_signal_count": signal_counts["unread"],
-        "read_signal_count": signal_counts["read"],
-        "dashboard_time": host_local_time_label(now.isoformat())[-5:],
-        "featured_window_days": featured_window_days,
-        "view": view,
-        "minimum_score": minimum_score,
-        "all_url": _dashboard_url("all", None),
-        "unread_url": _dashboard_url("unread", None),
-        "read_url": _dashboard_url("read", None),
-        "high_priority_url": _dashboard_url("all", 90),
-        "total_unread": signal_counts["unread"],
-        "is_admin": is_admin,
-        "csrf_token": csrf_token,
-    })
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {
+            "channels": channels,
+            "highlights": highlights,
+            "has_more_signals": has_more_signals,
+            "high_priority_count": count_dashboard_signals(
+                conn,
+                minimum_score=90,
+                read_state="all",
+                **day_filters,
+            ),
+            "pending_signal_count": pending_signal_count,
+            "all_signal_count": signal_counts["all"],
+            "unread_signal_count": signal_counts["unread"],
+            "read_signal_count": signal_counts["read"],
+            "dashboard_time": host_local_time_label(now.isoformat())[-5:],
+            "featured_window_days": featured_window_days,
+            "view": view,
+            "minimum_score": minimum_score,
+            "all_url": _dashboard_url("all", None),
+            "unread_url": _dashboard_url("unread", None),
+            "read_url": _dashboard_url("read", None),
+            "high_priority_url": _dashboard_url("all", 90),
+            "total_unread": signal_counts["unread"],
+            "is_admin": is_admin,
+            "csrf_token": csrf_token,
+        },
+    )
+
 
 @router.get("/items/{item_id}/open")
 def open_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
@@ -239,70 +389,222 @@ def open_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     mark_item_opened(conn, item_id)
-    mark_read(conn, item_id)
+    if item["channel_kind"] == "editorial":
+        mark_read(conn, item_id)
     return RedirectResponse(safe_external_href(item["url"]), status_code=302)
 
 
 @router.get("/channels/{channel_id}", response_class=HTMLResponse)
-def channel_drilldown(channel_id: int, request: Request, show_read: int | None = None,
-                       session: dict | None = Depends(get_optional_session),
-                       conn: sqlite3.Connection = Depends(get_db),
-                       t: Localizer = Depends(get_localizer)):
+def channel_drilldown(
+    channel_id: int,
+    request: Request,
+    show_read: int | None = None,
+    page_number: int = Query(1, alias="page", ge=1),
+    sort: MonitorSort = MonitorSort.SCORE,
+    on_sale: bool = False,
+    vendor: str | None = None,
+    source: str | None = None,
+    q: str | None = None,
+    ending_page: int = Query(1, ge=1),
+    upcoming_page: int = Query(1, ge=1),
+    history_page: int = Query(1, ge=1),
+    session: dict | None = Depends(get_optional_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
     channel = get_channel(conn, channel_id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-
     is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
-    items = [
-        item
-        for item in list_by_channel(conn, channel_id)
-        if item["ai_score"] is None or item["ai_score"] >= channel["minimum_score"]
-    ]
-    deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in items])
-    for item in items:
-        _decorate_item(item, t)
-        if not is_admin:
-            item["vote_reason"] = None
-        decorate_deep_read_state(
-            item, deep_reads.get(item["id"]), is_admin, "channel", channel_id, csrf_token)
+    now = datetime.now(timezone.utc)
+    page = build_channel_page(
+        conn,
+        channel,
+        t=t,
+        now=now,
+        is_owner=is_admin,
+        csrf_token=csrf_token,
+        show_read=bool(show_read),
+        monitor_query=MonitorQuery(
+            page=page_number,
+            sort=sort,
+            on_sale_only=on_sale,
+            vendor=vendor,
+            source=source,
+            search=q,
+        ),
+        tracker_query=TrackerQuery(
+            ending_page=ending_page,
+            upcoming_page=upcoming_page,
+            history_page=history_page,
+        ),
+    )
 
     sources = list_sources(conn, channel_id)
-    unread_count = sum(1 for i in items if not i["is_read"])
-    read_count = sum(1 for i in items if i["is_read"])
-    visible_items = items if show_read else [i for i in items if not i["is_read"]]
-
-    if is_admin:
+    if is_admin and isinstance(page, EditorialPage):
         mark_channel_read(conn, channel_id)
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(request, "channel_drilldown.html", {
-        "channel": channel,
+    context = {
+        "page": page,
         "nav_channels": list_channels(conn),
-        "highlighted": visible_items[:channel["highlight_count"]],
-        "folded": visible_items[channel["highlight_count"]:],
         "freshness": freshness_label(sources, t),
         "freshness_exact": freshness_exact_time(sources),
         "fetch_stats": fetch_stats_label(sources, t),
-        "unread_count": unread_count,
-        "read_count": read_count,
-        "show_read": bool(show_read),
         "source_summary": _source_summary(sources, t),
         "is_admin": is_admin,
         "csrf_token": csrf_token,
-    })
+        "monitor_previous_url": None,
+        "monitor_next_url": None,
+        "tracker_ending_previous_url": None,
+        "tracker_ending_next_url": None,
+        "tracker_upcoming_previous_url": None,
+        "tracker_upcoming_next_url": None,
+        "tracker_history_previous_url": None,
+        "tracker_history_next_url": None,
+    }
+    if isinstance(page, MonitorPage):
+        if page.pagination.has_previous:
+            context["monitor_previous_url"] = _monitor_page_url(
+                page, page.pagination.page - 1
+            )
+        if page.pagination.has_next:
+            context["monitor_next_url"] = _monitor_page_url(
+                page, page.pagination.page + 1
+            )
+    if isinstance(page, TrackerPage):
+        if page.ending_pagination.has_previous:
+            context["tracker_ending_previous_url"] = _tracker_page_url(
+                page, ending_page=page.ending_pagination.page - 1
+            )
+        if page.ending_pagination.has_next:
+            context["tracker_ending_next_url"] = _tracker_page_url(
+                page, ending_page=page.ending_pagination.page + 1
+            )
+        if page.upcoming_pagination.has_previous:
+            context["tracker_upcoming_previous_url"] = _tracker_page_url(
+                page, upcoming_page=page.upcoming_pagination.page - 1
+            )
+        if page.upcoming_pagination.has_next:
+            context["tracker_upcoming_next_url"] = _tracker_page_url(
+                page, upcoming_page=page.upcoming_pagination.page + 1
+            )
+        if page.history_pagination.has_previous:
+            context["tracker_history_previous_url"] = _tracker_page_url(
+                page, history_page=page.history_pagination.page - 1
+            )
+        if page.history_pagination.has_next:
+            context["tracker_history_next_url"] = _tracker_page_url(
+                page, history_page=page.history_pagination.page + 1
+            )
+    return templates.TemplateResponse(request, page.template_name, context)
+
+
+@router.get("/watchlist", response_class=HTMLResponse)
+def watchlist(
+    request: Request,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    now = datetime.now(timezone.utc)
+    page = build_watchlist_page(conn, t=t, now=now)
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "watchlist.html",
+        {
+            "page": page,
+            "default_email": resolve_default_email(
+                conn,
+                os.environ.get("DIGEST_EMAIL_TO"),
+            ).address,
+            "is_admin": True,
+            "csrf_token": session["csrf_token"],
+        },
+    )
+
+
+@router.post("/items/{item_id}/watch", response_class=HTMLResponse)
+def toggle_tracker_watch(
+    item_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    origin: str = Form("channel"),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    item = get_item(conn, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    removed = item_id in get_watched_item_ids(conn, [item_id])
+    if removed:
+        remove_tracker_watch(conn, item_id)
+    else:
+        try:
+            add_tracker_watch(conn, item_id, datetime.now(timezone.utc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    actual_channel_id = _item_channel_id(conn, item)
+    if request.headers.get("HX-Request") == "true":
+        if origin == "watchlist" and removed:
+            return HTMLResponse("")
+        item_view = build_tracker_item_view(
+            conn,
+            item,
+            t=t,
+            now=datetime.now(timezone.utc),
+            is_owner=True,
+        )
+        return request.app.state.templates.TemplateResponse(
+            request,
+            "_tracker_watch_control.html",
+            {
+                "item": item_view,
+                "csrf_token": session["csrf_token"],
+                "watch_origin": "channel",
+                "watch_target": "this",
+                "watch_swap": "outerHTML",
+                "watch_remove_mode": False,
+            },
+        )
+
+    if origin == "watchlist":
+        return RedirectResponse("/watchlist", status_code=303)
+    if origin in {"channel", "folded"} and actual_channel_id is not None:
+        return RedirectResponse(
+            f"/channels/{actual_channel_id}",
+            status_code=303,
+        )
+    return RedirectResponse("/", status_code=303)
 
 
 @router.post("/items/{item_id}/vote", response_class=HTMLResponse)
-def vote_on_item(item_id: int, request: Request, value: int = Form(...),
-                  csrf_token: str = Form(...), reason: str | None = Form(None),
-                  origin: str = Form("channel"),
-                  session: dict = Depends(require_admin_session),
-                  conn: sqlite3.Connection = Depends(get_db),
-                  t: Localizer = Depends(get_localizer)):
+def vote_on_item(
+    item_id: int,
+    request: Request,
+    value: int = Form(...),
+    csrf_token: str = Form(...),
+    reason: str | None = Form(None),
+    origin: str = Form("channel"),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
     verify_csrf(session, csrf_token)
     if value not in (1, -1):
         raise HTTPException(status_code=422, detail="value must be 1 or -1")
+
+    item = get_item(conn, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _require_editorial_item(item)
 
     existing = get_vote(conn, item_id)
     if reason is not None:
@@ -313,32 +615,58 @@ def vote_on_item(item_id: int, request: Request, value: int = Form(...),
         upsert_vote(conn, item_id, value, None)
 
     item = get_item(conn, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-    _decorate_item(item, t)
-    # _item_card.html/_folded_item.html are only ever rendered from the Channel drill-down (the
-    # vote widget's own host page), so this fragment's origin is always "channel" -- decorate
-    # with the item's ACTUAL owning channel (never trust anything client-supplied; there is no
-    # channel_id on this route at all) so the outerHTML-swapped card keeps its deep-read
-    # action/control instead of silently losing it on every vote. The partials also key the vote
-    # widget's visibility off channel.kind, so this same channel is passed into the template.
+    assert item is not None
     channel_id = _item_channel_id(conn, item)
     channel = get_channel(conn, channel_id) if channel_id is not None else None
-    decorate_deep_read_state(
-        item, get_deep_read(conn, item_id), True, "channel", channel_id, session["csrf_token"])
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    page = build_channel_page(
+        conn,
+        channel,
+        t=t,
+        now=datetime.now(timezone.utc),
+        is_owner=True,
+        csrf_token=session["csrf_token"],
+        show_read=True,
+    )
+    if not isinstance(page, EditorialPage):
+        raise HTTPException(
+            status_code=422,
+            detail="This action is only available for Editorial items",
+        )
+    item_view = _editorial_item_from_page(page, item_id)
+    if item_view is None:
+        raise HTTPException(status_code=404, detail="Item not found")
 
     templates = request.app.state.templates
     template_name = "_folded_item.html" if origin == "folded" else "_item_card.html"
-    return templates.TemplateResponse(request, template_name, {
-        "item": item, "channel": channel, "is_admin": True, "csrf_token": session["csrf_token"],
-    })
+    return templates.TemplateResponse(
+        request,
+        template_name,
+        {
+            "item": item_view,
+            "csrf_token": session["csrf_token"],
+        },
+    )
 
 
 @router.post("/channels/{channel_id}/mark-all-read")
-def mark_all_read_route(channel_id: int, csrf_token: str = Form(...),
-                         session: dict = Depends(require_admin_session),
-                         conn: sqlite3.Connection = Depends(get_db)):
+def mark_all_read_route(
+    channel_id: int,
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
     verify_csrf(session, csrf_token)
+    channel = get_channel(conn, channel_id)
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    definition = get_definition(require_channel_kind(channel["kind"]))
+    if definition.read_model is not ReadModel.TRACKED:
+        raise HTTPException(
+            status_code=422,
+            detail="This Channel does not use read state",
+        )
     mark_channel_read(conn, channel_id)
     return RedirectResponse(f"/channels/{channel_id}", status_code=303)
 
@@ -347,12 +675,18 @@ _ARCHIVE_PAGE_SIZE = 30
 
 
 @router.get("/archive", response_class=HTMLResponse)
-def archive(request: Request, channel: str | None = None,
-            from_: str | None = Query(None, alias="from"), to: str | None = None,
-            read_state: str | None = None, q: str | None = None, page: int = 1,
-            session: dict | None = Depends(get_optional_session),
-            conn: sqlite3.Connection = Depends(get_db),
-            t: Localizer = Depends(get_localizer)):
+def archive(
+    request: Request,
+    channel: str | None = None,
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = None,
+    read_state: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    session: dict | None = Depends(get_optional_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
     # The filter form's <select>/<input type=date> fields submit an EMPTY STRING when left at
     # their default/blank state (e.g. channel="", from="") -- not an omitted query param. FastAPI
     # would reject an empty string for `channel: int` outright (422 "int_parsing"), and an empty
@@ -369,35 +703,49 @@ def archive(request: Request, channel: str | None = None,
         channel_id = None
     from_ = from_ or None
     to = to or None
-    items, total = list_archive(conn, channel_id=channel_id, date_from=from_, date_to=to,
-                                read_state=read_state, search=q, page=page,
-                                page_size=_ARCHIVE_PAGE_SIZE)
+    items, total = list_archive(
+        conn,
+        channel_id=channel_id,
+        date_from=from_,
+        date_to=to,
+        read_state=read_state,
+        search=q,
+        page=page,
+        page_size=_ARCHIVE_PAGE_SIZE,
+    )
     is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
     deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in items])
     for item in items:
         _decorate_item(item, t)
         item["time_label"] = _time_label(item["fetched_at"])
-        item["vote_reason"] = None  # archive is always anonymous: never surface the private reason
+        item["vote_reason"] = (
+            None  # archive is always anonymous: never surface the private reason
+        )
         decorate_deep_read_state(
-            item, deep_reads.get(item["id"]), is_admin, "archive", None, csrf_token)
+            item, deep_reads.get(item["id"]), is_admin, "archive", None, csrf_token
+        )
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(request, "archive.html", {
-        "groups": _group_by_day(items),
-        "channels": list_channels(conn),
-        "total": total,
-        "page": page,
-        "has_prev": page > 1,
-        "has_next": page * _ARCHIVE_PAGE_SIZE < total,
-        "selected_channel": channel_id,
-        "selected_from": from_ or "",
-        "selected_to": to or "",
-        "selected_read_state": read_state or "",
-        "selected_search": q or "",
-        "is_admin": is_admin,
-        "csrf_token": csrf_token,
-    })
+    return templates.TemplateResponse(
+        request,
+        "archive.html",
+        {
+            "groups": _group_by_day(items),
+            "channels": list_channels(conn, kind="editorial"),
+            "total": total,
+            "page": page,
+            "has_prev": page > 1,
+            "has_next": page * _ARCHIVE_PAGE_SIZE < total,
+            "selected_channel": channel_id,
+            "selected_from": from_ or "",
+            "selected_to": to or "",
+            "selected_read_state": read_state or "",
+            "selected_search": q or "",
+            "is_admin": is_admin,
+            "csrf_token": csrf_token,
+        },
+    )
 
 
 # ============================================================================
@@ -406,6 +754,7 @@ def archive(request: Request, channel: str | None = None,
 # only do request handling (auth, CSRF, input validation, DB reads, and dispatching into the
 # deep_reads repository).
 # ============================================================================
+
 
 def _item_channel_id(conn: sqlite3.Connection, item: dict) -> int | None:
     """Derives the Channel that actually owns this item, via its Source -- never trusts a
@@ -416,8 +765,9 @@ def _item_channel_id(conn: sqlite3.Connection, item: dict) -> int | None:
     return source["channel_id"] if source is not None else None
 
 
-def _resolve_brief_origin(conn: sqlite3.Connection, item: dict, origin: str | None,
-                           channel_id: int | None) -> tuple[str | None, int | None, str | None]:
+def _resolve_brief_origin(
+    conn: sqlite3.Connection, item: dict, origin: str | None, channel_id: int | None
+) -> tuple[str | None, int | None, str | None]:
     """Lenient origin/channel_id resolution for the public GET brief/status routes: an
     unrecognized origin, or a channel_id that is not the channel actually owning this item, is
     just dropped back to "no back-nav context" (default back link) rather than erroring a
@@ -453,6 +803,7 @@ def request_deep_read_route(
     item = get_item(conn, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
+    _require_editorial_item(item)
 
     if origin == "channel":
         # channel_id must be the channel that ACTUALLY owns this item (derived through its own
@@ -467,7 +818,9 @@ def request_deep_read_route(
     if item["ai_score"] is None:
         raise HTTPException(status_code=422, detail="Item has not been AI-ranked")
 
-    deep_read = request_deep_read(conn, item_id, datetime.now(timezone.utc), regenerate=regenerate)
+    deep_read = request_deep_read(
+        conn, item_id, datetime.now(timezone.utc), regenerate=regenerate
+    )
 
     # The marker is a wakeup HINT for systemd (SQLite is the durable queue, see
     # collector/deep_read_trigger.py) -- it is only worth writing when this call actually left
@@ -490,7 +843,6 @@ def request_deep_read_route(
     return RedirectResponse(brief_url(item_id, origin, channel_id), status_code=303)
 
 
-
 @router.get("/items/{item_id}/brief", response_class=HTMLResponse)
 def deep_read_brief(
     item_id: int,
@@ -504,11 +856,13 @@ def deep_read_brief(
     item = get_item(conn, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
+    _require_editorial_item(item)
     _decorate_item(item, t)
 
     is_owner = session is not None
     resolved_origin, resolved_channel_id, channel_name = _resolve_brief_origin(
-        conn, item, origin, channel_id)
+        conn, item, origin, channel_id
+    )
     deep_read = get_deep_read(conn, item_id)
     context = build_brief_context(
         item=item,
@@ -538,10 +892,12 @@ def deep_read_brief_status(
     item = get_item(conn, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
+    _require_editorial_item(item)
 
     is_owner = session is not None
     resolved_origin, resolved_channel_id, channel_name = _resolve_brief_origin(
-        conn, item, origin, channel_id)
+        conn, item, origin, channel_id
+    )
     deep_read = get_deep_read(conn, item_id)
     context = build_brief_context(
         item=item,

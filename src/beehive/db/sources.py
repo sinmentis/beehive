@@ -13,8 +13,21 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from beehive.channels import require_channel_kind
+from beehive.channels.source_policy import assert_source_allowed
+
 
 def create_source(conn: sqlite3.Connection, channel_id: int, type: str, config: dict) -> int:
+    """Persist a Source, gating on Source/Channel compatibility first (the persistence safety
+    seam): the target Channel's kind is loaded and the shared policy must allow this Source type
+    before the INSERT. A missing Channel or an incompatible Source type raises ValueError, so an
+    incompatible Source can never reach the table regardless of which caller (admin UI, channel
+    duplication, a test) asks for it."""
+    row = conn.execute(
+        "SELECT kind FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"cannot create Source: Channel {channel_id} does not exist")
+    assert_source_allowed(type, require_channel_kind(row["kind"]))
     cur = conn.execute(
         "INSERT INTO sources (channel_id, type, config) VALUES (?, ?, ?)",
         (channel_id, type, json.dumps(config)))

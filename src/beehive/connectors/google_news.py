@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 
 from beehive.connectors.base import RawItem
 from beehive.connectors.registry import register
+from beehive.domain.channels import ChannelKind
 
 _FETCH_LIMIT = 50
 _USER_AGENT = "beehive/0.1 (by /u/sinmentis)"
@@ -50,6 +51,7 @@ def _to_raw_item(item) -> RawItem:
 
 class GoogleNewsQueryConnector:
     type_key = "google_news_query"
+    supported_channel_kinds = frozenset({ChannelKind.EDITORIAL})
 
     def __init__(self, fetch_rss=_default_fetch_rss):
         self._fetch_rss = fetch_rss

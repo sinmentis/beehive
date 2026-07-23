@@ -16,6 +16,7 @@ from urllib.parse import urlencode, urlparse
 
 from beehive.connectors.base import CommentFetchTarget, RawItem
 from beehive.connectors.registry import register
+from beehive.domain.channels import ChannelKind
 
 _OFFICIAL_BASE = "https://hacker-news.firebaseio.com/v0"
 _ALGOLIA_BASE = "https://hn.algolia.com/api/v1"
@@ -184,6 +185,7 @@ def _official_item_to_raw_item(payload: Any) -> RawItem | None:
 
 class HackerNewsStoriesConnector(_HackerNewsConnector):
     type_key = "hackernews_stories"
+    supported_channel_kinds = frozenset({ChannelKind.EDITORIAL})
 
     def validate_config(self, config: dict) -> None:
         feed = config.get("feed")
@@ -280,6 +282,7 @@ def _algolia_hit_to_raw_item(payload: Any) -> RawItem:
 
 class HackerNewsQueryConnector(_HackerNewsConnector):
     type_key = "hackernews_query"
+    supported_channel_kinds = frozenset({ChannelKind.EDITORIAL})
 
     def validate_config(self, config: dict) -> None:
         query = config.get("query")

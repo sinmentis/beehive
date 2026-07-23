@@ -18,7 +18,7 @@
 
 <table>
   <tr>
-    <td><strong>6 source families</strong><br><sub>News, communities, and institutions</sub></td>
+    <td><strong>9 source families</strong><br><sub>News, communities, stores, and auctions</sub></td>
     <td><strong>Self-hosted</strong><br><sub>Your data and schedule</sub></td>
     <td><strong>SQLite</strong><br><sub>Simple operations</sub></td>
     <td><strong>MIT</strong><br><sub>Open source</sub></td>
@@ -47,6 +47,20 @@ Choose sources, cadence, the number of highlights, the minimum visible AI score,
 
 <img src="docs/assets/channel-configuration.png" alt="Beehive channel configuration with synthetic sources and email routing" width="100%">
 
+### Use the right workflow for each Channel
+
+The Channel workflow is selected at creation and remains immutable:
+
+| Workflow | Purpose | Panel behavior |
+| --- | --- | --- |
+| Editorial | Recurring news and information | Ranked reading queue with unread state, votes, Deep Read, Home, Archive, and regular email delivery |
+| Monitor | Mutable shopping catalogues | Image-led active inventory, price and availability changes, search and filters, plus permanent unavailable history |
+| Tracker | Time- or condition-bound listings | Watched, ending-soon, upcoming, and permanent-history sections with item-level follow-up reminders |
+
+Each connector explicitly declares which workflows it supports. The admin Source picker only shows
+compatible connectors, and persistence and collection reject incompatible combinations rather than
+silently treating every Channel the same.
+
 ## How it works
 
 ```mermaid
@@ -54,24 +68,32 @@ flowchart LR
     Sources --> Collector
     Collector --> SQLite
     SQLite --> Ranker["AI ranker"]
-    Ranker --> Dashboard
-    Ranker --> Email["Alerts and digests"]
-    Dashboard -->|"Owner requests deep read"| DeepRead["Article brief worker"]
+    Ranker --> Workflow["Channel workflow"]
+    Workflow --> Panels["Dedicated panels"]
+    Workflow --> Email["Events, alerts, and digests"]
+    Panels -->|"Owner requests deep read"| DeepRead["Article brief worker"]
     DeepRead --> SQLite
 ```
 
-Every source adapter returns a common `RawItem` model. The collector deduplicates items in SQLite, ranks new content against the channel profile, and stores the generated summary and rationale. The web application and scheduled email jobs read from the same database. Article briefs use a separate queued worker, so fetching and AI synthesis never block the web request.
+Every source adapter returns a common `RawItem` model. The Channel definition then selects ranking,
+persistence, lifecycle, event, and presentation behavior. Editorial content uses read state; Monitor
+and Tracker listings refresh stable rows and retain inactive history. Email Groups may combine
+Channel workflows, while manually watched Tracker items use separate time-sensitive reminders.
+Article briefs use a queued worker, so fetching and AI synthesis never block the web request.
 
 ## Supported sources
 
-| Source | Integration |
-| --- | --- |
-| Reddit | Public subreddit Atom feeds |
-| Google News | Search-query RSS feeds |
-| Hacker News | Official Firebase API |
-| Reserve Bank of New Zealand | Official RSS |
-| New Zealand Government | Official RSS |
-| Federal Reserve | Official RSS |
+| Source | Integration | Channel workflow |
+| --- | --- | --- |
+| Reddit | Public subreddit Atom feeds | Editorial |
+| Google News | Search-query RSS feeds | Editorial |
+| Hacker News | Official Firebase API | Editorial |
+| Reserve Bank of New Zealand | Official RSS | Editorial |
+| New Zealand Government | Official RSS | Editorial |
+| Federal Reserve | Official RSS | Editorial |
+| Shopify storefronts | Public collection JSON | Monitor |
+| Land & Sea | Public server-rendered listing data | Monitor |
+| All About Auctions | Public upcoming-auction and paginated lot data, including bids and RRP | Tracker |
 
 ## Research Sessions
 
@@ -80,11 +102,11 @@ question that does not belong to any Channel. Every Research Session route, incl
 views, requires an authenticated Owner session (ADR-0008); there is no publicly reachable
 Research page.
 
-- **Existing connector coverage.** A Research Plan draws only from the same credentialless
-  connectors used by Channels: Reddit subreddit feeds, Google News search queries, Hacker News
-  stories and search, and the three fixed official RSS feeds (Reserve Bank of New Zealand, New
-  Zealand Government, Federal Reserve). No new connector or credential type is introduced
-  (ADR-0007).
+- **Research-approved connector coverage.** A Research Plan draws only from the credentialless
+  editorial connectors approved for Research: Reddit subreddit feeds, Google News search queries,
+  Hacker News stories and search, and the three fixed official RSS feeds (Reserve Bank of New
+  Zealand, New Zealand Government, Federal Reserve). Recurring retail and auction monitors remain
+  Channel-only sources (ADR-0007).
 - **Visible plan.** The AI proposes, and can later revise, a Research Plan listing the
   source-specific queries it intends to run. The application validates every proposed connector
   and configuration before anything executes, and the plan itself is shown to the Owner rather
@@ -194,9 +216,17 @@ export ACS_CONNECTION_STRING="..."
 export DIGEST_EMAIL_TO="you@example.com"
 export DIGEST_EMAIL_FROM="beehive@example.com"
 .venv/bin/python -m scripts.run_collector --mode digest --db-path "$DB_PATH"
+
+.venv/bin/python -m scripts.run_collector --mode auction-reminders --db-path "$DB_PATH"
 ```
 
-The admin interface can create channels, attach sources, configure fetch intervals and email routing, and trigger an immediate collection cycle.
+The `auction-reminders` mode name is retained for deployment compatibility, but it runs the generic
+Tracker reminder worker. The current auction adapter sends one reminder about an hour before the
+latest known closing time and handles genuine auction extensions.
+
+The admin interface creates an immutable Channel workflow, offers only compatible Sources,
+configures collection and email delivery, and can trigger an immediate collection cycle. The Owner
+can add watchable Tracker items to a private Watch List.
 
 An owner deep-read request is stored durably in SQLite. In the Quadlet deployment, a path unit starts
 the bounded article worker immediately and a timer reconciles any missed wakeup.
@@ -257,7 +287,10 @@ after the later change is removed.
 
 ## Deployment
 
-`deploy/` contains rootless Podman Quadlet units for the web application, scheduled and manual collection, daily digest, the queued article-brief worker, and the always-on Research worker with its reconcile timer. See [`deploy/README.md`](deploy/README.md).
+`deploy/` contains rootless Podman Quadlet units for the web application, scheduled and manual
+collection, email digests, five-minute Tracker reminder checks, the queued article-brief worker,
+and the always-on Research worker with its reconcile timer. See
+[`deploy/README.md`](deploy/README.md).
 
 ## Privacy and indexing
 

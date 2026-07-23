@@ -22,27 +22,25 @@
       <fieldset class="field channel-kind-field">
         <legend>{{ t('web.admin.channel_new.kind_label') }}</legend>
         <div class="type-options">
+          {% for option in kind_options %}
           <label class="type-option">
-            <input type="radio" name="kind" value="editorial" id="kind-editorial" checked>
-            <span class="source-icon" aria-hidden="true">📰</span>
-            <span class="name">{{ t('web.admin.channel_new.kind_editorial_label') }}</span>
+            <input type="radio" name="kind" value="{{ option.value }}" id="{{ option.input_id }}" {{ "checked" if option.value == selected_kind else "" }}>
+            <span class="source-icon" aria-hidden="true">{{ option.icon }}</span>
+            <span class="name">{{ option.label }}</span>
             <span class="option-check" aria-hidden="true"></span>
           </label>
-          <label class="type-option">
-            <input type="radio" name="kind" value="monitor" id="kind-monitor">
-            <span class="source-icon" aria-hidden="true">🔔</span>
-            <span class="name">{{ t('web.admin.channel_new.kind_monitor_label') }}</span>
-            <span class="option-check" aria-hidden="true"></span>
-          </label>
+          {% endfor %}
         </div>
-        <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.kind_editorial_hint') }}</p>
-        <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.kind_monitor_hint') }}</p>
+        {% for option in kind_options %}
+        <p class="hint kind-only-{{ option.value }}">{{ option.hint }}</p>
+        {% endfor %}
       </fieldset>
       <div class="field">
         <label for="new-channel-profile">{{ t('web.admin.channel_new.profile_label') }}</label>
         <textarea id="new-channel-profile" name="profile" placeholder="{{ t('web.admin.channel_new.profile_placeholder') }}" required></textarea>
         <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.profile_hint') }}</p>
         <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.profile_hint_monitor') }}</p>
+        <p class="hint kind-only-tracker">{{ t('web.admin.channel_new.profile_hint_tracker') }}</p>
       </div>
       <div class="field">
         <label for="new-fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
@@ -58,12 +56,14 @@
           <input id="new-highlight-count" type="number" name="highlight_count" value="8" min="1" max="50" required>
           <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.highlight_count_hint') }}</p>
           <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.highlight_count_hint_monitor') }}</p>
+          <p class="hint kind-only-tracker">{{ t('web.admin.channel_new.highlight_count_hint_tracker') }}</p>
         </div>
         <div class="field">
           <label for="new-minimum-score">{{ t('web.admin.channel_new.minimum_score_label') }}</label>
           <input id="new-minimum-score" type="number" name="minimum_score" value="0" min="0" max="100" required>
           <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.minimum_score_hint') }}</p>
           <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.minimum_score_hint_monitor') }}</p>
+          <p class="hint kind-only-tracker">{{ t('web.admin.channel_new.minimum_score_hint_tracker') }}</p>
         </div>
       </div>
       <div class="actions">

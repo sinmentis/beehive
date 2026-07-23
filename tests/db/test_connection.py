@@ -289,3 +289,168 @@ def test_deep_reads_status_check_constraint_rejects_unknown_status(tmp_path):
     except sqlite3.IntegrityError:
         raised = True
     assert raised
+
+
+# ---------------------------------------------------------------------------
+# channels.kind rebuild + auction->tracker data migration
+# ---------------------------------------------------------------------------
+
+# The full pre-tracker channels shape: kind CHECK still only permits editorial/monitor. Written
+# out (rather than derived) so the test pins the exact legacy DDL the rebuild must upgrade.
+_LEGACY_TWO_KIND_CHANNELS_DDL = (
+    "CREATE TABLE channels ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "name TEXT NOT NULL UNIQUE, "
+    "profile TEXT NOT NULL DEFAULT '', "
+    "kind TEXT NOT NULL DEFAULT 'editorial' CHECK (kind IN ('editorial', 'monitor')), "
+    "fetch_interval_hours INTEGER NOT NULL DEFAULT 3, "
+    "highlight_count INTEGER NOT NULL DEFAULT 8 CHECK (highlight_count BETWEEN 1 AND 50), "
+    "minimum_score INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100), "
+    "digest_email TEXT, last_digest_sent_at TEXT, last_digest_date TEXT, "
+    "created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')))"
+)
+
+
+def _build_legacy_two_kind_db(path):
+    """A pre-tracker database: a two-kind channels table plus the FK-connected children (email
+    group membership, sources, items, an auction watch) whose survival the rebuild must guarantee.
+    The two prior migration markers are set so only the new kind migration does any work."""
+    conn = connect(path)
+    conn.executescript(
+        _LEGACY_TWO_KIND_CHANNELS_DDL + ";"
+        "CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT);"
+        "CREATE TABLE email_groups ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, "
+        "subject_template TEXT NOT NULL DEFAULT '', recipient_email TEXT, "
+        "send_interval_hours INTEGER NOT NULL DEFAULT 24, last_sent_at TEXT, "
+        "created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')));"
+        "CREATE TABLE email_group_channels ("
+        "email_group_id INTEGER NOT NULL REFERENCES email_groups(id) ON DELETE CASCADE, "
+        "channel_id INTEGER NOT NULL UNIQUE REFERENCES channels(id) ON DELETE CASCADE, "
+        "PRIMARY KEY (email_group_id, channel_id));"
+        "CREATE TABLE sources ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE, "
+        "type TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', last_fetch_at TEXT, "
+        "last_fetch_error TEXT);"
+        "CREATE TABLE items ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE, "
+        "external_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, "
+        "body TEXT NOT NULL DEFAULT '', created_at TEXT, "
+        "fetched_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now')), "
+        "ai_score REAL, ai_summary TEXT, ai_rationale TEXT, "
+        "is_read INTEGER NOT NULL DEFAULT 0, raw_metadata TEXT NOT NULL DEFAULT '{}', "
+        "UNIQUE(source_id, external_id));"
+        "CREATE TABLE auction_watches ("
+        "item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE, "
+        "watched_at TEXT NOT NULL, reminder_sent_for_closing_at TEXT, reminder_sent_at TEXT, "
+        "claim_token TEXT, claim_closing_at TEXT, claim_expires_at TEXT, last_error TEXT);"
+    )
+    # editorial (id 1), auction monitor (id 2), shop monitor (id 3)
+    conn.execute("INSERT INTO channels (name, profile, kind) VALUES ('News', 'p', 'editorial')")
+    conn.execute("INSERT INTO channels (name, profile, kind) VALUES ('Auction', 'p', 'monitor')")
+    conn.execute("INSERT INTO channels (name, profile, kind) VALUES ('Shop', 'p', 'monitor')")
+    conn.execute("INSERT INTO email_groups (name) VALUES ('Default')")
+    conn.execute("INSERT INTO email_group_channels (email_group_id, channel_id) VALUES (1, 1)")
+    conn.execute(
+        "INSERT INTO sources (channel_id, type) VALUES (2, 'all_about_auctions')")
+    conn.execute(
+        "INSERT INTO sources (channel_id, type) VALUES (3, 'shopify_collection')")
+    conn.execute(
+        "INSERT INTO items (source_id, external_id, title, url) "
+        "VALUES (1, 'lot-1', 'Lot 1', 'https://example.com/lot-1')")
+    conn.execute(
+        "INSERT INTO auction_watches (item_id, watched_at) "
+        "VALUES (1, '2026-07-01T00:00:00+00:00')")
+    conn.executemany(
+        "INSERT INTO app_state (key, value) VALUES (?, '1')",
+        [("digest_channel_watermarks_migrated_v1",), ("default_email_group_migrated_v1",)])
+    conn.commit()
+    conn.close()
+
+
+def test_channels_kind_rebuild_widens_check_and_preserves_related_data(tmp_path):
+    path = str(tmp_path / "legacy.db")
+    _build_legacy_two_kind_db(path)
+
+    conn = connect(path)
+    init_schema(conn)
+
+    # The auction monitor Channel (it owns an all_about_auctions Source) becomes a tracker; the
+    # shop monitor Channel is left alone. Selection is by Source type, never a literal id.
+    kinds = {
+        row["name"]: row["kind"]
+        for row in conn.execute("SELECT name, kind FROM channels")
+    }
+    assert kinds == {"News": "editorial", "Auction": "tracker", "Shop": "monitor"}
+
+    # Inserting a tracker Channel now succeeds -- the widened CHECK is really in place.
+    conn.execute(
+        "INSERT INTO channels (name, profile, kind) VALUES ('New Tracker', 'p', 'tracker')")
+    conn.commit()
+
+    # Every FK-connected row survived the table rebuild with its parent id intact.
+    assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 2
+    assert conn.execute(
+        "SELECT channel_id FROM sources WHERE type = 'all_about_auctions'"
+    ).fetchone()["channel_id"] == 2
+    assert conn.execute("SELECT COUNT(*) FROM email_group_channels").fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT channel_id FROM email_group_channels"
+    ).fetchone()["channel_id"] == 1
+    assert conn.execute("SELECT COUNT(*) FROM auction_watches").fetchone()[0] == 1
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_channels_kind_rebuild_preserves_channel_ids_and_settings(tmp_path):
+    path = str(tmp_path / "legacy.db")
+    _build_legacy_two_kind_db(path)
+    conn = connect(path)
+    conn.execute(
+        "UPDATE channels SET highlight_count = 12, minimum_score = 40, "
+        "digest_email = 'x@example.com', profile = 'shopping' WHERE name = 'Shop'")
+    conn.commit()
+
+    init_schema(conn)
+
+    shop = conn.execute("SELECT * FROM channels WHERE name = 'Shop'").fetchone()
+    assert shop["id"] == 3  # id preserved across the rebuild
+    assert shop["highlight_count"] == 12
+    assert shop["minimum_score"] == 40
+    assert shop["digest_email"] == "x@example.com"
+    assert shop["profile"] == "shopping"
+
+
+def test_channels_kind_migration_is_idempotent(tmp_path):
+    path = str(tmp_path / "legacy.db")
+    _build_legacy_two_kind_db(path)
+    conn = connect(path)
+    init_schema(conn)
+    first = [
+        (r["id"], r["kind"])
+        for r in conn.execute("SELECT id, kind FROM channels ORDER BY id")
+    ]
+
+    init_schema(conn)  # must be a no-op
+    second = [
+        (r["id"], r["kind"])
+        for r in conn.execute("SELECT id, kind FROM channels ORDER BY id")
+    ]
+
+    assert first == second
+    marker = conn.execute(
+        "SELECT value FROM app_state WHERE key = 'channels_kind_tracker_migrated_v1'").fetchone()
+    assert marker["value"] == "1"
+    assert conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0] == 3
+
+
+def test_fresh_database_skips_the_channels_kind_rebuild_but_marks_it_done(tmp_path):
+    conn = connect(str(tmp_path / "fresh.db"))
+    init_schema(conn)
+    # A fresh schema already carries the three-kind CHECK, so a tracker Channel inserts directly.
+    conn.execute("INSERT INTO channels (name, profile, kind) VALUES ('T', 'p', 'tracker')")
+    conn.commit()
+    marker = conn.execute(
+        "SELECT value FROM app_state WHERE key = 'channels_kind_tracker_migrated_v1'").fetchone()
+    assert marker["value"] == "1"

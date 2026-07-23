@@ -17,6 +17,7 @@ from html.parser import HTMLParser
 
 from beehive.connectors.base import CommentFetchTarget, RawItem
 from beehive.connectors.registry import register
+from beehive.domain.channels import ChannelKind
 
 _BODY_CHAR_CAP = 1500
 _FETCH_LIMIT = 50
@@ -115,6 +116,7 @@ def _to_raw_item(entry) -> RawItem:
 
 class RedditSubredditConnector:
     type_key = "reddit_subreddit"
+    supported_channel_kinds = frozenset({ChannelKind.EDITORIAL})
 
     def __init__(self, fetch_rss=_default_fetch_rss, fetch_comment_rss=_default_fetch_comment_rss):
         self._fetch_rss = fetch_rss

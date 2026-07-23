@@ -3,10 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from beehive.channels import require_channel_kind
 from beehive.db.email_groups import assign_channel, get_channel_group
 from beehive.db.sources import create_source, list_by_channel
-
-_KINDS = ("editorial", "monitor")
 
 
 def _validate_display_settings(highlight_count: int, minimum_score: int) -> None:
@@ -16,21 +15,23 @@ def _validate_display_settings(highlight_count: int, minimum_score: int) -> None
         raise ValueError("minimum_score must be between 0 and 100")
 
 
-def _validate_kind(kind: str) -> None:
-    if kind not in _KINDS:
-        raise ValueError(f"kind must be one of {_KINDS}, got {kind!r}")
+def _validate_kind(kind: str) -> str:
+    """Validate a Channel kind against the canonical ChannelDefinition registry (the single
+    source of truth for the accepted kinds) and return its normalized stored string. Rejects any
+    kind without a definition, including a future kind added to the enum but never declared."""
+    return require_channel_kind(kind).value
 
 
 def create_channel(conn: sqlite3.Connection, name: str, profile: str,
                     fetch_interval_hours: int = 3, highlight_count: int = 8,
                     minimum_score: int = 0, kind: str = "editorial") -> int:
     _validate_display_settings(highlight_count, minimum_score)
-    _validate_kind(kind)
+    normalized_kind = _validate_kind(kind)
     cur = conn.execute(
         "INSERT INTO channels "
         "(name, profile, fetch_interval_hours, highlight_count, minimum_score, kind) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        (name, profile, fetch_interval_hours, highlight_count, minimum_score, kind))
+        (name, profile, fetch_interval_hours, highlight_count, minimum_score, normalized_kind))
     conn.commit()
     return cur.lastrowid
 
@@ -41,18 +42,13 @@ def get_channel(conn: sqlite3.Connection, channel_id: int) -> dict | None:
 
 
 def list_channels(conn: sqlite3.Connection, kind: str | None = None) -> list[dict]:
-    """kind=None (the default) returns every Channel regardless of kind -- the collector's
-    fetch loop relies on this to keep polling 'monitor' Channels' sources exactly like
-    'editorial' ones. Reading-oriented views (Home's per-channel nav shelf, the Channel nav
-    shelf, Archive's channel filter) also pass kind=None now, since a 'monitor' Channel gets
-    AI-ranked content on its own page too -- see run_channel_cycle and web/public.py. Only
-    Home's cross-channel highlights feed still restricts to kind='editorial' (see
-    db/items.py's _dashboard_signal_filters), since that feed's "read this" framing doesn't
-    fit a shopping deal the way a channel-scoped page does."""
+    """    kind=None (the default) returns every Channel regardless of kind. The collector and Channel
+    navigation use this so every workflow remains reachable and scheduled. Reading-only surfaces
+    such as Home highlights and Archive request Editorial data explicitly."""
     if kind is not None:
-        _validate_kind(kind)
+        normalized_kind = _validate_kind(kind)
         rows = conn.execute(
-            "SELECT * FROM channels WHERE kind = ? ORDER BY id", (kind,)).fetchall()
+            "SELECT * FROM channels WHERE kind = ? ORDER BY id", (normalized_kind,)).fetchall()
     else:
         rows = conn.execute("SELECT * FROM channels ORDER BY id").fetchall()
     return [dict(r) for r in rows]

@@ -29,8 +29,9 @@ def authed_client(db_path):
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
     client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
     return client
 
@@ -39,8 +40,9 @@ def test_new_source_form_requires_session(db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
-                         follow_redirects=False)
+    client = TestClient(
+        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+    )
     resp = client.get(f"/admin/channels/{channel_id}/sources/new")
     assert resp.status_code == 303
 
@@ -64,14 +66,21 @@ def test_create_source_succeeds_and_redirects(authed_client, db_path):
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/sources/new",
-                               data={"type": "reddit_subreddit", "subreddit": "PersonalFinanceNZ",
-                                     "csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={
+            "type": "reddit_subreddit",
+            "subreddit": "PersonalFinanceNZ",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit"
 
     conn = connect(db_path)
-    row = conn.execute("SELECT * FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()
     assert row["type"] == "reddit_subreddit"
     assert json.loads(row["config"])["subreddit"] == "PersonalFinanceNZ"
 
@@ -81,26 +90,34 @@ def test_create_source_rejects_wrong_csrf(authed_client, db_path):
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/sources/new",
-                               data={"type": "reddit_subreddit", "subreddit": "x",
-                                     "csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "reddit_subreddit", "subreddit": "x", "csrf_token": "wrong"},
+    )
     assert resp.status_code == 403
 
 
-def test_delete_source_removes_it_and_redirects_to_parent_channel(authed_client, db_path):
+def test_delete_source_removes_it_and_redirects_to_parent_channel(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
     conn.close()
 
-    resp = authed_client.post(f"/admin/sources/{source_id}/delete",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/sources/{source_id}/delete", data={"csrf_token": "csrf1"}
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit"
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM sources WHERE id = ?",
-                         (source_id,)).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_delete_source_404_for_missing_source(authed_client):
@@ -114,13 +131,18 @@ def test_delete_source_rejects_wrong_csrf(authed_client, db_path):
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
     conn.close()
 
-    resp = authed_client.post(f"/admin/sources/{source_id}/delete",
-                               data={"csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/admin/sources/{source_id}/delete", data={"csrf_token": "wrong"}
+    )
     assert resp.status_code == 403
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM sources WHERE id = ?",
-                         (source_id,)).fetchone()[0] == 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_create_google_news_source_succeeds_and_redirects(authed_client, db_path):
@@ -128,14 +150,21 @@ def test_create_google_news_source_succeeds_and_redirects(authed_client, db_path
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/sources/new",
-                               data={"type": "google_news_query", "query": "New Zealand economy",
-                                     "csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={
+            "type": "google_news_query",
+            "query": "New Zealand economy",
+            "csrf_token": "csrf1",
+        },
+    )
     assert resp.status_code == 303
     assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit"
 
     conn = connect(db_path)
-    row = conn.execute("SELECT * FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()
     assert row["type"] == "google_news_query"
     assert json.loads(row["config"])["query"] == "New Zealand economy"
 
@@ -145,15 +174,20 @@ def test_create_source_rejects_empty_subreddit_with_form_error(authed_client, db
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/sources/new",
-                               data={"type": "reddit_subreddit", "subreddit": "",
-                                     "csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "reddit_subreddit", "subreddit": "", "csrf_token": "csrf1"},
+    )
     assert resp.status_code == 400
     assert "subreddit" in resp.text
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM sources WHERE channel_id = ?",
-                         (channel_id,)).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_create_source_rejects_empty_query_with_form_error(authed_client, db_path):
@@ -161,15 +195,20 @@ def test_create_source_rejects_empty_query_with_form_error(authed_client, db_pat
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/sources/new",
-                               data={"type": "google_news_query", "query": "",
-                                     "csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "google_news_query", "query": "", "csrf_token": "csrf1"},
+    )
     assert resp.status_code == 400
     assert "query" in resp.text
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM sources WHERE channel_id = ?",
-                         (channel_id,)).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_create_source_rejects_unknown_type(authed_client, db_path):
@@ -177,14 +216,20 @@ def test_create_source_rejects_unknown_type(authed_client, db_path):
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
 
-    resp = authed_client.post(f"/admin/channels/{channel_id}/sources/new",
-                               data={"type": "bogus_type", "csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "bogus_type", "csrf_token": "csrf1"},
+    )
     assert resp.status_code == 400
     assert "unknown Source type" in resp.text
 
     conn = connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM sources WHERE channel_id = ?",
-                         (channel_id,)).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_new_source_form_shows_both_hackernews_types_with_consistent_icon(
@@ -314,10 +359,13 @@ def test_create_hackernews_source_rejects_invalid_config(
     assert resp.status_code == 400
     assert expected_message in resp.text
     conn = connect(db_path)
-    assert conn.execute(
-        "SELECT COUNT(*) FROM sources WHERE channel_id = ?",
-        (channel_id,),
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?",
+            (channel_id,),
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_invalid_hackernews_query_preserves_selected_type_and_entered_query(
@@ -402,7 +450,9 @@ def test_new_source_form_lists_shopify_collection_option(authed_client, db_path)
     assert 'id="shopify-collection-vendors"' in html
 
 
-def test_create_shopify_collection_source_succeeds_and_redirects(authed_client, db_path):
+def test_create_shopify_collection_source_succeeds_and_redirects(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
     conn.close()
@@ -419,7 +469,9 @@ def test_create_shopify_collection_source_succeeds_and_redirects(authed_client, 
     assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit"
 
     conn = connect(db_path)
-    row = conn.execute("SELECT * FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()
     assert row["type"] == "shopify_collection"
     assert json.loads(row["config"]) == {
         "collection_url": "https://arcteryx.co.nz/collections/outlet",
@@ -443,7 +495,9 @@ def test_create_shopify_collection_source_persists_vendor_list(authed_client, db
     assert resp.status_code == 303
 
     conn = connect(db_path)
-    row = conn.execute("SELECT * FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()
     assert json.loads(row["config"]) == {
         "collection_url": "https://arcteryx.co.nz/collections/outlet",
         "vendors": ["Arc'teryx", "Patagonia", "Salomon"],
@@ -457,15 +511,22 @@ def test_create_shopify_collection_source_rejects_empty_url(authed_client, db_pa
 
     resp = authed_client.post(
         f"/admin/channels/{channel_id}/sources/new",
-        data={"type": "shopify_collection", "shopify_collection_url": "", "csrf_token": "csrf1"},
+        data={
+            "type": "shopify_collection",
+            "shopify_collection_url": "",
+            "csrf_token": "csrf1",
+        },
     )
     assert resp.status_code == 400
     assert "Please enter a collection URL" in resp.text
 
     conn = connect(db_path)
-    assert conn.execute(
-        "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_create_shopify_collection_source_rejects_invalid_url(authed_client, db_path):
@@ -485,9 +546,12 @@ def test_create_shopify_collection_source_rejects_invalid_url(authed_client, db_
     assert "Please enter a valid http(s) URL" in resp.text
 
     conn = connect(db_path)
-    assert conn.execute(
-        "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_edit_channel_shows_shopify_collection_label_and_icon(authed_client, db_path):
@@ -518,7 +582,9 @@ def test_new_source_form_lists_land_sea_collection_option(authed_client, db_path
     assert 'id="land-sea-collection-url"' in html
 
 
-def test_create_land_sea_collection_source_succeeds_and_redirects(authed_client, db_path):
+def test_create_land_sea_collection_source_succeeds_and_redirects(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
     conn.close()
@@ -535,7 +601,9 @@ def test_create_land_sea_collection_source_succeeds_and_redirects(authed_client,
     assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit"
 
     conn = connect(db_path)
-    row = conn.execute("SELECT * FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()
     assert row["type"] == "land_sea_collection"
     assert json.loads(row["config"]) == {
         "collection_url": "https://www.land-sea.co.nz/sale",
@@ -549,15 +617,22 @@ def test_create_land_sea_collection_source_rejects_empty_url(authed_client, db_p
 
     resp = authed_client.post(
         f"/admin/channels/{channel_id}/sources/new",
-        data={"type": "land_sea_collection", "land_sea_collection_url": "", "csrf_token": "csrf1"},
+        data={
+            "type": "land_sea_collection",
+            "land_sea_collection_url": "",
+            "csrf_token": "csrf1",
+        },
     )
     assert resp.status_code == 400
     assert "Please enter a listing URL" in resp.text
 
     conn = connect(db_path)
-    assert conn.execute(
-        "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_create_land_sea_collection_source_rejects_invalid_url(authed_client, db_path):
@@ -577,9 +652,12 @@ def test_create_land_sea_collection_source_rejects_invalid_url(authed_client, db
     assert "Please enter a valid http(s) URL" in resp.text
 
     conn = connect(db_path)
-    assert conn.execute(
-        "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_edit_channel_shows_land_sea_collection_label_and_icon(authed_client, db_path):
@@ -598,13 +676,15 @@ def test_edit_channel_shows_land_sea_collection_label_and_icon(authed_client, db
     assert "🌊" in html
 
 
-def test_edit_channel_copy_button_exposes_full_land_sea_filter_url(authed_client, db_path):
-    filtered_url = (
-        "https://www.land-sea.co.nz/outlet/mens-outlet?availability=in-stock&brands=85,97,170,102,169"
-    )
+def test_edit_channel_copy_button_exposes_full_land_sea_filter_url(
+    authed_client, db_path
+):
+    filtered_url = "https://www.land-sea.co.nz/outlet/mens-outlet?availability=in-stock&brands=85,97,170,102,169"
     conn = connect(db_path)
     channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
-    create_source(conn, channel_id, "land_sea_collection", {"collection_url": filtered_url})
+    create_source(
+        conn, channel_id, "land_sea_collection", {"collection_url": filtered_url}
+    )
     conn.close()
 
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
@@ -616,22 +696,152 @@ def test_edit_channel_copy_button_exposes_full_land_sea_filter_url(authed_client
     assert f'data-copy-value="{escaped_url}"' in html
 
 
-def test_edit_channel_copy_button_exposes_full_shopify_filter_url(authed_client, db_path):
+def test_edit_channel_copy_button_exposes_full_shopify_filter_url(
+    authed_client, db_path
+):
     filtered_url = "https://arcteryx.co.nz/collections/outlet?vendor=Arc%27teryx"
     conn = connect(db_path)
     channel_id = create_channel(conn, "Clearance watch", "profile", kind="monitor")
-    create_source(conn, channel_id, "shopify_collection", {"collection_url": filtered_url})
+    create_source(
+        conn, channel_id, "shopify_collection", {"collection_url": filtered_url}
+    )
     conn.close()
 
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert f'data-copy-value="{filtered_url}"' in html
 
 
-def test_edit_channel_copy_button_falls_back_to_label_for_non_url_sources(authed_client, db_path):
+def test_edit_channel_copy_button_falls_back_to_label_for_non_url_sources(
+    authed_client, db_path
+):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
-    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "personalfinancenz"})
+    create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "personalfinancenz"}
+    )
     conn.close()
 
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert 'data-copy-value="r/personalfinancenz"' in html
+
+
+def test_new_source_form_lists_all_about_auctions_option(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Auction watch", "Makita tools", kind="tracker")
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
+
+    assert 'value="all_about_auctions"' in html
+    assert "All About Auctions" in html
+    assert 'id="type-all-about-auctions"' in html
+    assert '<span class="source-icon">AA</span>' in html
+
+
+def test_create_all_about_auctions_source_persists_empty_config(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Auction watch", "Makita tools", kind="tracker")
+    conn.close()
+
+    response = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "all_about_auctions", "csrf_token": "csrf1"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    conn = connect(db_path)
+    source = conn.execute(
+        "SELECT type, config FROM sources WHERE channel_id = ?",
+        (channel_id,),
+    ).fetchone()
+    assert source["type"] == "all_about_auctions"
+    assert source["config"] == "{}"
+
+
+def test_edit_channel_shows_all_about_auctions_label_and_icon(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Auction watch", "Makita tools", kind="tracker")
+    create_source(conn, channel_id, "all_about_auctions", {})
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
+
+    assert "All About Auctions" in html
+    assert '<span class="source-name">AA All About Auctions</span>' in html
+
+
+def test_add_source_page_for_monitor_channel_lists_only_monitor_types(
+    authed_client, db_path
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
+
+    assert 'value="shopify_collection"' in html
+    assert 'value="land_sea_collection"' in html
+    # Editorial and tracker Source types are not offered on a monitor Channel.
+    assert 'value="reddit_subreddit"' not in html
+    assert 'value="all_about_auctions"' not in html
+    # The Phase 3 (twitter) editorial placeholder is hidden for a monitor Channel too.
+    assert "Phase 3" not in html
+    # The first compatible type is pre-selected by default.
+    assert re.search(
+        r'value="shopify_collection"\s+id="type-shopify"\s+checked', html
+    )
+
+
+def test_add_source_page_for_tracker_channel_lists_only_all_about_auctions(
+    authed_client, db_path
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Auction watch", "Makita tools", kind="tracker")
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
+
+    assert 'value="all_about_auctions"' in html
+    assert 'value="reddit_subreddit"' not in html
+    assert 'value="shopify_collection"' not in html
+    assert "Phase 3" not in html
+
+
+def test_add_source_page_for_editorial_channel_still_lists_editorial_types(
+    authed_client, db_path
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
+
+    assert 'value="reddit_subreddit"' in html
+    assert 'value="hackernews_stories"' in html
+    assert 'value="shopify_collection"' not in html
+    assert 'value="all_about_auctions"' not in html
+    # The editorial Phase 3 (twitter) placeholder is still shown on an editorial Channel.
+    assert "Phase 3" in html
+
+
+def test_create_source_rejects_incompatible_type_with_localized_400(
+    authed_client, db_path
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    conn.close()
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "reddit_subreddit", "subreddit": "x", "csrf_token": "csrf1"},
+    )
+
+    assert resp.status_code == 400
+    assert "added to this channel type." in resp.text
+
+    conn = connect(db_path)
+    count = conn.execute(
+        "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone()[0]
+    assert count == 0

@@ -68,7 +68,15 @@
             <strong>{{ channel.name }}</strong>
             {% if channel.kind == 'monitor' %}<span class="kind-badge">🔔 {{ t('web.admin.settings.kind_badge_monitor') }}</span>{% endif %}
             <small>{{ channel.fetch_stats_label }}</small>
-            {% if triggered == channel.id %}<em class="trigger-flash" role="status">{{ t('web.admin.settings.trigger_flash') }}</em>{% endif %}
+            {% if channel.fetch_status_label %}
+            <em class="fetch-status fetch-status-{{ channel.fetch_status_kind }}"
+                role="{{ 'alert' if channel.fetch_status_kind == 'stale' else 'status' }}">{{ channel.fetch_status_label }}</em>
+            {% elif triggered == channel.id %}
+            <em class="trigger-flash" role="status">{{ t('web.admin.settings.trigger_flash') }}</em>
+            {% endif %}
+            {% if channel.fetch_error_label %}
+            <em class="fetch-status fetch-status-failed" role="alert">{{ channel.fetch_error_label }}</em>
+            {% endif %}
           </span>
           <span role="cell">{{ t('web.admin.settings.source_count', count=channel.source_count) }}</span>
           <span role="cell">{{ channel.fetch_interval_label }}</span>

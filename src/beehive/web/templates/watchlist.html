@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.watchlist', product=t('common.product_name')) }}{% endblock %}
+{% block body_class %}page-watchlist{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell watchlist-shell">
+  <header class="watchlist-header">
+    <div>
+      <p class="watchlist-eyebrow">{{ t('web.watchlist.eyebrow') }}</p>
+      <h1>{{ t('web.watchlist.heading') }}</h1>
+      <p>{{ t('web.watchlist.lede') }}</p>
+    </div>
+    <a class="watchlist-settings-link" href="/admin/settings">{{ t('web.watchlist.email_settings') }}</a>
+  </header>
+
+  {% if default_email %}
+  <p class="watchlist-email-status">{{ t('web.watchlist.email_status', email=default_email) }}</p>
+  {% else %}
+  <p class="watchlist-email-status warning">{{ t('web.watchlist.email_missing') }} <a href="/admin/settings">{{ t('web.watchlist.configure_email') }}</a></p>
+  {% endif %}
+
+  {% if page.items %}
+  <section class="watchlist-items" aria-label="{{ t('web.watchlist.list_aria') }}">
+    {% for item in page.items %}
+    <article class="watchlist-item{{ ' closed' if item.is_closed else '' }}" id="watchlist-item-{{ item.id }}">
+      <a class="watchlist-item-media" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">
+        {% if item.image_url %}
+        <img src="{{ item.image_url }}" alt="" width="240" height="180" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+        {% else %}
+        <span class="tracker-image-placeholder" aria-hidden="true"></span>
+        {% endif %}
+        <span class="sr-only">{{ t('web.item.opens_new_window') }}</span>
+      </a>
+      <div class="watchlist-item-main">
+        <p class="watchlist-item-context">{{ item.context }}</p>
+        <h2><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h2>
+        {% if item.pricing_facts %}
+        <p class="tracker-pricing">
+          {% for fact in item.pricing_facts %}<span>{{ fact }}</span>{% endfor %}
+        </p>
+        {% endif %}
+        <p class="watchlist-closing{{ ' closed' if item.is_closed else '' }}">
+          {% if item.deadline_relative_label %}<strong>{{ item.deadline_relative_label }}</strong>{% endif %}
+          {% if item.deadline_label %}{% if item.deadline_relative_label %} · {% endif %}{{ t('web.watchlist.closed_at' if item.is_closed else 'web.watchlist.closes_at', time=item.deadline_label) }}{% else %}{{ t('web.tracker.no_deadline') }}{% endif %}
+        </p>
+      </div>
+      {% set watch_origin = "watchlist" %}
+      {% set watch_target = "#watchlist-item-" ~ item.id %}
+      {% set watch_swap = "delete" %}
+      {% set watch_remove_mode = true %}
+      {% include "_tracker_watch_control.html" %}
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state watchlist-empty">
+    <h2>{{ t('web.watchlist.empty_heading') }}</h2>
+    <p>{{ t('web.watchlist.empty_body') }}</p>
+    <a class="button-primary" href="/">{{ t('web.watchlist.browse') }}</a>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
+{% endblock %}

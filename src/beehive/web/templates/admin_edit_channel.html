@@ -31,14 +31,14 @@
           <span class="field-label-static">{{ t('web.admin.channel_new.kind_label') }}</span>
           <p class="kind-static">
             <span class="kind-badge">
-              {% if channel.kind == 'monitor' %}🔔 {{ t('web.admin.channel_new.kind_monitor_label') }}{% else %}📰 {{ t('web.admin.channel_new.kind_editorial_label') }}{% endif %}
+              {{ kind_display.icon }} {{ kind_display.label }}
             </span>
           </p>
         </div>
         <div class="field">
           <label for="channel-profile">{{ t('web.admin.channel_new.profile_label') }}</label>
           <textarea id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
-          <p class="hint">{{ t('web.admin.channel_edit.profile_hint') if channel.kind == 'editorial' else t('web.admin.channel_new.profile_hint_monitor') }}</p>
+          <p class="hint">{{ kind_display.profile_hint }}</p>
         </div>
         <div class="field">
           <label for="fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
@@ -53,13 +53,13 @@
             <label for="highlight-count">{{ t('web.admin.channel_new.highlight_count_label') }}</label>
             <input id="highlight-count" type="number" name="highlight_count"
                    value="{{ channel.highlight_count }}" min="1" max="50" required>
-            <p class="hint">{{ t('web.admin.channel_new.highlight_count_hint') if channel.kind == 'editorial' else t('web.admin.channel_new.highlight_count_hint_monitor') }}</p>
+            <p class="hint">{{ kind_display.highlight_count_hint }}</p>
           </div>
           <div class="field">
             <label for="minimum-score">{{ t('web.admin.channel_new.minimum_score_label') }}</label>
             <input id="minimum-score" type="number" name="minimum_score"
                    value="{{ channel.minimum_score }}" min="0" max="100" required>
-            <p class="hint">{{ t('web.admin.channel_new.minimum_score_hint') if channel.kind == 'editorial' else t('web.admin.channel_new.minimum_score_hint_monitor') }}</p>
+            <p class="hint">{{ kind_display.minimum_score_hint }}</p>
           </div>
         </div>
         <div class="field">

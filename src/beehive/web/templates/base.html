@@ -22,6 +22,7 @@
     {% block header_status %}{% endblock %}
     <nav class="site-nav" aria-label="{{ t('web.nav.aria_label') }}">
       <a href="/archive"{% if request.url.path == "/archive" %} aria-current="page"{% endif %}>{{ t('web.nav.archive') }}</a>
+      {% if is_owner %}<a href="/watchlist"{% if request.url.path == "/watchlist" %} aria-current="page"{% endif %}>{{ t('web.nav.watchlist') }}</a>{% endif %}
       {% if is_owner %}<a href="/research"{% if request.url.path.startswith("/research") %} aria-current="page"{% endif %}>{{ t('web.nav.research') }}</a>{% endif %}
       <a href="/admin/login"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>{{ t('web.nav.admin') }}</a>
     </nav>

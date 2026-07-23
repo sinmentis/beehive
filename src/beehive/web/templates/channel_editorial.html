@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}{{ t('web.title.channel', product=t('common.product_name'), channel=channel.name) }}{% endblock %}
-{% block body_class %}page-channel{% endblock %}
+{% block title %}{{ t('web.title.channel', product=t('common.product_name'), channel=page.channel_name) }}{% endblock %}
+{% block body_class %}page-channel page-channel-editorial{% endblock %}
 {% block secondary_navigation %}
-  {% set active_channel_id = channel.id %}
+  {% set active_channel_id = page.channel_id %}
   {% set channel_navigation_all_active = false %}
   {% include "_channel_shelf.html" %}
 {% endblock %}
@@ -11,22 +11,23 @@
   <header class="channel-toolbar">
     <a class="channel-back" href="/">{{ t('web.channel.back_home') }}</a>
     <div class="channel-heading">
-      <h1 class="channel-title">{{ channel.name }}</h1>
-      <p class="channel-statline">{{ t('web.channel.unread_count', count=unread_count) }} · <span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
+      <p class="channel-workflow">{{ t('web.channel.editorial_label') }}</p>
+      <h1 class="channel-title">{{ page.channel_name }}</h1>
+      <p class="channel-statline">{{ t('web.channel.unread_count', count=page.unread_count) }} · <span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
     </div>
     <p class="channel-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
-  {% if read_count and not show_read %}
-    <a class="channel-read-link" href="/channels/{{ channel.id }}?show_read=1">{{ t('web.channel.expand_read', count=read_count) }}</a>
-  {% endif %}
+    {% if page.read_count and not page.show_read %}
+    <a class="channel-read-link" href="/channels/{{ page.channel_id }}?show_read=1">{{ t('web.channel.expand_read', count=page.read_count) }}</a>
+    {% endif %}
     <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
   </header>
 
   <section class="channel-section" aria-labelledby="priority-title">
     <header class="channel-section-heading">
       <h2 id="priority-title">{{ t('web.channel.priority_heading') }}</h2>
-      <span class="section-count"><span lang="en">Top</span> {{ highlighted|length }}</span>
+      <span class="section-count"><span lang="en">Top</span> {{ page.highlighted|length }}</span>
     </header>
-    {% for item in highlighted %}
+    {% for item in page.highlighted %}
     {% include "_item_card.html" %}
     {% else %}
     <div class="channel-empty">
@@ -36,20 +37,20 @@
     {% endfor %}
   </section>
 
-  {% if folded %}
+  {% if page.folded %}
   <section class="channel-section" aria-labelledby="folded-title">
     <header class="channel-section-heading">
       <h2 id="folded-title">{{ t('web.channel.folded_heading') }}</h2>
-      <span class="section-count">{{ t('web.channel.folded_count', count=folded|length) }}</span>
-      {% if is_admin %}
-      <form class="inline-form" method="post" action="/channels/{{ channel.id }}/mark-all-read">
+      <span class="section-count">{{ t('web.channel.folded_count', count=page.folded|length) }}</span>
+      {% if is_owner %}
+      <form class="inline-form" method="post" action="/channels/{{ page.channel_id }}/mark-all-read">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="mark-read-button">{{ t('web.channel.mark_all_read') }}</button>
       </form>
       {% endif %}
     </header>
     <div class="folded-list">
-      {% for item in folded %}
+      {% for item in page.folded %}
       {% include "_folded_item.html" %}
       {% endfor %}
     </div>

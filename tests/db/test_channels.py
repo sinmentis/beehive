@@ -203,7 +203,9 @@ def test_duplicate_channel_copies_sources_verbatim(conn):
         "collection_url": "https://bivouac.co.nz/collections/clearance",
         "vendors": ["Arcteryx", "Patagonia"],
     })
-    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "nzoutdoors"})
+    create_source(conn, channel_id, "land_sea_collection", {
+        "collection_url": "https://www.land-sea.co.nz/sale",
+    })
 
     new_id = duplicate_channel(conn, channel_id)
 

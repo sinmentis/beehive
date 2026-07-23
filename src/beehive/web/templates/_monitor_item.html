@@ -1,0 +1,60 @@
+<article class="monitor-card{{ ' monitor-card--history' if monitor_item_history else '' }}" id="monitor-item-{{ item.id }}">
+  <a class="monitor-card-media" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">
+    {% if item.image_url %}
+    <img src="{{ item.image_url }}" alt="" width="480" height="360" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+    {% else %}
+    <span class="monitor-image-placeholder" aria-hidden="true"></span>
+    {% endif %}
+    <span class="sr-only">{{ t('web.item.opens_new_window') }}</span>
+  </a>
+  <div class="monitor-card-body">
+    <div class="monitor-card-kicker">
+      <span>{{ item.source_label }}</span>
+      {% if item.is_present and item.is_available %}
+      <span class="listing-status listing-status--available">{{ t('web.monitor.status_available') }}</span>
+      {% elif item.is_present %}
+      <span class="listing-status listing-status--unavailable">{{ t('web.monitor.status_out_of_stock') }}</span>
+      {% else %}
+      <span class="listing-status listing-status--removed">{{ t('web.monitor.status_removed') }}</span>
+      {% endif %}
+    </div>
+
+    {% if item.change %}
+    <p class="monitor-change monitor-change--{{ item.change.event_type }}">
+      {% if item.change.event_type == 'price_drop' %}
+      <span>{{ t('background.digest_event_price_drop') }}</span>
+      {% if item.change.old_price_label and item.change.new_price_label %}
+      <strong>{{ t('background.digest_event_price_detail', old=item.change.old_price_label, new=item.change.new_price_label) }}</strong>
+      {% endif %}
+      {% elif item.change.event_type == 'back_in_stock' %}
+      <span>{{ t('background.digest_event_back_in_stock') }}</span>
+      {% else %}
+      <span>{{ t('background.digest_event_new') }}</span>
+      {% endif %}
+    </p>
+    {% endif %}
+
+    <h3><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
+    {% if item.ai_rationale %}<p class="monitor-summary">{{ item.ai_rationale }}</p>{% endif %}
+
+    <div class="monitor-product-meta">
+      {% if item.vendor %}<span>{{ item.vendor }}</span>{% endif %}
+      {% if item.product_type %}<span>{{ item.product_type }}</span>{% endif %}
+      {% if item.ai_score is not none %}<span>{{ t('web.monitor.match_score', score=item.ai_score) }}</span>{% endif %}
+    </div>
+
+    <div class="monitor-price-row">
+      {% if item.price_label %}
+      <strong class="monitor-price">{{ item.price_label }}</strong>
+      {% else %}
+      <span class="monitor-price monitor-price--missing">{{ t('web.monitor.price_unavailable') }}</span>
+      {% endif %}
+      {% if item.compare_at_price_label %}
+      <s aria-label="{{ t('web.monitor.original_price_aria', price=item.compare_at_price_label) }}">{{ item.compare_at_price_label }}</s>
+      {% endif %}
+      {% if item.discount_percent is not none %}
+      <span class="monitor-discount">{{ t('web.monitor.discount', percent=item.discount_percent) }}</span>
+      {% endif %}
+    </div>
+  </div>
+</article>

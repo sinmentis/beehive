@@ -12,6 +12,18 @@ _Avoid_: Search session, chat session, ad hoc channel
 A recurring collection configuration attached to a Channel.
 _Avoid_: Provider, research source
 
+**Editorial Channel**:
+A recurring information feed whose ranked items use read state, Home and Archive aggregation, feedback, Deep Read, and regular email delivery.
+_Avoid_: News mode, feed type
+
+**Monitor Channel**:
+A recurring mutable catalogue whose ranked listings remain available as active inventory or permanent history and can emit discovery, price-drop, and back-in-stock events.
+_Avoid_: Shopping list, Tracker
+
+**Tracker Channel**:
+A recurring mutable set of time- or condition-bound listings. It sends regular email for new matches and lets the Owner select individual items for adapter-defined follow-up reminders.
+_Avoid_: Auction Channel, Monitor
+
 **Research Source**:
 A connector and its source-specific input chosen by the Owner or added automatically by the Research Plan for one Research Session.
 _Avoid_: Source, provider
@@ -55,3 +67,11 @@ _Avoid_: Chat history, Evidence Snapshot, user notes
 **Owner**:
 The authenticated person who administers Beehive and has access to private, cost-incurring workflows.
 _Avoid_: Admin user, account
+
+**Tracker Watch**:
+The Owner's saved interest in one Tracker item, kept until the Owner removes it.
+_Avoid_: Channel monitor, favourite
+
+**Tracker Reminder**:
+An adapter-defined follow-up email for a Tracker Watch. The auction adapter sends it when the current closing time enters the one-hour reminder window and may send again after a genuine extension.
+_Avoid_: Digest, regular Channel email

@@ -1,0 +1,17 @@
+{% if item.is_watchable %}
+<button type="button"
+        class="watch-toggle{{ ' active' if item.is_watched else '' }}"
+        aria-label="{{ t('web.tracker.watch_remove_aria' if item.is_watched else 'web.tracker.watch_add_aria', title=item.title) }}"
+        aria-pressed="{{ 'true' if item.is_watched else 'false' }}"
+        data-focus-key="tracker-{{ item.id }}-watch"
+        data-feedback-message="{{ t('web.tracker.watch_removed_feedback' if item.is_watched else 'web.tracker.watch_added_feedback') }}"
+        hx-post="/items/{{ item.id }}/watch"
+        hx-vals='{{ {"csrf_token": csrf_token, "origin": watch_origin} | tojson }}'
+        hx-target="{{ watch_target }}" hx-swap="{{ watch_swap }}">
+  <span class="watch-icon" aria-hidden="true">
+    <span class="watch-icon-add">+</span>
+    <span class="watch-icon-active">✓</span>
+  </span>
+  <span>{{ t('web.tracker.remove_watch' if watch_remove_mode else ('web.tracker.watching' if item.is_watched else 'web.tracker.watch')) }}</span>
+</button>
+{% endif %}

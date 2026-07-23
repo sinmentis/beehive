@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.channel', product=t('common.product_name'), channel=page.channel_name) }}{% endblock %}
+{% block body_class %}page-channel page-channel-monitor{% endblock %}
+{% block secondary_navigation %}
+  {% set active_channel_id = page.channel_id %}
+  {% set channel_navigation_all_active = false %}
+  {% include "_channel_shelf.html" %}
+{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell channel-shell monitor-shell">
+  <header class="channel-toolbar channel-toolbar--catalogue">
+    <a class="channel-back" href="/">{{ t('web.channel.back_home') }}</a>
+    <div class="channel-heading">
+      <p class="channel-workflow">{{ t('web.channel.monitor_label') }}</p>
+      <h1 class="channel-title">{{ page.channel_name }}</h1>
+      <p class="channel-statline"><span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
+    </div>
+    <p class="channel-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
+  </header>
+
+  <form class="monitor-controls" method="get" action="/channels/{{ page.channel_id }}">
+    <label class="monitor-search">
+      <span>{{ t('web.monitor.search_label') }}</span>
+      <input type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}">
+    </label>
+    <label>
+      <span>{{ t('web.monitor.source_label') }}</span>
+      <select name="source">
+        <option value="">{{ t('web.monitor.all_sources') }}</option>
+        {% for option in page.source_options %}
+        <option value="{{ option }}"{% if page.source == option %} selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>{{ t('web.monitor.vendor_label') }}</span>
+      <select name="vendor">
+        <option value="">{{ t('web.monitor.all_vendors') }}</option>
+        {% for option in page.vendor_options %}
+        <option value="{{ option }}"{% if page.vendor == option %} selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <span>{{ t('web.monitor.sort_label') }}</span>
+      <select name="sort">
+        <option value="score"{% if page.sort.value == 'score' %} selected{% endif %}>{{ t('web.monitor.sort_score') }}</option>
+        <option value="discount"{% if page.sort.value == 'discount' %} selected{% endif %}>{{ t('web.monitor.sort_discount') }}</option>
+        <option value="price_asc"{% if page.sort.value == 'price_asc' %} selected{% endif %}>{{ t('web.monitor.sort_price_low') }}</option>
+        <option value="price_desc"{% if page.sort.value == 'price_desc' %} selected{% endif %}>{{ t('web.monitor.sort_price_high') }}</option>
+      </select>
+    </label>
+    <label class="monitor-checkbox">
+      <input type="checkbox" name="on_sale" value="true"{% if page.on_sale_only %} checked{% endif %}>
+      <span>{{ t('web.monitor.on_sale_only') }}</span>
+    </label>
+    <div class="monitor-control-actions">
+      <button type="submit" class="monitor-apply">{{ t('web.archive.apply_filters') }}</button>
+      <a href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a>
+    </div>
+  </form>
+
+  <section class="catalogue-section" aria-labelledby="monitor-available-title">
+    <header class="catalogue-heading">
+      <div>
+        <p class="section-kicker">{{ t('web.channel.monitor_label') }}</p>
+        <h2 id="monitor-available-title">{{ t('web.monitor.available_heading') }}</h2>
+      </div>
+      <span>{{ t('web.channel.folded_count', count=page.pagination.total) }}</span>
+    </header>
+
+    {% if page.items %}
+    <div class="monitor-grid">
+      {% for item in page.items %}
+      {% set monitor_item_history = false %}
+      {% include "_monitor_item.html" %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="channel-panel-empty">
+      {% if page.search or page.source or page.vendor or page.on_sale_only %}
+      <h3>{{ t('web.monitor.empty_filtered_heading') }}</h3>
+      <p>{{ t('web.monitor.empty_filtered_body') }}</p>
+      {% else %}
+      <h3>{{ t('web.monitor.empty_heading') }}</h3>
+      <p>{{ t('web.monitor.empty_body') }}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% set pagination = page.pagination %}
+    {% set previous_url = monitor_previous_url %}
+    {% set next_url = monitor_next_url %}
+    {% set pagination_aria = t('web.monitor.pagination_aria') %}
+    {% include "_channel_pagination.html" %}
+  </section>
+
+  {% if page.history %}
+  <details class="catalogue-history">
+    <summary>
+      <span>
+        <strong>{{ t('web.monitor.unavailable_heading') }}</strong>
+        <small>{{ t('web.monitor.unavailable_body') }}</small>
+      </span>
+      <span>{{ t('web.channel.folded_count', count=page.history|length) }}</span>
+    </summary>
+    <div class="monitor-grid monitor-grid--history">
+      {% for item in page.history %}
+      {% set monitor_item_history = true %}
+      {% include "_monitor_item.html" %}
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</main>
+{% endblock %}

@@ -79,5 +79,16 @@ def get_channel_group(conn: sqlite3.Connection, channel_id: int) -> dict | None:
 
 
 def mark_sent(conn: sqlite3.Connection, group_id: int, sent_at: str) -> None:
-    conn.execute("UPDATE email_groups SET last_sent_at = ? WHERE id = ?", (sent_at, group_id))
+    conn.execute(
+        "UPDATE email_groups SET last_sent_at = ?, last_checked_at = ? WHERE id = ?",
+        (sent_at, sent_at, group_id),
+    )
+    conn.commit()
+
+
+def mark_checked(conn: sqlite3.Connection, group_id: int, checked_at: str) -> None:
+    conn.execute(
+        "UPDATE email_groups SET last_checked_at = ? WHERE id = ?",
+        (checked_at, group_id),
+    )
     conn.commit()

@@ -1,0 +1,10 @@
+[Unit]
+Description=Check watched Tracker items for follow-up reminders every five minutes
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=beehive-auction-reminders.service
+
+[Install]
+WantedBy=timers.target
