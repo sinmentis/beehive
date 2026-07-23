@@ -676,13 +676,6 @@ def trigger_channel_fetch_batch(
     )
 
 
-_CHANNEL_KIND_ICONS = {
-    ChannelKind.EDITORIAL: "📰",
-    ChannelKind.MONITOR: "🔔",
-    ChannelKind.TRACKER: "🔨",
-}
-
-
 def _channel_kind_options(t: Localizer) -> tuple[dict, ...]:
     """The New Channel form's kind radios, generated from the ChannelDefinition registry (not a
     hardcoded list) so a newly declared kind appears automatically. input_id matches the
@@ -691,7 +684,7 @@ def _channel_kind_options(t: Localizer) -> tuple[dict, ...]:
         {
             "value": definition.kind.value,
             "input_id": f"kind-{definition.kind.value}",
-            "icon": _CHANNEL_KIND_ICONS[definition.kind],
+            "icon": definition.kind.value[0].upper(),
             "label": t.text(f"web.admin.channel_new.kind_{definition.kind.value}_label"),
             "hint": t.text(f"web.admin.channel_new.kind_{definition.kind.value}_hint"),
         }
@@ -713,7 +706,7 @@ def _channel_kind_display(kind: ChannelKind, t: Localizer) -> dict:
         highlight_hint = t.text(f"web.admin.channel_new.highlight_count_hint_{kind.value}")
         minimum_hint = t.text(f"web.admin.channel_new.minimum_score_hint_{kind.value}")
     return {
-        "icon": _CHANNEL_KIND_ICONS[kind],
+        "icon": kind.value[0].upper(),
         "label": t.text(f"web.admin.channel_new.kind_{kind.value}_label"),
         "profile_hint": profile_hint,
         "highlight_count_hint": highlight_hint,
