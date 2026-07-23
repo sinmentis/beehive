@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -506,6 +507,32 @@ def test_default_json_fetch_uses_user_agent_and_timeout():
     assert request.get_header("User-agent") == "beehive/0.1 (personal information hub)"
     assert urlopen.call_args.kwargs["timeout"] == 20
     assert payload == {"products": []}
+
+
+def test_default_json_fetch_retries_a_transient_service_error():
+    url = f"{_COLLECTION_URL}/products.json"
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = b'{"products": []}'
+    service_unavailable = HTTPError(
+        url,
+        503,
+        "Service Unavailable",
+        hdrs=None,
+        fp=None,
+    )
+
+    with (
+        patch(
+            "beehive.connectors.shopify_collection.urllib.request.urlopen",
+            side_effect=[service_unavailable, response],
+        ) as urlopen,
+        patch("beehive.connectors.shopify_collection.time", create=True) as time_module,
+    ):
+        payload = _default_fetch_json(url)
+
+    assert payload == {"products": []}
+    assert urlopen.call_count == 2
+    time_module.sleep.assert_called_once_with(1)
 
 
 def test_default_json_fetch_raises_on_invalid_json():

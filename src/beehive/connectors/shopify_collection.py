@@ -25,6 +25,8 @@ Tests inject a fake fetch_json and never touch the network."""
 from __future__ import annotations
 
 import json
+import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 from typing import Any, Callable
@@ -36,6 +38,7 @@ from beehive.domain.channels import ChannelKind
 
 _USER_AGENT = "beehive/0.1 (personal information hub)"
 _REQUEST_TIMEOUT_SECONDS = 20
+_REQUEST_ATTEMPTS = 3
 _PAGE_SIZE = 250
 # A clearance/outlet collection is a small slice of a store's catalog in practice; this caps
 # worst case at 1,000 products/cycle rather than trusting an unbounded storefront to stay small.
@@ -45,12 +48,21 @@ JsonFetcher = Callable[[str], Any]
 
 
 def _default_fetch_json(url: str) -> Any:
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(  # noqa: S310 (module only ever builds http(s) URLs)
-        request,
-        timeout=_REQUEST_TIMEOUT_SECONDS,
-    ) as response:
-        payload = response.read()
+    for attempt in range(1, _REQUEST_ATTEMPTS + 1):
+        request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+        try:
+            with urllib.request.urlopen(  # noqa: S310 (only builds http(s) URLs)
+                request,
+                timeout=_REQUEST_TIMEOUT_SECONDS,
+            ) as response:
+                payload = response.read()
+            break
+        except urllib.error.HTTPError as exc:
+            retryable = exc.code == 429 or 500 <= exc.code <= 599
+            if not retryable or attempt == _REQUEST_ATTEMPTS:
+                raise
+            exc.close()
+            time.sleep(attempt)
     try:
         return json.loads(payload)
     except json.JSONDecodeError as exc:
