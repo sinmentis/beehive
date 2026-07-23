@@ -30,9 +30,9 @@
         <div class="field">
           <span class="field-label-static">{{ t('web.admin.channel_new.kind_label') }}</span>
           <p class="kind-static">
-            <span class="kind-badge">
-              {{ kind_display.icon }} {{ kind_display.label }}
-            </span>
+            {% set channel_kind = channel.kind %}
+            {% set channel_kind_label = kind_display.label %}
+            {% include "_channel_kind_label.html" %}
           </p>
         </div>
         <div class="field">

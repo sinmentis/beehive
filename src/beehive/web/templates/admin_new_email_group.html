@@ -48,8 +48,10 @@
           <label class="group-channel-row">
             <input class="channel-checkbox" type="checkbox" name="channel_ids" value="{{ row.id }}" {{ "checked" if row.is_member else "" }}>
             <span class="group-channel-name">
-              {{ row.name }}
-              {% if row.kind == 'monitor' %}<span class="kind-badge">🔔 {{ t('web.admin.settings.kind_badge_monitor') }}</span>{% endif %}
+              <span>{{ row.name }}</span>
+              {% set channel_kind = row.kind %}
+              {% set channel_kind_label = row.kind_label %}
+              {% include "_channel_kind_label.html" %}
             </span>
             {% if row.other_group_name %}<span class="hint">{{ t('web.admin.email_group.channel_other_group_note', group=row.other_group_name) }}</span>{% endif %}
           </label>

@@ -948,15 +948,37 @@ button.deep-read-chip{border-color:var(--border-strong)}
 .channel-kind-field{padding:0;border:0}
 .channel-kind-field legend{margin-bottom:.7rem}
 .kind-static{margin:0}
-.kind-badge{
-  display:inline-block;
-  padding:.15rem .5rem;
-  border-radius:999px;
-  background:var(--accent-soft);
-  color:var(--accent);
-  font-weight:700;
-  font-size:.72rem;
+.channel-kind-label{
+  display:inline-flex;
+  align-items:center;
+  gap:.42rem;
+  color:var(--text-soft);
+  font-size:.68rem;
+  font-weight:680;
+  letter-spacing:.01em;
+  line-height:1;
+  white-space:nowrap;
 }
+.channel-kind-mark{
+  width:.5rem;
+  height:.5rem;
+  flex:none;
+  border:1px solid var(--muted-2);
+}
+.channel-kind-label--editorial .channel-kind-mark{
+  border-color:var(--muted-2);
+  border-radius:.08rem;
+  background:var(--muted-2);
+}
+.channel-kind-label--monitor .channel-kind-mark{
+  border-color:var(--accent);
+  border-radius:50%;
+}
+.channel-kind-label--tracker .channel-kind-mark{
+  border-color:var(--text-soft);
+  transform:rotate(45deg) scale(.82);
+}
+.kind-static .channel-kind-label{font-size:.75rem}
 input[type="text"],input[type="password"],input[type="email"],input[type="search"],input[type="date"],input[type="number"],textarea,select{
   width:100%;
   min-height:2.8rem;
@@ -2694,7 +2716,7 @@ select{
 .channel-admin-table{font-variant-numeric:tabular-nums}
 .channel-admin-head,.channel-admin-row{
   display:grid;
-  grid-template-columns:1.75rem minmax(14rem,1fr) 7rem 8rem 9rem 3rem;
+  grid-template-columns:1.75rem minmax(14rem,1fr) 7rem 6rem 8rem 9rem 3rem;
   gap:.75rem;
   align-items:center;
 }
@@ -2707,14 +2729,18 @@ select{
   text-transform:uppercase;
 }
 .channel-admin-row{
-  min-height:3.75rem;
-  padding:.55rem 0;
+  min-height:4rem;
+  padding:.65rem 0;
   border-top:1px solid var(--border);
   color:var(--muted);
   font-size:.72rem;
+  transition:background-color .18s ease,border-color .18s ease;
 }
 .channel-admin-row:first-of-type{border-top:1px solid var(--border)}
-.channel-admin-row:hover{background:rgba(255,255,255,.018)}
+.channel-admin-row:hover,.channel-admin-row:focus-within{
+  border-color:var(--border-strong);
+  background:rgba(255,255,255,.02);
+}
 .channel-admin-name{min-width:0}
 .channel-admin-name strong{
   display:block;
@@ -2738,8 +2764,16 @@ select{
 .channel-admin-name .trigger-flash{color:var(--success)}
 .channel-admin-name .fetch-status-queued,.channel-admin-name .fetch-status-running{color:var(--accent-strong)}
 .channel-admin-name .fetch-status-stale,.channel-admin-name .fetch-status-failed{color:var(--danger)}
+.channel-kind-cell{display:flex;align-items:center}
 .channel-edit-cell{text-align:right}
-.channel-edit-link{color:var(--muted);font-size:.7rem}
+.channel-edit-link{
+  display:inline-flex;
+  min-height:2rem;
+  align-items:center;
+  color:var(--muted);
+  font-size:.7rem;
+  font-weight:650;
+}
 .channel-edit-link:hover{color:var(--accent)}
 .channel-checkbox{
   display:grid;
@@ -2830,10 +2864,12 @@ select{
   .archive-filters .search-field{grid-column:1/-1}
   .archive-filters .filter-actions{grid-column:1/-1}
   .channel-admin-head,.channel-admin-row{
-    grid-template-columns:1.75rem minmax(11rem,1fr) 6rem 8rem 3rem;
+    grid-template-columns:1.75rem minmax(11rem,1fr) 6.5rem 8rem 3rem;
   }
   .channel-admin-head>:nth-child(4),
-  .channel-admin-row>:nth-child(4){display:none}
+  .channel-admin-row>:nth-child(4),
+  .channel-admin-head>:nth-child(5),
+  .channel-admin-row>:nth-child(5){display:none}
 }
 
 @media (max-width:720px){
@@ -2893,13 +2929,15 @@ select{
   .channel-bulk-toolbar{align-items:flex-start;flex-direction:column;padding:.65rem 0}
   .channel-bulk-toolbar .btn{width:100%}
   .channel-admin-head,.channel-admin-row{
-    grid-template-columns:1.25rem minmax(6.5rem,1fr) 6.25rem 2.25rem;
+    grid-template-columns:1.25rem minmax(7rem,1fr) 5.5rem 2.25rem;
     gap:.4rem;
   }
-  .channel-admin-head>:nth-child(3),
-  .channel-admin-row>:nth-child(3),
   .channel-admin-head>:nth-child(4),
-  .channel-admin-row>:nth-child(4){display:none}
+  .channel-admin-row>:nth-child(4),
+  .channel-admin-head>:nth-child(5),
+  .channel-admin-row>:nth-child(5),
+  .channel-admin-head>:nth-child(6),
+  .channel-admin-row>:nth-child(6){display:none}
   .setting-row{
     min-height:0;
     padding:1rem 0 1.15rem;

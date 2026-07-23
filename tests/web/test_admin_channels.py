@@ -72,18 +72,20 @@ def test_channels_list_shows_daily_interval_label(authed_client, db_path):
     assert "Once a day" in resp.text
 
 
-def test_channels_list_shows_monitor_badge_for_monitor_channels(authed_client, db_path):
+def test_channels_list_shows_a_kind_label_for_every_channel(authed_client, db_path):
     conn = connect(db_path)
-    create_channel(conn, "Arcteryx Outlet", "watch for price drops", kind="monitor")
     create_channel(conn, "NZ Finance", "economic news")
+    create_channel(conn, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    create_channel(conn, "Auctions", "watch closing lots", kind="tracker")
     conn.close()
 
     resp = authed_client.get("/admin/")
     assert resp.status_code == 200
-    assert "kind-badge" in resp.text
-    # The badge text ("Monitor") appears once per monitor channel; the editorial channel
-    # ("NZ Finance") does not get one.
-    assert resp.text.count("kind-badge") == 1
+    assert resp.text.count('class="channel-kind-label ') == 3
+    assert "channel-kind-label--editorial" in resp.text
+    assert "channel-kind-label--monitor" in resp.text
+    assert "channel-kind-label--tracker" in resp.text
+    assert "🔔" not in resp.text
 
 
 def test_new_channel_form_requires_session(db_path):

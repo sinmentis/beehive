@@ -81,12 +81,17 @@ def test_new_email_group_form_lists_existing_channels(authed_client, db_path):
     conn = connect(db_path)
     create_channel(conn, "NZ Finance", "economic news")
     create_channel(conn, "Arcteryx Outlet", "watch for price drops", kind="monitor")
+    create_channel(conn, "Auctions", "watch closing lots", kind="tracker")
     conn.close()
 
     resp = authed_client.get("/admin/email-groups/new")
     assert "NZ Finance" in resp.text
     assert "Arcteryx Outlet" in resp.text
-    assert "kind-badge" in resp.text  # monitor badge shown for the monitor channel
+    assert "Auctions" in resp.text
+    assert resp.text.count('class="channel-kind-label ') == 3
+    assert "channel-kind-label--editorial" in resp.text
+    assert "channel-kind-label--monitor" in resp.text
+    assert "channel-kind-label--tracker" in resp.text
 
 
 def test_new_email_group_form_notes_channel_already_in_another_group(authed_client, db_path):

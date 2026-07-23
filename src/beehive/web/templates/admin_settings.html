@@ -53,6 +53,7 @@
                    aria-label="{{ t('web.admin.settings.select_all') }}">
           </span>
           <span role="columnheader">{{ t('web.admin.settings.channel_column') }}</span>
+          <span role="columnheader">{{ t('web.admin.settings.kind_column') }}</span>
           <span role="columnheader">{{ t('web.admin.settings.sources_column') }}</span>
           <span role="columnheader">{{ t('web.admin.settings.cadence_column') }}</span>
           <span role="columnheader">{{ t('web.admin.settings.freshness_column') }}</span>
@@ -66,7 +67,6 @@
           </span>
           <span class="channel-admin-name" role="cell">
             <strong>{{ channel.name }}</strong>
-            {% if channel.kind == 'monitor' %}<span class="kind-badge">🔔 {{ t('web.admin.settings.kind_badge_monitor') }}</span>{% endif %}
             <small>{{ channel.fetch_stats_label }}</small>
             {% if channel.fetch_status_label %}
             <em class="fetch-status fetch-status-{{ channel.fetch_status_kind }}"
@@ -77,6 +77,11 @@
             {% if channel.fetch_error_label %}
             <em class="fetch-status fetch-status-failed" role="alert">{{ channel.fetch_error_label }}</em>
             {% endif %}
+          </span>
+          <span class="channel-kind-cell" role="cell">
+            {% set channel_kind = channel.kind %}
+            {% set channel_kind_label = channel.kind_label %}
+            {% include "_channel_kind_label.html" %}
           </span>
           <span role="cell">{{ t('web.admin.settings.source_count', count=channel.source_count) }}</span>
           <span role="cell">{{ channel.fetch_interval_label }}</span>

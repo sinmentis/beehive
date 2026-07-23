@@ -291,6 +291,10 @@ def _resolve_default_for_admin(
         return ResolvedRecipient(None, "missing"), _email_error_message(exc, t)
 
 
+def _channel_kind_label(kind: ChannelKind, t: Localizer) -> str:
+    return t.text(f"web.channel.{kind.value}_label")
+
+
 def _build_admin_channel_rows(
     conn: sqlite3.Connection,
     t: Localizer,
@@ -299,6 +303,7 @@ def _build_admin_channel_rows(
     manual_states = list_manual_trigger_states(data_dir)
     channels = []
     for channel in list_channels(conn):
+        kind = require_channel_kind(channel["kind"])
         sources = list_sources(conn, channel["id"])
         manual_state = manual_states.get(channel["id"])
         fetch_errors = [
@@ -327,7 +332,8 @@ def _build_admin_channel_rows(
             {
                 "id": channel["id"],
                 "name": channel["name"],
-                "kind": channel["kind"],
+                "kind": kind.value,
+                "kind_label": _channel_kind_label(kind, t),
                 "source_count": len(sources),
                 "fetch_interval_label": _fetch_interval_label(
                     channel["fetch_interval_hours"], t
@@ -371,6 +377,7 @@ def _build_admin_email_group_rows(
 
 def _build_group_channel_rows(
     conn: sqlite3.Connection,
+    t: Localizer,
     *,
     group_id: int | None,
     selected_ids: set[int] | None = None,
@@ -388,6 +395,7 @@ def _build_group_channel_rows(
         member_ids = set()
     rows = []
     for channel in list_channels(conn):
+        kind = require_channel_kind(channel["kind"])
         other_group = get_channel_group(conn, channel["id"])
         other_group_name = None
         if other_group is not None and other_group["id"] != group_id:
@@ -396,7 +404,8 @@ def _build_group_channel_rows(
             {
                 "id": channel["id"],
                 "name": channel["name"],
-                "kind": channel["kind"],
+                "kind": kind.value,
+                "kind_label": _channel_kind_label(kind, t),
                 "is_member": channel["id"] in member_ids,
                 "other_group_name": other_group_name,
             }
@@ -693,7 +702,7 @@ def _channel_kind_options(t: Localizer) -> tuple[dict, ...]:
 
 
 def _channel_kind_display(kind: ChannelKind, t: Localizer) -> dict:
-    """The static kind badge and per-field hints shown on the Edit Channel page, resolved for the
+    """The static kind label and per-field hints shown on the Edit Channel page, resolved for the
     Channel's (immutable) kind so the page renders the correct copy for editorial, monitor, and
     tracker alike. editorial keeps its distinct edit-page profile hint; the other kinds share the
     New Channel form's per-kind hint keys."""
@@ -706,8 +715,7 @@ def _channel_kind_display(kind: ChannelKind, t: Localizer) -> dict:
         highlight_hint = t.text(f"web.admin.channel_new.highlight_count_hint_{kind.value}")
         minimum_hint = t.text(f"web.admin.channel_new.minimum_score_hint_{kind.value}")
     return {
-        "icon": kind.value[0].upper(),
-        "label": t.text(f"web.admin.channel_new.kind_{kind.value}_label"),
+        "label": _channel_kind_label(kind, t),
         "profile_hint": profile_hint,
         "highlight_count_hint": highlight_hint,
         "minimum_score_hint": minimum_hint,
@@ -1079,7 +1087,7 @@ def _render_new_email_group_page(
             "default_error": default_error,
             "error": error,
             "channel_rows": _build_group_channel_rows(
-                conn, group_id=None, selected_ids=selected_channel_ids
+                conn, t, group_id=None, selected_ids=selected_channel_ids
             ),
         },
         status_code=status_code,
@@ -1178,7 +1186,7 @@ def _render_edit_email_group_page(
             "default_error": default_error,
             "error": error,
             "channel_rows": _build_group_channel_rows(
-                conn, group_id=group["id"], selected_ids=selected_channel_ids
+                conn, t, group_id=group["id"], selected_ids=selected_channel_ids
             ),
         },
         status_code=status_code,
