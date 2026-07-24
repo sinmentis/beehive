@@ -25,24 +25,42 @@
       <span>{{ t('web.monitor.search_label') }}</span>
       <input type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}">
     </label>
-    <label>
-      <span>{{ t('web.monitor.source_label') }}</span>
-      <select name="source">
-        <option value="">{{ t('web.monitor.all_sources') }}</option>
-        {% for option in page.source_options %}
-        <option value="{{ option }}"{% if page.source == option %} selected{% endif %}>{{ option }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      <span>{{ t('web.monitor.vendor_label') }}</span>
-      <select name="vendor">
-        <option value="">{{ t('web.monitor.all_vendors') }}</option>
-        {% for option in page.vendor_options %}
-        <option value="{{ option }}"{% if page.vendor == option %} selected{% endif %}>{{ option }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    <fieldset class="monitor-multi-filter">
+      <legend>{{ t('web.monitor.source_label') }}</legend>
+      <details class="monitor-multiselect" name="monitor-filter">
+        <summary title="{{ page.sources|join(', ') if page.sources else t('web.monitor.all_sources') }}">
+          <span>{{ page.sources|join(', ') if page.sources else t('web.monitor.all_sources') }}</span>
+        </summary>
+        <div class="monitor-multiselect-options" role="group" aria-label="{{ t('web.monitor.source_label') }}">
+          {% for option in page.source_options %}
+          <label class="monitor-multiselect-option">
+            <input type="checkbox" name="source" value="{{ option }}"{% if option in page.sources %} checked{% endif %}>
+            <span>{{ option }}</span>
+          </label>
+          {% else %}
+          <span class="monitor-multiselect-empty">{{ t('web.monitor.all_sources') }}</span>
+          {% endfor %}
+        </div>
+      </details>
+    </fieldset>
+    <fieldset class="monitor-multi-filter monitor-multi-filter--vendor">
+      <legend>{{ t('web.monitor.vendor_label') }}</legend>
+      <details class="monitor-multiselect" name="monitor-filter">
+        <summary title="{{ page.vendors|join(', ') if page.vendors else t('web.monitor.all_vendors') }}">
+          <span>{{ page.vendors|join(', ') if page.vendors else t('web.monitor.all_vendors') }}</span>
+        </summary>
+        <div class="monitor-multiselect-options" role="group" aria-label="{{ t('web.monitor.vendor_label') }}">
+          {% for option in page.vendor_options %}
+          <label class="monitor-multiselect-option">
+            <input type="checkbox" name="vendor" value="{{ option }}"{% if option in page.vendors %} checked{% endif %}>
+            <span>{{ option }}</span>
+          </label>
+          {% else %}
+          <span class="monitor-multiselect-empty">{{ t('web.monitor.all_vendors') }}</span>
+          {% endfor %}
+        </div>
+      </details>
+    </fieldset>
     <label>
       <span>{{ t('web.monitor.sort_label') }}</span>
       <select name="sort">
@@ -80,7 +98,7 @@
     </div>
     {% else %}
     <div class="channel-panel-empty">
-      {% if page.search or page.source or page.vendor or page.on_sale_only %}
+      {% if page.search or page.sources or page.vendors or page.on_sale_only %}
       <h3>{{ t('web.monitor.empty_filtered_heading') }}</h3>
       <p>{{ t('web.monitor.empty_filtered_body') }}</p>
       {% else %}

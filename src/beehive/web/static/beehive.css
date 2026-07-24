@@ -1690,14 +1690,95 @@ select{
   gap:.625rem;
   background:#151915;
 }
-.monitor-controls label{display:grid;min-width:0;gap:.3rem}
-.monitor-controls label>span{
+.monitor-controls>label{display:grid;min-width:0;gap:.3rem}
+.monitor-controls>label>span,.monitor-multi-filter>legend{
   color:var(--muted);
   font-size:.6rem;
   font-weight:700;
   letter-spacing:.055em;
   text-transform:uppercase;
 }
+.monitor-multi-filter{min-width:0;margin:0;padding:0;border:0}
+.monitor-multi-filter>legend{margin:0 0 .3rem;padding:0}
+.monitor-multiselect{position:relative;min-width:0}
+.monitor-multiselect summary{
+  display:flex;
+  width:100%;
+  min-height:2.5rem;
+  padding:.5rem .625rem;
+  border-radius:.4rem;
+  align-items:center;
+  justify-content:space-between;
+  gap:.5rem;
+  background:var(--surface);
+  box-shadow:inset 0 0 0 1px var(--border-strong);
+  color:var(--text);
+  cursor:pointer;
+  font-size:.75rem;
+  list-style:none;
+  transition:box-shadow .16s ease,transform .16s cubic-bezier(.2,0,0,1);
+}
+.monitor-multiselect summary::-webkit-details-marker{display:none}
+.monitor-multiselect summary>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.monitor-multiselect summary:active{transform:scale(.96)}
+.monitor-multiselect summary::after{
+  width:.42rem;
+  height:.42rem;
+  flex:0 0 auto;
+  border-right:1px solid var(--muted);
+  border-bottom:1px solid var(--muted);
+  content:"";
+  transform:rotate(45deg) translateY(-.12rem);
+  transition:transform .16s ease;
+}
+.monitor-multiselect[open] summary{
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 70%,var(--border-strong));
+}
+.monitor-multiselect[open] summary::after{transform:rotate(225deg) translate(-.1rem,-.1rem)}
+.monitor-multiselect-options{
+  position:absolute;
+  z-index:30;
+  top:calc(100% + .3rem);
+  left:0;
+  display:grid;
+  width:max(100%,16rem);
+  max-width:min(22rem,calc(100vw - 1.25rem));
+  max-height:17rem;
+  overflow:auto;
+  padding:.35rem;
+  border:1px solid var(--border-strong);
+  border-radius:.65rem;
+  background:var(--surface-raised);
+  box-shadow:0 .75rem 2rem rgba(0,0,0,.28);
+}
+.monitor-multi-filter--vendor .monitor-multiselect-options{right:0;left:auto}
+.monitor-multiselect-option{
+  display:flex!important;
+  min-height:2.75rem;
+  padding:.45rem .5rem;
+  border-radius:.3rem;
+  align-items:center;
+  gap:.6rem!important;
+  cursor:pointer;
+}
+.monitor-multiselect-option:hover{background:var(--surface)}
+.monitor-multiselect-option input{
+  width:1rem;
+  height:1rem;
+  flex:0 0 auto;
+  margin:0;
+  accent-color:var(--accent);
+}
+.monitor-multiselect-option>span{
+  overflow-wrap:anywhere;
+  color:var(--text-soft)!important;
+  font-size:.72rem!important;
+  font-weight:500!important;
+  letter-spacing:0!important;
+  line-height:1.35;
+  text-transform:none!important;
+}
+.monitor-multiselect-empty{padding:.65rem;color:var(--muted);font-size:.72rem}
 .monitor-controls input[type="search"],.monitor-controls input[type="number"],.monitor-controls select{
   width:100%;
   min-height:2.5rem;

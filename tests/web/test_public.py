@@ -20,8 +20,13 @@ from beehive.db.sources import create_source, record_fetch_success
 from beehive.db.votes import upsert_vote
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
-from beehive.web.public import _monitor_page_url, _tracker_page_url
+from beehive.web.public import (
+    _criteria_toggle_url,
+    _monitor_page_url,
+    _tracker_page_url,
+)
 from scripts.set_admin_password import set_admin_password
+from starlette.requests import Request
 
 
 @pytest.fixture
@@ -63,8 +68,8 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         pagination=SimpleNamespace(page=1),
         history_pagination=SimpleNamespace(page=3),
         on_sale_only=True,
-        vendor="Arc'teryx",
-        source="example.com/outlet",
+        vendors=("Arc'teryx", "Patagonia"),
+        sources=("example.com/outlet", "second.example/sale"),
         search="shell jacket",
         criteria=SimpleNamespace(showing_below_threshold=True),
     )
@@ -77,9 +82,36 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         "page": ["2"],
         "history_page": ["3"],
         "on_sale": ["1"],
-        "vendor": ["Arc'teryx"],
-        "source": ["example.com/outlet"],
+        "vendor": ["Arc'teryx", "Patagonia"],
+        "source": ["example.com/outlet", "second.example/sale"],
         "q": ["shell jacket"],
+        "show_below": ["1"],
+    }
+
+
+def test_criteria_toggle_url_preserves_repeated_monitor_filters():
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "scheme": "https",
+            "path": "/channels/6",
+            "raw_path": b"/channels/6",
+            "query_string": (
+                b"vendor=Arc%27teryx&vendor=Patagonia"
+                b"&source=example.com%2Foutlet&source=second.example%2Fsale&page=2"
+            ),
+            "headers": [],
+            "client": ("testclient", 50000),
+            "server": ("testserver", 443),
+        }
+    )
+
+    url = _criteria_toggle_url(request, showing_below=False)
+
+    assert parse_qs(urlsplit(url).query) == {
+        "vendor": ["Arc'teryx", "Patagonia"],
+        "source": ["example.com/outlet", "second.example/sale"],
         "show_below": ["1"],
     }
 

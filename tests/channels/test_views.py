@@ -497,7 +497,8 @@ def test_monitor_filters_on_sale_and_vendor(conn):
 
     assert len(ids()) == 3
     assert len(ids(on_sale_only=True)) == 2  # a, c
-    assert len(ids(vendor="teva")) == 2  # a, b (case-insensitive)
+    assert len(ids(vendors=("teva",))) == 2  # a, b (case-insensitive)
+    assert len(ids(vendors=("Teva", "Arc'teryx"))) == 3
 
 
 def test_monitor_blank_vendor_filter_is_no_filter(conn):
@@ -507,7 +508,11 @@ def test_monitor_blank_vendor_filter_is_no_filter(conn):
     _add_item(conn, source_id, "b", raw_metadata=_shopify_metadata(
         10.0, None, on_sale=False, vendor="Arc'teryx"), score=61)
     page = build_channel_page(
-        conn, channel, t=_EN, now=_NOW, monitor_query=MonitorQuery(vendor="   ")
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        monitor_query=MonitorQuery(vendors=("   ",)),
     )
     assert len(page.items) == 2
 
@@ -555,13 +560,13 @@ def test_monitor_search_source_filter_and_options(conn):
         now=_NOW,
         monitor_query=MonitorQuery(
             search="waterproof",
-            source="example.com/collections/outlet",
+            sources=("example.com/collections/outlet",),
         ),
     )
 
     assert [item.title for item in page.items] == ["Beta Jacket"]
     assert page.search == "waterproof"
-    assert page.source == "example.com/collections/outlet"
+    assert page.sources == ("example.com/collections/outlet",)
     assert page.vendor_options == ("Arc'teryx", "Teva")
     assert page.source_options == (
         "example.com/collections/outlet",
@@ -642,7 +647,7 @@ def test_monitor_history_is_filtered_and_paginated(conn):
         monitor_query=MonitorQuery(
             history_page=2,
             per_page=2,
-            vendor="Retired vendor",
+            vendors=("Retired vendor",),
             search="Retired",
         ),
     )

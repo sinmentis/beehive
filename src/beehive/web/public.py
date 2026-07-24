@@ -229,7 +229,7 @@ def _monitor_page_url(
     active_page: int | None = None,
     history_page: int | None = None,
 ) -> str:
-    params: dict[str, str] = {"sort": page.sort.value}
+    params: list[tuple[str, str]] = [("sort", page.sort.value)]
     active_page = active_page if active_page is not None else page.pagination.page
     history_page = (
         history_page
@@ -237,19 +237,17 @@ def _monitor_page_url(
         else page.history_pagination.page
     )
     if active_page != 1:
-        params["page"] = str(active_page)
+        params.append(("page", str(active_page)))
     if history_page != 1:
-        params["history_page"] = str(history_page)
+        params.append(("history_page", str(history_page)))
     if page.on_sale_only:
-        params["on_sale"] = "1"
-    if page.vendor:
-        params["vendor"] = page.vendor
-    if page.source:
-        params["source"] = page.source
+        params.append(("on_sale", "1"))
+    params.extend(("vendor", vendor) for vendor in page.vendors)
+    params.extend(("source", source) for source in page.sources)
     if page.search:
-        params["q"] = page.search
+        params.append(("q", page.search))
     if page.criteria.showing_below_threshold:
-        params["show_below"] = "1"
+        params.append(("show_below", "1"))
     return f"/channels/{page.channel_id}?{urlencode(params)}"
 
 
@@ -389,13 +387,14 @@ def _safe_return_url(value: str | None, fallback: str) -> str:
 
 
 def _criteria_toggle_url(request: Request, *, showing_below: bool) -> str:
-    params = dict(request.query_params)
-    for page_key in ("page", "ending_page", "upcoming_page", "history_page"):
-        params.pop(page_key, None)
-    if showing_below:
-        params.pop("show_below", None)
-    else:
-        params["show_below"] = "1"
+    reset_keys = {"page", "ending_page", "upcoming_page", "history_page", "show_below"}
+    params = [
+        (key, value)
+        for key, value in request.query_params.multi_items()
+        if key not in reset_keys
+    ]
+    if not showing_below:
+        params.append(("show_below", "1"))
     query = urlencode(params)
     return f"{request.url.path}?{query}" if query else request.url.path
 
@@ -554,8 +553,8 @@ def channel_drilldown(
     page_number: int = Query(1, alias="page", ge=1),
     sort: MonitorSort = MonitorSort.SCORE,
     on_sale: bool = False,
-    vendor: str | None = None,
-    source: str | None = None,
+    vendor: list[str] | None = Query(None),
+    source: list[str] | None = Query(None),
     category: str | None = None,
     q: str | None = None,
     show_below: bool = False,
@@ -591,8 +590,8 @@ def channel_drilldown(
             history_page=history_page,
             sort=sort,
             on_sale_only=on_sale,
-            vendor=vendor,
-            source=source,
+            vendors=tuple(vendor or ()),
+            sources=tuple(source or ()),
             search=q,
         ),
         tracker_query=TrackerQuery(
@@ -600,7 +599,10 @@ def channel_drilldown(
             upcoming_page=upcoming_page,
             history_page=history_page,
             search=q,
-            source=source,
+            source=next(
+                (value for value in (source or ()) if value.strip()),
+                None,
+            ),
             category=category,
             status=tracker_status,
             deadline=deadline,

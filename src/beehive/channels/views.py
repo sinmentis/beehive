@@ -553,8 +553,8 @@ class MonitorQuery:
     per_page: int = DEFAULT_PER_PAGE
     sort: MonitorSort = MonitorSort.SCORE
     on_sale_only: bool = False
-    vendor: str | None = None
-    source: str | None = None
+    vendors: tuple[str, ...] = ()
+    sources: tuple[str, ...] = ()
     search: str | None = None
 
 
@@ -612,8 +612,8 @@ class MonitorPage:
     history_pagination: Pagination
     sort: MonitorSort
     on_sale_only: bool
-    vendor: str | None
-    source: str | None
+    vendors: tuple[str, ...]
+    sources: tuple[str, ...]
     search: str | None
     vendor_options: tuple[str, ...]
     source_options: tuple[str, ...]
@@ -693,16 +693,35 @@ def _monitor_sort_key(sort: MonitorSort):
     return lambda v: (v.ai_score is None, -(v.ai_score if v.ai_score is not None else 0), v.id)
 
 
-def _passes_monitor_filters(view: MonitorItemView, query: MonitorQuery) -> bool:
+def _canonical_filter_values(
+    values: tuple[str, ...],
+    options: tuple[str, ...],
+) -> tuple[str, ...]:
+    options_by_key = {option.casefold(): option for option in options}
+    selected: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = value.strip()
+        key = normalized.casefold()
+        if not normalized or key in seen:
+            continue
+        seen.add(key)
+        selected.append(options_by_key.get(key, normalized))
+    return tuple(selected)
+
+
+def _passes_monitor_filters(
+    view: MonitorItemView,
+    query: MonitorQuery,
+    *,
+    vendor_keys: frozenset[str],
+    source_keys: frozenset[str],
+) -> bool:
     if query.on_sale_only and not view.is_on_sale:
         return False
-    # A blank vendor is "no filter", not "match the empty vendor" -- mirrors how the archive
-    # route normalizes an empty form field so a route can forward its raw value here safely.
-    wanted_vendor = (query.vendor or "").strip()
-    if wanted_vendor and (view.vendor or "").casefold() != wanted_vendor.casefold():
+    if vendor_keys and (view.vendor or "").casefold() not in vendor_keys:
         return False
-    wanted_source = (query.source or "").strip()
-    if wanted_source and view.source_label.casefold() != wanted_source.casefold():
+    if source_keys and view.source_label.casefold() not in source_keys:
         return False
     return _matches_search(
         query.search,
@@ -741,14 +760,49 @@ def _build_monitor_page(
         else:
             history_views.append(view)
 
+    option_views = (*active_views, *history_views)
+    vendor_options = tuple(
+        sorted({view.vendor for view in option_views if view.vendor}, key=str.casefold)
+    )
+    source_options = tuple(
+        sorted(
+            {view.source_label for view in option_views if view.source_label},
+            key=str.casefold,
+        )
+    )
+    selected_vendors = _canonical_filter_values(query.vendors, vendor_options)
+    selected_sources = _canonical_filter_values(query.sources, source_options)
+    vendor_keys = frozenset(value.casefold() for value in selected_vendors)
+    source_keys = frozenset(value.casefold() for value in selected_sources)
+
     sort_key = _monitor_sort_key(query.sort)
     # Apply the same filters to active and historical listings so a search or Source/vendor choice
     # never expands into an unrelated unbounded history section.
     filtered = sorted(
-        (v for v in active_views if _passes_monitor_filters(v, query)), key=sort_key
+        (
+            view
+            for view in active_views
+            if _passes_monitor_filters(
+                view,
+                query,
+                vendor_keys=vendor_keys,
+                source_keys=source_keys,
+            )
+        ),
+        key=sort_key,
     )
     filtered_history = sorted(
-        (v for v in history_views if _passes_monitor_filters(v, query)), key=sort_key
+        (
+            view
+            for view in history_views
+            if _passes_monitor_filters(
+                view,
+                query,
+                vendor_keys=vendor_keys,
+                source_keys=source_keys,
+            )
+        ),
+        key=sort_key,
     )
     pagination = Pagination(page=query.page, per_page=query.per_page, total=len(filtered))
     history_pagination = Pagination(
@@ -773,15 +827,11 @@ def _build_monitor_page(
         history_pagination=history_pagination,
         sort=query.sort,
         on_sale_only=query.on_sale_only,
-        vendor=query.vendor,
-        source=query.source,
+        vendors=selected_vendors,
+        sources=selected_sources,
         search=query.search,
-        vendor_options=tuple(
-            sorted({view.vendor for view in active_views if view.vendor}, key=str.casefold)
-        ),
-        source_options=tuple(
-            sorted({view.source_label for view in active_views if view.source_label}, key=str.casefold)
-        ),
+        vendor_options=vendor_options,
+        source_options=source_options,
         criteria=criteria,
     )
 

@@ -177,6 +177,87 @@ def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client
     assert "deep-read" not in response.text
 
 
+def test_monitor_panel_accepts_multiple_vendor_and_source_filters(conn, client):
+    _, connection = conn
+    channel_id = create_channel(
+        connection,
+        "Multi-source deals",
+        "discounted outdoor gear",
+        kind="monitor",
+    )
+    first_source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://first.example/collections/sale"},
+    )
+    second_source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://second.example/collections/sale"},
+    )
+    third_source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://third.example/collections/sale"},
+    )
+    _add_ranked_item(
+        connection,
+        first_source_id,
+        "selected-arc",
+        "Selected Arc Jacket",
+        _monitor_metadata(price=80, vendor="Arc'teryx"),
+    )
+    _add_ranked_item(
+        connection,
+        second_source_id,
+        "selected-patagonia",
+        "Selected Patagonia Fleece",
+        _monitor_metadata(price=90, vendor="Patagonia"),
+    )
+    _add_ranked_item(
+        connection,
+        second_source_id,
+        "wrong-vendor",
+        "Unselected Teva Shoe",
+        _monitor_metadata(price=100, vendor="Teva"),
+    )
+    _add_ranked_item(
+        connection,
+        third_source_id,
+        "wrong-source",
+        "Unselected Source Arc Jacket",
+        _monitor_metadata(price=110, vendor="Arc'teryx"),
+    )
+
+    response = client.get(
+        f"/channels/{channel_id}",
+        params=[
+            ("vendor", "Arc'teryx"),
+            ("vendor", "Patagonia"),
+            ("source", "first.example/collections/sale"),
+            ("source", "second.example/collections/sale"),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert [item.title for item in response.context["page"].items] == [
+        "Selected Arc Jacket",
+        "Selected Patagonia Fleece",
+    ]
+    assert response.context["page"].vendors == ("Arc'teryx", "Patagonia")
+    assert response.context["page"].sources == (
+        "first.example/collections/sale",
+        "second.example/collections/sale",
+    )
+    assert 'type="checkbox" name="vendor"' in response.text
+    assert 'type="checkbox" name="source"' in response.text
+    assert "Unselected Teva Shoe" not in response.text
+    assert "Unselected Source Arc Jacket" not in response.text
+
+
 def test_monitor_panel_separates_out_of_stock_and_removed_history(conn, client):
     _, connection = conn
     channel_id = create_channel(connection, "Gear", "outdoor gear", kind="monitor")
