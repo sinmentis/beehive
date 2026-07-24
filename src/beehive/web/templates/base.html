@@ -6,6 +6,9 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#10110f">
 <meta name="description" content="{{ t('web.meta.description', product=t('common.product_name')) }}">
+<meta property="og:title" content="{{ self.title()|striptags }}">
+<meta property="og:description" content="{{ t('web.meta.description', product=t('common.product_name')) }}">
+<meta property="og:type" content="website">
 <link rel="icon" href="/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
 <link rel="stylesheet" href="/static/beehive.css?v={{ asset_version }}">
 <title>{% block title %}{{ t('common.product_name') }}{% endblock %}</title>
@@ -23,8 +26,14 @@
     <nav class="site-nav" aria-label="{{ t('web.nav.aria_label') }}">
       <a href="/archive"{% if request.url.path == "/archive" %} aria-current="page"{% endif %}>{{ t('web.nav.archive') }}</a>
       {% if is_owner %}<a href="/watchlist"{% if request.url.path == "/watchlist" %} aria-current="page"{% endif %}>{{ t('web.nav.watchlist') }}</a>{% endif %}
-      {% if is_owner %}<a href="/research"{% if request.url.path.startswith("/research") %} aria-current="page"{% endif %}>{{ t('web.nav.research') }}</a>{% endif %}
-      <a href="/admin/login"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>{{ t('web.nav.admin') }}</a>
+      {% if is_owner %}<a href="/research"{% if request.url.path.startswith("/research") %} aria-current="page"{% endif %}>{{ t('web.nav.research') }}{% if research_unread_count %}<span class="nav-count" aria-label="{{ t('web.research.unread_count', count=research_unread_count) }}">{{ research_unread_count }}</span>{% endif %}</a>{% endif %}
+      <a href="{{ '/admin/' if is_owner else '/admin/login' }}"{% if request.url.path.startswith("/admin") %} aria-current="page"{% endif %}>{{ t('web.nav.admin') }}</a>
+      {% if is_owner %}
+      <form class="nav-logout" method="post" action="/admin/logout">
+        <input type="hidden" name="csrf_token" value="{{ global_csrf_token }}">
+        <button type="submit">{{ t('web.nav.logout') }}</button>
+      </form>
+      {% endif %}
     </nav>
   </div>
   {% block secondary_navigation %}{% endblock %}

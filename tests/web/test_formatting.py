@@ -41,7 +41,10 @@ def test_relative_time_uses_the_selected_locale():
 
 def test_host_local_time_label_formats_in_pacific_auckland():
     # 2026-07-09T00:00:00 UTC is 2026-07-09T12:00 in Pacific/Auckland (NZST, UTC+12 in July)
-    assert host_local_time_label("2026-07-09T00:00:00+00:00") == "2026-07-09 12:00"
+    assert (
+        host_local_time_label("2026-07-09T00:00:00+00:00")
+        == "2026-07-09 12:00 NZST"
+    )
 
 
 def test_freshness_label_says_never_fetched_when_no_sources_have_fetched():

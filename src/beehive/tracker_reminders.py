@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from beehive.channels.tracker import adapter_for_source
 from beehive.db.tracker_watches import (
     claim_due_tracker_reminders,
+    claim_tracker_reminder,
     complete_tracker_reminder_claim,
     fail_tracker_reminder_claim,
 )
@@ -95,20 +96,14 @@ def _render_reminder(items: list[dict], localizer: Localizer) -> tuple[str, str,
     return subject, plain_text, html_text
 
 
-def send_due_tracker_reminders(
+def _send_claim(
     conn: sqlite3.Connection,
     notifier: Notifier,
     default_recipient: ResolvedRecipient,
     localizer: Localizer,
-    *,
-    now: datetime | None = None,
+    claim,
+    run_time: datetime,
 ) -> int:
-    if default_recipient.address is None:
-        print("[tracker-reminders] no default email recipient configured; skipping")
-        return 0
-
-    run_time = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    claim = claim_due_tracker_reminders(conn, run_time)
     if not claim.items or claim.token is None:
         return 0
 
@@ -131,3 +126,50 @@ def send_due_tracker_reminders(
             f"{len(claim.items)} reminders but finalized {completed} watch rows"
         )
     return len(claim.items)
+
+
+def send_due_tracker_reminders(
+    conn: sqlite3.Connection,
+    notifier: Notifier,
+    default_recipient: ResolvedRecipient,
+    localizer: Localizer,
+    *,
+    now: datetime | None = None,
+) -> int:
+    if default_recipient.address is None:
+        print("[tracker-reminders] no default email recipient configured; skipping")
+        return 0
+
+    run_time = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    claim = claim_due_tracker_reminders(conn, run_time)
+    return _send_claim(
+        conn,
+        notifier,
+        default_recipient,
+        localizer,
+        claim,
+        run_time,
+    )
+
+
+def send_tracker_reminder_for_item(
+    conn: sqlite3.Connection,
+    notifier: Notifier,
+    default_recipient: ResolvedRecipient,
+    localizer: Localizer,
+    item_id: int,
+    *,
+    now: datetime | None = None,
+) -> int:
+    if default_recipient.address is None:
+        return 0
+    run_time = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    claim = claim_tracker_reminder(conn, item_id, run_time)
+    return _send_claim(
+        conn,
+        notifier,
+        default_recipient,
+        localizer,
+        claim,
+        run_time,
+    )

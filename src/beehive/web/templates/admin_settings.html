@@ -195,6 +195,14 @@
           <strong>{{ group.name }}</strong>
           <p>{{ t('web.admin.settings.group_subject_label', subject=group.subject_template) }} · {{ group.frequency_label }} · {{ t('web.admin.settings.group_member_count', count=group.member_count) }}</p>
           <p class="recipient">{{ group.effective_email or t('web.admin.settings.group_recipient_default') }}</p>
+          <dl class="delivery-status-list">
+            <div><dt>{{ t('web.admin.email_group.last_checked') }}</dt><dd>{{ group.last_checked_label or t('web.admin.email_group.not_yet') }}</dd></div>
+            <div><dt>{{ t('web.admin.email_group.last_sent') }}</dt><dd>{{ group.last_sent_label or t('web.admin.email_group.not_yet') }}</dd></div>
+            <div><dt>{{ t('web.admin.email_group.next_due') }}</dt><dd>{{ group.next_due_label }}</dd></div>
+          </dl>
+          {% if group.last_error %}
+          <p class="inline-error" role="status">{{ t('web.admin.email_group.last_error', time=group.last_error_label, error=group.last_error) }}</p>
+          {% endif %}
         </span>
         <span class="channel-edit-cell" role="cell">
           <a class="channel-edit-link" href="/admin/email-groups/{{ group.id }}/edit">{{ t('web.admin.settings.edit_group') }}</a>
@@ -213,6 +221,33 @@
 
   {% else %}
   <section class="admin-tab-panel settings-list">
+    {% if action_id %}
+    <p class="flash admin-feedback" role="status">{{ t('web.admin.activity.recovery_saved') }}</p>
+    {% endif %}
+    {% if undone %}
+    <p class="flash admin-feedback" role="status">{{ t('web.admin.activity.undo_success') }}</p>
+    {% endif %}
+    <section class="settings-section" aria-labelledby="health-title">
+      <header class="admin-section-heading">
+        <div>
+          <h2 id="health-title">{{ t('web.admin.health.heading') }}</h2>
+          <p>{{ t('web.admin.health.lede') }}</p>
+        </div>
+      </header>
+      <div class="health-grid">
+        {% for health in system_health %}
+        <article class="health-card health-card--{{ health.status }}">
+          <header>
+            <h3>{{ health.heading }}</h3>
+            <span>{{ health.status_label }}</span>
+          </header>
+          <p>{{ health.summary }}</p>
+          <strong>{{ health.detail }}</strong>
+          <a href="{{ health.href }}">{{ health.action_label }}</a>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
     <section class="settings-section" aria-labelledby="system-title">
       <h2 id="system-title">{{ t('web.admin.settings.system_heading') }}</h2>
       <form class="setting-row" method="post" action="/admin/featured-window">
@@ -230,6 +265,38 @@
           <button class="btn primary small" type="submit">{{ t('web.admin.featured.save') }}</button>
         </div>
       </form>
+    </section>
+    <section class="settings-section" aria-labelledby="activity-title">
+      <header class="admin-section-heading">
+        <div>
+          <h2 id="activity-title">{{ t('web.admin.activity.heading') }}</h2>
+          <p>{{ t('web.admin.activity.lede') }}</p>
+        </div>
+      </header>
+      {% if recent_actions %}
+      <div class="admin-activity-list">
+        {% for action in recent_actions %}
+        <article class="admin-activity-row{{ ' highlighted' if action.id == action_id else '' }}">
+          <div>
+            <strong>{{ action.action_label }}</strong>
+            <p>{{ action.impact_label }}</p>
+            <time datetime="{{ action.created_at }}">{{ action.created_label }}</time>
+          </div>
+          {% if action.can_undo %}
+          <form method="post" action="/admin/actions/{{ action.id }}/undo">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="return_url" value="/admin/?tab=system">
+            <button class="btn ghost small" type="submit">{{ t('web.admin.activity.undo') }}</button>
+          </form>
+          {% elif action.undone_at %}
+          <span class="activity-state">{{ t('web.admin.activity.undone') }}</span>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="hint">{{ t('web.admin.activity.empty') }}</p>
+      {% endif %}
     </section>
   </section>
   {% endif %}

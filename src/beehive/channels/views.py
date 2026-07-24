@@ -111,6 +111,11 @@ def _opt_score(row: Row, key: str) -> int | None:
     return int(round(raw)) if raw is not None else None
 
 
+def _feedback_value(row: Row) -> int | None:
+    value = row.get("vote_value")
+    return int(value) if value in (-1, 1) else None
+
+
 def _metadata(item: Row) -> Mapping[str, object]:
     value = item["raw_metadata"]
     if not isinstance(value, dict):
@@ -193,7 +198,7 @@ def _host_local_label(iso_str: str) -> str:
     dt = datetime.fromisoformat(iso_str)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(HOST_TZ).strftime("%Y-%m-%d %H:%M")
+    return dt.astimezone(HOST_TZ).strftime("%Y-%m-%d %H:%M %Z")
 
 
 def _collection_host_label(config: Mapping[str, object]) -> str:
@@ -297,6 +302,23 @@ class Pagination:
         return (self.page - 1) * self.per_page
 
 
+def _matches_search(query: str | None, *fields: str | None) -> bool:
+    wanted = (query or "").strip().casefold()
+    if not wanted:
+        return True
+    return wanted in " ".join(field for field in fields if field).casefold()
+
+
+@dataclass(frozen=True, slots=True)
+class ChannelCriteriaView:
+    minimum_score: int
+    total_count: int
+    matched_count: int
+    hidden_count: int
+    unranked_count: int
+    showing_below_threshold: bool
+
+
 # --------------------------------------------------------------------------------------------
 # Deep read (Editorial only)
 # --------------------------------------------------------------------------------------------
@@ -368,6 +390,13 @@ class EditorialItemView:
 
 
 @dataclass(frozen=True, slots=True)
+class EditorialQuery:
+    page: int = 1
+    per_page: int = DEFAULT_PER_PAGE
+    search: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class EditorialPage:
     template_name: str
     channel_id: int
@@ -377,6 +406,9 @@ class EditorialPage:
     unread_count: int
     read_count: int
     show_read: bool
+    search: str | None
+    folded_pagination: Pagination
+    criteria: ChannelCriteriaView
 
 
 def _editorial_item(
@@ -436,10 +468,41 @@ def _build_editorial_page(
     is_owner: bool,
     csrf_token: str | None,
     show_read: bool,
+    query: EditorialQuery,
+    criteria: ChannelCriteriaView,
 ) -> EditorialPage:
-    deep_reads = get_deep_reads_for_items(conn, [_req_int(item, "id") for item in items])
-    views = [
-        _editorial_item(
+    unread_count = sum(1 for item in items if not bool(_req_int(item, "is_read")))
+    read_count = len(items) - unread_count
+    visible_rows = items if show_read else [
+        item for item in items if not bool(_req_int(item, "is_read"))
+    ]
+    filtered_rows = [
+        item
+        for item in visible_rows
+        if _matches_search(
+            query.search,
+            _req_str(item, "title"),
+            _opt_str(item, "ai_summary"),
+            _opt_str(item, "ai_rationale"),
+            _source_label(item, t),
+        )
+    ]
+    highlighted_rows = filtered_rows[:highlight_count] if query.page == 1 else []
+    folded_rows = filtered_rows[highlight_count:]
+    folded_pagination = Pagination(
+        page=query.page,
+        per_page=query.per_page,
+        total=len(folded_rows),
+    )
+    folded_window = folded_rows[
+        folded_pagination.offset : folded_pagination.offset + folded_pagination.per_page
+    ]
+    page_rows = [*highlighted_rows, *folded_window]
+    deep_reads = get_deep_reads_for_items(
+        conn, [_req_int(item, "id") for item in page_rows]
+    )
+    views = {
+        _req_int(item, "id"): _editorial_item(
             item,
             t,
             now,
@@ -448,20 +511,22 @@ def _build_editorial_page(
             deep_read=deep_reads.get(_req_int(item, "id")),
             csrf_token=csrf_token,
         )
-        for item in items
-    ]
-    unread_count = sum(1 for v in views if not v.is_read)
-    read_count = sum(1 for v in views if v.is_read)
-    visible = views if show_read else [v for v in views if not v.is_read]
+        for item in page_rows
+    }
+    highlighted = tuple(views[_req_int(item, "id")] for item in highlighted_rows)
+    folded = tuple(views[_req_int(item, "id")] for item in folded_window)
     return EditorialPage(
         template_name=definition.panel_template,
         channel_id=channel_id,
         channel_name=channel_name,
-        highlighted=tuple(visible[:highlight_count]),
-        folded=tuple(visible[highlight_count:]),
+        highlighted=highlighted,
+        folded=folded,
         unread_count=unread_count,
         read_count=read_count,
         show_read=show_read,
+        search=query.search,
+        folded_pagination=folded_pagination,
+        criteria=criteria,
     )
 
 
@@ -484,6 +549,7 @@ class MonitorQuery:
     listing lands in (see _build_monitor_page)."""
 
     page: int = 1
+    history_page: int = 1
     per_page: int = DEFAULT_PER_PAGE
     sort: MonitorSort = MonitorSort.SCORE
     on_sale_only: bool = False
@@ -532,6 +598,7 @@ class MonitorItemView:
     vendor: str | None
     product_type: str | None
     change: MonitorChangeMarker | None
+    feedback_value: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -542,6 +609,7 @@ class MonitorPage:
     items: tuple[MonitorItemView, ...]
     history: tuple[MonitorItemView, ...]
     pagination: Pagination
+    history_pagination: Pagination
     sort: MonitorSort
     on_sale_only: bool
     vendor: str | None
@@ -549,6 +617,7 @@ class MonitorPage:
     search: str | None
     vendor_options: tuple[str, ...]
     source_options: tuple[str, ...]
+    criteria: ChannelCriteriaView
 
 
 _MONITOR_EVENT_TYPES = frozenset({"discovered", "price_drop", "back_in_stock"})
@@ -604,6 +673,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
         vendor=_clean_text(metadata.get("vendor")),
         product_type=_clean_text(metadata.get("product_type")),
         change=_monitor_change_marker(event),
+        feedback_value=_feedback_value(item),
     )
 
 
@@ -634,23 +704,15 @@ def _passes_monitor_filters(view: MonitorItemView, query: MonitorQuery) -> bool:
     wanted_source = (query.source or "").strip()
     if wanted_source and view.source_label.casefold() != wanted_source.casefold():
         return False
-    wanted_search = (query.search or "").strip().casefold()
-    if wanted_search:
-        haystack = " ".join(
-            text
-            for text in (
-                view.title,
-                view.ai_summary,
-                view.ai_rationale,
-                view.vendor,
-                view.product_type,
-                view.source_label,
-            )
-            if text
-        ).casefold()
-        if wanted_search not in haystack:
-            return False
-    return True
+    return _matches_search(
+        query.search,
+        view.title,
+        view.ai_summary,
+        view.ai_rationale,
+        view.vendor,
+        view.product_type,
+        view.source_label,
+    )
 
 
 def _build_monitor_page(
@@ -661,6 +723,7 @@ def _build_monitor_page(
     channel_name: str,
     t: Localizer,
     query: MonitorQuery,
+    criteria: ChannelCriteriaView,
 ) -> MonitorPage:
     latest_events = latest_actionable_events_for_items(
         conn, [_req_int(item, "id") for item in items]
@@ -679,15 +742,27 @@ def _build_monitor_page(
             history_views.append(view)
 
     sort_key = _monitor_sort_key(query.sort)
-    # Sort + filter + paginate the Active catalogue (the primary view). The Unavailable history is
-    # only sorted, never filtered (an on-sale/vendor filter is a catalogue concern) and not
-    # paginated in this first pass.
+    # Apply the same filters to active and historical listings so a search or Source/vendor choice
+    # never expands into an unrelated unbounded history section.
     filtered = sorted(
         (v for v in active_views if _passes_monitor_filters(v, query)), key=sort_key
     )
+    filtered_history = sorted(
+        (v for v in history_views if _passes_monitor_filters(v, query)), key=sort_key
+    )
     pagination = Pagination(page=query.page, per_page=query.per_page, total=len(filtered))
+    history_pagination = Pagination(
+        page=query.history_page,
+        per_page=query.per_page,
+        total=len(filtered_history),
+    )
     window = filtered[pagination.offset : pagination.offset + pagination.per_page]
-    history = tuple(sorted(history_views, key=sort_key))
+    history = tuple(
+        filtered_history[
+            history_pagination.offset : history_pagination.offset
+            + history_pagination.per_page
+        ]
+    )
     return MonitorPage(
         template_name=definition.panel_template,
         channel_id=channel_id,
@@ -695,6 +770,7 @@ def _build_monitor_page(
         items=tuple(window),
         history=history,
         pagination=pagination,
+        history_pagination=history_pagination,
         sort=query.sort,
         on_sale_only=query.on_sale_only,
         vendor=query.vendor,
@@ -706,6 +782,7 @@ def _build_monitor_page(
         source_options=tuple(
             sorted({view.source_label for view in active_views if view.source_label}, key=str.casefold)
         ),
+        criteria=criteria,
     )
 
 
@@ -719,9 +796,12 @@ class TrackerItemView:
     open_url: str
     safe_url: str
     image_url: str | None
+    source_label: str
     context: str
     ai_score: int | None
     ai_summary: str | None
+    ai_rationale: str | None
+    price: float | None
     status: str | None
     pricing_facts: tuple[str, ...]
     deadline: str | None
@@ -731,6 +811,23 @@ class TrackerItemView:
     is_active: bool
     is_watched: bool
     is_watchable: bool
+    feedback_value: int | None
+
+
+class TrackerStatus(str, Enum):
+    ALL = "all"
+    WATCHED = "watched"
+    ACTIVE = "active"
+    ENDING = "ending"
+    UPCOMING = "upcoming"
+    HISTORY = "history"
+
+
+class TrackerDeadline(str, Enum):
+    ALL = "all"
+    DAY = "day"
+    WEEK = "week"
+    NONE = "none"
 
 
 @dataclass(frozen=True, slots=True)
@@ -739,6 +836,13 @@ class TrackerQuery:
     upcoming_page: int = 1
     history_page: int = 1
     per_page: int = DEFAULT_PER_PAGE
+    search: str | None = None
+    source: str | None = None
+    category: str | None = None
+    status: TrackerStatus = TrackerStatus.ALL
+    deadline: TrackerDeadline = TrackerDeadline.ALL
+    minimum_score: int | None = None
+    maximum_price: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -753,6 +857,16 @@ class TrackerPage:
     ending_pagination: Pagination
     upcoming_pagination: Pagination
     history_pagination: Pagination
+    search: str | None
+    source: str | None
+    category: str | None
+    status: TrackerStatus
+    deadline: TrackerDeadline
+    minimum_score: int | None
+    maximum_price: float | None
+    source_options: tuple[str, ...]
+    category_options: tuple[str, ...]
+    criteria: ChannelCriteriaView
 
 
 def _deadline_relative_label(
@@ -774,6 +888,15 @@ def _deadline_relative_label(
     if hours < 24:
         return t.text("web.tracker.ends_in_hours", count=hours)
     return t.text("web.tracker.ends_in_days", count=math.ceil(seconds / 86400))
+
+
+def _tracker_price(metadata: Mapping[str, object]) -> float | None:
+    for key in ("estimated_cost", "current_bid", "price", "sold_price"):
+        value = metadata.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        return float(value)
+    return None
 
 
 def _tracker_item(
@@ -811,9 +934,12 @@ def _tracker_item(
         open_url=_open_url(item_id, url),
         safe_url=_safe_external_href(url),
         image_url=_safe_image_url(metadata.get("image_url")),
+        source_label=_source_label(item, t),
         context=_plain_display_text(display.context),
         ai_score=_opt_score(item, "ai_score"),
         ai_summary=_clean_text(item.get("ai_summary")),
+        ai_rationale=_clean_text(item.get("ai_rationale")),
+        price=_tracker_price(metadata),
         status=_clean_text(metadata.get("status")),
         pricing_facts=tuple(display.details),
         deadline=deadline.isoformat() if deadline is not None else None,
@@ -832,7 +958,69 @@ def _tracker_item(
         is_active=is_active,
         is_watched=is_watched,
         is_watchable=watchable,
+        feedback_value=_feedback_value(item),
     )
+
+
+def _passes_tracker_filters(
+    view: TrackerItemView,
+    query: TrackerQuery,
+    now: datetime,
+) -> bool:
+    if not _matches_search(
+        query.search,
+        view.title,
+        view.ai_summary,
+        view.ai_rationale,
+        view.context,
+        view.status,
+        view.source_label,
+        *view.pricing_facts,
+    ):
+        return False
+    if query.source and view.source_label.casefold() != query.source.strip().casefold():
+        return False
+    if query.category and view.context.casefold() != query.category.strip().casefold():
+        return False
+    if query.minimum_score is not None and (
+        view.ai_score is None or view.ai_score < query.minimum_score
+    ):
+        return False
+    if query.maximum_price is not None and (
+        view.price is None or view.price > query.maximum_price
+    ):
+        return False
+
+    deadline = datetime.fromisoformat(view.deadline) if view.deadline is not None else None
+    if query.deadline is TrackerDeadline.DAY and (
+        deadline is None or deadline > now + timedelta(days=1)
+    ):
+        return False
+    if query.deadline is TrackerDeadline.WEEK and (
+        deadline is None or deadline > now + timedelta(days=7)
+    ):
+        return False
+    if query.deadline is TrackerDeadline.NONE and deadline is not None:
+        return False
+
+    if query.status is TrackerStatus.WATCHED:
+        return view.is_watched
+    if query.status is TrackerStatus.ACTIVE:
+        return view.is_active
+    if query.status is TrackerStatus.ENDING:
+        return bool(
+            view.is_active
+            and deadline is not None
+            and deadline <= now + ENDING_SOON_WINDOW
+        )
+    if query.status is TrackerStatus.UPCOMING:
+        return bool(
+            view.is_active
+            and (deadline is None or deadline > now + ENDING_SOON_WINDOW)
+        )
+    if query.status is TrackerStatus.HISTORY:
+        return not view.is_active
+    return True
 
 
 def _build_tracker_page(
@@ -846,6 +1034,7 @@ def _build_tracker_page(
     query: TrackerQuery,
     *,
     is_owner: bool,
+    criteria: ChannelCriteriaView,
 ) -> TrackerPage:
     watched_ids = (
         get_watched_item_ids(conn, [_req_int(item, "id") for item in items])
@@ -868,7 +1057,9 @@ def _build_tracker_page(
     ending_soon: list[TrackerItemView] = []
     upcoming: list[TrackerItemView] = []
     history: list[TrackerItemView] = []
-    for view in views:
+    for view in (
+        candidate for candidate in views if _passes_tracker_filters(candidate, query, now)
+    ):
         if not view.is_active:
             history.append(view)
         elif view.is_watched:
@@ -922,6 +1113,20 @@ def _build_tracker_page(
         ending_pagination=ending_pagination,
         upcoming_pagination=upcoming_pagination,
         history_pagination=history_pagination,
+        search=query.search,
+        source=query.source,
+        category=query.category,
+        status=query.status,
+        deadline=query.deadline,
+        minimum_score=query.minimum_score,
+        maximum_price=query.maximum_price,
+        source_options=tuple(
+            sorted({view.source_label for view in views}, key=str.casefold)
+        ),
+        category_options=tuple(
+            sorted({view.context for view in views if view.context}, key=str.casefold)
+        ),
+        criteria=criteria,
     )
 
 
@@ -973,6 +1178,11 @@ class WatchlistItemView:
     deadline: str | None
     deadline_label: str | None
     deadline_relative_label: str | None
+    watched_at_label: str
+    reminder_due_label: str | None
+    reminder_sent_label: str | None
+    reminder_status: str
+    reminder_error: str | None
     is_active: bool
     is_closed: bool
     is_watched: bool
@@ -982,6 +1192,34 @@ class WatchlistItemView:
 @dataclass(frozen=True, slots=True)
 class WatchlistPage:
     items: tuple[WatchlistItemView, ...]
+    query: "WatchlistQuery"
+    pagination: Pagination
+    active_count: int
+    closed_count: int
+    total_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class WatchlistQuery:
+    search: str = ""
+    status: str = "active"
+    reminder: str = "all"
+    page: int = 1
+    per_page: int = 24
+
+    def __post_init__(self) -> None:
+        if self.status not in {"active", "closed", "all"}:
+            raise ValueError(f"unknown Watch List status: {self.status}")
+        if self.reminder not in {
+            "all",
+            "scheduled",
+            "due",
+            "sent",
+            "error",
+            "inactive",
+        }:
+            raise ValueError(f"unknown Watch List reminder state: {self.reminder}")
+        Pagination(page=self.page, per_page=self.per_page, total=0)
 
 
 def _watchlist_item(row: Row, t: Localizer, now: datetime) -> WatchlistItemView:
@@ -992,6 +1230,23 @@ def _watchlist_item(row: Row, t: Localizer, now: datetime) -> WatchlistItemView:
     deadline = _opt_str(row, "deadline")
     deadline_dt = datetime.fromisoformat(deadline) if deadline is not None else None
     is_active = _req_bool(row, "is_active")
+    reminder_due_at = _opt_str(row, "reminder_due_at")
+    reminder_sent_at = _opt_str(row, "reminder_sent_at")
+    reminder_key = _opt_str(row, "reminder_key")
+    sent_for_key = _opt_str(row, "reminder_sent_for_closing_at")
+    reminder_error = _clean_text(row.get("last_error"))
+    if reminder_error:
+        reminder_status = "error"
+    elif reminder_key is not None and sent_for_key == reminder_key and reminder_sent_at:
+        reminder_status = "sent"
+    elif is_active and reminder_due_at:
+        reminder_status = (
+            "due"
+            if datetime.fromisoformat(reminder_due_at) <= now
+            else "scheduled"
+        )
+    else:
+        reminder_status = "inactive"
     return WatchlistItemView(
         id=item_id,
         title=_req_str(row, "title"),
@@ -1008,6 +1263,15 @@ def _watchlist_item(row: Row, t: Localizer, now: datetime) -> WatchlistItemView:
             now=now,
             t=t,
         ),
+        watched_at_label=_host_local_label(_req_str(row, "watched_at")),
+        reminder_due_label=(
+            _host_local_label(reminder_due_at) if reminder_due_at else None
+        ),
+        reminder_sent_label=(
+            _host_local_label(reminder_sent_at) if reminder_sent_at else None
+        ),
+        reminder_status=reminder_status,
+        reminder_error=reminder_error,
         is_active=is_active,
         is_closed=_req_bool(row, "is_closed"),
         # Every row is an existing watch on an owner-only page, so removal is always offered even
@@ -1018,14 +1282,59 @@ def _watchlist_item(row: Row, t: Localizer, now: datetime) -> WatchlistItemView:
 
 
 def build_watchlist_page(
-    conn: sqlite3.Connection, *, t: Localizer, now: datetime
+    conn: sqlite3.Connection,
+    *,
+    t: Localizer,
+    now: datetime,
+    query: WatchlistQuery | None = None,
 ) -> WatchlistPage:
     """Typed model for the owner-only Watch List, in list_tracker_watches' order (active first,
     then by deadline). `now` must be timezone-aware."""
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
+    selected_query = query or WatchlistQuery()
+    all_items = [_watchlist_item(row, t, now) for row in list_tracker_watches(conn, now)]
+    active_count = sum(item.is_active and not item.is_closed for item in all_items)
+    closed_count = len(all_items) - active_count
+    search = selected_query.search.strip().casefold()
+    filtered = [
+        item
+        for item in all_items
+        if (
+            selected_query.status == "all"
+            or (
+                selected_query.status == "active"
+                and item.is_active
+                and not item.is_closed
+            )
+            or (
+                selected_query.status == "closed"
+                and (not item.is_active or item.is_closed)
+            )
+        )
+        and (
+            selected_query.reminder == "all"
+            or item.reminder_status == selected_query.reminder
+        )
+        and (
+            not search
+            or search in item.title.casefold()
+            or search in item.context.casefold()
+        )
+    ]
+    pagination = Pagination(
+        page=selected_query.page,
+        per_page=selected_query.per_page,
+        total=len(filtered),
+    )
+    start = pagination.offset
     return WatchlistPage(
-        items=tuple(_watchlist_item(row, t, now) for row in list_tracker_watches(conn, now))
+        items=tuple(filtered[start : start + pagination.per_page]),
+        query=selected_query,
+        pagination=pagination,
+        active_count=active_count,
+        closed_count=closed_count,
+        total_count=len(all_items),
     )
 
 
@@ -1044,6 +1353,8 @@ def build_channel_page(
     is_owner: bool = False,
     csrf_token: str | None = None,
     show_read: bool = False,
+    show_below_score: bool = False,
+    editorial_query: EditorialQuery | None = None,
     monitor_query: MonitorQuery | None = None,
     tracker_query: TrackerQuery | None = None,
 ) -> ChannelPage:
@@ -1062,13 +1373,23 @@ def build_channel_page(
     channel_name = _req_str(channel, "name")
     minimum_score = _req_int(channel, "minimum_score")
 
-    # Items below the Channel's configured minimum score are hidden on every kind's page, exactly
-    # as the current drill-down route filters them; an unranked item (score None) is always kept.
-    items: list[Row] = [
+    all_items: list[Row] = list_by_channel(conn, channel_id)
+    matched_items: list[Row] = [
         item
-        for item in list_by_channel(conn, channel_id)
+        for item in all_items
         if (score := _raw_number(item, "ai_score")) is None or score >= minimum_score
     ]
+    criteria = ChannelCriteriaView(
+        minimum_score=minimum_score,
+        total_count=len(all_items),
+        matched_count=len(matched_items),
+        hidden_count=len(all_items) - len(matched_items),
+        unranked_count=sum(
+            1 for item in all_items if _raw_number(item, "ai_score") is None
+        ),
+        showing_below_threshold=show_below_score,
+    )
+    items = all_items if show_below_score else matched_items
 
     if definition.kind is ChannelKind.EDITORIAL:
         return _build_editorial_page(
@@ -1083,6 +1404,8 @@ def build_channel_page(
             is_owner=is_owner,
             csrf_token=csrf_token,
             show_read=show_read,
+            query=editorial_query if editorial_query is not None else EditorialQuery(),
+            criteria=criteria,
         )
     if definition.kind is ChannelKind.MONITOR:
         return _build_monitor_page(
@@ -1093,6 +1416,7 @@ def build_channel_page(
             channel_name,
             t,
             monitor_query if monitor_query is not None else MonitorQuery(),
+            criteria,
         )
     if definition.kind is ChannelKind.TRACKER:
         return _build_tracker_page(
@@ -1105,5 +1429,6 @@ def build_channel_page(
             now,
             tracker_query if tracker_query is not None else TrackerQuery(),
             is_owner=is_owner,
+            criteria=criteria,
         )
     raise ValueError(f"unsupported Channel kind: {definition.kind!r}")

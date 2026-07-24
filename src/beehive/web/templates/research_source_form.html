@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.research.source_form.title', product=t('common.product_name')) }}{% endblock %}
+{% block body_class %}page-research{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.research') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell admin-narrow">
+  <p class="crumb"><a href="/research/{{ session_id }}?tab=plan">← {{ t('web.research.source_form.back') }}</a></p>
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow">{{ t('web.research.sources.heading') }}</p>
+      <h1>{{ t('web.research.source_form.edit_heading') if source else t('web.research.source_form.new_heading') }}</h1>
+      <p>{{ t('web.research.source_form.body') }}</p>
+    </div>
+  </header>
+  {% if error %}<p class="page-banner" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" class="admin-form" action="{{ '/research/' ~ session_id ~ '/sources/' ~ source.id ~ '/edit' if source else '/research/' ~ session_id ~ '/sources/new' }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if source %}
+    <div class="form-field">
+      <span class="form-label">{{ t('web.research.source_form.type') }}</span>
+      {% for name, label in connector_options %}
+      {% if name == connector_type %}<strong>{{ label }}</strong>{% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <label class="form-field">
+      <span class="form-label">{{ t('web.research.source_form.type') }}</span>
+      <select name="connector_type" required>
+        {% for name, label in connector_options %}
+        <option value="{{ name }}"{% if name == connector_type %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="form-field">
+      <span class="form-label">{{ t('web.research.source_form.value') }}</span>
+      <input type="text" name="value" value="{{ value }}" maxlength="200">
+      <span class="hint">{{ t('web.research.source_form.value_hint') }}</span>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn">{{ t('common.save') }}</button>
+      <a class="btn ghost" href="/research/{{ session_id }}?tab=plan">{{ t('common.cancel') }}</a>
+    </div>
+  </form>
+</main>
+{% endblock %}

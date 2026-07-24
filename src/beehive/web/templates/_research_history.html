@@ -1,0 +1,63 @@
+<section class="research-tab-panel research-history" aria-labelledby="research-history-title">
+  <h2 id="research-history-title">{{ t('web.research.history.heading') }}</h2>
+  <p class="hint">{{ t('web.research.history.body') }}</p>
+
+  <h3>{{ t('web.research.history.runs_heading') }}</h3>
+  {% if history.runs %}
+  <div class="table-scroll" role="region" aria-labelledby="research-history-title" tabindex="0">
+    <table class="admin-table research-history-table">
+      <thead>
+        <tr>
+          <th>{{ t('web.research.history.run') }}</th>
+          <th>{{ t('web.research.history.kind') }}</th>
+          <th>{{ t('web.research.history.status') }}</th>
+          <th>{{ t('web.research.history.requested') }}</th>
+          <th>{{ t('web.research.history.duration_heading') }}</th>
+          <th>{{ t('web.research.history.work') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in history.runs %}
+        <tr>
+          <td>#{{ run.id }}</td>
+          <td>{{ run.kind_label }}</td>
+          <td>{{ run.status_label }}</td>
+          <td>{{ run.requested_label }}</td>
+          <td>{{ run.duration_label }}</td>
+          <td>{{ t('web.research.history.work_detail', attempts=run.attempt_count, deep=run.deep_fetch_count, plans=run.plan_count) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="research-history-grid">
+    <section>
+      <h3>{{ t('web.research.history.snapshots_heading') }}</h3>
+      <ul class="source-list">
+        {% for snapshot in history.snapshots %}
+        <li class="source-row">
+          <span>{{ t('web.research.history.snapshot_detail', sequence=snapshot.sequence, run=snapshot.run_id, count=snapshot.item_count) }}</span>
+          <span class="hint">{{ snapshot.status_label }} · {{ snapshot.created_label }}</span>
+        </li>
+        {% else %}
+        <li class="hint">{{ t('web.research.history.none') }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    <section>
+      <h3>{{ t('web.research.history.syntheses_heading') }}</h3>
+      <ul class="source-list">
+        {% for synthesis_row in history.syntheses %}
+        <li class="source-row">
+          <span>{{ t('web.research.history.synthesis_detail', version=synthesis_row.version, run=synthesis_row.run_id) }}</span>
+          <span class="hint">{{ synthesis_row.sufficiency_label }} · {{ synthesis_row.model }} · {{ synthesis_row.created_label }}</span>
+        </li>
+        {% else %}
+        <li class="hint">{{ t('web.research.history.none') }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</section>

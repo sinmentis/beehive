@@ -6,9 +6,10 @@ from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import insert_new
-from beehive.db.sources import (create_source, delete_source, get_source, list_by_channel,
-                                    record_fetch_error, record_fetch_success,
-                                    reset_fetch_state_by_channel)
+from beehive.db.sources import (create_source, delete_source, find_duplicate_source, get_source,
+                                    list_by_channel, record_fetch_error, record_fetch_success,
+                                    reset_fetch_state_by_channel, set_source_paused,
+                                    update_source)
 
 
 @pytest.fixture
@@ -143,3 +144,137 @@ def test_reset_fetch_state_by_channel_does_not_affect_other_channels(conn, chann
     other_row = list_by_channel(conn, other_channel_id)[0]
     assert other_row["last_fetch_at"] == "2026-07-09T03:00:00"
     assert other_row["last_fetch_raw_count"] == 5
+
+
+def test_create_source_persists_optional_display_name(conn, channel_id):
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "x"}, name="Personal Finance")
+    assert get_source(conn, source_id)["name"] == "Personal Finance"
+
+
+def test_create_source_blank_name_is_stored_as_null(conn, channel_id):
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "x"}, name="   ")
+    assert get_source(conn, source_id)["name"] is None
+
+
+def test_update_source_replaces_type_config_and_name(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "old"})
+    update_source(
+        conn, source_id, "google_news_query", {"query": "kiwis"}, name="Kiwi news")
+    row = get_source(conn, source_id)
+    assert row["type"] == "google_news_query"
+    assert json.loads(row["config"])["query"] == "kiwis"
+    assert row["name"] == "Kiwi news"
+
+
+def test_update_source_leaves_fetch_bookkeeping_untouched(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "old"})
+    record_fetch_success(conn, source_id, "2026-07-09T03:00:00", raw_count=9, new_count=2)
+    update_source(conn, source_id, "reddit_subreddit", {"subreddit": "new"})
+    row = get_source(conn, source_id)
+    assert row["last_fetch_at"] == "2026-07-09T03:00:00"
+    assert row["last_fetch_raw_count"] == 9
+
+
+def test_update_source_rejects_type_incompatible_with_channel_kind(conn):
+    monitor_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    source_id = create_source(
+        conn, monitor_id, "shopify_collection", {"collection_url": "https://a/collections/x"})
+    with pytest.raises(ValueError, match="not compatible with a 'monitor' Channel"):
+        update_source(conn, source_id, "reddit_subreddit", {"subreddit": "x"})
+    # The original type is preserved when the update is refused.
+    assert get_source(conn, source_id)["type"] == "shopify_collection"
+
+
+def test_update_source_raises_for_missing_source(conn):
+    with pytest.raises(ValueError, match="Source 999 does not exist"):
+        update_source(conn, 999, "reddit_subreddit", {"subreddit": "x"})
+
+
+def test_find_duplicate_source_matches_same_type_and_config(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    assert find_duplicate_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "x"}) == source_id
+
+
+def test_find_duplicate_source_is_key_order_independent(conn):
+    monitor_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    source_id = create_source(
+        conn, monitor_id, "shopify_collection",
+        {"collection_url": "https://s/collections/x", "vendors": ["A", "B"]})
+    # Same keys, different insertion order -- still the same Source.
+    assert find_duplicate_source(
+        conn, monitor_id, "shopify_collection",
+        {"vendors": ["A", "B"], "collection_url": "https://s/collections/x"}) == source_id
+
+
+def test_find_duplicate_source_returns_none_for_different_config(conn, channel_id):
+    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    assert find_duplicate_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "y"}) is None
+
+
+def test_find_duplicate_source_excludes_the_edited_row(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    # Re-saving the same Source unchanged is not a duplicate of itself.
+    assert find_duplicate_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "x"},
+        exclude_source_id=source_id) is None
+
+
+def test_find_duplicate_source_is_scoped_to_one_channel(conn, channel_id):
+    other_channel_id = create_channel(conn, "Other", "profile")
+    create_source(conn, other_channel_id, "reddit_subreddit", {"subreddit": "x"})
+    assert find_duplicate_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "x"}) is None
+
+
+def test_set_source_paused_records_and_clears_the_timestamp(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    set_source_paused(conn, source_id, True, now_iso="2026-07-09T03:00:00")
+    assert get_source(conn, source_id)["paused_at"] == "2026-07-09T03:00:00"
+    set_source_paused(conn, source_id, False)
+    assert get_source(conn, source_id)["paused_at"] is None
+
+
+def test_set_source_paused_requires_a_timestamp_to_pause(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    with pytest.raises(ValueError, match="needs a timestamp"):
+        set_source_paused(conn, source_id, True)
+
+
+def test_record_fetch_success_stamps_attempt_and_ok_status(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_success(conn, source_id, "2026-07-09T03:00:00")
+    row = get_source(conn, source_id)
+    assert row["last_attempt_at"] == "2026-07-09T03:00:00"
+    assert row["last_fetch_status"] == "ok"
+
+
+def test_record_fetch_error_stamps_attempt_and_error_status_without_last_fetch_at(
+    conn, channel_id
+):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_success(conn, source_id, "2026-07-09T00:00:00")
+    record_fetch_error(conn, source_id, "timeout", "2026-07-09T03:00:00")
+    row = get_source(conn, source_id)
+    assert row["last_attempt_at"] == "2026-07-09T03:00:00"  # attempt advances
+    assert row["last_fetch_status"] == "error"
+    assert row["last_fetch_at"] == "2026-07-09T00:00:00"  # last SUCCESS unchanged
+
+
+def test_reset_fetch_state_clears_attempt_and_status_but_not_pause_or_name(conn, channel_id):
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "x"}, name="Keep me")
+    record_fetch_error(conn, source_id, "boom", "2026-07-09T06:00:00")
+    set_source_paused(conn, source_id, True, now_iso="2026-07-09T06:00:00")
+
+    reset_fetch_state_by_channel(conn, channel_id)
+
+    row = get_source(conn, source_id)
+    assert row["last_attempt_at"] is None
+    assert row["last_fetch_status"] is None
+    # Clearing fetched data must not resume a paused Source or forget its display name.
+    assert row["paused_at"] == "2026-07-09T06:00:00"
+    assert row["name"] == "Keep me"

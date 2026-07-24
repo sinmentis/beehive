@@ -189,3 +189,32 @@ def test_deep_read_namespace_renders_in_every_supported_language():
             values = {name: sample_values[name] for name in placeholders}
             rendered = localizer.text(key, **values)
             assert rendered.strip(), f"{key!r} rendered blank for {language.code!r}"
+
+
+def test_admin_safety_catalog_is_localized_not_english_fallback():
+    """Guards the admin/owner-safety strings (web.py `_ADMIN_SAFETY_CATALOGS`) against
+    silently reverting to the old behavior of applying the English catalog to every locale.
+    Full key and placeholder parity is already enforced by the combined-catalog tests, so this
+    stays deliberately narrow: a handful of stable keys whose wording must differ from English
+    in every non-English locale (common actions, a weekday, a health status, admin labels). If
+    any of these equals the English source for any locale, the block has fallen back to English."""
+    english = web.CATALOGS["en"]
+    always_translated_keys = [
+        "common.save",
+        "common.cancel",
+        "web.admin.activity.undo",
+        "web.weekday.monday",
+        "web.admin.health.status_ok",
+        "web.admin.source_test.eyebrow",
+        "web.admin.email_group.schedule_heading",
+        "web.research.history.duration_pending",
+    ]
+    for key in always_translated_keys:
+        english_message = english[key]
+        for language in SUPPORTED_LANGUAGES:
+            if language.code == "en":
+                continue
+            translated = web.CATALOGS[language.code][key]
+            assert translated != english_message, (
+                f"{key!r} is still the English fallback ({english_message!r}) for "
+                f"{language.code!r}; the admin-safety catalog is not localized")

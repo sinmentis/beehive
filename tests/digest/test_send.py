@@ -18,7 +18,7 @@ from beehive.db.item_events import (
     suppress_item_events,
 )
 from beehive.db.items import insert_new, insert_new_returning_id, update_ai_ranking_by_id
-from beehive.db.sources import create_source, record_fetch_error
+from beehive.db.sources import create_source, record_fetch_error, set_source_paused
 from beehive.digest.send import send_email_group_digests
 from beehive.email_routing import ResolvedRecipient
 from beehive.localization import localizer_for
@@ -70,7 +70,8 @@ def _stage_event(conn, source_id, external_id, *, title="Item", url="https://x",
 
 def _group_row(conn, group_id):
     return conn.execute(
-        "SELECT last_sent_at, last_checked_at FROM email_groups WHERE id = ?",
+        "SELECT last_sent_at, last_checked_at, last_error, last_error_at "
+        "FROM email_groups WHERE id = ?",
         (group_id,)).fetchone()
 
 
@@ -313,6 +314,21 @@ def test_warning_is_rendered_in_the_selected_language(conn):
     assert "timeout" in plain_text  # raw provider error still untranslated
 
 
+def test_paused_source_contributes_no_digest_warning(conn):
+    # A paused Source is dormant: its lingering last_fetch_error must not surface as a digest
+    # warning, and with nothing else to send the group evaluates to an empty (no-email) cycle.
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    record_fetch_error(conn, source_id, "timeout", "2026-07-09T00:00:00")
+    set_source_paused(conn, source_id, True, now_iso="2026-07-09T00:00:00")
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_not_called()
+
+
 # --- Failure retries, marks nothing -----------------------------------------------------------
 
 def test_delivery_failure_marks_no_events_and_advances_no_checkpoints(conn):
@@ -330,6 +346,8 @@ def test_delivery_failure_marks_no_events_and_advances_no_checkpoints(conn):
     group = _group_row(conn, group_id)
     assert group["last_sent_at"] is None
     assert group["last_checked_at"] is None  # a failed send advances nothing, so it retries
+    assert group["last_error"] == "smtp down"
+    assert group["last_error_at"] == _SENT_AT
     channel = conn.execute(
         "SELECT last_digest_sent_at FROM channels WHERE id = ?", (channel_id,)).fetchone()
     assert channel["last_digest_sent_at"] is None
@@ -341,6 +359,9 @@ def test_delivery_failure_marks_no_events_and_advances_no_checkpoints(conn):
     healthy.send.assert_called_once()
     assert "news" in healthy.send.call_args.args[1]
     assert _delivered_at(conn, event_id) == (RUN_TIME + timedelta(hours=1)).isoformat()
+    recovered_group = _group_row(conn, group_id)
+    assert recovered_group["last_error"] is None
+    assert recovered_group["last_error_at"] is None
 
 
 # --- Missing recipient: empty vs content ------------------------------------------------------
@@ -378,6 +399,8 @@ def test_missing_recipient_with_content_is_raised_and_marks_nothing(conn, capsys
     group = _group_row(conn, group_id)
     assert group["last_checked_at"] is None  # nothing advances, so the event retries
     assert group["last_sent_at"] is None
+    assert group["last_error"]
+    assert group["last_error_at"] == _SENT_AT
 
 
 # --- Only ready events are eligible -----------------------------------------------------------
@@ -473,6 +496,7 @@ def test_partial_failure_advances_only_the_successful_group_and_continues(conn):
     failure_row = _group_row(conn, failure_group)
     assert failure_row["last_sent_at"] is None
     assert failure_row["last_checked_at"] is None
+    assert failure_row["last_error"] == "mailbox unavailable"
     assert notifier.send.call_count == 2
 
 

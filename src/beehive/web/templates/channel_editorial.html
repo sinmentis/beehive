@@ -13,15 +13,34 @@
     <div class="channel-heading">
       <p class="channel-workflow">{{ t('web.channel.editorial_label') }}</p>
       <h1 class="channel-title">{{ page.channel_name }}</h1>
-      <p class="channel-statline">{{ t('web.channel.unread_count', count=page.unread_count) }} · <span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
+      <p class="channel-statline">{% if is_owner %}{{ t('web.channel.unread_count', count=page.unread_count) }} · {% endif %}<span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
     </div>
     <p class="channel-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
-    {% if page.read_count and not page.show_read %}
-    <a class="channel-read-link" href="/channels/{{ page.channel_id }}?show_read=1">{{ t('web.channel.expand_read', count=page.read_count) }}</a>
+    <form class="channel-search" method="get" role="search">
+      {% if is_owner and page.show_read %}<input type="hidden" name="show_read" value="1">{% endif %}
+      {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
+      <label class="sr-only" for="channel-search">{{ t('web.dashboard.search_label') }}</label>
+      <input id="channel-search" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.dashboard.search_placeholder') }}">
+    </form>
+    {% if is_owner and ((page.read_count and not page.show_read) or page.unread_count) %}
+    <div class="channel-read-actions">
+      {% if page.read_count and not page.show_read %}
+      <a class="channel-read-link" href="{{ editorial_show_read_url }}">{{ t('web.channel.expand_read', count=page.read_count) }}</a>
+      {% endif %}
+      {% if page.unread_count %}
+      <form class="inline-form" method="post" action="/channels/{{ page.channel_id }}/mark-all-read">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next_url" value="{{ return_url }}">
+        <button type="submit" class="mark-read-button">{{ t('web.channel.mark_all_read') }}</button>
+      </form>
+      {% endif %}
+    </div>
     {% endif %}
     <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
   </header>
+  {% include "_channel_criteria.html" %}
 
+  {% if page.folded_pagination.page == 1 %}
   <section class="channel-section" aria-labelledby="priority-title">
     <header class="channel-section-heading">
       <h2 id="priority-title">{{ t('web.channel.priority_heading') }}</h2>
@@ -36,18 +55,13 @@
     </div>
     {% endfor %}
   </section>
+  {% endif %}
 
   {% if page.folded %}
   <section class="channel-section" aria-labelledby="folded-title">
     <header class="channel-section-heading">
       <h2 id="folded-title">{{ t('web.channel.folded_heading') }}</h2>
       <span class="section-count">{{ t('web.channel.folded_count', count=page.folded|length) }}</span>
-      {% if is_owner %}
-      <form class="inline-form" method="post" action="/channels/{{ page.channel_id }}/mark-all-read">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="mark-read-button">{{ t('web.channel.mark_all_read') }}</button>
-      </form>
-      {% endif %}
     </header>
     <div class="folded-list">
       {% for item in page.folded %}
@@ -55,6 +69,13 @@
       {% endfor %}
     </div>
   </section>
+  {% endif %}
+  {% if page.folded_pagination.page_count > 1 or page.folded_pagination.page > 1 %}
+  <nav class="pager" aria-label="{{ t('web.archive.pager_aria') }}">
+    {% if editorial_previous_url %}<a href="{{ editorial_previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
+    <span>{{ t('web.archive.page_label', page=page.folded_pagination.page) }}</span>
+    {% if editorial_next_url %}<a href="{{ editorial_next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
+  </nav>
   {% endif %}
 </main>
 {% endblock %}

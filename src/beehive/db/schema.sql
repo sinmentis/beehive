@@ -50,8 +50,15 @@ CREATE TABLE IF NOT EXISTS email_groups (
     subject_template TEXT NOT NULL DEFAULT '',
     recipient_email TEXT,
     send_interval_hours INTEGER NOT NULL DEFAULT 24,
+    schedule_mode TEXT NOT NULL DEFAULT 'interval'
+        CHECK (schedule_mode IN ('interval', 'calendar')),
+    schedule_timezone TEXT NOT NULL DEFAULT 'Pacific/Auckland',
+    schedule_time TEXT NOT NULL DEFAULT '09:00',
+    schedule_weekdays TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6',
     last_sent_at TEXT,
     last_checked_at TEXT,
+    last_error TEXT,
+    last_error_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
 
@@ -67,15 +74,27 @@ CREATE TABLE IF NOT EXISTS email_group_channels (
     PRIMARY KEY (email_group_id, channel_id)
 );
 
+-- name is an optional Owner-supplied display label; when blank the admin UI derives one from the
+-- config (see web/admin.py::_admin_source_label). paused_at, when set, takes the Source out of
+-- every collector cycle entirely (run_channel_cycle skips it before the due-check and before any
+-- snapshot reconciliation) and out of every operational/digest warning summary, without deleting
+-- its config or history -- clearing it resumes the Source. last_attempt_at / last_fetch_status
+-- record the outcome of the most recent fetch attempt regardless of success (status 'ok' on a
+-- successful cycle, 'error' on a failure that left last_fetch_at untouched), so the Channel editor
+-- can show "attempted Nm ago, last succeeded Nh ago" even while a Source is failing.
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
     type TEXT NOT NULL,
     config TEXT NOT NULL DEFAULT '{}',
+    name TEXT,
     last_fetch_at TEXT,
     last_fetch_error TEXT,
     last_fetch_raw_count INTEGER,
-    last_fetch_new_count INTEGER
+    last_fetch_new_count INTEGER,
+    paused_at TEXT,
+    last_attempt_at TEXT,
+    last_fetch_status TEXT
 );
 
 -- external_id is the connector's stable identity for a listing. For an editorial (APPEND) feed
@@ -214,6 +233,23 @@ CREATE TABLE IF NOT EXISTS admin_login_attempts (
     success INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS admin_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_type TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER,
+    target_label TEXT NOT NULL,
+    detail_json TEXT NOT NULL DEFAULT '{}',
+    undo_payload BLOB,
+    undo_expires_at TEXT,
+    undone_at TEXT,
+    created_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_actions_created
+    ON admin_actions(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS app_state (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -295,6 +331,7 @@ CREATE TABLE IF NOT EXISTS research_sessions (
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
     created_at TEXT NOT NULL,
     last_activity_at TEXT NOT NULL,
+    last_viewed_at TEXT,
     archived_at TEXT,
     CHECK (
         (status = 'archived' AND archived_at IS NOT NULL)
@@ -310,6 +347,7 @@ CREATE TABLE IF NOT EXISTS research_sources (
     connector_type TEXT NOT NULL,
     config TEXT NOT NULL DEFAULT '{}',
     origin TEXT NOT NULL CHECK (origin IN ('owner', 'plan')),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
     created_at TEXT NOT NULL
 );
 
@@ -343,6 +381,7 @@ CREATE INDEX IF NOT EXISTS idx_research_sources_session ON research_sources(sess
 CREATE TABLE IF NOT EXISTS research_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id INTEGER NOT NULL REFERENCES research_sessions(id) ON DELETE CASCADE,
+    run_kind TEXT NOT NULL DEFAULT 'full' CHECK (run_kind IN ('full', 'synthesis')),
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'completed', 'cancelled', 'failed')),
     phase TEXT
@@ -382,6 +421,12 @@ CREATE INDEX IF NOT EXISTS idx_research_runs_status
     ON research_runs(status, requested_at, lease_expires_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_research_runs_one_active_per_session
     ON research_runs(session_id) WHERE status IN ('pending', 'processing');
+
+CREATE TABLE IF NOT EXISTS research_completion_notifications (
+    run_id INTEGER PRIMARY KEY REFERENCES research_runs(id) ON DELETE CASCADE,
+    attempted_at TEXT,
+    sent_at TEXT
+);
 
 -- Visible, persisted Research Plan revisions for a run. Append-only: a revision is never
 -- edited or deleted once written, so the Owner can always see exactly what the AI proposed at

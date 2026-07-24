@@ -15,14 +15,18 @@ from beehive.connectors import all_about_auctions  # noqa: F401
 from beehive.channels.views import (
     DEFAULT_PER_PAGE,
     MAX_PER_PAGE,
+    EditorialQuery,
     EditorialPage,
     MonitorPage,
     MonitorQuery,
     MonitorSort,
     Pagination,
+    TrackerDeadline,
     TrackerPage,
     TrackerQuery,
+    TrackerStatus,
     WatchlistPage,
+    WatchlistQuery,
     build_channel_page,
     build_watchlist_page,
 )
@@ -316,6 +320,67 @@ def test_editorial_minimum_score_hides_low_scored_but_keeps_unranked(conn):
     assert ids["lo"] not in kept
 
 
+def test_editorial_folded_items_are_paginated_without_repeating_highlights(conn):
+    channel = _channel(conn, "News", "editorial", highlight_count=1)
+    source_id = create_source(conn, channel["id"], "reddit_subreddit", {"subreddit": "nz"})
+    for index in range(6):
+        _add_item(
+            conn,
+            source_id,
+            f"item-{index}",
+            title=f"Item {index}",
+            raw_metadata={"score": 1, "num_comments": 0},
+            score=100 - index,
+            summary=f"Summary {index}",
+        )
+
+    first = build_channel_page(
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        editorial_query=EditorialQuery(page=1, per_page=2),
+    )
+    second = build_channel_page(
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        editorial_query=EditorialQuery(page=2, per_page=2),
+    )
+
+    assert [item.ai_summary for item in first.highlighted] == ["Summary 0"]
+    assert [item.ai_summary for item in first.folded] == ["Summary 1", "Summary 2"]
+    assert second.highlighted == ()
+    assert [item.ai_summary for item in second.folded] == ["Summary 3", "Summary 4"]
+    assert second.folded_pagination.total == 5
+
+
+def test_channel_criteria_reports_hidden_items_and_owner_override(conn):
+    channel = _channel(conn, "News", "editorial", minimum_score=80)
+    source_id = create_source(conn, channel["id"], "reddit_subreddit", {"subreddit": "nz"})
+    _add_item(conn, source_id, "high", score=90)
+    _add_item(conn, source_id, "low", score=70)
+    _add_item(conn, source_id, "unranked")
+
+    filtered = build_channel_page(conn, channel, t=_EN, now=_NOW, show_read=True)
+    expanded = build_channel_page(
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        show_read=True,
+        show_below_score=True,
+    )
+
+    assert filtered.criteria.total_count == 3
+    assert filtered.criteria.matched_count == 2
+    assert filtered.criteria.hidden_count == 1
+    assert filtered.criteria.unranked_count == 1
+    assert len(filtered.highlighted) == 2
+    assert len(expanded.highlighted) == 3
+
+
 # --------------------------------------------------------------------------------------------
 # Monitor: active/history split, price/discount/availability, filter/sort/paginate
 # --------------------------------------------------------------------------------------------
@@ -549,6 +614,44 @@ def test_monitor_pagination_windows_and_flags(conn):
     assert len(last.items) == 1
     assert last.pagination.has_previous is True
     assert last.pagination.has_next is False
+
+
+def test_monitor_history_is_filtered_and_paginated(conn):
+    channel, source_id = _monitor_channel(conn)
+    for index in range(5):
+        _add_item(
+            conn,
+            source_id,
+            f"history-{index}",
+            title=f"Retired {index}",
+            raw_metadata=_shopify_metadata(
+                float(index),
+                None,
+                on_sale=False,
+                vendor="Retired vendor",
+            ),
+            score=100 - index,
+            inactive_at=_NOW.isoformat(),
+        )
+
+    page = build_channel_page(
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        monitor_query=MonitorQuery(
+            history_page=2,
+            per_page=2,
+            vendor="Retired vendor",
+            search="Retired",
+        ),
+    )
+
+    assert len(page.history) == 2
+    assert page.history_pagination.total == 5
+    assert page.history_pagination.page == 2
+    assert page.history_pagination.has_previous is True
+    assert page.history_pagination.has_next is True
 
 
 def test_monitor_page_past_end_is_empty_not_error(conn):
@@ -802,6 +905,61 @@ def test_tracker_sections_split_watched_ending_upcoming_history(conn):
     assert page.watched[0].is_watchable is True
 
 
+def test_tracker_filters_search_score_price_deadline_status_and_category(conn):
+    channel, source_id = _tracker_channel(conn)
+    cheap = _auction_metadata(
+        _NOW + timedelta(hours=2),
+        auction_title="Tools auction",
+    )
+    expensive = _auction_metadata(
+        _NOW + timedelta(days=3),
+        auction_title="Furniture auction",
+    )
+    expensive["estimated_cost"] = 2500.0
+    _add_item(
+        conn,
+        source_id,
+        "cheap",
+        title="Cordless drill",
+        raw_metadata=cheap,
+        score=95,
+        summary="Useful workshop tool",
+        rationale="Matches the requested workshop equipment",
+    )
+    _add_item(
+        conn,
+        source_id,
+        "expensive",
+        title="Dining table",
+        raw_metadata=expensive,
+        score=70,
+        summary="Large furniture",
+        rationale="Weak match",
+    )
+
+    page = build_channel_page(
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        is_owner=True,
+        tracker_query=TrackerQuery(
+            search="workshop",
+            source="All About Auctions",
+            category="Tools auction",
+            status=TrackerStatus.ENDING,
+            deadline=TrackerDeadline.DAY,
+            minimum_score=90,
+            maximum_price=600,
+        ),
+    )
+
+    assert [item.title for item in page.ending_soon] == ["Cordless drill"]
+    assert page.ending_soon[0].ai_rationale == "Matches the requested workshop equipment"
+    assert page.source_options == ("All About Auctions",)
+    assert page.category_options == ("Furniture auction", "Tools auction")
+
+
 def test_tracker_sections_paginate_independently(conn):
     channel, source_id = _tracker_channel(conn)
     for index in range(15):
@@ -968,7 +1126,12 @@ def test_watchlist_marks_closed_lot_via_generic_facts(conn):
     _watch(conn, source_id, "1-A", _NOW + timedelta(hours=2))
     # Viewed after the deadline: closed/active come from adapter facts (list_tracker_watches),
     # not a connector-specific re-parse of closing_at.
-    row = build_watchlist_page(conn, t=_EN, now=_NOW + timedelta(hours=3)).items[0]
+    row = build_watchlist_page(
+        conn,
+        t=_EN,
+        now=_NOW + timedelta(hours=3),
+        query=WatchlistQuery(status="closed"),
+    ).items[0]
     assert row.is_active is False
     assert row.is_closed is True
     assert row.is_watchable is True  # still removable on the owner page
@@ -990,7 +1153,12 @@ def test_watchlist_orders_active_before_closed(conn):
     closed = _watch(conn, source_id, "closed", _NOW + timedelta(hours=1))
     active = _watch(conn, source_id, "active", _NOW + timedelta(hours=5))
     # Both watched while open; view once "closed" has elapsed but "active" has not.
-    page = build_watchlist_page(conn, t=_EN, now=_NOW + timedelta(hours=2))
+    page = build_watchlist_page(
+        conn,
+        t=_EN,
+        now=_NOW + timedelta(hours=2),
+        query=WatchlistQuery(status="all"),
+    )
     assert [row.id for row in page.items] == [active, closed]
     assert page.items[0].is_closed is False
     assert page.items[1].is_closed is True
@@ -999,6 +1167,24 @@ def test_watchlist_orders_active_before_closed(conn):
 def test_watchlist_empty_when_no_watches(conn):
     _tracker_channel(conn)
     assert build_watchlist_page(conn, t=_EN, now=_NOW).items == ()
+
+
+def test_watchlist_filters_closed_items_and_exposes_counts(conn):
+    _, source_id = _tracker_channel(conn)
+    _watch(conn, source_id, "closed", _NOW + timedelta(hours=1))
+    active = _watch(conn, source_id, "active", _NOW + timedelta(hours=5))
+
+    page = build_watchlist_page(
+        conn,
+        t=_EN,
+        now=_NOW + timedelta(hours=2),
+        query=WatchlistQuery(status="active"),
+    )
+
+    assert [item.id for item in page.items] == [active]
+    assert page.active_count == 1
+    assert page.closed_count == 1
+    assert page.total_count == 2
 
 
 def test_watchlist_requires_timezone_aware_now(conn):

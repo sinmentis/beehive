@@ -23,25 +23,45 @@ from beehive.connectors import (  # noqa: F401 (import side effect: registers th
     official_feeds,
     reddit,
 )
+from beehive.db.evidence_state import get_latest_evidence_state_revision
 from beehive.db.research_runs import (list_research_runs, enqueue_research_run,
                                        request_cancel_research_run)
 from beehive.db.research_sessions import (archive_research_session,
                                            create_research_session_with_sources,
                                            get_research_session, hard_delete_research_session,
-                                           list_research_sessions, touch_research_session_activity,
-                                           unarchive_research_session)
-from beehive.db.research_sources import list_research_sources
-from beehive.domain.research import ResearchRunStatus, ResearchSessionStatus
+                                           list_research_sessions,
+                                           mark_research_session_viewed,
+                                           touch_research_session_activity,
+                                           unarchive_research_session,
+                                           unread_completed_research_session_ids)
+from beehive.db.research_sources import (
+    deactivate_research_source,
+    get_research_source,
+    list_research_sources,
+    upsert_owner_research_source,
+    update_research_source,
+)
+from beehive.domain.research import (
+    ResearchRunStatus,
+    ResearchSessionStatus,
+    ResearchSourceOrigin,
+)
 from beehive.localization import Localizer
 from beehive.research.connector_policy import ConnectorPolicyError, normalize_and_validate_sources
 from beehive.research.conversation import ConversationError, submit_owner_message
+from beehive.research.limits import (
+    MAX_CANDIDATES_PER_SOURCE,
+    MAX_DEEP_FETCHES_PER_RUN,
+    MAX_REVISION_ROUNDS,
+    MAX_RUN_DURATION,
+)
 from beehive.research.synthesis import SynthesisError, exclude_evidence_item, restore_evidence_item
 from beehive.web import research_view
 from beehive.web.deps import get_db, get_localizer, require_admin_session, verify_csrf
 
 router = APIRouter(prefix="/research")
 
-_TABS = frozenset({"synthesis", "plan", "evidence"})
+_TABS = frozenset({"synthesis", "plan", "evidence", "history"})
 
 # Connectors an Owner may pick directly from the create-session form. Reddit is deliberately not
 # in this list -- it is offered separately as its own "seed" text field (see module docstring
@@ -51,6 +71,7 @@ _QUERY_CONNECTORS = ("google_news_query", "hackernews_query")
 _FIXED_CONNECTORS = ("hackernews_stories", "rbnz_news", "nz_government_news",
                      "federal_reserve_news")
 _SELECTABLE_CONNECTORS = (*_QUERY_CONNECTORS, *_FIXED_CONNECTORS)
+_SOURCE_FORM_CONNECTORS = (*_SELECTABLE_CONNECTORS, "reddit_subreddit")
 
 _ACTION_ERROR_KEYS = {
     "refresh": "web.research.error.refresh_failed",
@@ -60,6 +81,8 @@ _ACTION_ERROR_KEYS = {
     "delete": "web.research.error.delete_failed",
     "evidence": "web.research.error.evidence_failed",
     "message": "web.research.error.message_failed",
+    "source": "web.research.error.source_failed",
+    "synthesis": "web.research.error.synthesis_retry_failed",
 }
 
 
@@ -79,6 +102,97 @@ def _latest_run(conn: sqlite3.Connection, session_id: int):
     return runs[-1] if runs else None
 
 
+def _sources_are_mutable(conn: sqlite3.Connection, session_id: int) -> bool:
+    research_session = _require_session(conn, session_id)
+    run = _latest_run(conn, session_id)
+    return (
+        research_session.status is ResearchSessionStatus.ACTIVE
+        and (
+            run is None
+            or run.status not in {ResearchRunStatus.PENDING, ResearchRunStatus.PROCESSING}
+        )
+    )
+
+
+def _source_form_config(connector_type: str, value: str) -> dict:
+    value = value.strip()
+    if connector_type in {"google_news_query", "hackernews_query"}:
+        if not value:
+            raise ConnectorPolicyError("A query is required")
+        config = {"query": value}
+        if connector_type == "hackernews_query":
+            config["sort"] = "relevance"
+        return config
+    if connector_type == "reddit_subreddit":
+        if not value:
+            raise ConnectorPolicyError("A subreddit is required")
+        return {"subreddit": value}
+    if connector_type == "hackernews_stories":
+        return {"feed": value if value in {"top", "new", "best"} else "top"}
+    return {}
+
+
+def _source_form_value(connector_type: str, config: dict) -> str:
+    if connector_type in {"google_news_query", "hackernews_query"}:
+        return str(config.get("query", ""))
+    if connector_type == "reddit_subreddit":
+        return str(config.get("subreddit", ""))
+    if connector_type == "hackernews_stories":
+        return str(config.get("feed", "top"))
+    return ""
+
+
+def _prepare_new_session(
+    question: str,
+    keyword: str,
+    connectors: list[str],
+    reddit_subreddit: str,
+    t: Localizer,
+) -> tuple[str, str, str, list[str], list[tuple[str, dict]], str | None]:
+    question_clean = question.strip()
+    keyword_clean = keyword.strip() or question_clean
+    reddit_clean = reddit_subreddit.strip()
+    selected = [connector for connector in connectors if connector in _SELECTABLE_CONNECTORS]
+    error = None
+    if not question_clean:
+        error = t.text("web.research.new.error_question_required")
+    elif len(question_clean) > research_view.MAX_QUESTION_LENGTH:
+        error = t.text("web.research.new.error_question_too_long")
+    elif reddit_clean and len(reddit_clean) > research_view.MAX_SUBREDDIT_LENGTH:
+        error = t.text("web.research.new.error_reddit_invalid")
+
+    proposed: list[tuple[str, dict]] = []
+    if error is None:
+        for connector_type in selected:
+            if connector_type == "google_news_query":
+                proposed.append((connector_type, {"query": keyword_clean}))
+            elif connector_type == "hackernews_query":
+                proposed.append((connector_type, {"query": keyword_clean, "sort": "relevance"}))
+            elif connector_type == "hackernews_stories":
+                proposed.append((connector_type, {"feed": "top"}))
+            else:
+                proposed.append((connector_type, {}))
+        if reddit_clean:
+            proposed.append(("reddit_subreddit", {"subreddit": reddit_clean}))
+        if not proposed:
+            error = t.text("web.research.new.error_no_source")
+
+    normalized: list[tuple[str, dict]] = []
+    if error is None:
+        try:
+            normalized = normalize_and_validate_sources(proposed)
+        except ConnectorPolicyError:
+            error = t.text("web.research.new.error_source_invalid")
+    return (
+        question_clean,
+        keyword_clean,
+        reddit_clean,
+        selected,
+        normalized,
+        error,
+    )
+
+
 # ============================================================================
 # List
 # ============================================================================
@@ -93,10 +207,17 @@ def research_list(
 ):
     active = list_research_sessions(conn, ResearchSessionStatus.ACTIVE)
     archived = list_research_sessions(conn, ResearchSessionStatus.ARCHIVED)
+    unread_ids = unread_completed_research_session_ids(conn)
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "research_list.html", {
-        "active_rows": [research_view.build_session_row(s, t) for s in active],
-        "archived_rows": [research_view.build_session_row(s, t) for s in archived],
+        "active_rows": [
+            research_view.build_session_row(s, t, is_unread=s.id in unread_ids)
+            for s in active
+        ],
+        "archived_rows": [
+            research_view.build_session_row(s, t, is_unread=s.id in unread_ids)
+            for s in archived
+        ],
     })
 
 
@@ -139,6 +260,57 @@ def new_session_form(
     return _render_new_form(request, session, t)
 
 
+@router.post("/new/preview", response_class=HTMLResponse)
+def new_session_preview(
+    request: Request,
+    question: str = Form(...),
+    keyword: str = Form(""),
+    connectors: list[str] = Form([]),
+    reddit_subreddit: str = Form(""),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    (
+        question_clean,
+        keyword_clean,
+        reddit_clean,
+        selected,
+        normalized,
+        error,
+    ) = _prepare_new_session(question, keyword, connectors, reddit_subreddit, t)
+    if error is not None:
+        return _render_new_form(
+            request,
+            session,
+            t,
+            question=question,
+            keyword=keyword,
+            reddit_subreddit=reddit_subreddit,
+            selected_connectors=selected,
+            error=error,
+            status_code=400,
+        )
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "research_run_preview.html",
+        {
+            "csrf_token": session["csrf_token"],
+            "mode": "new",
+            "question": question_clean,
+            "keyword": keyword_clean,
+            "reddit_subreddit": reddit_clean,
+            "selected_connectors": selected,
+            "source_count": len(normalized),
+            "max_minutes": int(MAX_RUN_DURATION.total_seconds() // 60),
+            "max_rounds": MAX_REVISION_ROUNDS,
+            "max_deep_fetches": MAX_DEEP_FETCHES_PER_RUN,
+            "max_candidates_per_source": MAX_CANDIDATES_PER_SOURCE,
+        },
+    )
+
+
 @router.post("/new")
 def new_session_submit(
     request: Request,
@@ -152,42 +324,14 @@ def new_session_submit(
     t: Localizer = Depends(get_localizer),
 ):
     verify_csrf(session, csrf_token)
-
-    question_clean = question.strip()
-    keyword_clean = keyword.strip() or question_clean
-    reddit_clean = reddit_subreddit.strip()
-    selected = [c for c in connectors if c in _SELECTABLE_CONNECTORS]
-
-    error = None
-    if not question_clean:
-        error = t.text("web.research.new.error_question_required")
-    elif len(question_clean) > research_view.MAX_QUESTION_LENGTH:
-        error = t.text("web.research.new.error_question_too_long")
-    elif reddit_clean and len(reddit_clean) > research_view.MAX_SUBREDDIT_LENGTH:
-        error = t.text("web.research.new.error_reddit_invalid")
-
-    proposed: list[tuple[str, dict]] = []
-    if error is None:
-        for connector_type in selected:
-            if connector_type == "google_news_query":
-                proposed.append((connector_type, {"query": keyword_clean}))
-            elif connector_type == "hackernews_query":
-                proposed.append((connector_type, {"query": keyword_clean, "sort": "relevance"}))
-            elif connector_type == "hackernews_stories":
-                proposed.append((connector_type, {"feed": "top"}))
-            else:
-                proposed.append((connector_type, {}))
-        if reddit_clean:
-            proposed.append(("reddit_subreddit", {"subreddit": reddit_clean}))
-        if not proposed:
-            error = t.text("web.research.new.error_no_source")
-
-    normalized: list[tuple[str, dict]] = []
-    if error is None:
-        try:
-            normalized = normalize_and_validate_sources(proposed)
-        except ConnectorPolicyError:
-            error = t.text("web.research.new.error_source_invalid")
+    (
+        question_clean,
+        _keyword_clean,
+        _reddit_clean,
+        selected,
+        normalized,
+        error,
+    ) = _prepare_new_session(question, keyword, connectors, reddit_subreddit, t)
 
     if error is not None:
         return _render_new_form(
@@ -198,6 +342,207 @@ def new_session_submit(
     session_id, _run_id = create_research_session_with_sources(
         conn, question_clean, normalized, research_view.utcnow())
     return RedirectResponse(f"/research/{session_id}", status_code=303)
+
+
+def _render_source_form(
+    request: Request,
+    session: dict,
+    t: Localizer,
+    session_id: int,
+    *,
+    source=None,
+    connector_type: str = "google_news_query",
+    value: str = "",
+    error: str | None = None,
+    status_code: int = 200,
+):
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "research_source_form.html",
+        {
+            "session_id": session_id,
+            "csrf_token": session["csrf_token"],
+            "source": source,
+            "connector_type": connector_type,
+            "value": value,
+            "connector_options": tuple(
+                (name, _connector_option_label(name, t))
+                for name in _SOURCE_FORM_CONNECTORS
+            ),
+            "error": error,
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/{session_id}/sources/new", response_class=HTMLResponse)
+def new_research_source(
+    session_id: int,
+    request: Request,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    if not _sources_are_mutable(conn, session_id):
+        return RedirectResponse(f"/research/{session_id}?action_error=source", status_code=303)
+    return _render_source_form(request, session, t, session_id)
+
+
+@router.post("/{session_id}/sources/new")
+def create_research_source_submit(
+    session_id: int,
+    request: Request,
+    connector_type: str = Form(...),
+    value: str = Form(""),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    if not _sources_are_mutable(conn, session_id):
+        return RedirectResponse(f"/research/{session_id}?action_error=source", status_code=303)
+    if connector_type not in _SOURCE_FORM_CONNECTORS:
+        connector_type = "google_news_query"
+    try:
+        proposed = _source_form_config(connector_type, value)
+        normalized = normalize_and_validate_sources([(connector_type, proposed)])
+        normalized_type, config = normalized[0]
+        upsert_owner_research_source(
+            conn,
+            session_id,
+            normalized_type,
+            config,
+            research_view.utcnow(),
+        )
+    except (ConnectorPolicyError, ValueError, sqlite3.IntegrityError):
+        return _render_source_form(
+            request,
+            session,
+            t,
+            session_id,
+            connector_type=connector_type,
+            value=value,
+            error=t.text("web.research.source_form.invalid"),
+            status_code=400,
+        )
+    return RedirectResponse(f"/research/{session_id}?tab=plan", status_code=303)
+
+
+@router.get("/{session_id}/sources/{source_id}/edit", response_class=HTMLResponse)
+def edit_research_source(
+    session_id: int,
+    source_id: int,
+    request: Request,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    source = get_research_source(conn, source_id)
+    owner_sources = list_research_sources(
+        conn,
+        session_id,
+        origin=ResearchSourceOrigin.OWNER,
+    )
+    active_source_ids = {item.id for item in owner_sources}
+    if (
+        source is None
+        or source.session_id != session_id
+        or source.origin is not ResearchSourceOrigin.OWNER
+        or source.id not in active_source_ids
+    ):
+        raise HTTPException(status_code=404, detail="Research Source not found")
+    if not _sources_are_mutable(conn, session_id):
+        return RedirectResponse(f"/research/{session_id}?action_error=source", status_code=303)
+    return _render_source_form(
+        request,
+        session,
+        t,
+        session_id,
+        source=source,
+        connector_type=source.connector_type,
+        value=_source_form_value(source.connector_type, source.config),
+    )
+
+
+@router.post("/{session_id}/sources/{source_id}/edit")
+def edit_research_source_submit(
+    session_id: int,
+    source_id: int,
+    request: Request,
+    value: str = Form(""),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    source = get_research_source(conn, source_id)
+    owner_sources = list_research_sources(
+        conn,
+        session_id,
+        origin=ResearchSourceOrigin.OWNER,
+    )
+    active_source_ids = {item.id for item in owner_sources}
+    if (
+        source is None
+        or source.session_id != session_id
+        or source.origin is not ResearchSourceOrigin.OWNER
+        or source.id not in active_source_ids
+    ):
+        raise HTTPException(status_code=404, detail="Research Source not found")
+    if not _sources_are_mutable(conn, session_id):
+        return RedirectResponse(f"/research/{session_id}?action_error=source", status_code=303)
+    try:
+        proposed = _source_form_config(source.connector_type, value)
+        _, config = normalize_and_validate_sources(
+            [(source.connector_type, proposed)]
+        )[0]
+        update_research_source(conn, source_id, config)
+    except (ConnectorPolicyError, ValueError, sqlite3.IntegrityError):
+        return _render_source_form(
+            request,
+            session,
+            t,
+            session_id,
+            source=source,
+            connector_type=source.connector_type,
+            value=value,
+            error=t.text("web.research.source_form.invalid"),
+            status_code=400,
+        )
+    return RedirectResponse(f"/research/{session_id}?tab=plan", status_code=303)
+
+
+@router.post("/{session_id}/sources/{source_id}/delete")
+def delete_research_source_submit(
+    session_id: int,
+    source_id: int,
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    source = get_research_source(conn, source_id)
+    owner_sources = list_research_sources(
+        conn,
+        session_id,
+        origin=ResearchSourceOrigin.OWNER,
+    )
+    active_source_ids = {item.id for item in owner_sources}
+    if (
+        source is None
+        or source.session_id != session_id
+        or source.origin is not ResearchSourceOrigin.OWNER
+        or source.id not in active_source_ids
+    ):
+        raise HTTPException(status_code=404, detail="Research Source not found")
+    if not _sources_are_mutable(conn, session_id):
+        return RedirectResponse(f"/research/{session_id}?action_error=source", status_code=303)
+    if len(owner_sources) <= 1:
+        return RedirectResponse(f"/research/{session_id}?action_error=source", status_code=303)
+    deactivate_research_source(conn, source_id)
+    return RedirectResponse(f"/research/{session_id}?tab=plan", status_code=303)
 
 
 # ============================================================================
@@ -216,20 +561,28 @@ def research_detail(
     t: Localizer = Depends(get_localizer),
 ):
     research_session = _require_session(conn, session_id)
+    mark_research_session_viewed(conn, session_id, research_view.utcnow())
     active_tab = tab if tab in _TABS else "synthesis"
     run = _latest_run(conn, session_id)
-    sources = list_research_sources(conn, session_id)
+    sources = list_research_sources(
+        conn,
+        session_id,
+        origin=ResearchSourceOrigin.OWNER,
+    )
 
     synthesis_document = research_view.load_synthesis_document(conn, session_id)
     synthesis_view = research_view.build_synthesis_tab_view(synthesis_document, t)
     evidence_view = research_view.build_evidence_tab_view(conn, session_id, t, page=page)
-    plan_views = research_view.build_plan_views(conn, run.id, t) if run is not None else ()
+    plan_views = research_view.build_session_plan_views(conn, session_id, t)
+    history_view = research_view.build_research_history_view(conn, session_id, t)
     conversation_view = research_view.build_conversation_view(
         conn, research_session, synthesis_document, evidence_view.all_excluded, t)
     run_status_view = research_view.build_run_status_view(run, t)
 
     is_archived = research_session.status is ResearchSessionStatus.ARCHIVED
     has_active_run = run_status_view.is_pending
+    can_edit_sources = not is_archived and not has_active_run
+    latest_revision = get_latest_evidence_state_revision(conn, session_id)
 
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "research_detail.html", {
@@ -245,12 +598,19 @@ def research_detail(
         "messages_status_url": f"/research/{session_id}/messages/status",
         "synthesis": synthesis_view,
         "plan_revisions": plan_views,
+        "history": history_view,
         "evidence": evidence_view,
         "conversation": conversation_view,
         "can_refresh": not is_archived and not has_active_run,
         "can_archive": not is_archived and not has_active_run and not conversation_view.has_pending_request,
         "can_unarchive": is_archived,
         "can_mutate_evidence": not is_archived,
+        "can_edit_sources": can_edit_sources,
+        "can_retry_synthesis": (
+            can_edit_sources
+            and latest_revision is not None
+            and bool(latest_revision.evidence_item_ids)
+        ),
         "action_error_message": (
             t.text(_ACTION_ERROR_KEYS[action_error])
             if action_error in _ACTION_ERROR_KEYS else None
@@ -314,6 +674,41 @@ def research_messages_status(
 # Run lifecycle: refresh / cancel
 # ============================================================================
 
+@router.get("/{session_id}/refresh-preview", response_class=HTMLResponse)
+def research_refresh_preview(
+    session_id: int,
+    request: Request,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    _t: Localizer = Depends(get_localizer),
+):
+    if not _sources_are_mutable(conn, session_id):
+        return RedirectResponse(
+            f"/research/{session_id}?action_error=refresh",
+            status_code=303,
+        )
+    research_session = _require_session(conn, session_id)
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "research_run_preview.html",
+        {
+            "csrf_token": session["csrf_token"],
+            "mode": "refresh",
+            "session_id": session_id,
+            "question": research_session.question,
+            "source_count": len(list_research_sources(
+                conn,
+                session_id,
+                origin=ResearchSourceOrigin.OWNER,
+            )),
+            "max_minutes": int(MAX_RUN_DURATION.total_seconds() // 60),
+            "max_rounds": MAX_REVISION_ROUNDS,
+            "max_deep_fetches": MAX_DEEP_FETCHES_PER_RUN,
+            "max_candidates_per_source": MAX_CANDIDATES_PER_SOURCE,
+        },
+    )
+
+
 @router.post("/{session_id}/refresh")
 def research_refresh(
     session_id: int,
@@ -334,6 +729,41 @@ def research_refresh(
     except ValueError:
         return RedirectResponse(
             f"/research/{session_id}?action_error=refresh", status_code=303)
+    touch_research_session_activity(conn, session_id, research_view.utcnow())
+    return RedirectResponse(f"/research/{session_id}", status_code=303)
+
+
+@router.post("/{session_id}/retry-synthesis")
+def research_retry_synthesis(
+    session_id: int,
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    if not _sources_are_mutable(conn, session_id):
+        return RedirectResponse(
+            f"/research/{session_id}?action_error=synthesis",
+            status_code=303,
+        )
+    revision = get_latest_evidence_state_revision(conn, session_id)
+    if revision is None or not revision.evidence_item_ids:
+        return RedirectResponse(
+            f"/research/{session_id}?action_error=synthesis",
+            status_code=303,
+        )
+    try:
+        enqueue_research_run(
+            conn,
+            session_id,
+            research_view.utcnow(),
+            run_kind="synthesis",
+        )
+    except ValueError:
+        return RedirectResponse(
+            f"/research/{session_id}?action_error=synthesis",
+            status_code=303,
+        )
     touch_research_session_activity(conn, session_id, research_view.utcnow())
     return RedirectResponse(f"/research/{session_id}", status_code=303)
 

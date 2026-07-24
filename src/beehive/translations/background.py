@@ -214,3 +214,60 @@ CATALOGS = {
         "background.tracker_reminder.view_item_link": "Eintrag öffnen",
     },
 }
+
+_RESEARCH_NOTIFICATION_CATALOGS = {
+    "en": {
+        "background.research_complete_subject": "Research complete: {question}",
+        "background.research_complete_body": (
+            'Research for "{question}" is ready.\n\nOpen Beehive Research session '
+            "{session_id} to review the synthesis and evidence."
+        ),
+    },
+    "zh-CN": {
+        "background.research_complete_subject": "研究已完成：{question}",
+        "background.research_complete_body": (
+            "“{question}”的研究结果已就绪。\n\n请打开 Beehive Research 会话 "
+            "{session_id} 查看综合结论和证据。"
+        ),
+    },
+    "ja": {
+        "background.research_complete_subject": "リサーチ完了：{question}",
+        "background.research_complete_body": (
+            "「{question}」のリサーチが完了しました。\n\nBeehive Research のセッション "
+            "{session_id} で要約と根拠を確認してください。"
+        ),
+    },
+    "ko": {
+        "background.research_complete_subject": "리서치 완료: {question}",
+        "background.research_complete_body": (
+            '"{question}" 리서치가 준비되었습니다.\n\nBeehive Research 세션 '
+            "{session_id}에서 종합 결과와 근거를 확인하세요."
+        ),
+    },
+    "es": {
+        "background.research_complete_subject": "Investigación completada: {question}",
+        "background.research_complete_body": (
+            'La investigación de "{question}" está lista.\n\nAbre la sesión '
+            "{session_id} de Beehive Research para revisar la síntesis y las pruebas."
+        ),
+    },
+    "fr": {
+        "background.research_complete_subject": "Recherche terminée : {question}",
+        "background.research_complete_body": (
+            'La recherche sur « {question} » est prête.\n\nOuvrez la session '
+            "{session_id} de Beehive Research pour consulter la synthèse et les preuves."
+        ),
+    },
+    "de": {
+        "background.research_complete_subject": "Recherche abgeschlossen: {question}",
+        "background.research_complete_body": (
+            'Die Recherche zu „{question}“ ist fertig.\n\nÖffnen Sie Beehive Research '
+            "Sitzung {session_id}, um Synthese und Belege zu prüfen."
+        ),
+    },
+}
+
+for _locale, _catalog in _RESEARCH_NOTIFICATION_CATALOGS.items():
+    CATALOGS[_locale].update(_catalog)
+
+del _locale, _catalog

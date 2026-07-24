@@ -1,9 +1,9 @@
 # deploy/quadlet/beehive-digest.timer
 [Unit]
-Description=Evaluate Beehive email groups hourly (host tz); each group's own send interval decides whether it actually sends
+Description=Evaluate Beehive email group schedules every 15 minutes
 
 [Timer]
-OnCalendar=hourly
+OnCalendar=*:0/15
 Persistent=true
 Unit=beehive-digest.service
 

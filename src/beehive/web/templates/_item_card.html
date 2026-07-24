@@ -1,4 +1,4 @@
-<article class="item{{ ' read' if item.is_read else '' }}" id="item-{{ item.id }}">
+<article class="item{{ ' read' if is_owner and item.is_read else '' }}" id="item-{{ item.id }}">
   <div class="meta-row">
     <p class="meta">
       {% if item.ai_score is not none %}
@@ -9,6 +9,8 @@
       <a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{% if item.engagement_label %}{{ item.engagement_label }} {% endif %}↗<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
       {% if item.ai_rationale %}· {{ item.ai_rationale }} {% endif %}· <span title="{{ item.exact_time }}">{{ item.age }}</span>
     </p>
+    <div class="item-owner-actions">
+      {% include "_read_state_control.html" %}
     <div class="votes" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}">
       {% if is_owner %}
       <button type="button" aria-label="{{ t('web.item.vote_up_aria') }}"
@@ -17,7 +19,7 @@
               data-focus-key="item-{{ item.id }}-up"
               data-feedback-message="{{ t('web.item.vote_up_feedback') }}"
               hx-post="/items/{{ item.id }}/vote"
-              hx-vals='{{ {"value": 1, "csrf_token": csrf_token} | tojson }}'
+              hx-vals='{{ {"value": 1, "csrf_token": csrf_token, "editorial_page": editorial_page, "editorial_show_read": editorial_show_read, "editorial_show_below": editorial_show_below, "editorial_search": editorial_search} | tojson }}'
               hx-target="#item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↑</span></button>
       <button type="button" aria-label="{{ t('web.item.vote_down_aria') }}"
               aria-pressed="{{ 'true' if item.vote_value == -1 else 'false' }}"
@@ -25,11 +27,12 @@
               data-focus-key="item-{{ item.id }}-down"
               data-feedback-message="{{ t('web.item.vote_down_feedback') }}"
               hx-post="/items/{{ item.id }}/vote"
-              hx-vals='{{ {"value": -1, "csrf_token": csrf_token} | tojson }}'
+              hx-vals='{{ {"value": -1, "csrf_token": csrf_token, "editorial_page": editorial_page, "editorial_show_read": editorial_show_read, "editorial_show_below": editorial_show_below, "editorial_search": editorial_search} | tojson }}'
               hx-target="#item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↓{% if item.vote_value == -1 %} ·{% endif %}</span></button>
       {% else %}
       {% if item.vote_value == 1 %}<span class="vote-state up" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>{% elif item.vote_value == -1 %}<span class="vote-state down" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>{% endif %}
       {% endif %}
+    </div>
     </div>
   </div>
   <h3 class="item-title"><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
@@ -46,7 +49,7 @@
            data-focus-key="item-{{ item.id }}-reason"
            data-feedback-message="{{ t('web.item.reason_feedback') }}"
            hx-post="/items/{{ item.id }}/vote" hx-trigger="blur"
-           hx-vals='{{ {"value": -1, "csrf_token": csrf_token} | tojson }}'
+           hx-vals='{{ {"value": -1, "csrf_token": csrf_token, "editorial_page": editorial_page, "editorial_show_read": editorial_show_read, "editorial_show_below": editorial_show_below, "editorial_search": editorial_search} | tojson }}'
            hx-target="#item-{{ item.id }}" hx-swap="outerHTML">
   </div>
   {% endif %}

@@ -108,7 +108,9 @@ def test_deep_read_route_requires_session(conn, client):
     resp = client.post(f"/items/{item_id}/deep-read",
                         data={"csrf_token": "x", "origin": "dashboard"})
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"] == (
+        "/admin/login?next=%2Fadmin%2F%3Freauth%3D1"
+    )
     assert get_deep_read(c, item_id) is None
 
 

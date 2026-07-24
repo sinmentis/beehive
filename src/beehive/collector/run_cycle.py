@@ -88,6 +88,12 @@ async def run_channel_cycle(
     collection = ChannelCollection.for_channel(channel)
 
     for source in list_sources(conn, channel["id"]):
+        # A paused Source is dormant: skip it entirely, before the due-check and before any fetch,
+        # so a MUTABLE_SNAPSHOT Channel never reaches ingest_fetch for it and therefore never
+        # reconciles its still-valid listings to inactive. The Source keeps its config, items, and
+        # fetch history until an Owner resumes it.
+        if source["paused_at"]:
+            continue
         if not force_fetch and not source_is_due(
             source,
             channel["fetch_interval_hours"],

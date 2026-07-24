@@ -97,6 +97,39 @@ def delete_channel(conn: sqlite3.Connection, channel_id: int) -> None:
     conn.commit()
 
 
+def channel_impact_counts(conn: sqlite3.Connection, channel_id: int) -> dict[str, int]:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(DISTINCT sources.id) AS sources,
+            COUNT(DISTINCT items.id) AS items,
+            COUNT(DISTINCT votes.item_id) AS votes,
+            COUNT(DISTINCT deep_reads.item_id) AS deep_reads,
+            COUNT(DISTINCT auction_watches.item_id) AS watches,
+            COUNT(DISTINCT item_events.id) AS events
+        FROM channels
+        LEFT JOIN sources ON sources.channel_id = channels.id
+        LEFT JOIN items ON items.source_id = sources.id
+        LEFT JOIN votes ON votes.item_id = items.id
+        LEFT JOIN deep_reads ON deep_reads.item_id = items.id
+        LEFT JOIN auction_watches ON auction_watches.item_id = items.id
+        LEFT JOIN item_events ON item_events.item_id = items.id
+        WHERE channels.id = ?
+        """,
+        (channel_id,),
+    ).fetchone()
+    if row is None:
+        return {
+            "sources": 0,
+            "items": 0,
+            "votes": 0,
+            "deep_reads": 0,
+            "watches": 0,
+            "events": 0,
+        }
+    return {key: int(row[key]) for key in row.keys()}
+
+
 def _unique_duplicate_name(conn: sqlite3.Connection, original_name: str) -> str:
     existing = {
         row["name"] for row in conn.execute("SELECT name FROM channels").fetchall()

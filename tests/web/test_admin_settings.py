@@ -40,7 +40,7 @@ def test_admin_root_requires_session(db_path):
         follow_redirects=False)
     response = client.get("/admin/")
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/login"
+    assert response.headers["location"].startswith("/admin/login?next=")
 
 
 def test_settings_page_shows_environment_fallback(
@@ -383,7 +383,7 @@ def test_save_language_requires_session(db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/login"
+    assert response.headers["location"].startswith("/admin/login?next=")
 
 
 def test_fresh_database_defaults_to_current_llm_model(authed_client):
@@ -462,4 +462,4 @@ def test_save_model_requires_session(db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/login"
+    assert response.headers["location"].startswith("/admin/login?next=")

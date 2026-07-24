@@ -118,6 +118,7 @@ from beehive.research.conversation import (ConversationClaimLostError, Conversat
                                             process_claimed_chat_request)
 from beehive.research.limits import MAX_ERROR_DETAIL_LENGTH, MAX_RUN_DURATION
 from beehive.research.orchestrator import SealedEvidenceOutcome, run_research_orchestration
+from beehive.research.synthesis_retry import run_synthesis_retry
 
 _ERROR_DETAIL_CAP = MAX_ERROR_DETAIL_LENGTH
 _ENV_PREFIX = "RESEARCH_WORKER_"
@@ -295,6 +296,22 @@ def _default_research_task_runner(
     try:
         async def _run() -> SealedEvidenceOutcome:
             async with tool_free_client() as ai_client:
+                row = conn.execute(
+                    "SELECT run_kind FROM research_runs WHERE id = ?",
+                    (run_id,),
+                ).fetchone()
+                if row is not None and row["run_kind"] == "synthesis":
+                    return await run_synthesis_retry(
+                        conn,
+                        run_id,
+                        claim_token,
+                        session_id,
+                        question,
+                        localizer_for(language_code),
+                        model=model,
+                        now_fn=now_fn,
+                        client=ai_client,
+                    )
                 return await run_research_orchestration(
                     conn, run_id, claim_token, session_id, question, localizer_for(language_code),
                     now_fn=now_fn, fetcher=fetcher, planner_model=model, sufficiency_model=model,

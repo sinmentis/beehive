@@ -21,6 +21,7 @@
       <label for="archive-query">{{ t('web.archive.query_label') }}</label>
       <input id="archive-query" type="search" name="q" value="{{ selected_search }}" placeholder="{{ t('web.archive.query_placeholder') }}">
     </div>
+    {% if is_admin %}
     <div class="field">
       <label for="archive-channel">{{ t('web.archive.channel_label') }}</label>
       <select id="archive-channel" name="channel">
@@ -30,6 +31,7 @@
         {% endfor %}
       </select>
     </div>
+    {% endif %}
     <div class="field">
       <label for="archive-from">{{ t('web.archive.from_label') }}</label>
       <input id="archive-from" type="date" name="from" value="{{ selected_from }}">
@@ -59,7 +61,7 @@
       <h2 class="day-label" id="day-{{ loop.index }}">{{ day }}</h2>
       <div class="archive-list">
         {% for item in day_items %}
-        <article class="archive-row{{ ' read' if item.is_read else '' }}">
+        <article class="archive-row{{ ' read' if is_admin and item.is_read else '' }}">
           <div class="archive-main">
             <p class="archive-source"><span class="source-marker" aria-hidden="true"></span>{{ item.channel_name }} · {{ item.source_label }}</p>
             <h3><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
@@ -69,6 +71,8 @@
           </div>
           <div class="archive-side">
             {{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>{% elif item.vote_value == -1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>{% endif %}
+            {% set is_owner = is_admin %}
+            {% include "_read_state_control.html" %}
             {% set deep_read_variant = "side" %}
             {% include "_deep_read_action.html" %}
           </div>
@@ -87,9 +91,9 @@
   {% endif %}
 
   <nav class="pager" aria-label="{{ t('web.archive.pager_aria') }}">
-    {% if has_prev %}<a href="/archive?page={{ page - 1 }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
+    {% if previous_url %}<a href="{{ previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
     <span>{{ t('web.archive.page_label', page=page) }}</span>
-    {% if has_next %}<a href="/archive?page={{ page + 1 }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
+    {% if next_url %}<a href="{{ next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
   </nav>
 </main>
 {% endblock %}

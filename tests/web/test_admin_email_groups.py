@@ -1,7 +1,10 @@
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
+from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.email_groups import (
@@ -12,7 +15,10 @@ from beehive.db.email_groups import (
     list_email_groups,
     list_member_channels,
 )
+from beehive.db.item_events import mark_item_events_ready, record_or_coalesce_event
+from beehive.db.items import insert_new_returning_id, update_ai_ranking_by_id
 from beehive.db.sessions import create_session
+from beehive.db.sources import create_source
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
 from scripts.set_admin_password import set_admin_password
@@ -49,7 +55,7 @@ def test_groups_tab_requires_session(db_path):
                          follow_redirects=False)
     resp = client.get("/admin/?tab=groups")
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_groups_tab_lists_default_group(authed_client):
@@ -69,12 +75,14 @@ def test_new_email_group_form_requires_session(db_path):
                          follow_redirects=False)
     resp = client.get("/admin/email-groups/new")
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_new_email_group_form_includes_csrf_token(authed_client):
     resp = authed_client.get("/admin/email-groups/new")
     assert 'name="csrf_token" value="csrf1"' in resp.text
+    assert 'data-schedule-builder' in resp.text
+    assert '/static/beehive.js?v=' in resp.text
 
 
 def test_new_email_group_form_lists_existing_channels(authed_client, db_path):
@@ -122,7 +130,50 @@ def test_create_email_group_succeeds_and_redirects_to_edit_page(authed_client, d
     assert new_group["subject_template"] == "Weekly \u00b7 {date}"
     assert new_group["recipient_email"] == "owner@example.com"
     assert new_group["send_interval_hours"] == 168
-    assert resp.headers["location"] == f"/admin/email-groups/{new_group['id']}/edit"
+    assert resp.headers["location"] == (
+        f"/admin/email-groups/{new_group['id']}/edit?created=1"
+    )
+
+
+def test_create_calendar_email_group_persists_local_schedule(authed_client, db_path):
+    resp = authed_client.post("/admin/email-groups/new", data={
+        "name": "Weekday Brief",
+        "subject_template": "Brief · {date}",
+        "recipient_email": "owner@example.com",
+        "send_interval_hours": "24",
+        "schedule_mode": "calendar",
+        "schedule_timezone": "Pacific/Auckland",
+        "schedule_time": "08:30",
+        "schedule_weekdays": ["0", "2", "4"],
+        "csrf_token": "csrf1",
+    })
+
+    assert resp.status_code == 303
+    conn = connect(db_path)
+    group = next(
+        item for item in list_email_groups(conn) if item["name"] == "Weekday Brief"
+    )
+    assert group["schedule_mode"] == "calendar"
+    assert group["schedule_timezone"] == "Pacific/Auckland"
+    assert group["schedule_time"] == "08:30"
+    assert group["schedule_weekdays"] == "0,2,4"
+
+
+def test_calendar_email_group_rejects_invalid_timezone(authed_client):
+    resp = authed_client.post("/admin/email-groups/new", data={
+        "name": "Broken",
+        "subject_template": "Brief · {date}",
+        "recipient_email": "owner@example.com",
+        "send_interval_hours": "24",
+        "schedule_mode": "calendar",
+        "schedule_timezone": "Mars/Olympus",
+        "schedule_time": "08:30",
+        "schedule_weekdays": ["0"],
+        "csrf_token": "csrf1",
+    })
+
+    assert resp.status_code == 400
+    assert "Choose a valid timezone." in resp.text
 
 
 def test_create_email_group_assigns_selected_channels(authed_client, db_path):
@@ -208,7 +259,7 @@ def test_edit_email_group_form_requires_session(db_path):
                          follow_redirects=False)
     resp = client.get(f"/admin/email-groups/{group_id}/edit")
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_edit_email_group_form_404_for_missing_group(authed_client):
@@ -227,6 +278,8 @@ def test_edit_email_group_form_shows_current_values(authed_client, db_path):
     assert 'value="Weekly \u00b7 {date}"' in resp.text
     assert 'value="owner@example.com"' in resp.text
     assert 'value="168"' in resp.text
+    assert 'data-schedule-builder' in resp.text
+    assert '/static/beehive.js?v=' in resp.text
 
 
 def test_edit_email_group_form_shows_member_channel_checked(authed_client, db_path):
@@ -253,7 +306,7 @@ def test_update_email_group_saves_changes_and_redirects(authed_client, db_path):
         "csrf_token": "csrf1",
     })
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/admin/email-groups/{group_id}/edit"
+    assert resp.headers["location"] == f"/admin/email-groups/{group_id}/edit?saved=1"
 
     conn = connect(db_path)
     group = get_email_group(conn, group_id)
@@ -363,10 +416,12 @@ def test_delete_email_group_removes_it_and_redirects(authed_client, db_path):
     group_id = create_email_group(conn, "Weekly", "Weekly \u00b7 {date}")
     conn.close()
 
-    resp = authed_client.post(f"/admin/email-groups/{group_id}/delete",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/email-groups/{group_id}/delete",
+        data={"csrf_token": "csrf1", "confirmation": "Weekly"},
+    )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/?tab=groups"
+    assert resp.headers["location"].startswith("/admin/?tab=system&action=")
 
     conn = connect(db_path)
     assert get_email_group(conn, group_id) is None
@@ -379,8 +434,10 @@ def test_delete_email_group_does_not_delete_member_channels(authed_client, db_pa
     assign_channel(conn, group_id, channel_id)
     conn.close()
 
-    resp = authed_client.post(f"/admin/email-groups/{group_id}/delete",
-                               data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/admin/email-groups/{group_id}/delete",
+        data={"csrf_token": "csrf1", "confirmation": "Weekly"},
+    )
     assert resp.status_code == 303
 
     conn = connect(db_path)
@@ -394,8 +451,10 @@ def test_delete_email_group_rejects_wrong_csrf(authed_client, db_path):
     group_id = create_email_group(conn, "Weekly", "Weekly \u00b7 {date}")
     conn.close()
 
-    resp = authed_client.post(f"/admin/email-groups/{group_id}/delete",
-                               data={"csrf_token": "wrong"})
+    resp = authed_client.post(
+        f"/admin/email-groups/{group_id}/delete",
+        data={"csrf_token": "wrong", "confirmation": "Weekly"},
+    )
     assert resp.status_code == 403
 
     conn = connect(db_path)
@@ -403,7 +462,10 @@ def test_delete_email_group_rejects_wrong_csrf(authed_client, db_path):
 
 
 def test_delete_email_group_404_for_missing_group(authed_client):
-    resp = authed_client.post("/admin/email-groups/999/delete", data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        "/admin/email-groups/999/delete",
+        data={"csrf_token": "csrf1", "confirmation": "Missing"},
+    )
     assert resp.status_code == 404
 
 
@@ -440,3 +502,76 @@ def test_group_frequency_label_distinguishes_24_from_other_multiples(authed_clie
     resp = authed_client.get("/admin/?tab=groups")
     assert "Every 48 hours" in resp.text
     assert "Once a day" in resp.text
+
+
+def test_preview_and_test_send_do_not_consume_pending_events(
+    authed_client,
+    db_path,
+    monkeypatch,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(
+        conn,
+        channel_id,
+        "reddit_subreddit",
+        {"subreddit": "PersonalFinanceNZ"},
+    )
+    item_id = insert_new_returning_id(
+        conn,
+        source_id,
+        RawItem(
+            external_id="post-1",
+            title="Rates held",
+            url="https://example.com/rates",
+        ),
+    )
+    update_ai_ranking_by_id(
+        conn,
+        item_id,
+        score=90,
+        summary="The central bank held rates.",
+        rationale="Relevant",
+    )
+    event_id = record_or_coalesce_event(
+        conn,
+        item_id,
+        "discovered",
+        {},
+        "2026-07-15T00:00:00+00:00",
+    )
+    mark_item_events_ready(conn, item_id, "2026-07-15T00:01:00+00:00")
+    group_id = create_email_group(
+        conn,
+        "Daily",
+        "Digest · {date}",
+        recipient_email="owner@example.com",
+    )
+    assign_channel(conn, group_id, channel_id)
+    conn.close()
+
+    preview = authed_client.get(f"/admin/email-groups/{group_id}/preview")
+    assert preview.status_code == 200
+    assert "The central bank held rates." in preview.text
+
+    notifier = MagicMock()
+    monkeypatch.setattr(
+        "beehive.web.admin.build_notifier",
+        lambda *_args, **_kwargs: notifier,
+    )
+    sent = authed_client.post(
+        f"/admin/email-groups/{group_id}/test-send",
+        data={"csrf_token": "csrf1"},
+    )
+
+    assert sent.status_code == 303
+    assert sent.headers["location"] == (
+        f"/admin/email-groups/{group_id}/edit?test_sent=1"
+    )
+    notifier.send.assert_called_once()
+    conn = connect(db_path)
+    assert conn.execute(
+        "SELECT delivered_at FROM item_events WHERE id = ?",
+        (event_id,),
+    ).fetchone()["delivered_at"] is None
+    assert get_email_group(conn, group_id)["last_sent_at"] is None

@@ -17,8 +17,10 @@
     </div>
     <p class="channel-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
   </header>
+  {% include "_channel_criteria.html" %}
 
   <form class="monitor-controls" method="get" action="/channels/{{ page.channel_id }}">
+    {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
     <label class="monitor-search">
       <span>{{ t('web.monitor.search_label') }}</span>
       <input type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}">
@@ -95,14 +97,14 @@
     {% include "_channel_pagination.html" %}
   </section>
 
-  {% if page.history %}
-  <details class="catalogue-history">
+  {% if page.history_pagination.total %}
+  <details class="catalogue-history"{% if page.history_pagination.page > 1 %} open{% endif %}>
     <summary>
       <span>
         <strong>{{ t('web.monitor.unavailable_heading') }}</strong>
         <small>{{ t('web.monitor.unavailable_body') }}</small>
       </span>
-      <span>{{ t('web.channel.folded_count', count=page.history|length) }}</span>
+      <span>{{ t('web.channel.folded_count', count=page.history_pagination.total) }}</span>
     </summary>
     <div class="monitor-grid monitor-grid--history">
       {% for item in page.history %}
@@ -110,6 +112,11 @@
       {% include "_monitor_item.html" %}
       {% endfor %}
     </div>
+    {% set pagination = page.history_pagination %}
+    {% set previous_url = monitor_history_previous_url %}
+    {% set next_url = monitor_history_next_url %}
+    {% set pagination_aria = t('web.monitor.pagination_aria') %}
+    {% include "_channel_pagination.html" %}
   </details>
   {% endif %}
 </main>

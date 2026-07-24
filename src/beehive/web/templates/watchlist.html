@@ -9,26 +9,89 @@
       <h1>{{ t('web.watchlist.heading') }}</h1>
       <p>{{ t('web.watchlist.lede') }}</p>
     </div>
-    <a class="watchlist-settings-link" href="/admin/settings">{{ t('web.watchlist.email_settings') }}</a>
+    <a class="watchlist-settings-link" href="/admin/?tab=delivery">{{ t('web.watchlist.email_settings') }}</a>
   </header>
 
   {% if default_email %}
   <p class="watchlist-email-status">{{ t('web.watchlist.email_status', email=default_email) }}</p>
   {% else %}
-  <p class="watchlist-email-status warning">{{ t('web.watchlist.email_missing') }} <a href="/admin/settings">{{ t('web.watchlist.configure_email') }}</a></p>
+  <p class="watchlist-email-status warning">{{ t('web.watchlist.email_missing') }} <a href="/admin/?tab=delivery">{{ t('web.watchlist.configure_email') }}</a></p>
+  {% endif %}
+
+  {% if removed_count is not none %}
+  <p class="status-banner" role="status">{{ t('web.watchlist.removed_count', count=removed_count) }}</p>
+  {% endif %}
+  {% if retry_result %}
+  <p class="status-banner{{ ' error' if retry_result == 'failed' else '' }}" role="status">
+    {{ t('web.watchlist.retry_' ~ retry_result) }}
+  </p>
+  {% endif %}
+
+  <nav class="watchlist-tabs" aria-label="{{ t('web.watchlist.status_aria') }}">
+    <a href="{{ watchlist_active_url }}"{% if page.query.status == 'active' %} aria-current="page"{% endif %}>
+      {{ t('web.watchlist.active') }} <span>{{ page.active_count }}</span>
+    </a>
+    <a href="{{ watchlist_closed_url }}"{% if page.query.status == 'closed' %} aria-current="page"{% endif %}>
+      {{ t('web.watchlist.closed') }} <span>{{ page.closed_count }}</span>
+    </a>
+    <a href="{{ watchlist_all_url }}"{% if page.query.status == 'all' %} aria-current="page"{% endif %}>
+      {{ t('web.watchlist.all') }} <span>{{ page.total_count }}</span>
+    </a>
+  </nav>
+
+  <form class="watchlist-filters" method="get" action="/watchlist">
+    <input type="hidden" name="status" value="{{ page.query.status }}">
+    <label>
+      <span>{{ t('web.watchlist.search_label') }}</span>
+      <input type="search" name="q" value="{{ page.query.search }}" placeholder="{{ t('web.watchlist.search_placeholder') }}">
+    </label>
+    <label>
+      <span>{{ t('web.watchlist.reminder_filter') }}</span>
+      <select name="reminder">
+        {% for value in ['all', 'scheduled', 'due', 'sent', 'error', 'inactive'] %}
+        <option value="{{ value }}"{% if page.query.reminder == value %} selected{% endif %}>{{ t('web.watchlist.reminder_filter_' ~ value) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn ghost" type="submit">{{ t('web.watchlist.apply_filters') }}</button>
+    {% if page.query.search or page.query.reminder != 'all' %}
+    <a class="text-link" href="/watchlist?status={{ page.query.status }}">{{ t('web.watchlist.clear_filters') }}</a>
+    {% endif %}
+  </form>
+
+  {% if page.items %}
+  <div class="watchlist-bulk-bar">
+    <form id="watchlist-bulk-form" method="post" action="/watchlist/remove-selected">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next_url" value="{{ watchlist_return_url }}">
+      <button class="btn danger" type="submit">{{ t('web.watchlist.remove_selected') }}</button>
+    </form>
+    <p>
+      {{ t(
+        'web.watchlist.result_range',
+        start=watchlist_range_start,
+        end=watchlist_range_end,
+        total=page.pagination.total
+      ) }}
+    </p>
+  </div>
   {% endif %}
 
   {% if page.items %}
   <section class="watchlist-items" aria-label="{{ t('web.watchlist.list_aria') }}">
     {% for item in page.items %}
     <article class="watchlist-item{{ ' closed' if item.is_closed else '' }}" id="watchlist-item-{{ item.id }}">
-      <a class="watchlist-item-media" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">
+      <label class="watchlist-select">
+        <input type="checkbox" name="item_ids" value="{{ item.id }}" form="watchlist-bulk-form">
+        <span class="sr-only">{{ t('web.watchlist.select_item', title=item.title) }}</span>
+      </label>
+      <a class="watchlist-item-media" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer"
+         aria-label="{{ item.title }}. {{ t('web.item.opens_new_window') }}">
         {% if item.image_url %}
         <img src="{{ item.image_url }}" alt="" width="240" height="180" loading="lazy" decoding="async" referrerpolicy="no-referrer">
         {% else %}
         <span class="tracker-image-placeholder" aria-hidden="true"></span>
         {% endif %}
-        <span class="sr-only">{{ t('web.item.opens_new_window') }}</span>
       </a>
       <div class="watchlist-item-main">
         <p class="watchlist-item-context">{{ item.context }}</p>
@@ -42,6 +105,26 @@
           {% if item.deadline_relative_label %}<strong>{{ item.deadline_relative_label }}</strong>{% endif %}
           {% if item.deadline_label %}{% if item.deadline_relative_label %} · {% endif %}{{ t('web.watchlist.closed_at' if item.is_closed else 'web.watchlist.closes_at', time=item.deadline_label) }}{% else %}{{ t('web.tracker.no_deadline') }}{% endif %}
         </p>
+        <p class="watchlist-reminder watchlist-reminder--{{ item.reminder_status }}">
+          {% if item.reminder_status == 'sent' %}
+          {{ t('web.watchlist.reminder_sent', time=item.reminder_sent_label) }}
+          {% elif item.reminder_status == 'scheduled' %}
+          {{ t('web.watchlist.reminder_scheduled', time=item.reminder_due_label) }}
+          {% elif item.reminder_status == 'due' %}
+          {{ t('web.watchlist.reminder_due') }}
+          {% elif item.reminder_status == 'error' %}
+          {{ t('web.watchlist.reminder_failed', error=item.reminder_error) }}
+          {% else %}
+          {{ t('web.watchlist.reminder_inactive') }}
+          {% endif %}
+        </p>
+        {% if item.reminder_status == 'error' %}
+        <form class="watchlist-retry" method="post" action="/items/{{ item.id }}/retry-reminder">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="next_url" value="{{ watchlist_return_url }}">
+          <button class="btn ghost" type="submit">{{ t('web.watchlist.retry_reminder') }}</button>
+        </form>
+        {% endif %}
       </div>
       {% set watch_origin = "watchlist" %}
       {% set watch_target = "#watchlist-item-" ~ item.id %}
@@ -53,11 +136,37 @@
   </section>
   {% else %}
   <section class="empty-state watchlist-empty">
+    {% if page.total_count %}
+    <h2>{{ t('web.watchlist.filtered_empty_heading') }}</h2>
+    <p>{{ t('web.watchlist.filtered_empty_body') }}</p>
+    <a class="button-primary" href="/watchlist?status=all">{{ t('web.watchlist.show_all') }}</a>
+    {% else %}
     <h2>{{ t('web.watchlist.empty_heading') }}</h2>
     <p>{{ t('web.watchlist.empty_body') }}</p>
     <a class="button-primary" href="/">{{ t('web.watchlist.browse') }}</a>
+    {% endif %}
   </section>
   {% endif %}
+
+  {% if page.pagination.page_count > 1 %}
+  <nav class="channel-pagination" aria-label="{{ t('web.watchlist.pagination_aria') }}">
+    {% if watchlist_previous_url %}<a href="{{ watchlist_previous_url }}">{{ t('web.pagination.previous') }}</a>{% endif %}
+    <span>{{ t('web.pagination.page_of', page=page.pagination.page, pages=page.pagination.page_count) }}</span>
+    {% if watchlist_next_url %}<a href="{{ watchlist_next_url }}">{{ t('web.pagination.next') }}</a>{% endif %}
+  </nav>
+  {% endif %}
+
+  {% if page.closed_count %}
+  <details class="watchlist-clear-closed danger-disclosure">
+    <summary>{{ t('web.watchlist.clear_closed') }}</summary>
+    <p>{{ t('web.watchlist.clear_closed_warning', count=page.closed_count) }}</p>
+    <form method="post" action="/watchlist/clear-closed">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn danger" type="submit">{{ t('web.watchlist.confirm_clear_closed') }}</button>
+    </form>
+  </details>
+  {% endif %}
+  <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 </main>
 {% endblock %}
 {% block scripts %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ error_title }} · {{ t('common.product_name') }}{% endblock %}
+{% block body_class %}page-error{% endblock %}
+{% block content %}
+<main id="main-content" class="not-found-shell">
+  <div>
+    <p class="eyebrow" lang="en">{{ status_code }}</p>
+    <h1>{{ error_title }}</h1>
+    <p class="page-lede">{{ error_message }}</p>
+    <a class="btn primary" href="/">{{ t('web.error.back_home') }}</a>
+  </div>
+  <div class="not-found-code" aria-hidden="true">{{ status_code }}</div>
+</main>
+{% endblock %}

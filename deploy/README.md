@@ -5,7 +5,7 @@ process selects its role through a Quadlet unit's `Exec=`:
 
 - an always-on public web app (Dashboard, Channel drill-down, and `/admin/*`),
 - a timer-triggered fetch/AI-rank cycle,
-- an hourly-evaluated periodic email group digest job,
+- a 15-minute Email Group schedule and Research-completion notification job,
 - a five-minute Tracker reminder job, currently backed by the auction adapter,
 - a queued, owner-triggered article deep-read worker, and
 - an always-on durable Research worker (Research Runs + Research Chat replies, ADR-0009), backed
@@ -30,7 +30,7 @@ the reverse proxy.
 | `quadlet/beehive-web.container` | Always-on web app — `PublishPort=127.0.0.1:8095:8000`, `Restart=always` |
 | `quadlet/beehive-fetch.container` + `.timer` | Fetch → dedup → AI-rank cycle, every 3 hours |
 | `quadlet/beehive-fetch-manual.container` + `.path` | Manual per-Channel trigger — started only when the admin UI writes a trigger marker, never on a timer |
-| `quadlet/beehive-digest.container` + `.timer` | Hourly evaluation of every custom email group; each group's own send interval decides whether it actually sends that run |
+| `quadlet/beehive-digest.container` + `.timer` | Evaluates Email Group interval/calendar schedules and pending Research-completion emails every 15 minutes |
 | `quadlet/beehive-auction-reminders.container` + `.timer` | Runs the generic Tracker reminder worker every 5 minutes; the current auction adapter claims watched lots inside the one-hour closing window |
 | `quadlet/beehive-deep-read.container` + `.path` + `.timer` | Bounded article brief worker; the path provides low-latency wakeup and the timer reconciles missed wakeups |
 | `quadlet/beehive-research.container` | Always-on durable Research worker — bounded Research Run + Research Chat pools (ADR-0009), `Restart=always` |
@@ -66,9 +66,9 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
   sufficiency/synthesis/chat AI calls, all via `ai/llm_client.py`). The web container and the
   Research reconcile-sweep container do not receive this secret — reconciliation only recovers
   expired leases, it never calls the AI.
-- `beehive-acs-connection` → `ACS_CONNECTION_STRING` (digest and Tracker-reminder email delivery,
-  paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM` `Environment=` values on those
-  containers). Omit this secret to skip email; the app falls back to logging.
+- `beehive-acs-connection` → `ACS_CONNECTION_STRING` (Email Group, Research-completion, and
+  Tracker-reminder delivery, paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM`
+  `Environment=` values on those containers). Omit this secret to log delivery instead.
 
 No Reddit credential is needed: the fetch container's Reddit connector reads Reddit's public,
 unauthenticated Atom RSS feed (`https://www.reddit.com/r/<subreddit>/hot/.rss`), not the OAuth
@@ -114,6 +114,23 @@ systemctl --user enable --now beehive-research-reconcile.timer
 When the owner requests a brief, the web process commits a pending SQLite job before writing the
 wakeup marker. The marker is only a latency hint: `beehive-deep-read.timer` starts the same bounded
 worker every five minutes so queued work is not stranded if the path event is missed.
+
+## Email schedule operations
+
+`beehive-digest.timer` runs every 15 minutes. Each Email Group independently uses either a fixed
+interval or selected weekdays plus a local time and IANA timezone. The job records every check,
+successful send, and delivery error. It also sends pending Research completion notifications to
+the configured default recipient before evaluating Email Groups.
+
+The Owner can inspect next-due times and delivery failures in Admin, preview current pending
+content, and send a test copy without consuming events. System Health summarizes missing
+recipients and recent delivery errors.
+
+```bash
+systemctl --user status beehive-digest.timer
+systemctl --user list-timers beehive-digest.timer --no-pager
+journalctl --user -u beehive-digest.service -n 100 --no-pager
+```
 
 ## Research worker (ADR-0009)
 

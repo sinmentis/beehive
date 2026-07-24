@@ -1,7 +1,7 @@
 {# One row in the Research Session list -- accepts `row` (research_view.SessionRowView). #}
-<div class="channel-admin-row research-session-row" role="row">
+<div class="channel-admin-row research-session-row{{ ' research-session-row--unread' if row.is_unread else '' }}" role="row">
   <span class="channel-admin-copy" role="cell">
-    <a class="research-session-link" href="{{ row.detail_url }}"><strong>{{ row.question }}</strong></a>
+    <a class="research-session-link" href="{{ row.detail_url }}"><strong>{{ row.question }}</strong>{% if row.is_unread %}<span class="unread-label">{{ t('web.research.unread') }}</span>{% endif %}</a>
     <p>{{ row.last_activity_label }}</p>
   </span>
   <span class="research-session-status" role="cell">{{ row.status_label }}</span>

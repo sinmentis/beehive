@@ -1,11 +1,20 @@
 (() => {
   let focusKey = "";
   let feedbackMessage = "";
+  let fallbackFocusElement = null;
 
   document.addEventListener("htmx:beforeRequest", (event) => {
     const element = event.detail.elt;
     focusKey = element.dataset.focusKey || "";
     feedbackMessage = element.dataset.feedbackMessage || "";
+    const removableItem = element.closest(".watchlist-item");
+    if (removableItem) {
+      fallbackFocusElement = (
+        removableItem.nextElementSibling?.querySelector("button, a")
+        || removableItem.previousElementSibling?.querySelector("button, a")
+        || document.querySelector(".watchlist-settings-link")
+      );
+    }
   });
 
   document.addEventListener("htmx:afterSwap", () => {
@@ -13,7 +22,11 @@
       const target = document.querySelector(
         `[data-focus-key="${CSS.escape(focusKey)}"]`,
       );
-      target?.focus();
+      if (target) {
+        target.focus();
+      } else if (fallbackFocusElement instanceof HTMLElement) {
+        fallbackFocusElement.focus();
+      }
     }
 
     if (feedbackMessage) {
@@ -29,6 +42,7 @@
 
     focusKey = "";
     feedbackMessage = "";
+    fallbackFocusElement = null;
   });
 
   const channelForm = document.querySelector(".channel-bulk-form");
@@ -224,6 +238,120 @@
         // Clipboard access can be denied (e.g. insecure context) -- leave the label as-is.
       });
     });
+  });
+
+  document.querySelectorAll("[data-source-test-form]").forEach((form) => {
+    form.addEventListener("submit", () => {
+      const button = form.querySelector("button[type='submit']");
+      form.setAttribute("aria-busy", "true");
+      if (button instanceof HTMLButtonElement) {
+        button.disabled = true;
+        button.classList.add("is-loading");
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-schedule-builder]").forEach((builder) => {
+    const modeInputs = [
+      ...builder.querySelectorAll('input[name="schedule_mode"]'),
+    ];
+    const panels = [...builder.querySelectorAll("[data-schedule-panel]")];
+    const syncScheduleFields = () => {
+      const selectedMode = modeInputs.find((input) => input.checked)?.value || "interval";
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset.schedulePanel !== selectedMode;
+      });
+    };
+    modeInputs.forEach((input) => {
+      input.addEventListener("change", syncScheduleFields);
+    });
+    syncScheduleFields();
+  });
+
+  const shouldRestoreDraft = new URLSearchParams(window.location.search).get("reauth") === "1";
+  document.querySelectorAll("form[data-preserve-draft]").forEach((form) => {
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    const storageKey = `beehive:draft:${window.location.pathname}:${form.action}`;
+    const saveDraft = () => {
+      const values = {};
+      [...form.elements].forEach((control) => {
+        if (
+          !(control instanceof HTMLInputElement
+            || control instanceof HTMLTextAreaElement
+            || control instanceof HTMLSelectElement)
+          || !control.name
+          || ["csrf_token", "password", "next"].includes(control.name)
+          || control instanceof HTMLInputElement && control.type === "file"
+        ) {
+          return;
+        }
+        if (
+          control instanceof HTMLInputElement
+          && ["checkbox", "radio"].includes(control.type)
+        ) {
+          if (!Object.hasOwn(values, control.name)) {
+            values[control.name] = [];
+          }
+          if (control.checked) {
+            values[control.name].push(control.value);
+          }
+          return;
+        }
+        const value = control.value;
+        if (Object.hasOwn(values, control.name)) {
+          values[control.name] = (
+            Array.isArray(values[control.name])
+              ? [...values[control.name], value]
+              : [values[control.name], value]
+          );
+        } else {
+          values[control.name] = value;
+        }
+      });
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify(values));
+      } catch (error) {
+        console.warn("Could not preserve the form draft", error);
+      }
+    };
+
+    if (shouldRestoreDraft) {
+      try {
+        const stored = window.sessionStorage.getItem(storageKey);
+        const values = stored ? JSON.parse(stored) : null;
+        if (values && typeof values === "object") {
+          [...form.elements].forEach((control) => {
+            if (
+              !(control instanceof HTMLInputElement
+                || control instanceof HTMLTextAreaElement
+                || control instanceof HTMLSelectElement)
+              || !control.name
+              || !Object.hasOwn(values, control.name)
+            ) {
+              return;
+            }
+            const storedValue = values[control.name];
+            if (
+              control instanceof HTMLInputElement
+              && ["checkbox", "radio"].includes(control.type)
+            ) {
+              const selected = Array.isArray(storedValue) ? storedValue : [storedValue];
+              control.checked = selected.includes(control.value);
+            } else if (typeof storedValue === "string") {
+              control.value = storedValue;
+            }
+            control.dispatchEvent(new Event("input", { bubbles: true }));
+            control.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+        }
+      } catch (error) {
+        console.warn("Could not restore the form draft", error);
+      }
+    }
+    form.addEventListener("input", saveDraft);
+    form.addEventListener("change", saveDraft);
   });
 
   const search = document.querySelector(".dashboard-search input[type='search']");

@@ -382,7 +382,7 @@ def _persist_plan_sources(
     (research_source_id, external_key): a duplicate research_sources row for the same
     connector_type/config would fragment what should be one citation-stable Evidence Item
     across two different research_source_id values."""
-    existing = list_research_sources(conn, session_id)
+    existing = list_research_sources(conn, session_id, include_inactive=True)
     by_key: dict[tuple[str, tuple[tuple[str, str], ...]], ResearchSource] = {
         (source.connector_type, _config_key(source.config)): source for source in existing
     }

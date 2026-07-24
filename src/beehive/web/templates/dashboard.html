@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t('web.title.dashboard', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-dashboard{% endblock %}
-{% block header_status %}<span class="dashboard-clock">{{ dashboard_time }} · {{ t('web.dashboard.unread_count', count=total_unread) }}</span>{% endblock %}
+{% block header_status %}{% if is_admin %}<span class="dashboard-clock">{{ dashboard_time }} · {{ t('web.dashboard.unread_count', count=total_unread) }}</span>{% else %}<span class="dashboard-clock">{{ dashboard_time }}</span>{% endif %}{% endblock %}
 {% block secondary_navigation %}
   {% set nav_channels = channels %}
   {% set active_channel_id = none %}
@@ -19,7 +19,7 @@
   <header class="dashboard-toolbar">
     <div class="dashboard-title">
       <h1>{{ t('web.dashboard.heading') }}</h1>
-      <span>{{ highlights|length }}{% if has_more_signals %}+{% endif %}</span>
+      <span>{{ highlights|length }}</span>
     </div>
     <nav class="dashboard-tabs" aria-label="{{ t('web.dashboard.tabs_aria') }}">
       {% if view == "all" and minimum_score is none %}
@@ -27,14 +27,14 @@
       {% else %}
       <a href="{{ all_url }}">{{ t('web.dashboard.tab_all_count', count=all_signal_count) }}</a>
       {% endif %}
-      {% if view == "unread" and minimum_score is none %}
+      {% if is_admin and view == "unread" and minimum_score is none %}
       <strong aria-current="page">{{ t('web.dashboard.tab_unread', count=unread_signal_count) }}</strong>
-      {% else %}
+      {% elif is_admin %}
       <a href="{{ unread_url }}">{{ t('web.dashboard.tab_unread', count=unread_signal_count) }}</a>
       {% endif %}
-      {% if view == "read" and minimum_score is none %}
+      {% if is_admin and view == "read" and minimum_score is none %}
       <strong aria-current="page">{{ t('web.dashboard.tab_read', count=read_signal_count) }}</strong>
-      {% else %}
+      {% elif is_admin %}
       <a href="{{ read_url }}">{{ t('web.dashboard.tab_read', count=read_signal_count) }}</a>
       {% endif %}
       {% if minimum_score is not none %}
@@ -43,11 +43,19 @@
       <a href="{{ high_priority_url }}">{{ t('web.dashboard.tab_high_priority', count=high_priority_count) }}</a>
       {% endif %}
     </nav>
-    <form class="dashboard-search" action="/archive" method="get" role="search">
+    <form class="dashboard-search" action="/search" method="get" role="search">
       <label class="sr-only" for="dashboard-search">{{ t('web.dashboard.search_label') }}</label>
       <input id="dashboard-search" type="search" name="q" placeholder="{{ t('web.dashboard.search_placeholder') }}">
       <kbd class="dashboard-search-shortcut" aria-hidden="true">/</kbd>
     </form>
+    {% if is_admin and unread_signal_count %}
+    <form class="inline-form dashboard-mark-read" method="post" action="/dashboard/mark-all-read">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if minimum_score is not none %}<input type="hidden" name="minimum_score" value="{{ minimum_score }}">{% endif %}
+      <input type="hidden" name="next_url" value="{{ return_url }}">
+      <button type="submit" class="mark-read-button">{{ t('web.channel.mark_all_read') }}</button>
+    </form>
+    {% endif %}
   </header>
 
   {% if not channels %}
@@ -66,7 +74,7 @@
       <table class="signal-table">
         <caption class="sr-only">{{ t('web.dashboard.table_caption', days=featured_window_days) }}</caption>
         <colgroup>
-          <col class="signal-state-col" data-column-key="state">
+          {% if is_admin %}<col class="signal-state-col" data-column-key="state">{% endif %}
           <col class="signal-score-col" data-column-key="score">
           <col class="signal-channel-col" data-column-key="channel">
           <col class="signal-source-col" data-column-key="source">
@@ -76,7 +84,7 @@
         </colgroup>
         <thead>
           <tr>
-            <th scope="col" data-column-header="state"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span>{{ resize_handle('state', t('web.dashboard.column_read_state'), 11) }}</th>
+            {% if is_admin %}<th scope="col" data-column-header="state"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span>{{ resize_handle('state', t('web.dashboard.column_read_state'), 11) }}</th>{% endif %}
             <th scope="col" data-column-header="score">{{ t('web.dashboard.column_score') }}{{ resize_handle('score', t('web.dashboard.column_score'), 34) }}</th>
             <th scope="col" data-column-header="channel">{{ t('web.dashboard.column_channel') }}{{ resize_handle('channel', t('web.dashboard.column_channel'), 64) }}</th>
             <th scope="col" class="signal-source-heading" data-column-header="source">{{ t('web.dashboard.column_source') }}{{ resize_handle('source', t('web.dashboard.column_source'), 64) }}</th>
@@ -87,8 +95,20 @@
         </thead>
         <tbody>
           {% for item in highlights %}
-          <tr class="signal-row {{ 'is-read' if item.is_read else 'is-unread' }}{{ ' is-dim' if item.ai_score < 60 else '' }}" tabindex="-1">
-            <td class="signal-state"><span class="signal-unread-dot" aria-hidden="true"></span><span class="sr-only">{{ t('web.dashboard.state_unread') if not item.is_read else t('web.dashboard.state_read') }}</span></td>
+          <tr class="signal-row{% if is_admin %} {{ 'is-read' if item.is_read else 'is-unread' }}{% endif %}{{ ' is-dim' if item.ai_score < 60 else '' }}" tabindex="-1">
+            {% if is_admin %}
+            <td class="signal-state">
+              <form class="dashboard-read-state-form" method="post" action="/items/{{ item.id }}/read-state">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="is_read" value="{{ 0 if item.is_read else 1 }}">
+                <input type="hidden" name="next_url" value="{{ return_url }}">
+                <button type="submit" aria-label="{{ t('web.item.mark_unread_aria' if item.is_read else 'web.item.mark_read_aria', title=item.title) }}">
+                  <span class="signal-unread-dot" aria-hidden="true"></span>
+                  <span class="sr-only">{{ t('web.dashboard.state_unread') if not item.is_read else t('web.dashboard.state_read') }}</span>
+                </button>
+              </form>
+            </td>
+            {% endif %}
             <td class="signal-score">{{ item.ai_score|round|int }}</td>
             <td><a class="signal-channel" href="/channels/{{ item.item_channel_id }}" title="{{ item.channel_name }}">{{ item.channel_name }}</a></td>
             <td class="signal-source" title="{{ item.source_label }}">{{ item.source_label }}</td>
@@ -114,8 +134,15 @@
       <span><kbd>j/k</kbd> {{ t('web.dashboard.shortcut_move') }}</span>
       <span><kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }}</span>
       <span><kbd>f</kbd> {{ t('web.dashboard.shortcut_filter') }}</span>
-      <b>{{ highlights|length }}{% if has_more_signals %}+{% endif %} / {{ pending_signal_count }}</b>
+      <b>{{ highlights|length }} / {{ pending_signal_count }}</b>
     </footer>
+    {% if pagination.page_count > 1 or pagination.page > 1 %}
+    <nav class="pager dashboard-pager" aria-label="{{ t('web.archive.pager_aria') }}">
+      {% if previous_url %}<a href="{{ previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
+      <span>{{ t('web.archive.page_label', page=pagination.page) }}</span>
+      {% if next_url %}<a href="{{ next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
+    </nav>
+    {% endif %}
     <p id="dashboard-selection-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
     {% else %}
     <div class="dashboard-signals-empty">

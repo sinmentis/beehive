@@ -4,6 +4,7 @@
      title="{{ item.exact_time }}">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   {% if item.engagement_label %}<span class="folded-engagement">{{ item.engagement_label }}</span>{% endif %}
   <div class="folded-actions">
+    {% include "_read_state_control.html" %}
     {% if is_owner %}
     <div class="folded-votes" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}">
       <button type="button" aria-label="{{ t('web.item.vote_up_aria') }}"
@@ -12,7 +13,7 @@
               data-focus-key="folded-{{ item.id }}-up"
               data-feedback-message="{{ t('web.item.vote_up_feedback') }}"
               hx-post="/items/{{ item.id }}/vote"
-              hx-vals='{{ {"value": 1, "csrf_token": csrf_token, "origin": "folded"} | tojson }}'
+              hx-vals='{{ {"value": 1, "csrf_token": csrf_token, "origin": "folded", "editorial_page": editorial_page, "editorial_show_read": editorial_show_read, "editorial_show_below": editorial_show_below, "editorial_search": editorial_search} | tojson }}'
               hx-target="#folded-item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↑</span></button>
       <button type="button" aria-label="{{ t('web.item.vote_down_aria') }}"
               aria-pressed="{{ 'true' if item.vote_value == -1 else 'false' }}"
@@ -20,7 +21,7 @@
               data-focus-key="folded-{{ item.id }}-down"
               data-feedback-message="{{ t('web.item.vote_down_feedback') }}"
               hx-post="/items/{{ item.id }}/vote"
-              hx-vals='{{ {"value": -1, "csrf_token": csrf_token, "origin": "folded"} | tojson }}'
+              hx-vals='{{ {"value": -1, "csrf_token": csrf_token, "origin": "folded", "editorial_page": editorial_page, "editorial_show_read": editorial_show_read, "editorial_show_below": editorial_show_below, "editorial_search": editorial_search} | tojson }}'
               hx-target="#folded-item-{{ item.id }}" hx-swap="outerHTML"><span aria-hidden="true">↓</span></button>
     </div>
     {% elif item.vote_value == 1 %}

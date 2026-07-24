@@ -1,8 +1,16 @@
 import pytest
 
 from beehive.connectors.base import RawItem
-from beehive.db.channels import (create_channel, delete_channel, duplicate_channel, get_channel,
-                                     list_channels, mark_digest_sent, update_channel)
+from beehive.db.channels import (
+    channel_impact_counts,
+    create_channel,
+    delete_channel,
+    duplicate_channel,
+    get_channel,
+    list_channels,
+    mark_digest_sent,
+    update_channel,
+)
 from beehive.db.connection import connect, init_schema
 from beehive.db.email_groups import (assign_channel, create_email_group, get_channel_group,
                                       list_member_channels)
@@ -25,6 +33,24 @@ def test_create_and_get_channel(conn):
     assert row["fetch_interval_hours"] == 3
     assert row["highlight_count"] == 8
     assert row["minimum_score"] == 0
+
+
+def test_channel_impact_counts_include_cascading_content(conn):
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "nz"}
+    )
+    insert_new(
+        conn,
+        source_id,
+        RawItem(external_id="one", title="One", url="https://example.com"),
+    )
+
+    impact = channel_impact_counts(conn, channel_id)
+
+    assert impact["sources"] == 1
+    assert impact["items"] == 1
+    assert impact["votes"] == 0
 
 
 def test_create_channel_saves_display_settings(conn):

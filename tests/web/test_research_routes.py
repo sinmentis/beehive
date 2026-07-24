@@ -4,7 +4,7 @@ validation, no web-side AI/network call, refresh/cancel, archive restrictions, h
 cascade, evidence exclude/restore (incl. empty-evidence state), one-pending-chat enforcement,
 first-chat-disabled-until-synthesis, latest synthesis staying visible during a refresh, and the
 exact HTMX poll/termination contract."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -119,6 +119,14 @@ def _create_session_with_two_evidence_items_and_synthesis(c):
     return session_id, item1.id, item2.id
 
 
+def _mark_run_completed(c, run_id: int, *, minutes_after_t0: int = 5) -> None:
+    c.execute(
+        "UPDATE research_runs SET status = 'completed', completed_at = ? WHERE id = ?",
+        ((T0 + timedelta(minutes=minutes_after_t0)).isoformat(), run_id),
+    )
+    c.commit()
+
+
 _ALL_GET_ROUTES = [
     "/research",
     "/research/new",
@@ -127,9 +135,12 @@ _SESSION_GET_ROUTE_TEMPLATES = [
     "/research/{id}",
     "/research/{id}/status",
     "/research/{id}/messages/status",
+    "/research/{id}/refresh-preview",
+    "/research/{id}/sources/new",
 ]
 _SESSION_POST_ROUTE_TEMPLATES = [
     "/research/{id}/refresh",
+    "/research/{id}/retry-synthesis",
     "/research/{id}/cancel",
     "/research/{id}/archive",
     "/research/{id}/unarchive",
@@ -146,7 +157,7 @@ def test_every_static_get_route_redirects_anonymous_to_login(client):
     for path in _ALL_GET_ROUTES:
         resp = client.get(path)
         assert resp.status_code == 303, path
-        assert resp.headers["location"] == "/admin/login"
+        assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_every_session_get_route_redirects_anonymous_to_login(client, conn):
@@ -155,7 +166,7 @@ def test_every_session_get_route_redirects_anonymous_to_login(client, conn):
     for template in _SESSION_GET_ROUTE_TEMPLATES:
         resp = client.get(template.format(id=session_id))
         assert resp.status_code == 303, template
-        assert resp.headers["location"] == "/admin/login"
+        assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_every_session_post_route_redirects_anonymous_to_login(client, conn):
@@ -164,7 +175,7 @@ def test_every_session_post_route_redirects_anonymous_to_login(client, conn):
     for template in _SESSION_POST_ROUTE_TEMPLATES:
         resp = client.post(template.format(id=session_id), data={"csrf_token": "whatever"})
         assert resp.status_code == 303, template
-        assert resp.headers["location"] == "/admin/login"
+        assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_evidence_exclude_restore_require_auth(client, conn):
@@ -175,13 +186,20 @@ def test_evidence_exclude_restore_require_auth(client, conn):
             f"/research/{session_id}/evidence/{item_id}/{action}",
             data={"csrf_token": "whatever"})
         assert resp.status_code == 303
-        assert resp.headers["location"] == "/admin/login"
+        assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_new_session_post_requires_auth(client):
     resp = client.post("/research/new", data={"question": "Q", "csrf_token": "x"})
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
+
+    preview = client.post(
+        "/research/new/preview",
+        data={"question": "Q", "csrf_token": "x"},
+    )
+    assert preview.status_code == 303
+    assert preview.headers["location"].startswith("/admin/login?next=")
 
 
 # ============================================================================
@@ -271,6 +289,28 @@ def test_nav_shows_research_link_for_owner_on_admin_page(authed_client):
     assert 'href="/research"' in resp.text
 
 
+def test_completed_research_is_unread_until_owner_opens_detail(authed_client, conn):
+    _, c = conn
+    session_id, _, run_id, _, _ = _create_session_with_evidence(c)
+    _mark_run_completed(c, run_id)
+
+    listing = authed_client.get("/research")
+    assert listing.status_code == 200
+    assert "New result" in listing.text
+    assert "1 unread Research results" in listing.text
+
+    detail = authed_client.get(f"/research/{session_id}")
+    assert detail.status_code == 200
+
+    listing_after_view = authed_client.get("/research")
+    assert "New result" not in listing_after_view.text
+    assert "unread Research results" not in listing_after_view.text
+    assert c.execute(
+        "SELECT last_viewed_at FROM research_sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()["last_viewed_at"] is not None
+
+
 # ============================================================================
 # Create: atomic, strict seed validation, no web-side AI/network call
 # ============================================================================
@@ -296,6 +336,23 @@ def test_create_session_persists_question_and_sources_atomically(authed_client, 
     runs = c.execute("SELECT status FROM research_runs").fetchall()
     assert len(runs) == 1
     assert runs[0]["status"] == "pending"
+
+
+def test_new_session_preview_shows_enforced_budget_without_writing(
+    authed_client,
+    db_path,
+):
+    resp = authed_client.post("/research/new/preview", data={
+        "question": "What is happening with NZ interest rates?",
+        "connectors": ["google_news_query", "rbnz_news"],
+        "csrf_token": "csrf1",
+    })
+
+    assert resp.status_code == 200
+    assert "20 minutes" in resp.text
+    assert "Maximum deep fetches" in resp.text
+    c = connect(db_path)
+    assert c.execute("SELECT COUNT(*) FROM research_sessions").fetchone()[0] == 0
 
 
 def test_create_session_rejects_blank_question_with_no_rows_written(authed_client, db_path):
@@ -394,6 +451,164 @@ def test_refresh_enqueues_a_new_run_for_active_session(authed_client, conn):
         "SELECT status FROM research_runs WHERE session_id=?", (session_id,)).fetchall()
     assert len(runs) == 2
     assert any(r["status"] == "pending" for r in runs)
+
+
+def test_refresh_preview_does_not_enqueue_until_confirmed(authed_client, conn):
+    _, c = conn
+    session_id, _, run_id, *_ = _create_session_with_evidence(c)
+    c.execute(
+        "UPDATE research_runs SET status='completed', completed_at=? WHERE id=?",
+        (T0.isoformat(), run_id),
+    )
+    c.commit()
+
+    resp = authed_client.get(f"/research/{session_id}/refresh-preview")
+
+    assert resp.status_code == 200
+    assert "Hard run ceilings" in resp.text
+    assert c.execute(
+        "SELECT COUNT(*) FROM research_runs WHERE session_id=?",
+        (session_id,),
+    ).fetchone()[0] == 1
+
+
+def test_retry_synthesis_enqueues_synthesis_only_run(authed_client, conn):
+    _, c = conn
+    session_id, _, run_id, *_ = _create_session_with_evidence(c)
+    c.execute(
+        "UPDATE research_runs SET status='completed', completed_at=? WHERE id=?",
+        (T0.isoformat(), run_id),
+    )
+    c.commit()
+
+    resp = authed_client.post(
+        f"/research/{session_id}/retry-synthesis",
+        data={"csrf_token": "csrf1"},
+    )
+
+    assert resp.status_code == 303
+    row = c.execute(
+        "SELECT run_kind, status FROM research_runs "
+        "WHERE session_id=? ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    assert (row["run_kind"], row["status"]) == ("synthesis", "pending")
+
+
+def test_current_source_can_change_without_deleting_historical_evidence(
+    authed_client,
+    conn,
+):
+    _, c = conn
+    session_id, source_id, run_id, _, item_id = _create_session_with_evidence(c)
+    c.execute(
+        "UPDATE research_runs SET status='completed', completed_at=? WHERE id=?",
+        (T0.isoformat(), run_id),
+    )
+    c.commit()
+
+    add = authed_client.post(
+        f"/research/{session_id}/sources/new",
+        data={
+            "connector_type": "google_news_query",
+            "value": "mortgage rates",
+            "csrf_token": "csrf1",
+        },
+    )
+    remove = authed_client.post(
+        f"/research/{session_id}/sources/{source_id}/delete",
+        data={"csrf_token": "csrf1"},
+    )
+
+    assert add.status_code == 303
+    assert remove.status_code == 303
+    assert c.execute(
+        "SELECT is_active FROM research_sources WHERE id=?",
+        (source_id,),
+    ).fetchone()["is_active"] == 0
+    assert c.execute(
+        "SELECT COUNT(*) FROM research_evidence_items WHERE id=?",
+        (item_id,),
+    ).fetchone()[0] == 1
+    detail = authed_client.get(f"/research/{session_id}?tab=evidence")
+    assert detail.status_code == 200
+    assert "Rates held" in detail.text
+
+
+def test_plan_sources_remain_historical_and_cannot_be_managed_as_owner_sources(
+    authed_client,
+    conn,
+):
+    _, c = conn
+    session_id, owner_source_id, run_id, *_ = _create_session_with_evidence(c)
+    plan_source_id = create_research_source(
+        c,
+        session_id,
+        "google_news_query",
+        {"query": "historical plan query"},
+        ResearchSourceOrigin.PLAN,
+        T0,
+    ).id
+    _mark_run_completed(c, run_id)
+
+    detail = authed_client.get(f"/research/{session_id}?tab=plan")
+    assert detail.status_code == 200
+    assert f"/sources/{owner_source_id}/edit" in detail.text
+    assert f"/sources/{plan_source_id}/edit" not in detail.text
+
+    edit = authed_client.get(
+        f"/research/{session_id}/sources/{plan_source_id}/edit"
+    )
+    remove = authed_client.post(
+        f"/research/{session_id}/sources/{plan_source_id}/delete",
+        data={"csrf_token": "csrf1"},
+    )
+    assert edit.status_code == 404
+    assert remove.status_code == 404
+
+    preview = authed_client.get(f"/research/{session_id}/refresh-preview")
+    assert "<dt>Current Sources</dt><dd>1</dd>" in preview.text
+
+
+def test_adding_an_existing_plan_source_promotes_it_without_duplication(
+    authed_client,
+    conn,
+):
+    _, c = conn
+    session_id, _, run_id, *_ = _create_session_with_evidence(c)
+    plan_source_id = create_research_source(
+        c,
+        session_id,
+        "google_news_query",
+        {"query": "mortgage rates"},
+        ResearchSourceOrigin.PLAN,
+        T0,
+    ).id
+    _mark_run_completed(c, run_id)
+
+    response = authed_client.post(
+        f"/research/{session_id}/sources/new",
+        data={
+            "connector_type": "google_news_query",
+            "value": "mortgage rates",
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert response.status_code == 303
+    row = c.execute(
+        "SELECT origin, is_active FROM research_sources WHERE id = ?",
+        (plan_source_id,),
+    ).fetchone()
+    assert (row["origin"], row["is_active"]) == ("owner", 1)
+    assert c.execute(
+        """
+        SELECT COUNT(*)
+        FROM research_sources
+        WHERE session_id = ? AND connector_type = 'google_news_query'
+        """,
+        (session_id,),
+    ).fetchone()[0] == 1
 
 
 def test_refresh_rejects_when_a_run_is_already_active(authed_client, conn):

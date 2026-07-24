@@ -1,0 +1,12 @@
+<form class="listing-feedback" method="post" action="/items/{{ item.id }}/relevance"
+      {% if feedback_hx %}hx-post="/items/{{ item.id }}/relevance" hx-target="this" hx-swap="outerHTML"{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="next_url" value="{{ return_url }}">
+  <span>{{ t('web.feedback.prompt') }}</span>
+  <button type="submit" name="value" value="1"{% if item.feedback_value == 1 %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>
+    {{ t('web.feedback.relevant') }}
+  </button>
+  <button type="submit" name="value" value="-1"{% if item.feedback_value == -1 %} class="active negative" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>
+    {{ t('web.feedback.not_relevant') }}
+  </button>
+</form>

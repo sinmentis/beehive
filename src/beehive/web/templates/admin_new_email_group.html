@@ -14,7 +14,7 @@
   </header>
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
   <section class="admin-panel">
-    <form method="post" action="/admin/email-groups/new">
+    <form method="post" action="/admin/email-groups/new" data-preserve-draft>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="field">
         <label for="new-group-name">{{ t('web.admin.email_group.name_label') }}</label>
@@ -25,11 +25,35 @@
         <input id="new-group-subject" type="text" name="subject_template" value="{{ subject_template }}" placeholder="{{ t('web.admin.email_group.subject_placeholder') }}" required autocomplete="off">
         <p class="hint">{{ t('web.admin.email_group.subject_hint') }}</p>
       </div>
-      <div class="field">
-        <label for="new-group-interval">{{ t('web.admin.email_group.interval_label') }}</label>
-        <input id="new-group-interval" type="number" name="send_interval_hours" value="{{ send_interval_hours }}" min="1" required>
-        <p class="hint">{{ t('web.admin.email_group.interval_hint') }}</p>
-      </div>
+      <fieldset class="field schedule-builder" data-schedule-builder>
+        <legend>{{ t('web.admin.email_group.schedule_heading') }}</legend>
+        <div class="choice-row">
+          <label><input type="radio" name="schedule_mode" value="interval" {{ "checked" if schedule_mode == "interval" else "" }}> {{ t('web.admin.email_group.schedule_interval') }}</label>
+          <label><input type="radio" name="schedule_mode" value="calendar" {{ "checked" if schedule_mode == "calendar" else "" }}> {{ t('web.admin.email_group.schedule_calendar') }}</label>
+        </div>
+        <div class="schedule-fields schedule-fields--interval" data-schedule-panel="interval">
+          <label for="new-group-interval">{{ t('web.admin.email_group.interval_label') }}
+            <input id="new-group-interval" type="number" name="send_interval_hours" value="{{ send_interval_hours }}" min="1" required>
+          </label>
+        </div>
+        <div class="schedule-fields schedule-fields--calendar" data-schedule-panel="calendar">
+          <label for="new-group-time">{{ t('web.admin.email_group.time_label') }}
+            <input id="new-group-time" type="time" name="schedule_time" value="{{ schedule_time }}">
+          </label>
+          <label for="new-group-timezone">{{ t('web.admin.email_group.timezone_label') }}
+            <select id="new-group-timezone" name="schedule_timezone">
+              {% for timezone in schedule_timezones %}<option value="{{ timezone }}" {{ "selected" if timezone == schedule_timezone else "" }}>{{ timezone }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="weekday-picker" data-schedule-panel="calendar" aria-label="{{ t('web.admin.email_group.days_label') }}">
+          {% for day in schedule_weekdays %}
+          <label><input type="checkbox" name="schedule_weekdays" value="{{ day.value }}" {{ "checked" if day.selected else "" }}> {{ day.label }}</label>
+          {% endfor %}
+        </div>
+        <p class="hint">{{ t('web.admin.email_group.schedule_hint') }}</p>
+        {% if schedule_error %}<p class="error" role="alert">{{ schedule_error }}</p>{% endif %}
+      </fieldset>
       <div class="field">
         <label for="new-group-email">{{ t('web.admin.email_group.recipient_label') }}</label>
         <input id="new-group-email" type="text" inputmode="email" name="recipient_email"
@@ -68,4 +92,7 @@
     </form>
   </section>
 </main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
 {% endblock %}

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -12,11 +14,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from beehive.db.connection import connect, init_schema
+from beehive.db.research_sessions import count_unread_completed_research_sessions
 from beehive.localization import load_localizer
 from beehive.web import admin, public, research
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
+_LOGGER = logging.getLogger(__name__)
 
 _CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
         "script-src 'self'; frame-ancestors 'none'")
@@ -43,9 +47,19 @@ def _localization_context(request: Request) -> dict:
     the getattr default of False there). base.html's top-level Research nav link is gated on
     this single flag so it never appears for an anonymous visitor on any page."""
     localizer = request.state.localizer
+    is_owner = getattr(request.state, "is_owner", False)
+    research_unread_count = 0
+    if is_owner:
+        conn = connect(request.app.state.db_path)
+        try:
+            research_unread_count = count_unread_completed_research_sessions(conn)
+        finally:
+            conn.close()
     return {
         "t": localizer.text, "localizer": localizer, "locale": localizer.code,
-        "is_owner": getattr(request.state, "is_owner", False),
+        "is_owner": is_owner,
+        "global_csrf_token": getattr(request.state, "csrf_token", None),
+        "research_unread_count": research_unread_count,
     }
 
 
@@ -88,9 +102,50 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     app.state.templates.env.globals["asset_version"] = _static_asset_version()
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
+    def _load_request_localizer(request: Request) -> None:
+        if hasattr(request.state, "localizer"):
+            return
+        request_conn = connect(app.state.db_path)
+        try:
+            request.state.localizer = load_localizer(request_conn)
+        finally:
+            request_conn.close()
+
+    def _wants_html(request: Request) -> bool:
+        return (
+            "text/html" in request.headers.get("accept", "").lower()
+            or request.headers.get("HX-Request") == "true"
+        )
+
+    def _error_page(
+        request: Request,
+        *,
+        status_code: int,
+        title_key: str,
+        message_key: str,
+    ) -> Response:
+        _load_request_localizer(request)
+        return app.state.templates.TemplateResponse(
+            request,
+            "error.html",
+            {
+                "status_code": status_code,
+                "error_title": request.state.localizer.text(title_key),
+                "error_message": request.state.localizer.text(message_key),
+            },
+            status_code=status_code,
+        )
+
     @app.exception_handler(404)
     async def not_found(request: Request, exc: Exception) -> Response:
         if isinstance(exc, StarletteHTTPException) and exc.detail != "Not Found":
+            if _wants_html(request):
+                return _error_page(
+                    request,
+                    status_code=404,
+                    title_key="web.error.not_found_title",
+                    message_key="web.error.not_found_message",
+                )
             return JSONResponse(
                 {"detail": exc.detail},
                 status_code=exc.status_code,
@@ -98,15 +153,57 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
             )
         # Unmatched routes never run get_localizer (no route means no dependencies), so the
         # context processor above would find nothing on request.state -- load it directly here.
-        conn = connect(app.state.db_path)
-        try:
-            request.state.localizer = load_localizer(conn)
-        finally:
-            conn.close()
+        _load_request_localizer(request)
         return app.state.templates.TemplateResponse(
             request,
             "not_found.html",
             status_code=404,
+        )
+
+    @app.exception_handler(403)
+    async def forbidden(request: Request, exc: Exception) -> Response:
+        if not _wants_html(request) and isinstance(exc, StarletteHTTPException):
+            return JSONResponse(
+                {"detail": exc.detail},
+                status_code=403,
+                headers=exc.headers,
+            )
+        return _error_page(
+            request,
+            status_code=403,
+            title_key="web.error.forbidden_title",
+            message_key="web.error.forbidden_message",
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> Response:
+        if not _wants_html(request):
+            return JSONResponse({"detail": exc.errors()}, status_code=422)
+        return _error_page(
+            request,
+            status_code=422,
+            title_key="web.error.invalid_request_title",
+            message_key="web.error.invalid_request_message",
+        )
+
+    @app.exception_handler(500)
+    async def internal_error(request: Request, exc: Exception) -> Response:
+        _LOGGER.error(
+            "Unhandled web request error",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        if not _wants_html(request):
+            return JSONResponse(
+                {"detail": "Internal server error"},
+                status_code=500,
+            )
+        return _error_page(
+            request,
+            status_code=500,
+            title_key="web.error.internal_title",
+            message_key="web.error.internal_message",
         )
 
     app.include_router(public.router)

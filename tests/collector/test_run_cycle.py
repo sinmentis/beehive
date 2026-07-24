@@ -12,7 +12,7 @@ from beehive.connectors.registry import register
 from beehive.db.channels import create_channel, get_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import list_by_channel
-from beehive.db.sources import create_source, record_fetch_success
+from beehive.db.sources import create_source, record_fetch_success, set_source_paused
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.domain.channels import ChannelKind
 from beehive.localization import localizer_for
@@ -1754,3 +1754,49 @@ async def test_monitor_price_drop_event_is_staged_and_readied_after_rerank(conn)
     assert [e["event_type"] for e in events] == ["price_drop"]
     assert json.loads(events[0]["payload"]) == {"old_price": 50.0, "new_price": 40.0}
     assert events[0]["ready_at"] is not None  # 70 >= 50, so the drop is deliverable
+
+
+@pytest.mark.asyncio
+async def test_paused_source_is_skipped_entirely(conn, channel):
+    # A paused Source is dormant: even a forced cycle must not fetch it.
+    connector = _StubConnector(items=[RawItem(external_id="t1", title="T", url="https://x")])
+    register(connector)
+    source_id = create_source(conn, channel["id"], "stub_test_source", {})
+    set_source_paused(conn, source_id, True, now_iso="2026-07-01T00:00:00")
+
+    await run_channel_cycle(
+        conn, channel, LogNotifier(), force_fetch=True, localizer=_EN_LOCALIZER
+    )
+
+    assert connector.fetch_calls == []
+    # Nothing was fetched, so no attempt/status was stamped either.
+    row = list_sources(conn, channel["id"])[0]
+    assert row["last_attempt_at"] is None
+    assert row["last_fetch_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_paused_monitor_source_is_not_reconciled_inactive(conn):
+    # Skipping a paused Source must never run snapshot reconciliation for it, so its still-valid
+    # listings stay active rather than being retired as "absent from the (never taken) snapshot".
+    channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    monitor_channel = get_channel(conn, channel_id)
+    register(_StubConnector(items=[]))
+    source_id = create_source(conn, channel_id, "stub_test_source", {})
+    for external_id in ("a", "b"):
+        conn.execute(
+            "INSERT INTO items (source_id, external_id, title, url, ai_score, last_seen_at) "
+            "VALUES (?, ?, 'T', 'https://x', 50, '2026-07-01T00:00:00')",
+            (source_id, external_id),
+        )
+    conn.commit()
+    set_source_paused(conn, source_id, True, now_iso="2026-07-01T00:00:00")
+
+    await run_channel_cycle(
+        conn, monitor_channel, LogNotifier(), force_fetch=True, localizer=_EN_LOCALIZER
+    )
+
+    active = conn.execute(
+        "SELECT COUNT(*) FROM items WHERE inactive_at IS NULL"
+    ).fetchone()[0]
+    assert active == 2  # nothing retired for a paused Source

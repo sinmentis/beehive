@@ -491,16 +491,24 @@ class AllAboutAuctionsConnector:
         if not isinstance(config, dict) or config:
             raise ValueError("all_about_auctions config must be an empty object")
 
-    def _fetch_auction_lots(self, auction: _AuctionRef) -> list[RawItem]:
+    def _fetch_auction_lots(
+        self,
+        auction: _AuctionRef,
+        *,
+        item_limit: int | None = None,
+        page_limit: int | None = None,
+    ) -> list[RawItem]:
         items: list[RawItem] = []
         offset = 0
         expected_total: int | None = None
+        pages_fetched = 0
         while True:
             records, total = _parse_lot_page(
                 self._fetch_with_delay(_lot_page_url(auction.auction_id, offset)),
                 auction,
                 offset,
             )
+            pages_fetched += 1
             if expected_total is None:
                 expected_total = total
             elif total != expected_total:
@@ -518,9 +526,13 @@ class AllAboutAuctionsConnector:
                     continue
                 if item is not None:
                     items.append(item)
+                    if item_limit is not None and len(items) >= item_limit:
+                        return items
 
             collected = offset + len(records)
             if collected >= total:
+                break
+            if page_limit is not None and pages_fetched >= page_limit:
                 break
             if not records or len(records) < _LOT_PAGE_SIZE:
                 raise RuntimeError(
@@ -542,6 +554,25 @@ class AllAboutAuctionsConnector:
         if auctions and not items_by_id:
             raise RuntimeError("All About Auctions returned no usable lots")
         return list(items_by_id.values())
+
+    def fetch_preview(self, config: dict, *, limit: int) -> list[RawItem]:
+        self.validate_config(config)
+        if limit < 1:
+            raise ValueError("preview limit must be positive")
+        auctions = _parse_upcoming_auctions(
+            self._fetch_with_delay(_UPCOMING_AUCTIONS_URL)
+        )
+        for auction in auctions:
+            items = self._fetch_auction_lots(
+                auction,
+                item_limit=limit,
+                page_limit=1,
+            )
+            if items:
+                return items
+        if auctions:
+            raise RuntimeError("All About Auctions returned no usable lots")
+        return []
 
 
 register(AllAboutAuctionsConnector())

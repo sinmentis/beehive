@@ -321,6 +321,34 @@ def test_fetch_paginates_in_batches_of_one_hundred():
     assert sleeps == [_CRAWL_DELAY_SECONDS, _CRAWL_DELAY_SECONDS]
 
 
+def test_fetch_preview_stops_after_requested_items_on_first_lot_page():
+    auction_id = "1-A"
+    first_page = [
+        _lot_record(f"1-LOT{index}", lot_number=index) for index in range(100)
+    ]
+    calls: list[str] = []
+    sleeps: list[float] = []
+    connector = _connector(
+        {
+            _UPCOMING_AUCTIONS_URL: _homepage_with_view_vars(
+                {"row_id": auction_id, "title": "Large auction", "lot_count": 150}
+            ),
+            _lot_page_url(auction_id, 0): _lot_page(
+                *first_page,
+                total_num_results=150,
+            ),
+        },
+        calls,
+        sleeps,
+    )
+
+    items = connector.fetch_preview({}, limit=10)
+
+    assert len(items) == 10
+    assert calls == [_UPCOMING_AUCTIONS_URL, _lot_page_url(auction_id, 0)]
+    assert sleeps == [_CRAWL_DELAY_SECONDS]
+
+
 def test_fetch_uses_embedded_data_to_discover_auctions_missing_from_page_links():
     calls: list[str] = []
     sleeps: list[float] = []

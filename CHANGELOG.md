@@ -38,11 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   startup contract tests.
 - Generic Tracker Watches and follow-up reminders, with All About Auctions as the first adapter and
   compatibility-preserving auction reminder storage and deployment names.
+- Owner administration safety and operations: typed destructive confirmations, seven-day
+  transactional recovery, recent activity, bounded non-persisting Source test samples, Channel
+  onboarding, delivery history, and cross-worker System Health.
+- Email Group calendar schedules with local weekdays, times, and IANA timezones, plus non-mutating
+  email previews and test sends.
+- Research Source management, enforced work-budget previews, run/snapshot/synthesis history,
+  synthesis-only retries, unread completion state, and localized completion emails.
 
 ### Changed
 
 - Email Groups now consume actionable Channel events and may render mixed Editorial, Monitor, and
   Tracker sections without sending empty scheduled messages.
+- The digest timer now evaluates Email Group schedules and Research completion notifications every
+  15 minutes. Individual groups remain governed by their own interval or calendar schedule.
 - New ranking summaries state the strongest evidence-supported conclusion in one sentence instead
   of only describing the article topic.
 - Failed article briefs now identify the failing stage, explain whether the LLM ran, and provide a

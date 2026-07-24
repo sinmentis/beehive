@@ -31,6 +31,61 @@ def _as_aware_utc(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _email_group_checkpoint(group: dict) -> datetime | None:
+    checkpoints = [
+        _as_aware_utc(value)
+        for value in (group.get("last_checked_at"), group.get("last_sent_at"))
+        if value
+    ]
+    return max(checkpoints) if checkpoints else None
+
+
+def _calendar_schedule(group: dict) -> tuple[ZoneInfo, frozenset[int], int, int]:
+    zone = ZoneInfo(group.get("schedule_timezone") or "Pacific/Auckland")
+    weekday_text = group.get("schedule_weekdays") or "0,1,2,3,4,5,6"
+    weekdays = frozenset(int(value) for value in weekday_text.split(",") if value != "")
+    if not weekdays or not weekdays <= frozenset(range(7)):
+        raise ValueError("email group schedule needs at least one valid weekday")
+    try:
+        hour_text, minute_text = (group.get("schedule_time") or "09:00").split(":", 1)
+        hour = int(hour_text)
+        minute = int(minute_text)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("email group schedule needs a valid HH:MM time") from exc
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise ValueError("email group schedule needs a valid HH:MM time")
+    return zone, weekdays, hour, minute
+
+
+def _calendar_slot(
+    group: dict,
+    now: datetime,
+    *,
+    direction: int,
+) -> datetime:
+    zone, weekdays, hour, minute = _calendar_schedule(group)
+    local_now = now.astimezone(zone)
+    for day_offset in range(8):
+        candidate_date = (
+            local_now.date() + timedelta(days=direction * day_offset)
+        )
+        if candidate_date.weekday() not in weekdays:
+            continue
+        candidate = datetime(
+            candidate_date.year,
+            candidate_date.month,
+            candidate_date.day,
+            hour,
+            minute,
+            tzinfo=zone,
+        )
+        if direction < 0 and candidate <= local_now:
+            return candidate.astimezone(timezone.utc)
+        if direction > 0 and candidate > local_now:
+            return candidate.astimezone(timezone.utc)
+    raise RuntimeError("could not calculate an email group calendar slot")
+
+
 def source_is_due(source: dict, interval_hours: int, now: datetime) -> bool:
     _require_aware(now)
     last_fetch_at = source.get("last_fetch_at")
@@ -41,20 +96,37 @@ def source_is_due(source: dict, interval_hours: int, now: datetime) -> bool:
 
 
 def email_group_is_due(group: dict, now: datetime) -> bool:
-    """Mirrors source_is_due's interval-hours-since-last-run + jitter-absorbing grace window,
-    but uses the email group's latest successful evaluation (last_checked_at) or delivery
-    (last_sent_at). Empty evaluations therefore wait for the next interval without pretending an
-    email was sent."""
+    """Return whether a group has crossed its interval or latest local calendar slot."""
     _require_aware(now)
-    checkpoints = [
-        _as_aware_utc(value)
-        for value in (group.get("last_checked_at"), group.get("last_sent_at"))
-        if value
-    ]
-    if not checkpoints:
+    checkpoint = _email_group_checkpoint(group)
+    if group.get("schedule_mode", "interval") == "calendar":
+        if checkpoint is None and group.get("created_at"):
+            checkpoint = _as_aware_utc(group["created_at"])
+        latest_slot = _calendar_slot(group, now, direction=-1)
+        return checkpoint is None or latest_slot > checkpoint
+    if group.get("schedule_mode", "interval") != "interval":
+        raise ValueError(f"unknown email group schedule mode: {group['schedule_mode']!r}")
+    if checkpoint is None:
         return True
-    due_at = max(checkpoints) + timedelta(hours=group["send_interval_hours"])
+    due_at = checkpoint + timedelta(hours=group["send_interval_hours"])
     return due_at - _DUE_GRACE <= now.astimezone(timezone.utc)
+
+
+def next_email_group_due_at(group: dict, now: datetime) -> datetime:
+    _require_aware(now)
+    checkpoint = _email_group_checkpoint(group)
+    if group.get("schedule_mode", "interval") == "calendar":
+        if checkpoint is None and group.get("created_at"):
+            checkpoint = _as_aware_utc(group["created_at"])
+        latest_slot = _calendar_slot(group, now, direction=-1)
+        if checkpoint is None or latest_slot > checkpoint:
+            return latest_slot
+        return _calendar_slot(group, now, direction=1)
+    if group.get("schedule_mode", "interval") != "interval":
+        raise ValueError(f"unknown email group schedule mode: {group['schedule_mode']!r}")
+    if checkpoint is None:
+        return now.astimezone(timezone.utc)
+    return checkpoint + timedelta(hours=group["send_interval_hours"])
 
 
 def _next_timer_slot_at_or_after(

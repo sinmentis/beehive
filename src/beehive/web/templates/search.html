@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.search', product=t('common.product_name')) }}{% endblock %}
+{% block body_class %}page-archive page-search{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.search.heading') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell archive-shell">
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow">{{ t('web.search.eyebrow') }}</p>
+      <h1>{{ t('web.search.heading') }}</h1>
+      <p class="page-lede">{{ t('web.search.lede') }}</p>
+    </div>
+    <div class="result-stat">
+      <strong>{{ total }}</strong>
+      <span>{{ t('web.search.result_count_label') }}</span>
+    </div>
+  </header>
+
+  <form class="filters archive-filters" method="get" role="search">
+    <div class="field search-field">
+      <label for="global-query">{{ t('web.dashboard.search_label') }}</label>
+      <input id="global-query" type="search" name="q" value="{{ query }}" required
+             placeholder="{{ t('web.dashboard.search_placeholder') }}">
+    </div>
+    <div class="filter-actions">
+      <button class="btn primary" type="submit">{{ t('web.search.submit') }}</button>
+    </div>
+  </form>
+
+  {% if items %}
+  <div class="archive-list search-results">
+    {% for item in items %}
+    <article class="archive-row">
+      <div class="archive-main">
+        <p class="archive-source">
+          <span class="source-marker" aria-hidden="true"></span>
+          {{ item.workflow_label }} · <a href="/channels/{{ item.item_channel_id }}">{{ item.channel_name }}</a> · {{ item.source_label }}
+        </p>
+        <h2><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h2>
+        {% if item.ai_rationale %}<p class="search-rationale">{{ item.ai_rationale }}</p>{% endif %}
+        {% if item.auction_pricing_facts %}
+        <p class="tracker-pricing">{% for fact in item.auction_pricing_facts %}<span>{{ fact }}</span>{% endfor %}</p>
+        {% elif item.engagement_label %}
+        <p class="search-facts">{{ item.engagement_label }}</p>
+        {% endif %}
+      </div>
+      <div class="archive-side">
+        <span>{{ item.time_label }}</span>
+        {% if item.channel_kind == 'editorial' %}
+        {% set is_owner = is_admin %}
+        {% include "_read_state_control.html" %}
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% elif query %}
+  <div class="empty-state">
+    <span class="empty-mark" aria-hidden="true"></span>
+    <h2>{{ t('web.search.empty_heading') }}</h2>
+    <p>{{ t('web.search.empty_body') }}</p>
+  </div>
+  {% endif %}
+
+  {% if previous_url or next_url %}
+  <nav class="pager" aria-label="{{ t('web.archive.pager_aria') }}">
+    {% if previous_url %}<a href="{{ previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
+    <span>{{ t('web.archive.page_label', page=page) }}</span>
+    {% if next_url %}<a href="{{ next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
+  </nav>
+  {% endif %}
+</main>
+{% endblock %}

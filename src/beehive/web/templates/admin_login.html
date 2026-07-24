@@ -8,7 +8,9 @@
     <p class="eyebrow" lang="en">Private control room</p>
     <h1 id="login-title">{{ t('web.admin.login.heading') }}</h1>
     <p class="page-lede">{{ t('web.admin.login.lede') }}</p>
+    {% if expired %}<p class="page-banner" role="status">{{ t('web.admin.login.expired') }}</p>{% endif %}
     <form method="post" action="/admin/login">
+      <input type="hidden" name="next" value="{{ next_path }}">
       <div class="field">
         <label for="admin-password">{{ t('web.admin.login.password_label') }}</label>
         <input id="admin-password" type="password" name="password" placeholder="{{ t('web.admin.login.password_placeholder') }}" required autocomplete="current-password">

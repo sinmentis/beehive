@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from beehive.db.channels import mark_digest_sent
@@ -25,6 +26,7 @@ from beehive.db.email_groups import (
     list_email_groups,
     list_member_channels,
     mark_checked,
+    mark_error,
     mark_sent,
 )
 from beehive.db.item_events import list_ready_events_for_channels, mark_events_delivered
@@ -51,6 +53,24 @@ class RecipientDeliveryError(RuntimeError):
         self.error = error
 
 
+@dataclass(frozen=True)
+class EmailGroupDigestPreview:
+    subject: str
+    plain_text: str
+    html: str
+    event_count: int
+    warning_count: int
+    channel_count: int
+
+
+@dataclass(frozen=True)
+class _GroupDigestContent:
+    channel_digests: list
+    delivered_event_ids: list[int]
+    included_channel_ids: list[int]
+    warning_count: int
+
+
 def _format_subject(template: str, digest_date: str) -> str:
     try:
         return template.format(date=digest_date)
@@ -68,6 +88,86 @@ def _events_by_channel(events: list[dict]) -> dict[int, list[dict]]:
     for event in events:
         grouped[event["channel_id"]].append(event)
     return grouped
+
+
+def _build_group_content(
+    conn: sqlite3.Connection,
+    group: dict,
+    localizer: Localizer,
+) -> _GroupDigestContent:
+    member_channels = list_member_channels(conn, group["id"])
+    channel_ids = [channel["id"] for channel in member_channels]
+    grouped_events = _events_by_channel(list_ready_events_for_channels(conn, channel_ids))
+    channel_digests = []
+    delivered_event_ids: list[int] = []
+    included_channel_ids: list[int] = []
+    warning_count = 0
+    for channel in member_channels:
+        capped = grouped_events.get(channel["id"], [])[: channel["highlight_count"]]
+        warnings = [
+            localizer.text(
+                "background.source_fetch_warning",
+                source_type=source["type"],
+                error=source["last_fetch_error"],
+            )
+            for source in list_sources(conn, channel["id"])
+            if source["last_fetch_error"] and not source["paused_at"]
+        ]
+        if not capped and not warnings:
+            continue
+        channel_digests.append(
+            compose_channel_digest(
+                channel["name"],
+                channel["kind"],
+                capped,
+                warnings,
+                localizer,
+            )
+        )
+        delivered_event_ids.extend(event["id"] for event in capped)
+        included_channel_ids.append(channel["id"])
+        warning_count += len(warnings)
+    return _GroupDigestContent(
+        channel_digests=channel_digests,
+        delivered_event_ids=delivered_event_ids,
+        included_channel_ids=included_channel_ids,
+        warning_count=warning_count,
+    )
+
+
+def build_email_group_digest_preview(
+    conn: sqlite3.Connection,
+    group: dict,
+    localizer: Localizer,
+    *,
+    now: datetime | None = None,
+) -> EmailGroupDigestPreview | None:
+    run_time = now or datetime.now(timezone.utc)
+    digest_date = run_time.date().isoformat()
+    content = _build_group_content(conn, group, localizer)
+    if not content.channel_digests:
+        return None
+    subject = _format_subject(group["subject_template"], digest_date)
+    subject, plain_text = render_digest_email(
+        content.channel_digests,
+        digest_date,
+        localizer,
+        subject,
+    )
+    html = render_digest_email_html(
+        content.channel_digests,
+        digest_date,
+        localizer,
+        subject,
+    )
+    return EmailGroupDigestPreview(
+        subject=subject,
+        plain_text=plain_text,
+        html=html,
+        event_count=len(content.delivered_event_ids),
+        warning_count=content.warning_count,
+        channel_count=len(content.included_channel_ids),
+    )
 
 
 def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
@@ -89,8 +189,20 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
         except EmailConfigurationError as exc:
             print(f'[digest] Email group "{group["name"]}" has content to send but no valid '
                   f"email recipient, skipping it: {exc}")
+            mark_error(
+                conn,
+                group["id"],
+                error=str(exc),
+                failed_at=checkpoint,
+            )
             failures.append(exc)
         except RecipientDeliveryError as exc:
+            mark_error(
+                conn,
+                group["id"],
+                error=str(exc.error),
+                failed_at=checkpoint,
+            )
             failures.append(exc)
 
     if failures:
@@ -104,31 +216,8 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
     RecipientDeliveryError (leaving every checkpoint untouched, so the exact events retry) when a
     group with real content cannot be delivered. A group with nothing deliverable advances only
     last_checked_at and returns normally."""
-    member_channels = list_member_channels(conn, group["id"])
-    channel_ids = [channel["id"] for channel in member_channels]
-    grouped_events = _events_by_channel(list_ready_events_for_channels(conn, channel_ids))
-
-    channel_digests = []
-    delivered_event_ids: list[int] = []
-    included_channel_ids: list[int] = []
-    for channel in member_channels:
-        capped = grouped_events.get(channel["id"], [])[: channel["highlight_count"]]
-        warnings = [
-            localizer.text("background.source_fetch_warning",
-                           source_type=source["type"], error=source["last_fetch_error"])
-            for source in list_sources(conn, channel["id"])
-            if source["last_fetch_error"]
-        ]
-        if not capped and not warnings:
-            # This Channel has nothing to contribute this cycle -- it gets no section, and its
-            # legacy digest watermark is left where it is.
-            continue
-        channel_digests.append(compose_channel_digest(
-            channel["name"], channel["kind"], capped, warnings, localizer))
-        delivered_event_ids.extend(event["id"] for event in capped)
-        included_channel_ids.append(channel["id"])
-
-    if not channel_digests:
+    content = _build_group_content(conn, group, localizer)
+    if not content.channel_digests:
         # No ready events and no Source warnings anywhere (including a group with no member
         # Channels): nothing to send, but the group was genuinely evaluated, so pace it forward
         # without claiming an email went out and without touching any Channel watermark.
@@ -144,9 +233,9 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
 
     subject = _format_subject(group["subject_template"], digest_date)
     subject, plain_text = render_digest_email(
-        channel_digests, digest_date, localizer, subject)
+        content.channel_digests, digest_date, localizer, subject)
     html = render_digest_email_html(
-        channel_digests, digest_date, localizer, subject)
+        content.channel_digests, digest_date, localizer, subject)
     try:
         notifier.send(subject, plain_text, html, to_addr=recipient.address)
     except Exception as exc:
@@ -154,7 +243,15 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
 
     # Delivered: mark exactly the included event ids (never the capped-out remainder), advance the
     # included Channels' legacy digest watermark, and advance both group checkpoints.
-    mark_events_delivered(conn, delivered_event_ids, delivered_at=checkpoint)
+    mark_events_delivered(
+        conn,
+        content.delivered_event_ids,
+        delivered_at=checkpoint,
+    )
     mark_digest_sent(
-        conn, included_channel_ids, sent_at=checkpoint, digest_date=digest_date)
+        conn,
+        content.included_channel_ids,
+        sent_at=checkpoint,
+        digest_date=digest_date,
+    )
     mark_sent(conn, group["id"], sent_at=checkpoint)

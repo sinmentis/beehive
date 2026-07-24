@@ -23,6 +23,7 @@ import hmac
 import sqlite3
 from collections.abc import Generator
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 from fastapi import Depends, HTTPException, Request
 
@@ -56,6 +57,7 @@ def _get_valid_session(request: Request, conn: sqlite3.Connection) -> dict | Non
     session = get_session(conn, session_id) if session_id else None
     if session is None or session["expires_at"] <= datetime.now(timezone.utc).isoformat():
         request.state.is_owner = False
+        request.state.csrf_token = None
         return None
     # Single choke point for "is this request from the authenticated Owner", stashed on
     # request.state so app.py's _localization_context can expose it to EVERY template (the
@@ -63,6 +65,7 @@ def _get_valid_session(request: Request, conn: sqlite3.Connection) -> dict | Non
     # its own duplicate session check -- both require_admin_session and get_optional_session
     # below call this helper, so any route depending on either one populates it.
     request.state.is_owner = True
+    request.state.csrf_token = session["csrf_token"]
     return session
 
 
@@ -70,7 +73,27 @@ def require_admin_session(request: Request,
                            conn: sqlite3.Connection = Depends(get_db)) -> dict:
     session = _get_valid_session(request, conn)
     if session is None:
-        raise HTTPException(status_code=303, headers={"Location": "/admin/login"})
+        if request.method == "GET":
+            return_path = request.url.path
+            query = request.url.query
+        else:
+            referer = urlparse(request.headers.get("referer", ""))
+            if referer.path.startswith("/") and (
+                not referer.netloc or referer.netloc == request.url.netloc
+            ):
+                return_path = referer.path
+                query = referer.query
+            else:
+                return_path = "/admin/"
+                query = ""
+        return_params = dict(parse_qsl(query, keep_blank_values=True))
+        return_params["reauth"] = "1"
+        return_query = urlencode(return_params)
+        target = f"{return_path}?{return_query}" if return_query else return_path
+        raise HTTPException(
+            status_code=303,
+            headers={"Location": f"/admin/login?{urlencode({'next': target})}"},
+        )
     return session
 
 

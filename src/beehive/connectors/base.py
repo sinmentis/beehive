@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from beehive.domain.channels import ChannelKind
 
@@ -40,6 +40,14 @@ class SourceConnector(Protocol):
         ...
 
     def fetch(self, config: dict) -> list[RawItem]:
+        ...
+
+
+@runtime_checkable
+class PreviewSourceConnector(Protocol):
+    """Optional bounded fetch used by the admin Source test surface."""
+
+    def fetch_preview(self, config: dict, *, limit: int) -> list[RawItem]:
         ...
 
 

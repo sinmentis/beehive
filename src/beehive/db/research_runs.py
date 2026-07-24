@@ -212,8 +212,13 @@ def get_active_research_run(conn: sqlite3.Connection, session_id: int) -> Resear
     return _row_to_run(row) if row else None
 
 
-def enqueue_research_run(conn: sqlite3.Connection, session_id: int,
-                          now: datetime) -> ResearchRun:
+def enqueue_research_run(
+    conn: sqlite3.Connection,
+    session_id: int,
+    now: datetime,
+    *,
+    run_kind: str = "full",
+) -> ResearchRun:
     """Creates a fresh pending Research Run. Uses BEGIN IMMEDIATE (per the module-wide
     convention of taking the write lock up front for every enqueue/claim/cap/version/citation
     allocation) so the active-run check below and the INSERT happen as one atomic unit.
@@ -224,6 +229,8 @@ def enqueue_research_run(conn: sqlite3.Connection, session_id: int,
     ('pending','processing') as defense in depth if this check were ever bypassed. A session's
     terminal runs (completed/cancelled/failed) are never touched by this check, so a fresh
     refresh is always allowed once the active run reaches a terminal state."""
+    if run_kind not in {"full", "synthesis"}:
+        raise ValueError(f"unknown Research Run kind: {run_kind!r}")
     conn.execute("BEGIN IMMEDIATE")
     try:
         if not _is_session_active(conn, session_id):
@@ -233,9 +240,9 @@ def enqueue_research_run(conn: sqlite3.Connection, session_id: int,
             raise ValueError(
                 f"Research Session {session_id} already has an active Research Run")
         cur = conn.execute(
-            "INSERT INTO research_runs (session_id, status, requested_at) "
-            "VALUES (?, 'pending', ?)",
-            (session_id, now.isoformat()))
+            "INSERT INTO research_runs (session_id, run_kind, status, requested_at) "
+            "VALUES (?, ?, 'pending', ?)",
+            (session_id, run_kind, now.isoformat()))
         run_id = cur.lastrowid
     except BaseException:
         conn.rollback()

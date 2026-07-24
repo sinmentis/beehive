@@ -92,6 +92,22 @@ def complete_pending_manual_triggers(data_dir: str) -> None:
         pass
 
 
+def clear_stale_manual_triggers(data_dir: str, *, now: float | None = None) -> bool:
+    """Owner-driven recovery for an inflight marker a crashed/killed worker never cleared.
+
+    Only acts when the marker is actually STALE (older than MANUAL_FETCH_STALE_SECONDS, as
+    list_manual_trigger_states already decides) -- a genuinely running fetch is left alone. Reuses
+    the existing marker helpers and never touches the marker protocol itself: the staleness verdict
+    comes from list_manual_trigger_states and the removal from complete_pending_manual_triggers.
+    Returns True when a stale marker was cleared, False when there was nothing stale to clear.
+    """
+    states = list_manual_trigger_states(data_dir, now=now)
+    if "stale" not in states.values():
+        return False
+    complete_pending_manual_triggers(data_dir)
+    return True
+
+
 def list_manual_trigger_states(
     data_dir: str,
     *,

@@ -57,4 +57,11 @@
     <p>{{ t('web.research.synthesis.empty_body') }}</p>
   </div>
   {% endif %}
+  {% if can_retry_synthesis %}
+  <form method="post" action="/research/{{ research_session.id }}/retry-synthesis" class="research-synthesis-retry">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="btn ghost small">{{ t('web.research.synthesis.retry_action') }}</button>
+    <p class="hint">{{ t('web.research.synthesis.retry_hint') }}</p>
+  </form>
+  {% endif %}
 </section>

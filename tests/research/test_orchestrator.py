@@ -19,7 +19,7 @@ from beehive.db.research_runs import (claim_research_run, enqueue_research_run,
 from beehive.db.research_sessions import create_research_session
 from beehive.db.research_snapshots import (add_snapshot_items, add_snapshot_items_if_claimed,
                                             create_snapshot, get_latest_snapshot, list_snapshots)
-from beehive.db.research_sources import create_research_source
+from beehive.db.research_sources import create_research_source, deactivate_research_source
 from beehive.db.research_syntheses import create_synthesis, list_syntheses
 from beehive.deep_read.fetch import FetchFailure, FetchFailureReason, FetchedArticle
 from beehive.domain.research import (ClaimProvenance, EvidenceCitation, EvidenceQuality,
@@ -29,7 +29,12 @@ from beehive.domain.research import (ClaimProvenance, EvidenceCitation, Evidence
 from beehive.localization import localizer_for
 from beehive.research import synthesis as synth
 from beehive.research.limits import MAX_EVIDENCE_TEXT_CHARS_IN_PROMPT
-from beehive.research.orchestrator import RunOutcomeStatus, run_research_orchestration
+from beehive.research.orchestrator import (
+    RunOutcomeStatus,
+    _persist_plan_sources,
+    run_research_orchestration,
+)
+from beehive.research.planner import ResearchPlan, ResearchPlanSource
 
 T0 = datetime(2026, 7, 15, 0, 0, 0, tzinfo=timezone.utc)
 _EN = localizer_for("en")
@@ -54,6 +59,37 @@ def _claimed_run(conn, question="Why did RBNZ cut rates?", lease_seconds=600,
     lease = claim_research_run(
         conn, run.id, T0, lease_seconds=lease_seconds, deadline_seconds=deadline_seconds)
     return session_id, lease.run
+
+
+def test_plan_persistence_reuses_inactive_source_identity(conn):
+    session_id = create_research_session(conn, "Q", T0).id
+    existing = create_research_source(
+        conn,
+        session_id,
+        "google_news_query",
+        {"query": "rates"},
+        ResearchSourceOrigin.PLAN,
+        T0,
+    )
+    deactivate_research_source(conn, existing.id)
+    plan = ResearchPlan(
+        summary="Check rates.",
+        sources=(
+            ResearchPlanSource(
+                connector_type="google_news_query",
+                config={"query": "rates"},
+                rationale="Current coverage",
+            ),
+        ),
+    )
+
+    persisted = _persist_plan_sources(conn, session_id, plan, T0)
+
+    assert [source.id for source in persisted] == [existing.id]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM research_sources WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()[0] == 1
 
 
 def _plan_response(sources, summary="Investigate the topic."):

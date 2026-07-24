@@ -2,8 +2,7 @@
    `session_id`, `csrf_token`, `messages_status_url`. Polls only while a chat reply is pending or
    processing; a terminal (no active request) render omits hx-trigger entirely. #}
 {% if not conversation_fragment_only %}
-<section id="research-conversation" class="research-conversation" aria-labelledby="research-conversation-title"
-         aria-live="polite">
+<section id="research-conversation" class="research-conversation" aria-labelledby="research-conversation-title">
 {% endif %}
 <div id="research-conversation-content"
      {% if conversation.has_pending_request %}hx-get="{{ messages_status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
@@ -12,7 +11,7 @@
   <p class="error" role="alert">{{ conversation.failure_message }}</p>
   {% endif %}
 
-  <div class="research-message-list" role="log" aria-live="polite">
+  <div class="research-message-list" role="log">
     {% for message in conversation.messages %}
     {% include "_research_message.html" %}
     {% else %}
@@ -27,9 +26,11 @@
         </div>
       </div>
     </div>
-    <p class="sr-only" role="status">{{ t('web.research.conversation.reply_generating') }}</p>
     {% endif %}
   </div>
+  {% if conversation.has_pending_request %}
+  <p class="sr-only" role="status">{{ t('web.research.conversation.reply_generating') }}</p>
+  {% endif %}
 
   {% if conversation.can_submit %}
   <form class="research-message-form" method="post" action="/research/{{ session_id }}/messages">

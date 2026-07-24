@@ -13,7 +13,7 @@
     </div>
   </header>
   <section class="admin-panel">
-    <form method="post" action="/admin/channels/new" class="channel-form">
+    <form method="post" action="/admin/channels/new" class="channel-form" data-preserve-draft>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="field">
         <label for="new-channel-name">{{ t('web.admin.channel_new.name_label') }}</label>

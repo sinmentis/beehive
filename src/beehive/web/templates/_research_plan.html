@@ -1,12 +1,50 @@
-{# Plan tab body: `plan_revisions` (tuple of research_view.PlanRevisionView), latest run only. #}
+{# Current persisted Sources are operational inputs; Plan revisions below are immutable history. #}
 <section class="research-tab-panel research-plan" aria-labelledby="research-plan-title">
   <h2 id="research-plan-title" class="sr-only">{{ t('web.research.plan.heading') }}</h2>
+  <section class="research-current-sources" aria-labelledby="research-current-sources-title">
+    <div class="research-section-heading">
+      <div>
+        <h3 id="research-current-sources-title">{{ t('web.research.sources.heading') }}</h3>
+        <p class="hint">{{ t('web.research.sources.body') }}</p>
+      </div>
+      {% if can_edit_sources %}
+      <a class="btn ghost small" href="/research/{{ research_session.id }}/sources/new">{{ t('web.research.sources.add') }}</a>
+      {% endif %}
+    </div>
+    <ul class="source-list research-source-management">
+      {% for source in sources %}
+      <li class="source-row">
+        <span>
+          <span class="source-name">{{ source.label }}</span>
+          <span class="research-source-origin">{{ source.origin_label }}</span>
+        </span>
+        {% if can_edit_sources %}
+        <span class="row-actions">
+          <a class="btn ghost small" href="/research/{{ research_session.id }}/sources/{{ source.id }}/edit">{{ t('common.edit') }}</a>
+          {% if sources|length > 1 %}
+          <form method="post" action="/research/{{ research_session.id }}/sources/{{ source.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn ghost small">{{ t('common.remove') }}</button>
+          </form>
+          {% endif %}
+        </span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  <div class="research-section-heading research-plan-history-heading">
+    <div>
+      <h3>{{ t('web.research.plan.history_heading') }}</h3>
+      <p class="hint">{{ t('web.research.plan.history_body') }}</p>
+    </div>
+  </div>
   {% if plan_revisions %}
   <div class="research-plan-list">
-    {% for revision in plan_revisions|reverse %}
+    {% for revision in plan_revisions %}
     <details class="research-plan-revision"{% if loop.first %} open{% endif %}>
       <summary class="research-plan-revision-heading">
-        <span>{{ t('web.research.plan.version_label', version=revision.version) }}</span>
+        <span>{{ t('web.research.plan.run_version_label', run=revision.run_id, version=revision.version) }}</span>
         {% if loop.first %}
         <span class="research-plan-latest-badge">{{ t('web.research.plan.latest_badge') }}</span>
         {% endif %}

@@ -64,6 +64,7 @@
     <a href="/research/{{ research_session.id }}?tab=synthesis"{% if active_tab == "synthesis" %} aria-current="page"{% endif %}>{{ t('web.research.detail.tab_synthesis') }}</a>
     <a href="/research/{{ research_session.id }}?tab=plan"{% if active_tab == "plan" %} aria-current="page"{% endif %}>{{ t('web.research.detail.tab_plan') }}</a>
     <a href="/research/{{ research_session.id }}?tab=evidence"{% if active_tab == "evidence" %} aria-current="page"{% endif %}>{{ t('web.research.detail.tab_evidence') }}</a>
+    <a href="/research/{{ research_session.id }}?tab=history"{% if active_tab == "history" %} aria-current="page"{% endif %}>{{ t('web.research.detail.tab_history') }}</a>
   </nav>
 
   <div class="admin-tab-panel research-tab-body">
@@ -111,6 +112,8 @@
       </div>
       {% endif %}
     </section>
+    {% elif active_tab == "history" %}
+    {% include "_research_history.html" %}
     {% endif %}
   </div>
 

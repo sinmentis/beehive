@@ -18,6 +18,11 @@ from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import insert_new
 from beehive.db.sources import create_source
+from beehive.db.tracker_watches import (
+    claim_tracker_reminder,
+    remove_closed_tracker_watches,
+    remove_tracker_watches,
+)
 from beehive.domain.channels import ChannelKind
 
 _NOW = datetime(2026, 7, 22, 10, 0, tzinfo=timezone.utc)
@@ -176,6 +181,32 @@ def test_failed_claim_is_released_for_retry(conn):
 
     retry = claim_due_auction_reminders(conn, _NOW + timedelta(minutes=1))
     assert [item["item_id"] for item in retry.items] == [item_id]
+
+
+def test_owner_can_claim_one_failed_reminder_for_immediate_retry(conn):
+    first_id = _add_item(conn, "retry-one", closing_at=_NOW + timedelta(minutes=45))
+    second_id = _add_item(conn, "retry-two", closing_at=_NOW + timedelta(minutes=50))
+    for item_id in (first_id, second_id):
+        add_auction_watch(conn, item_id, _NOW - timedelta(hours=1))
+
+    claim = claim_tracker_reminder(conn, second_id, _NOW)
+
+    assert [item["item_id"] for item in claim.items] == [second_id]
+    assert claim.token
+    remaining = claim_due_auction_reminders(conn, _NOW)
+    assert [item["item_id"] for item in remaining.items] == [first_id]
+
+
+def test_bulk_and_closed_watch_removal(conn):
+    closed_id = _add_item(conn, "closed", closing_at=_NOW + timedelta(minutes=30))
+    active_id = _add_item(conn, "active", closing_at=_NOW + timedelta(hours=3))
+    extra_id = _add_item(conn, "extra", closing_at=_NOW + timedelta(hours=4))
+    for item_id in (closed_id, active_id, extra_id):
+        add_auction_watch(conn, item_id, _NOW - timedelta(hours=1))
+
+    assert remove_closed_tracker_watches(conn, _NOW + timedelta(hours=1)) == 1
+    assert remove_tracker_watches(conn, [active_id, 999, active_id]) == 1
+    assert get_watched_item_ids(conn, [closed_id, active_id, extra_id]) == {extra_id}
 
 
 def test_expired_claim_is_recovered_after_fifteen_minutes(conn):

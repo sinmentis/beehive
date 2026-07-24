@@ -1,0 +1,19 @@
+{% if is_admin %}
+<aside class="channel-criteria" aria-label="{{ t('web.channel.criteria_aria') }}">
+  <div>
+    <strong>{{ t('web.channel.criteria_summary', matched=page.criteria.matched_count, total=page.criteria.total_count) }}</strong>
+    <span>{{ t('web.channel.criteria_threshold', score=page.criteria.minimum_score) }}</span>
+    {% if page.criteria.unranked_count %}
+    <span>{{ t('web.channel.criteria_unranked', count=page.criteria.unranked_count) }}</span>
+    {% endif %}
+  </div>
+  <div class="channel-criteria-actions">
+    {% if page.criteria.hidden_count %}
+    <a href="{{ criteria_toggle_url }}">
+      {{ t('web.channel.criteria_apply_threshold') if page.criteria.showing_below_threshold else t('web.channel.criteria_show_hidden', count=page.criteria.hidden_count) }}
+    </a>
+    {% endif %}
+    <a href="/admin/channels/{{ page.channel_id }}/edit">{{ t('web.channel.criteria_edit') }}</a>
+  </div>
+</aside>
+{% endif %}

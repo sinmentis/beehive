@@ -2,6 +2,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 from beehive.db.connection import connect, init_schema
+from beehive.db.research_notifications import list_pending_completion_notifications
 
 
 def test_init_schema_creates_all_tables(tmp_path):
@@ -116,6 +117,39 @@ def test_init_schema_adds_missing_columns_to_a_pre_existing_database(tmp_path):
     source_columns = {r[1] for r in conn.execute("PRAGMA table_info(sources)")}
     assert "last_fetch_raw_count" in source_columns
     assert "last_fetch_new_count" in source_columns
+    assert "name" in source_columns
+    assert "paused_at" in source_columns
+    assert "last_attempt_at" in source_columns
+    assert "last_fetch_status" in source_columns
+
+
+def test_init_schema_adds_source_lifecycle_columns_and_preserves_rows(tmp_path):
+    """A production database whose sources table predates the lifecycle/observability columns:
+    init_schema must backfill name/paused_at/last_attempt_at/last_fetch_status (all NULL) without
+    dropping the existing Source row."""
+    path = str(tmp_path / "old.db")
+    conn = connect(path)
+    conn.execute(
+        "CREATE TABLE sources (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER NOT NULL, "
+        "type TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', last_fetch_at TEXT, "
+        "last_fetch_error TEXT, last_fetch_raw_count INTEGER, last_fetch_new_count INTEGER)")
+    conn.execute(
+        "INSERT INTO sources (channel_id, type, config, last_fetch_at) "
+        "VALUES (1, 'reddit_subreddit', '{\"subreddit\": \"x\"}', '2026-07-09T00:00:00')")
+    conn.commit()
+    conn.close()
+
+    conn = connect(path)
+    init_schema(conn)
+
+    row = conn.execute(
+        "SELECT name, paused_at, last_attempt_at, last_fetch_status, last_fetch_at "
+        "FROM sources WHERE type = 'reddit_subreddit'").fetchone()
+    assert row["name"] is None
+    assert row["paused_at"] is None
+    assert row["last_attempt_at"] is None
+    assert row["last_fetch_status"] is None
+    assert row["last_fetch_at"] == "2026-07-09T00:00:00"  # existing row preserved
 
 
 def test_init_schema_is_safe_to_run_twice_on_an_already_migrated_database(tmp_path):
@@ -241,6 +275,117 @@ def test_existing_editorial_channels_join_default_email_group_once(tmp_path):
     groups_after = conn.execute("SELECT * FROM email_groups").fetchall()
     assert len(groups_after) == 1
     assert _member_names() == ["Existing Editorial"]
+
+
+def _insert_completed_research_run(
+    conn: sqlite3.Connection,
+    *,
+    question: str,
+    completed_at: str,
+) -> int:
+    session_id = conn.execute(
+        """
+        INSERT INTO research_sessions (question, created_at, last_activity_at)
+        VALUES (?, ?, ?)
+        """,
+        (question, completed_at, completed_at),
+    ).lastrowid
+    run_id = conn.execute(
+        """
+        INSERT INTO research_runs (
+            session_id,
+            status,
+            requested_at,
+            completed_at
+        )
+        VALUES (?, 'completed', ?, ?)
+        """,
+        (session_id, completed_at, completed_at),
+    ).lastrowid
+    conn.commit()
+    return int(run_id)
+
+
+def test_existing_completed_research_runs_are_baselined_without_emailing(tmp_path):
+    conn = connect(str(tmp_path / "legacy.db"))
+    init_schema(conn)
+    conn.execute(
+        "DELETE FROM app_state "
+        "WHERE key = 'research_completion_notifications_baselined_v1'"
+    )
+    conn.execute("DROP TABLE research_completion_notifications")
+    completed_at = "2026-07-01T12:00:00+00:00"
+    old_run_id = _insert_completed_research_run(
+        conn,
+        question="Historical research",
+        completed_at=completed_at,
+    )
+
+    init_schema(conn)
+
+    baseline = conn.execute(
+        """
+        SELECT attempted_at, sent_at
+        FROM research_completion_notifications
+        WHERE run_id = ?
+        """,
+        (old_run_id,),
+    ).fetchone()
+    assert dict(baseline) == {
+        "attempted_at": completed_at,
+        "sent_at": completed_at,
+    }
+    assert list_pending_completion_notifications(conn) == []
+
+    new_run_id = _insert_completed_research_run(
+        conn,
+        question="New research",
+        completed_at="2026-07-02T12:00:00+00:00",
+    )
+    init_schema(conn)
+    assert [
+        pending["run_id"] for pending in list_pending_completion_notifications(conn)
+    ] == [new_run_id]
+
+
+def test_research_notification_baseline_preserves_failed_attempts(tmp_path):
+    conn = connect(str(tmp_path / "existing.db"))
+    init_schema(conn)
+    conn.execute(
+        "DELETE FROM app_state "
+        "WHERE key = 'research_completion_notifications_baselined_v1'"
+    )
+    run_id = _insert_completed_research_run(
+        conn,
+        question="Retry research",
+        completed_at="2026-07-01T12:00:00+00:00",
+    )
+    conn.execute(
+        """
+        INSERT INTO research_completion_notifications (run_id, attempted_at)
+        VALUES (?, '2026-07-01T12:05:00+00:00')
+        """,
+        (run_id,),
+    )
+    conn.commit()
+
+    init_schema(conn)
+
+    retry = conn.execute(
+        """
+        SELECT attempted_at, sent_at
+        FROM research_completion_notifications
+        WHERE run_id = ?
+        """,
+        (run_id,),
+    ).fetchone()
+    assert dict(retry) == {
+        "attempted_at": "2026-07-01T12:05:00+00:00",
+        "sent_at": None,
+    }
+    assert [
+        pending["run_id"] for pending in list_pending_completion_notifications(conn)
+    ] == [run_id]
 
 
 def _insert_item(conn) -> int:

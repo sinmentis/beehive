@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.research.preview.title', product=t('common.product_name')) }}{% endblock %}
+{% block body_class %}page-research{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.research') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell admin-narrow">
+  <p class="crumb">
+    <a href="{{ '/research/new' if mode == 'new' else '/research/' ~ session_id }}">← {{ t('web.research.preview.back') }}</a>
+  </p>
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow">{{ t('web.research.preview.eyebrow') }}</p>
+      <h1>{{ t('web.research.preview.new_heading') if mode == 'new' else t('web.research.preview.refresh_heading') }}</h1>
+      <p>{{ question }}</p>
+    </div>
+  </header>
+
+  <section class="research-budget-preview" aria-labelledby="research-budget-heading">
+    <h2 id="research-budget-heading">{{ t('web.research.preview.budget_heading') }}</h2>
+    <p>{{ t('web.research.preview.budget_body') }}</p>
+    <dl class="research-budget-grid">
+      <div><dt>{{ t('web.research.preview.sources') }}</dt><dd>{{ source_count }}</dd></div>
+      <div><dt>{{ t('web.research.preview.deadline') }}</dt><dd>{{ t('web.research.preview.minutes', count=max_minutes) }}</dd></div>
+      <div><dt>{{ t('web.research.preview.rounds') }}</dt><dd>{{ max_rounds }}</dd></div>
+      <div><dt>{{ t('web.research.preview.deep_fetches') }}</dt><dd>{{ max_deep_fetches }}</dd></div>
+      <div><dt>{{ t('web.research.preview.candidates') }}</dt><dd>{{ max_candidates_per_source }}</dd></div>
+    </dl>
+    <p class="hint">{{ t('web.research.preview.cost_note') }}</p>
+  </section>
+
+  <form method="post" action="{{ '/research/new' if mode == 'new' else '/research/' ~ session_id ~ '/refresh' }}" class="form-actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if mode == 'new' %}
+    <input type="hidden" name="question" value="{{ question }}">
+    <input type="hidden" name="keyword" value="{{ keyword }}">
+    <input type="hidden" name="reddit_subreddit" value="{{ reddit_subreddit }}">
+    {% for connector in selected_connectors %}
+    <input type="hidden" name="connectors" value="{{ connector }}">
+    {% endfor %}
+    {% endif %}
+    <button type="submit" class="btn primary">{{ t('web.research.preview.confirm_new') if mode == 'new' else t('web.research.preview.confirm_refresh') }}</button>
+    <a class="btn ghost" href="{{ '/research/new' if mode == 'new' else '/research/' ~ session_id }}">{{ t('common.cancel') }}</a>
+  </form>
+</main>
+{% endblock %}

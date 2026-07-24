@@ -35,7 +35,7 @@ def relative_time(iso_str: str, t: Localizer) -> str:
 
 
 def host_local_time_label(iso_str: str) -> str:
-    return _as_aware_utc(iso_str).astimezone(HOST_TZ).strftime("%Y-%m-%d %H:%M")
+    return _as_aware_utc(iso_str).astimezone(HOST_TZ).strftime("%Y-%m-%d %H:%M %Z")
 
 
 def freshness_label(sources: list[dict], t: Localizer) -> str:

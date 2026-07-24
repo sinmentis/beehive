@@ -23,6 +23,13 @@ _COLUMNS_TO_ENSURE = [
     ("items", "opened_at", "TEXT"),
     ("sources", "last_fetch_raw_count", "INTEGER"),
     ("sources", "last_fetch_new_count", "INTEGER"),
+    # Source lifecycle + per-Source observability, added after the original sources table. All
+    # NULL on a legacy row, so an un-upgraded Source stays active, unnamed, and without recorded
+    # attempt history until its first post-upgrade fetch, exactly as before.
+    ("sources", "name", "TEXT"),
+    ("sources", "paused_at", "TEXT"),
+    ("sources", "last_attempt_at", "TEXT"),
+    ("sources", "last_fetch_status", "TEXT"),
     ("items", "best_comment_summary", "TEXT"),
     ("channels", "digest_email", "TEXT"),
     ("channels", "last_digest_sent_at", "TEXT"),
@@ -49,6 +56,23 @@ _COLUMNS_TO_ENSURE = [
     ("items", "superseded_at", "TEXT"),
     # Regular Email Group event-scan watermark (item_events path), distinct from last_sent_at.
     ("email_groups", "last_checked_at", "TEXT"),
+    ("email_groups", "schedule_mode", "TEXT NOT NULL DEFAULT 'interval'"),
+    (
+        "email_groups",
+        "schedule_timezone",
+        "TEXT NOT NULL DEFAULT 'Pacific/Auckland'",
+    ),
+    ("email_groups", "schedule_time", "TEXT NOT NULL DEFAULT '09:00'"),
+    (
+        "email_groups",
+        "schedule_weekdays",
+        "TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6'",
+    ),
+    ("email_groups", "last_error", "TEXT"),
+    ("email_groups", "last_error_at", "TEXT"),
+    ("research_sessions", "last_viewed_at", "TEXT"),
+    ("research_sources", "is_active", "INTEGER NOT NULL DEFAULT 1"),
+    ("research_runs", "run_kind", "TEXT NOT NULL DEFAULT 'full'"),
 ]
 
 _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"
@@ -66,6 +90,9 @@ _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"
 _DEFAULT_EMAIL_GROUP_MIGRATION_KEY = "default_email_group_migrated_v1"
 _DEFAULT_EMAIL_GROUP_NAME = "Default"
 _DEFAULT_EMAIL_GROUP_SUBJECT = "Beehive Daily Digest \u00b7 {date}"
+_RESEARCH_COMPLETION_BASELINE_MIGRATION_KEY = (
+    "research_completion_notifications_baselined_v1"
+)
 
 # Indexes whose columns are added by _COLUMNS_TO_ENSURE above rather than existing on a legacy
 # table, so they cannot live in schema.sql: init_schema() runs schema.sql's CREATE statements
@@ -255,6 +282,36 @@ def _migrate_default_email_group(conn: sqlite3.Connection) -> None:
         (_DEFAULT_EMAIL_GROUP_MIGRATION_KEY,))
 
 
+def _migrate_research_completion_notification_baseline(
+    conn: sqlite3.Connection,
+) -> None:
+    marker = conn.execute(
+        "SELECT value FROM app_state WHERE key = ?",
+        (_RESEARCH_COMPLETION_BASELINE_MIGRATION_KEY,),
+    ).fetchone()
+    if marker is not None:
+        return
+
+    # Completed runs that predate this notification feature must not look newly pending after
+    # upgrade. Existing rows, including failed attempts awaiting retry, remain untouched.
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO research_completion_notifications (
+            run_id,
+            attempted_at,
+            sent_at
+        )
+        SELECT id, completed_at, completed_at
+        FROM research_runs
+        WHERE status = 'completed'
+        """
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_state (key, value) VALUES (?, '1')",
+        (_RESEARCH_COMPLETION_BASELINE_MIGRATION_KEY,),
+    )
+
+
 def _derive_stable_shopping_id(external_id: str) -> str | None:
     """The stable product id embedded in a legacy "<product-id>:<price>" external_id, or None if
     the trailing colon-delimited suffix is not a numeric price (so the value is already stable, or
@@ -350,5 +407,6 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_channels_kind_to_tracker(conn)
     _migrate_channel_digest_watermarks(conn)
     _migrate_default_email_group(conn)
+    _migrate_research_completion_notification_baseline(conn)
     _migrate_stable_shopping_external_ids(conn)
     conn.commit()

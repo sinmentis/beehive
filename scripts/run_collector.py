@@ -49,6 +49,7 @@ from beehive.email_routing import (
 )
 from beehive.localization import load_localizer
 from beehive.notify import Notifier, build_notifier
+from beehive.research.notifications import send_research_completion_notifications
 from beehive.tracker_reminders import send_due_tracker_reminders
 
 
@@ -170,7 +171,22 @@ def run_digest(db_path: str) -> None:
     try:
         localizer = load_localizer(conn)
         notifier, default_recipient = _build_delivery_context(conn)
-        send_email_group_digests(conn, notifier, default_recipient, localizer)
+        delivery_failures: list[Exception] = []
+        try:
+            send_research_completion_notifications(
+                conn,
+                notifier,
+                default_recipient,
+                localizer,
+            )
+        except ExceptionGroup as exc:
+            delivery_failures.extend(exc.exceptions)
+        try:
+            send_email_group_digests(conn, notifier, default_recipient, localizer)
+        except ExceptionGroup as exc:
+            delivery_failures.extend(exc.exceptions)
+        if delivery_failures:
+            raise ExceptionGroup("One or more scheduled emails failed", delivery_failures)
     finally:
         conn.close()
 

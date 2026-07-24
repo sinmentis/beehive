@@ -486,6 +486,11 @@ def mark_read(conn: sqlite3.Connection, item_id: int) -> None:
     conn.commit()
 
 
+def mark_unread(conn: sqlite3.Connection, item_id: int) -> None:
+    conn.execute("UPDATE items SET is_read = 0 WHERE id = ?", (item_id,))
+    conn.commit()
+
+
 def mark_channel_read(conn: sqlite3.Connection, channel_id: int) -> None:
     conn.execute(
         "UPDATE items SET is_read = 1 WHERE is_read = 0 AND source_id IN "
@@ -575,9 +580,49 @@ def list_archive(
     return [_row_to_dict(r) for r in rows], total
 
 
+def list_search_results(
+    conn: sqlite3.Connection,
+    *,
+    search: str,
+    page: int = 1,
+    page_size: int = 30,
+) -> tuple[list[dict], int]:
+    term = search.strip()
+    if not term:
+        return [], 0
+    like_pattern = f"%{term}%"
+    params = [like_pattern, like_pattern, like_pattern, like_pattern]
+    where_clause = (
+        "items.superseded_at IS NULL AND "
+        "(items.title LIKE ? OR items.ai_summary LIKE ? OR "
+        "items.ai_rationale LIKE ? OR items.body LIKE ?)"
+    )
+    total = conn.execute(
+        "SELECT COUNT(*) FROM items "
+        "JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        f"WHERE {where_clause}",
+        params,
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
+        "channels.name AS channel_name, channels.id AS item_channel_id, "
+        "channels.kind AS channel_kind, "
+        "votes.value AS vote_value, votes.reason AS vote_reason "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        "LEFT JOIN votes ON votes.item_id = items.id "
+        f"WHERE {where_clause} "
+        "ORDER BY items.fetched_at DESC, items.id DESC LIMIT ? OFFSET ?",
+        params + [page_size, (page - 1) * page_size],
+    ).fetchall()
+    return [_row_to_dict(row) for row in rows], total
+
+
 def list_dashboard_highlights(
     conn: sqlite3.Connection,
     limit: int = 5,
+    offset: int = 0,
     minimum_score: float | None = None,
     published_from: str | None = None,
     published_to: str | None = None,
@@ -597,10 +642,37 @@ def list_dashboard_highlights(
         "JOIN channels ON channels.id = sources.channel_id "
         "LEFT JOIN votes ON votes.item_id = items.id "
         f"WHERE {' AND '.join(where)} "
-        "ORDER BY items.ai_score DESC, items.id ASC LIMIT ?",
-        params + [limit],
+        "ORDER BY items.ai_score DESC, items.id ASC LIMIT ? OFFSET ?",
+        params + [limit, offset],
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+def mark_dashboard_signals_read(
+    conn: sqlite3.Connection,
+    *,
+    minimum_score: float | None = None,
+    published_from: str | None = None,
+    published_to: str | None = None,
+    read_state: str = "all",
+) -> int:
+    where, params = _dashboard_signal_filters(
+        minimum_score=minimum_score,
+        published_from=published_from,
+        published_to=published_to,
+        read_state=read_state,
+    )
+    cur = conn.execute(
+        "UPDATE items SET is_read = 1 WHERE id IN ("
+        "SELECT items.id FROM items "
+        "JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        "LEFT JOIN votes ON votes.item_id = items.id "
+        f"WHERE {' AND '.join(where)})",
+        params,
+    )
+    conn.commit()
+    return cur.rowcount
 
 
 def count_dashboard_signals(

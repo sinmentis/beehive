@@ -1,0 +1,11 @@
+{% if is_owner %}
+<form class="read-state-form" method="post" action="/items/{{ item.id }}/read-state">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="is_read" value="{{ 0 if item.is_read else 1 }}">
+  <input type="hidden" name="next_url" value="{{ return_url }}">
+  <button type="submit" class="mark-read-button"
+          aria-label="{{ t('web.item.mark_unread_aria' if item.is_read else 'web.item.mark_read_aria', title=item.title) }}">
+    {{ t('web.item.mark_unread' if item.is_read else 'web.item.mark_read') }}
+  </button>
+</form>
+{% endif %}

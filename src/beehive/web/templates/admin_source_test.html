@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.source_test', product=t('common.product_name')) }}{% endblock %}
+{% block body_class %}page-admin page-editor{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell editor-shell">
+  <p class="crumb"><a href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.source_test.back', channel=channel.name) }}</a></p>
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow">{{ t('web.admin.source_test.eyebrow') }}</p>
+      <h1>{{ t('web.admin.source_test.heading', source=source_label) }}</h1>
+      <p class="page-lede">{{ t('web.admin.source_test.lede') }}</p>
+    </div>
+  </header>
+  {% if error %}
+  <section class="page-banner" role="alert">
+    <h2>{{ t('web.admin.source_test.failed') }}</h2>
+    <p>{{ error }}</p>
+  </section>
+  {% else %}
+  <p class="flash admin-feedback" role="status">{{ t('web.admin.source_test.success', count=total_count, duration=duration_ms) }}</p>
+  {% if items %}
+  <section class="admin-panel">
+    <h2>{{ t('web.admin.source_test.preview_heading') }}</h2>
+    <ol class="source-test-results">
+      {% for item in items %}
+      <li>
+        {% if item.url != '#' %}<a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% else %}
+  <section class="empty-state">
+    <h2>{{ t('web.admin.source_test.empty_heading') }}</h2>
+    <p>{{ t('web.admin.source_test.empty_body') }}</p>
+  </section>
+  {% endif %}
+  {% endif %}
+</main>
+{% endblock %}

@@ -53,7 +53,9 @@ def test_missing_cookie_redirects_to_login(app):
     client = TestClient(app, follow_redirects=False)
     resp = client.get("/protected")
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"] == (
+        "/admin/login?next=%2Fprotected%3Freauth%3D1"
+    )
 
 
 def test_tampered_cookie_redirects_to_login(app, db_path):

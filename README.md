@@ -111,6 +111,12 @@ Research page.
   source-specific queries it intends to run. The application validates every proposed connector
   and configuration before anything executes, and the plan itself is shown to the Owner rather
   than hidden.
+- **Owner-managed current Sources.** The Owner can add, edit, or remove the persisted Sources used
+  by the next full run. Removing a Source deactivates it instead of deleting it, so historical
+  evidence and citations remain intact. Prior AI plan proposals stay visible as immutable history.
+- **Bounded work preview.** New and refresh runs show their enforced ceilings before enqueueing:
+  20 minutes, eight planning rounds, 30 deep fetches, and 25 candidates per Source. Runs can stop
+  earlier when the evidence is sufficient.
 - **Durable, asynchronous evidence collection.** A Research Run collects, enriches, and clusters
   evidence in the background across a fixed 20-minute budget per run, and survives worker
   restarts or cancellation: completed steps are persisted before a snapshot is sealed (ADR-0009,
@@ -123,6 +129,11 @@ Research page.
   points at the same item.
 - **Evidence curation.** The Owner can exclude an Evidence Item from future synthesis and chat,
   or restore it later, without deleting the underlying evidence.
+- **History and synthesis recovery.** The History tab retains every run, evidence snapshot, and
+  synthesis with duration and work counts. A synthesis-only retry reuses the latest active
+  evidence without collecting Sources again.
+- **Completion alerts.** Completed runs appear as unread in the Owner navigation until opened. The
+  digest worker also sends a localized completion email when a default recipient is configured.
 - **Durable long chat.** Conversation about a Research Session continues past the length of a
   single AI context window using an AI-maintained, versioned Conversation Memory that a later
   chat reply can pin.
@@ -206,6 +217,20 @@ The same page also stores one global LLM model. `claude-haiku-4.5` preserves the
 changing it applies to future rankings, comment summaries, summary rewrites, and article briefs.
 Previously generated content is not regenerated automatically.
 
+### Admin operations
+
+The Owner admin includes an onboarding checklist for new Channels, bounded non-persisting Source
+test samples, recent owner activity, and a System Health view covering collection, email delivery,
+Tracker reminders, and Research workers. Deleting a Channel, Source, or Email Group, or clearing a
+Channel's collected data, stores a compressed recovery copy for seven days. Undo restores the
+original IDs and dependent rows in one transaction; an ID conflict fails without partially
+restoring data.
+
+Email Groups can run after a fixed interval or on selected weekdays at a local `HH:MM` time in an
+IANA timezone such as `Pacific/Auckland`. The admin shows the last check, last send, next due time,
+and the latest delivery error. Preview and test-send actions use current pending events and Source
+warnings without marking them delivered.
+
 ## Collect and digest
 
 ```bash
@@ -223,6 +248,10 @@ export DIGEST_EMAIL_FROM="beehive@example.com"
 The `auction-reminders` mode name is retained for deployment compatibility, but it runs the generic
 Tracker reminder worker. The current auction adapter sends one reminder about an hour before the
 latest known closing time and handles genuine auction extensions.
+
+Digest mode evaluates both Email Group schedules and pending Research completion notifications.
+The included deployment timer runs it every 15 minutes; each Email Group still decides whether it
+is due from its own interval or local calendar schedule.
 
 The admin interface creates an immutable Channel workflow, offers only compatible Sources,
 configures collection and email delivery, and can trigger an immediate collection cycle. The Owner

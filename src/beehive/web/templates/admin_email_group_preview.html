@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ t('web.title.email_group_preview', product=t('common.product_name'), group=group.name) }}{% endblock %}
+{% block body_class %}page-admin page-editor{% endblock %}
+{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% block content %}
+<main id="main-content" class="page-shell form-shell">
+  <p class="crumb"><a href="/admin/email-groups/{{ group.id }}/edit">{{ t('web.admin.email_group.preview_back', group=group.name) }}</a></p>
+  <header class="page-heading compact-heading">
+    <div>
+      <p class="eyebrow">{{ t('web.admin.email_group.preview_eyebrow') }}</p>
+      <h1>{{ t('web.admin.email_group.preview_heading', group=group.name) }}</h1>
+      <p class="page-lede">{{ t('web.admin.email_group.preview_lede') }}</p>
+    </div>
+  </header>
+
+  {% if recipient_error %}<div class="page-banner" role="alert">{{ recipient_error }}</div>{% endif %}
+  {% if preview %}
+  <section class="admin-panel digest-preview" aria-labelledby="preview-subject">
+    <dl class="preview-facts">
+      <div><dt>{{ t('web.admin.email_group.preview_recipient') }}</dt><dd>{{ recipient or t('web.admin.settings.not_configured') }}</dd></div>
+      <div><dt>{{ t('web.admin.email_group.preview_channels') }}</dt><dd>{{ preview.channel_count }}</dd></div>
+      <div><dt>{{ t('web.admin.email_group.preview_events') }}</dt><dd>{{ preview.event_count }}</dd></div>
+      <div><dt>{{ t('web.admin.email_group.preview_warnings') }}</dt><dd>{{ preview.warning_count }}</dd></div>
+    </dl>
+    <h2 id="preview-subject">{{ preview.subject }}</h2>
+    <pre class="email-plain-preview">{{ preview.plain_text }}</pre>
+    <form method="post" action="/admin/email-groups/{{ group.id }}/test-send">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn primary" type="submit" {{ "disabled" if not recipient else "" }}>{{ t('web.admin.email_group.test_send') }}</button>
+    </form>
+  </section>
+  {% else %}
+  <section class="empty-state">
+    <h2>{{ t('web.admin.email_group.preview_empty_heading') }}</h2>
+    <p>{{ t('web.admin.email_group.preview_empty_body') }}</p>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

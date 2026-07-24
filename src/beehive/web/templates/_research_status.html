@@ -41,19 +41,13 @@
     <button type="submit" class="btn ghost small">{{ t('web.research.status.cancel') }}</button>
   </form>
   {% elif can_refresh and not is_archived %}
-  <form class="research-status-action" method="post" action="/research/{{ session_id }}/refresh">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit" class="btn primary small">{{ t('web.research.status.refresh') }}</button>
-  </form>
+  <a class="btn primary small research-status-action" href="/research/{{ session_id }}/refresh-preview">{{ t('web.research.status.refresh') }}</a>
   {% endif %}
 </div>
 {% elif not run_status.is_pending %}
 <div id="research-status-actions" hx-swap-oob="outerHTML">
   {% if can_refresh and not is_archived %}
-  <form class="research-status-action" method="post" action="/research/{{ session_id }}/refresh">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit" class="btn primary small">{{ t('web.research.status.refresh') }}</button>
-  </form>
+  <a class="btn primary small research-status-action" href="/research/{{ session_id }}/refresh-preview">{{ t('web.research.status.refresh') }}</a>
   {% endif %}
 </div>
 {% endif %}

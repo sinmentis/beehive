@@ -2,7 +2,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from beehive.scheduling import email_group_is_due, next_channel_fetch_at, source_is_due
+from beehive.scheduling import (
+    email_group_is_due,
+    next_channel_fetch_at,
+    next_email_group_due_at,
+    source_is_due,
+)
 
 
 def _source(last_fetch_at):
@@ -91,6 +96,67 @@ def test_recent_empty_email_group_check_controls_the_next_due_time():
     )
 
     assert not email_group_is_due(group, now)
+
+
+def test_calendar_group_becomes_due_after_its_local_slot():
+    group = {
+        "schedule_mode": "calendar",
+        "schedule_timezone": "Pacific/Auckland",
+        "schedule_time": "09:00",
+        "schedule_weekdays": "0",
+        "created_at": "2026-07-12T20:00:00+00:00",
+        "last_checked_at": None,
+        "last_sent_at": None,
+    }
+
+    assert not email_group_is_due(
+        group,
+        datetime(2026, 7, 12, 20, 59, tzinfo=timezone.utc),
+    )
+    assert email_group_is_due(
+        group,
+        datetime(2026, 7, 12, 21, 1, tzinfo=timezone.utc),
+    )
+
+
+def test_new_calendar_group_does_not_execute_a_slot_before_creation():
+    group = {
+        "schedule_mode": "calendar",
+        "schedule_timezone": "Pacific/Auckland",
+        "schedule_time": "09:00",
+        "schedule_weekdays": "0",
+        "created_at": "2026-07-12T22:00:00+00:00",
+        "last_checked_at": None,
+        "last_sent_at": None,
+    }
+    now = datetime(2026, 7, 13, 0, 0, tzinfo=timezone.utc)
+
+    assert not email_group_is_due(group, now)
+    assert next_email_group_due_at(group, now) == datetime(
+        2026,
+        7,
+        19,
+        21,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+
+def test_calendar_schedule_uses_its_configured_timezone():
+    group = {
+        "schedule_mode": "calendar",
+        "schedule_timezone": "America/New_York",
+        "schedule_time": "09:00",
+        "schedule_weekdays": "0",
+        "created_at": "2026-07-13T12:00:00+00:00",
+        "last_checked_at": None,
+        "last_sent_at": None,
+    }
+
+    assert next_email_group_due_at(
+        group,
+        datetime(2026, 7, 13, 12, 30, tzinfo=timezone.utc),
+    ) == datetime(2026, 7, 13, 13, 0, tzinfo=timezone.utc)
 
 
 def test_next_channel_fetch_uses_earliest_source_due_slot():

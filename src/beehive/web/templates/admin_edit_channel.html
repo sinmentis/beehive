@@ -17,11 +17,81 @@
     </form>
   </header>
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
+  {% if created %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.created') }}</p>{% endif %}
+  {% if saved %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.saved') }}</p>{% endif %}
+  {% if source_saved %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.source_saved') }}</p>{% endif %}
+  {% if source_removed %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.source_removed') }}</p>{% endif %}
+  {% if undone %}<p class="flash admin-feedback" role="status">{{ t('web.admin.activity.undo_success') }}</p>{% endif %}
+  {% if fetch_requested %}<p class="flash admin-feedback" role="status">{{ t('web.admin.onboarding.fetch_requested') }}</p>{% endif %}
   {% if cleared_count is not none %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.clear_data_success', count=cleared_count) }}</p>{% endif %}
+  {% if undo_action_id %}
+  <form class="admin-undo-banner" method="post" action="/admin/actions/{{ undo_action_id }}/undo">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit">
+    <span>{{ t('web.admin.activity.undo_available') }}</span>
+    <button class="btn ghost small" type="submit">{{ t('web.admin.activity.undo') }}</button>
+  </form>
+  {% endif %}
+  {% if recovered %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.recover_stale_success') }}</p>{% endif %}
+  {% if stale_recovery %}
+  <div class="page-banner" role="alert">
+    <p>{{ t('web.admin.channel_edit.recover_stale_body') }}</p>
+    <form method="post" action="/admin/channels/{{ channel.id }}/recover-stale-fetch">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn ghost small" type="submit">{{ t('web.admin.channel_edit.recover_stale_action') }}</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if not setup.complete %}
+  <section class="setup-checklist" aria-labelledby="setup-title">
+    <header>
+      <p class="section-kicker">{{ t('web.admin.onboarding.eyebrow') }}</p>
+      <h2 id="setup-title">{{ t('web.admin.onboarding.heading') }}</h2>
+      <p>{{ t('web.admin.onboarding.lede') }}</p>
+    </header>
+    <ol>
+      <li class="complete">
+        <span aria-hidden="true">1</span>
+        <div><strong>{{ t('web.admin.onboarding.channel_step') }}</strong><small>{{ t('web.admin.onboarding.channel_done') }}</small></div>
+      </li>
+      <li class="{{ 'complete' if setup.source_count else 'current' }}">
+        <span aria-hidden="true">2</span>
+        <div>
+          <strong>{{ t('web.admin.onboarding.source_step') }}</strong>
+          <small>{{ t('web.admin.onboarding.source_done', count=setup.source_count) if setup.source_count else t('web.admin.onboarding.source_todo') }}</small>
+        </div>
+        {% if not setup.source_count %}<a class="btn ghost small" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>{% endif %}
+      </li>
+      <li class="{{ 'complete' if setup.attempted_source_count else ('current' if setup.source_count else '') }}">
+        <span aria-hidden="true">3</span>
+        <div>
+          <strong>{{ t('web.admin.onboarding.fetch_step') }}</strong>
+          <small>{{ t('web.admin.onboarding.fetch_done') if setup.attempted_source_count else t('web.admin.onboarding.fetch_todo') }}</small>
+        </div>
+        {% if setup.source_count and not setup.attempted_source_count %}
+        <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit">
+          <button class="btn ghost small" type="submit">{{ t('web.admin.onboarding.fetch_action') }}</button>
+        </form>
+        {% endif %}
+      </li>
+      <li class="{{ 'complete' if setup.ranked_item_count else ('current' if setup.attempted_source_count else '') }}">
+        <span aria-hidden="true">4</span>
+        <div>
+          <strong>{{ t('web.admin.onboarding.results_step') }}</strong>
+          <small>{{ t('web.admin.onboarding.results_done', count=setup.ranked_item_count) if setup.ranked_item_count else t('web.admin.onboarding.results_todo', count=setup.item_count) }}</small>
+        </div>
+        {% if setup.ranked_item_count %}<a class="btn ghost small" href="/channels/{{ channel.id }}">{{ t('web.admin.onboarding.open_channel') }}</a>{% endif %}
+      </li>
+    </ol>
+  </section>
+  {% endif %}
 
   <div class="editor-grid">
     <section class="admin-panel">
-      <form method="post" action="/admin/channels/{{ channel.id }}/edit">
+      <form method="post" action="/admin/channels/{{ channel.id }}/edit" data-preserve-draft>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="field">
           <label for="channel-name">{{ t('web.admin.channel_new.name_label') }}</label>
@@ -97,21 +167,55 @@
       <div class="source-list">
         {% for source in sources %}
         <article class="source-row">
-          <span class="source-name">{{ source.icon }} {{ source.label }}</span>
+          <div>
+            <span class="source-name">{{ source.icon }} {{ source.label }}</span>
+            <p class="hint">
+              {% if source.paused %}{{ t('web.admin.channel_edit.source_paused') }} · {% endif %}
+              {% if source.last_attempt_relative %}<span title="{{ source.last_attempt_exact }}">{{ t('web.admin.channel_edit.source_last_attempt', time=source.last_attempt_relative) }}</span>{% else %}{{ t('web.admin.channel_edit.source_never_fetched') }}{% endif %}
+              {% if source.last_fetch_relative %} · <span title="{{ source.last_fetch_exact }}">{{ t('web.admin.channel_edit.source_last_success', time=source.last_fetch_relative) }}</span>{% endif %}
+              {% if source.raw_count is not none %} · {{ t('web.admin.channel_edit.source_counts', new=source.new_count or 0, raw=source.raw_count) }}{% endif %}
+            </p>
+            {% if source.error and not source.paused %}<p class="error" role="alert">{{ source.error }}</p>{% endif %}
+          </div>
           <div class="row-actions">
+            <form method="post" action="/admin/sources/{{ source.id }}/test" data-source-test-form>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="text-action" type="submit">{{ t('web.admin.channel_edit.test_source') }}</button>
+            </form>
+            <a class="text-action" href="/admin/sources/{{ source.id }}/edit">{{ t('web.admin.channel_edit.edit_source') }}</a>
             <button type="button" class="text-action copy-source-btn" data-copy-value="{{ source.copy_value }}"
                     data-copy-label="{{ t('web.admin.channel_edit.copy_source') }}"
                     data-copied-label="{{ t('web.admin.channel_edit.copy_source_done') }}">{{ t('web.admin.channel_edit.copy_source') }}</button>
-            <form method="post" action="/admin/sources/{{ source.id }}/delete">
+            {% if source.paused %}
+            <form method="post" action="/admin/sources/{{ source.id }}/resume">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="text-action danger-text" type="submit">{{ t('web.admin.channel_edit.remove_source') }}</button>
+              <button class="text-action" type="submit">{{ t('web.admin.channel_edit.resume_source') }}</button>
             </form>
+            {% else %}
+            <form method="post" action="/admin/sources/{{ source.id }}/pause">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="text-action" type="submit">{{ t('web.admin.channel_edit.pause_source') }}</button>
+            </form>
+            {% endif %}
+            <details class="source-remove-confirm">
+              <summary class="text-action danger-text">{{ t('web.admin.channel_edit.remove_source') }}</summary>
+              <p>{{ t('web.admin.channel_edit.remove_source_impact', items=source.impact['items'], votes=source.impact.votes, deep_reads=source.impact.deep_reads, watches=source.impact.watches, events=source.impact.events) }}</p>
+              <form method="post" action="/admin/sources/{{ source.id }}/delete">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label>
+                  {{ t('web.admin.channel_edit.type_to_confirm', value=source.confirmation_value) }}
+                  <input type="text" name="confirmation" required autocomplete="off">
+                </label>
+                <button class="btn danger small" type="submit">{{ t('web.admin.channel_edit.confirm_remove_source') }}</button>
+              </form>
+            </details>
           </div>
         </article>
         {% else %}
         <div class="empty-state compact-empty">
           <h3>{{ t('web.admin.channel_edit.empty_sources_heading') }}</h3>
           <p>{{ t('web.admin.channel_edit.empty_sources_body') }}</p>
+          <a class="btn primary small" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>
         </div>
         {% endfor %}
       </div>
@@ -122,7 +226,7 @@
     <div>
       <p class="section-kicker" lang="en">Danger zone</p>
       <h2 id="clear-data-title">{{ t('web.admin.channel_edit.clear_data_heading') }}</h2>
-      <p>{{ t('web.admin.channel_edit.clear_data_warning', channel=channel.name) }}</p>
+      <p>{{ t('web.admin.channel_edit.clear_data_warning_full', channel=channel.name, items=impact['items'], votes=impact.votes, deep_reads=impact.deep_reads, watches=impact.watches, events=impact.events) }}</p>
     </div>
     <details class="delete-confirm">
       <summary class="btn danger">
@@ -134,6 +238,10 @@
         <div class="confirm-actions">
           <form method="post" action="/admin/channels/{{ channel.id }}/clear-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>
+              {{ t('web.admin.channel_edit.type_to_confirm', value=channel.name) }}
+              <input type="text" name="confirmation" required autocomplete="off">
+            </label>
             <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.clear_data_confirm_action') }}</button>
           </form>
         </div>
@@ -145,7 +253,7 @@
     <div>
       <p class="section-kicker" lang="en">Danger zone</p>
       <h2 id="danger-title">{{ t('web.admin.channel_edit.delete_heading') }}</h2>
-      <p>{{ t('web.admin.channel_edit.delete_warning', channel=channel.name) }}</p>
+      <p>{{ t('web.admin.channel_edit.delete_warning_full', channel=channel.name, sources=impact.sources, items=impact['items'], votes=impact.votes, deep_reads=impact.deep_reads, watches=impact.watches, events=impact.events) }}</p>
     </div>
     <details class="delete-confirm">
       <summary class="btn danger">
@@ -157,6 +265,10 @@
         <div class="confirm-actions">
           <form method="post" action="/admin/channels/{{ channel.id }}/delete">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>
+              {{ t('web.admin.channel_edit.type_to_confirm', value=channel.name) }}
+              <input type="text" name="confirmation" required autocomplete="off">
+            </label>
             <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.delete_confirm_action') }}</button>
           </form>
         </div>
@@ -164,4 +276,7 @@
     </details>
   </section>
 </main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
 {% endblock %}

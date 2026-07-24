@@ -13,9 +13,12 @@
     </div>
   </header>
   {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
+  {% if created %}<p class="flash admin-feedback" role="status">{{ t('web.admin.email_group.created') }}</p>{% endif %}
+  {% if saved %}<p class="flash admin-feedback" role="status">{{ t('web.admin.email_group.saved') }}</p>{% endif %}
+  {% if test_sent %}<p class="flash admin-feedback" role="status">{{ t('web.admin.email_group.test_sent') }}</p>{% endif %}
 
   <section class="admin-panel">
-    <form method="post" action="/admin/email-groups/{{ group.id }}/edit">
+    <form method="post" action="/admin/email-groups/{{ group.id }}/edit" data-preserve-draft>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="field">
         <label for="group-name">{{ t('web.admin.email_group.name_label') }}</label>
@@ -26,11 +29,35 @@
         <input id="group-subject" type="text" name="subject_template" value="{{ subject_template }}" required autocomplete="off">
         <p class="hint">{{ t('web.admin.email_group.subject_hint') }}</p>
       </div>
-      <div class="field">
-        <label for="group-interval">{{ t('web.admin.email_group.interval_label') }}</label>
-        <input id="group-interval" type="number" name="send_interval_hours" value="{{ send_interval_hours }}" min="1" required>
-        <p class="hint">{{ t('web.admin.email_group.interval_hint') }}</p>
-      </div>
+      <fieldset class="field schedule-builder" data-schedule-builder>
+        <legend>{{ t('web.admin.email_group.schedule_heading') }}</legend>
+        <div class="choice-row">
+          <label><input type="radio" name="schedule_mode" value="interval" {{ "checked" if schedule_mode == "interval" else "" }}> {{ t('web.admin.email_group.schedule_interval') }}</label>
+          <label><input type="radio" name="schedule_mode" value="calendar" {{ "checked" if schedule_mode == "calendar" else "" }}> {{ t('web.admin.email_group.schedule_calendar') }}</label>
+        </div>
+        <div class="schedule-fields schedule-fields--interval" data-schedule-panel="interval">
+          <label for="group-interval">{{ t('web.admin.email_group.interval_label') }}
+            <input id="group-interval" type="number" name="send_interval_hours" value="{{ send_interval_hours }}" min="1" required>
+          </label>
+        </div>
+        <div class="schedule-fields schedule-fields--calendar" data-schedule-panel="calendar">
+          <label for="group-time">{{ t('web.admin.email_group.time_label') }}
+            <input id="group-time" type="time" name="schedule_time" value="{{ schedule_time }}">
+          </label>
+          <label for="group-timezone">{{ t('web.admin.email_group.timezone_label') }}
+            <select id="group-timezone" name="schedule_timezone">
+              {% for timezone in schedule_timezones %}<option value="{{ timezone }}" {{ "selected" if timezone == schedule_timezone else "" }}>{{ timezone }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="weekday-picker" data-schedule-panel="calendar" aria-label="{{ t('web.admin.email_group.days_label') }}">
+          {% for day in schedule_weekdays %}
+          <label><input type="checkbox" name="schedule_weekdays" value="{{ day.value }}" {{ "checked" if day.selected else "" }}> {{ day.label }}</label>
+          {% endfor %}
+        </div>
+        <p class="hint">{{ t('web.admin.email_group.schedule_hint') }}</p>
+        {% if schedule_error %}<p class="error" role="alert">{{ schedule_error }}</p>{% endif %}
+      </fieldset>
       <div class="field">
         <label for="group-email">{{ t('web.admin.email_group.recipient_label') }}</label>
         <input id="group-email" type="text" inputmode="email" name="recipient_email"
@@ -64,6 +91,7 @@
       </fieldset>
       <div class="actions">
         <button class="btn primary" type="submit">{{ t('web.admin.channel_edit.save') }}</button>
+        <a class="btn ghost" href="/admin/email-groups/{{ group.id }}/preview">{{ t('web.admin.email_group.preview_action') }}</a>
         <a class="btn ghost" href="/admin/?tab=groups">{{ t('web.admin.channel_new.cancel') }}</a>
       </div>
     </form>
@@ -73,7 +101,7 @@
     <div>
       <p class="section-kicker" lang="en">Danger zone</p>
       <h2 id="danger-title">{{ t('web.admin.email_group.delete_heading') }}</h2>
-      <p>{{ t('web.admin.email_group.delete_warning', group=group.name) }}</p>
+      <p>{{ t('web.admin.email_group.delete_warning_full', group=group.name, channels=member_count) }}</p>
     </div>
     <details class="delete-confirm">
       <summary class="btn danger">
@@ -85,6 +113,10 @@
         <div class="confirm-actions">
           <form method="post" action="/admin/email-groups/{{ group.id }}/delete">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>
+              {{ t('web.admin.channel_edit.type_to_confirm', value=group.name) }}
+              <input type="text" name="confirmation" required autocomplete="off">
+            </label>
             <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.delete_confirm_action') }}</button>
           </form>
         </div>
@@ -92,4 +124,7 @@
     </details>
   </section>
 </main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
 {% endblock %}

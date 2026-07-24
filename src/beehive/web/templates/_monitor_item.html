@@ -1,11 +1,11 @@
 <article class="monitor-card{{ ' monitor-card--history' if monitor_item_history else '' }}" id="monitor-item-{{ item.id }}">
-  <a class="monitor-card-media" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">
+  <a class="monitor-card-media" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer"
+     aria-label="{{ item.title }}. {{ t('web.item.opens_new_window') }}">
     {% if item.image_url %}
     <img src="{{ item.image_url }}" alt="" width="480" height="360" loading="lazy" decoding="async" referrerpolicy="no-referrer">
     {% else %}
     <span class="monitor-image-placeholder" aria-hidden="true"></span>
     {% endif %}
-    <span class="sr-only">{{ t('web.item.opens_new_window') }}</span>
   </a>
   <div class="monitor-card-body">
     <div class="monitor-card-kicker">
@@ -56,5 +56,9 @@
       <span class="monitor-discount">{{ t('web.monitor.discount', percent=item.discount_percent) }}</span>
       {% endif %}
     </div>
+    {% if is_admin %}
+    {% set feedback_hx = true %}
+    {% include "_listing_feedback_control.html" %}
+    {% endif %}
   </div>
 </article>

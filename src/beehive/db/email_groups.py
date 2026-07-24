@@ -11,11 +11,30 @@ import sqlite3
 
 def create_email_group(conn: sqlite3.Connection, name: str, subject_template: str = "",
                         recipient_email: str | None = None,
-                        send_interval_hours: int = 24) -> int:
+                        send_interval_hours: int = 24, *,
+                        schedule_mode: str = "interval",
+                        schedule_timezone: str = "Pacific/Auckland",
+                        schedule_time: str = "09:00",
+                        schedule_weekdays: str = "0,1,2,3,4,5,6") -> int:
     cur = conn.execute(
-        "INSERT INTO email_groups (name, subject_template, recipient_email, send_interval_hours) "
-        "VALUES (?, ?, ?, ?)",
-        (name, subject_template, recipient_email or None, send_interval_hours))
+        """
+        INSERT INTO email_groups (
+            name, subject_template, recipient_email, send_interval_hours,
+            schedule_mode, schedule_timezone, schedule_time, schedule_weekdays
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            name,
+            subject_template,
+            recipient_email or None,
+            send_interval_hours,
+            schedule_mode,
+            schedule_timezone,
+            schedule_time,
+            schedule_weekdays,
+        ),
+    )
     conn.commit()
     return cur.lastrowid
 
@@ -32,11 +51,36 @@ def list_email_groups(conn: sqlite3.Connection) -> list[dict]:
 
 def update_email_group(conn: sqlite3.Connection, group_id: int, name: str,
                         subject_template: str, recipient_email: str | None,
-                        send_interval_hours: int) -> None:
+                        send_interval_hours: int, *,
+                        schedule_mode: str = "interval",
+                        schedule_timezone: str = "Pacific/Auckland",
+                        schedule_time: str = "09:00",
+                        schedule_weekdays: str = "0,1,2,3,4,5,6") -> None:
     conn.execute(
-        "UPDATE email_groups SET name = ?, subject_template = ?, recipient_email = ?, "
-        "send_interval_hours = ? WHERE id = ?",
-        (name, subject_template, recipient_email or None, send_interval_hours, group_id))
+        """
+        UPDATE email_groups
+        SET name = ?,
+            subject_template = ?,
+            recipient_email = ?,
+            send_interval_hours = ?,
+            schedule_mode = ?,
+            schedule_timezone = ?,
+            schedule_time = ?,
+            schedule_weekdays = ?
+        WHERE id = ?
+        """,
+        (
+            name,
+            subject_template,
+            recipient_email or None,
+            send_interval_hours,
+            schedule_mode,
+            schedule_timezone,
+            schedule_time,
+            schedule_weekdays,
+            group_id,
+        ),
+    )
     conn.commit()
 
 
@@ -80,7 +124,14 @@ def get_channel_group(conn: sqlite3.Connection, channel_id: int) -> dict | None:
 
 def mark_sent(conn: sqlite3.Connection, group_id: int, sent_at: str) -> None:
     conn.execute(
-        "UPDATE email_groups SET last_sent_at = ?, last_checked_at = ? WHERE id = ?",
+        """
+        UPDATE email_groups
+        SET last_sent_at = ?,
+            last_checked_at = ?,
+            last_error = NULL,
+            last_error_at = NULL
+        WHERE id = ?
+        """,
         (sent_at, sent_at, group_id),
     )
     conn.commit()
@@ -88,7 +139,31 @@ def mark_sent(conn: sqlite3.Connection, group_id: int, sent_at: str) -> None:
 
 def mark_checked(conn: sqlite3.Connection, group_id: int, checked_at: str) -> None:
     conn.execute(
-        "UPDATE email_groups SET last_checked_at = ? WHERE id = ?",
+        """
+        UPDATE email_groups
+        SET last_checked_at = ?,
+            last_error = NULL,
+            last_error_at = NULL
+        WHERE id = ?
+        """,
         (checked_at, group_id),
+    )
+    conn.commit()
+
+
+def mark_error(
+    conn: sqlite3.Connection,
+    group_id: int,
+    *,
+    error: str,
+    failed_at: str,
+) -> None:
+    conn.execute(
+        """
+        UPDATE email_groups
+        SET last_error = ?, last_error_at = ?
+        WHERE id = ?
+        """,
+        (error, failed_at, group_id),
     )
     conn.commit()

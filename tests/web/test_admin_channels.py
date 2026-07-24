@@ -160,7 +160,7 @@ def test_create_channel_succeeds_with_valid_csrf(authed_client, db_path):
     )
     assert resp.status_code == 303
     assert resp.headers["location"].startswith("/admin/channels/")
-    assert resp.headers["location"].endswith("/edit")
+    assert resp.headers["location"].endswith("/edit?created=1")
 
     conn = connect(db_path)
     row = conn.execute("SELECT * FROM channels WHERE name = 'NZ Finance'").fetchone()
@@ -326,6 +326,56 @@ def test_edit_channel_form_shows_current_values(authed_client, db_path):
     assert 'id="minimum-score"' in resp.text
     assert 'value="70" min="0" max="100"' in resp.text
     assert "r/PersonalFinanceNZ" in resp.text
+    assert "data-source-test-form" in resp.text
+    assert "/static/beehive.js?v=" in resp.text
+    assert "&lt;built-in method items" not in resp.text
+    assert "0 items" in resp.text
+
+
+def test_legacy_success_counts_as_a_fetch_attempt_for_onboarding(
+    authed_client,
+    db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    source_id = create_source(
+        conn,
+        channel_id,
+        "reddit_subreddit",
+        {"subreddit": "PersonalFinanceNZ"},
+    )
+    insert_new(
+        conn,
+        source_id,
+        RawItem(
+            external_id="legacy",
+            title="Legacy item",
+            url="https://example.com/legacy",
+        ),
+    )
+    conn.execute(
+        """
+        UPDATE sources
+        SET last_fetch_at = ?,
+            last_attempt_at = NULL,
+            last_fetch_status = NULL
+        WHERE id = ?
+        """,
+        ("2026-07-15T00:00:00+00:00", source_id),
+    )
+    conn.execute(
+        "UPDATE items SET ai_score = 80 WHERE source_id = ?",
+        (source_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+
+    assert resp.status_code == 200
+    assert "not fetched yet" not in resp.text
+    assert "attempted" in resp.text
+    assert "Finish setting up this Channel" not in resp.text
 
 
 def test_edit_channel_form_shows_no_group_message_when_unassigned(
@@ -579,10 +629,11 @@ def test_delete_channel_removes_it_and_redirects(authed_client, db_path):
     conn.close()
 
     resp = authed_client.post(
-        f"/admin/channels/{channel_id}/delete", data={"csrf_token": "csrf1"}
+        f"/admin/channels/{channel_id}/delete",
+        data={"csrf_token": "csrf1", "confirmation": "To Delete"},
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/"
+    assert resp.headers["location"].startswith("/admin/?tab=system&action=")
 
     conn = connect(db_path)
     assert (
@@ -599,7 +650,8 @@ def test_delete_channel_rejects_wrong_csrf(authed_client, db_path):
     conn.close()
 
     resp = authed_client.post(
-        f"/admin/channels/{channel_id}/delete", data={"csrf_token": "wrong"}
+        f"/admin/channels/{channel_id}/delete",
+        data={"csrf_token": "wrong", "confirmation": "To Delete"},
     )
     assert resp.status_code == 403
 
@@ -621,10 +673,11 @@ def test_clear_channel_data_requires_session(db_path):
         create_app(db_path, session_secret="test-secret"), follow_redirects=False
     )
     resp = client.post(
-        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "x"}
+        f"/admin/channels/{channel_id}/clear-data",
+        data={"csrf_token": "x", "confirmation": "NZ Finance"},
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_clear_channel_data_rejects_wrong_csrf(authed_client, db_path):
@@ -633,14 +686,16 @@ def test_clear_channel_data_rejects_wrong_csrf(authed_client, db_path):
     conn.close()
 
     resp = authed_client.post(
-        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "wrong"}
+        f"/admin/channels/{channel_id}/clear-data",
+        data={"csrf_token": "wrong", "confirmation": "NZ Finance"},
     )
     assert resp.status_code == 403
 
 
 def test_clear_channel_data_404_for_missing_channel(authed_client):
     resp = authed_client.post(
-        "/admin/channels/999/clear-data", data={"csrf_token": "csrf1"}
+        "/admin/channels/999/clear-data",
+        data={"csrf_token": "csrf1", "confirmation": "Missing"},
     )
     assert resp.status_code == 404
 
@@ -658,11 +713,14 @@ def test_clear_channel_data_deletes_items_and_redirects(authed_client, db_path):
     conn.close()
 
     resp = authed_client.post(
-        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"}
+        f"/admin/channels/{channel_id}/clear-data",
+        data={"csrf_token": "csrf1", "confirmation": "NZ Finance"},
     )
 
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit?cleared=2"
+    assert resp.headers["location"].startswith(
+        f"/admin/channels/{channel_id}/edit?cleared=2&undo_action="
+    )
 
     conn = connect(db_path)
     assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
@@ -678,7 +736,8 @@ def test_clear_channel_data_resets_source_fetch_bookkeeping(authed_client, db_pa
     conn.close()
 
     authed_client.post(
-        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"}
+        f"/admin/channels/{channel_id}/clear-data",
+        data={"csrf_token": "csrf1", "confirmation": "NZ Finance"},
     )
 
     conn = connect(db_path)
@@ -700,7 +759,8 @@ def test_clear_channel_data_does_not_delete_the_channel_or_sources(
     conn.close()
 
     authed_client.post(
-        f"/admin/channels/{channel_id}/clear-data", data={"csrf_token": "csrf1"}
+        f"/admin/channels/{channel_id}/clear-data",
+        data={"csrf_token": "csrf1", "confirmation": "NZ Finance"},
     )
 
     conn = connect(db_path)
@@ -730,7 +790,7 @@ def test_duplicate_channel_requires_session(db_path):
         f"/admin/channels/{channel_id}/duplicate", data={"csrf_token": "x"}
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_duplicate_channel_rejects_wrong_csrf(authed_client, db_path):
@@ -772,7 +832,9 @@ def test_duplicate_channel_copies_it_and_redirects_to_new_edit_page(
     assert len(rows) == 2
     new_channel_id, new_name = rows[1]["id"], rows[1]["name"]
     assert new_name == "NZ Finance (copy)"
-    assert resp.headers["location"] == f"/admin/channels/{new_channel_id}/edit"
+    assert resp.headers["location"] == (
+        f"/admin/channels/{new_channel_id}/edit?created=1"
+    )
     assert (
         conn.execute(
             "SELECT COUNT(*) FROM sources WHERE channel_id = ?", (new_channel_id,)
@@ -829,7 +891,7 @@ def test_trigger_fetch_requires_session(db_path):
         f"/admin/channels/{channel_id}/trigger-fetch", data={"csrf_token": "x"}
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_trigger_fetch_rejects_wrong_csrf(authed_client, db_path):
@@ -946,7 +1008,7 @@ def test_bulk_fetch_requires_session(db_path):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/login"
+    assert response.headers["location"].startswith("/admin/login?next=")
 
 
 def test_bulk_fetch_rejects_missing_channel(authed_client, db_path):
@@ -1071,7 +1133,7 @@ def test_channels_list_freshness_has_exact_time_tooltip(authed_client, db_path):
     conn.close()
 
     resp = authed_client.get("/admin/")
-    assert 'title="2026-07-09 15:00"' in resp.text
+    assert 'title="2026-07-09 15:00 NZST"' in resp.text
 
 
 def test_admin_channels_list_shows_fetch_stats(authed_client, db_path):

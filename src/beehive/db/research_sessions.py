@@ -116,6 +116,42 @@ def list_research_sessions(conn: sqlite3.Connection,
     return [_row_to_session(r) for r in rows]
 
 
+def unread_completed_research_session_ids(conn: sqlite3.Connection) -> set[int]:
+    rows = conn.execute(
+        """
+        SELECT research_sessions.id
+        FROM research_sessions
+        WHERE EXISTS (
+            SELECT 1
+            FROM research_runs
+            WHERE research_runs.session_id = research_sessions.id
+              AND research_runs.status = 'completed'
+              AND research_runs.completed_at > COALESCE(
+                  research_sessions.last_viewed_at,
+                  research_sessions.created_at
+              )
+        )
+        """
+    ).fetchall()
+    return {int(row["id"]) for row in rows}
+
+
+def count_unread_completed_research_sessions(conn: sqlite3.Connection) -> int:
+    return len(unread_completed_research_session_ids(conn))
+
+
+def mark_research_session_viewed(
+    conn: sqlite3.Connection,
+    session_id: int,
+    now: datetime,
+) -> None:
+    conn.execute(
+        "UPDATE research_sessions SET last_viewed_at = ? WHERE id = ?",
+        (now.isoformat(), session_id),
+    )
+    conn.commit()
+
+
 def touch_research_session_activity(conn: sqlite3.Connection, session_id: int,
                                      now: datetime) -> None:
     """Bump last_activity_at (e.g. after a new run, message, or chat reply). Never touches

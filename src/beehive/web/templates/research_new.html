@@ -15,7 +15,7 @@
   {% if error %}<p class="page-banner" role="alert">{{ error }}</p>{% endif %}
 
   <section class="admin-panel">
-    <form method="post" action="/research/new" class="research-form">
+    <form method="post" action="/research/new/preview" class="research-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
       <div class="field">
@@ -58,7 +58,7 @@
       </div>
 
       <div class="actions">
-        <button class="btn primary" type="submit">{{ t('web.research.new.submit') }}</button>
+        <button class="btn primary" type="submit">{{ t('web.research.new.preview_action') }}</button>
         <a class="btn ghost" href="/research">{{ t('web.research.new.cancel') }}</a>
       </div>
     </form>

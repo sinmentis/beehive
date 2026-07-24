@@ -92,8 +92,13 @@ def test_logout_deletes_session_and_redirects(client):
     login_resp = client.post("/admin/login", data={"password": "correct-password"})
     old_cookie_value = login_resp.cookies[SESSION_COOKIE_NAME]
     client.cookies.set(SESSION_COOKIE_NAME, old_cookie_value)
+    conn = connect(client.app.state.db_path)
+    csrf_token = conn.execute(
+        "SELECT csrf_token FROM sessions"
+    ).fetchone()["csrf_token"]
+    conn.close()
 
-    logout_resp = client.post("/admin/logout")
+    logout_resp = client.post("/admin/logout", data={"csrf_token": csrf_token})
     assert logout_resp.status_code == 303
     assert logout_resp.headers["location"] == "/admin/login"
 
@@ -103,9 +108,9 @@ def test_logout_deletes_session_and_redirects(client):
     # signature still verifies fine (SESSION_SECRET is unchanged); only the DB lookup should
     # now fail.
     client.cookies.set(SESSION_COOKIE_NAME, old_cookie_value)
-    resp = client.post("/admin/logout")
+    resp = client.post("/admin/logout", data={"csrf_token": csrf_token})
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"].startswith("/admin/login?next=")
 
 
 def test_login_form_logo_links_to_dashboard(client):

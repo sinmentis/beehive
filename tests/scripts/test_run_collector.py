@@ -490,6 +490,29 @@ def test_run_digest_loads_and_passes_the_stored_platform_language(
     assert localizer.code == "fr"
 
 
+def test_run_digest_still_evaluates_groups_when_research_email_fails(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.delenv("ACS_CONNECTION_STRING", raising=False)
+    monkeypatch.setenv("DIGEST_EMAIL_TO", "fallback@example.com")
+    from scripts.run_collector import run_digest
+
+    failure = RuntimeError("research delivery failed")
+    with (
+        patch(
+            "scripts.run_collector.send_research_completion_notifications",
+            side_effect=ExceptionGroup("research failed", [failure]),
+        ),
+        patch("scripts.run_collector.send_email_group_digests") as mock_groups,
+    ):
+        with pytest.raises(ExceptionGroup, match="scheduled emails failed") as exc_info:
+            run_digest(str(tmp_path / "t.db"))
+
+    mock_groups.assert_called_once()
+    assert exc_info.value.exceptions == (failure,)
+
+
 class _ManualTriggerStubConnector:
     type_key = "manual_trigger_stub"
     supported_channel_kinds = frozenset(ChannelKind)

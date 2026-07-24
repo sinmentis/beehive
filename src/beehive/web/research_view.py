@@ -144,9 +144,15 @@ class SessionRowView:
     is_archived: bool
     last_activity_label: str
     detail_url: str
+    is_unread: bool = False
 
 
-def build_session_row(session: ResearchSession, t: Localizer) -> SessionRowView:
+def build_session_row(
+    session: ResearchSession,
+    t: Localizer,
+    *,
+    is_unread: bool = False,
+) -> SessionRowView:
     return SessionRowView(
         id=session.id,
         question=_truncate(session.question, MAX_QUESTION_LENGTH),
@@ -154,6 +160,7 @@ def build_session_row(session: ResearchSession, t: Localizer) -> SessionRowView:
         is_archived=session.status is ResearchSessionStatus.ARCHIVED,
         last_activity_label=relative_time(session.last_activity_at.isoformat(), t),
         detail_url=f"/research/{session.id}",
+        is_unread=is_unread,
     )
 
 
@@ -239,6 +246,7 @@ class PlanRevisionView:
     sources: tuple[PlanSourceView, ...]
     is_available: bool
     created_at_label: str
+    run_id: int = 0
 
 
 def _parse_plan_sources(raw_sources: object, t: Localizer) -> tuple[PlanSourceView, ...] | None:
@@ -269,7 +277,8 @@ def build_plan_revision_view(run_id: int, plan_json: str, is_validated: bool, ve
     (is_available=False) rather than raising or ever exposing the raw JSON to a template."""
     unavailable = PlanRevisionView(
         version=version, summary=t.text("web.research.plan.unavailable"), sources=(),
-        is_available=False, created_at_label=host_local_time_label(created_at.isoformat()))
+        is_available=False, created_at_label=host_local_time_label(created_at.isoformat()),
+        run_id=run_id)
     if not is_validated:
         return unavailable
     try:
@@ -286,7 +295,7 @@ def build_plan_revision_view(run_id: int, plan_json: str, is_validated: bool, ve
         return unavailable
     return PlanRevisionView(
         version=version, summary=_truncate(summary, 600), sources=sources, is_available=True,
-        created_at_label=host_local_time_label(created_at.isoformat()))
+        created_at_label=host_local_time_label(created_at.isoformat()), run_id=run_id)
 
 
 def build_plan_views(conn, run_id: int, t: Localizer) -> tuple[PlanRevisionView, ...]:
@@ -295,6 +304,22 @@ def build_plan_views(conn, run_id: int, t: Localizer) -> tuple[PlanRevisionView,
         build_plan_revision_view(
             run_id, r.plan_json, r.is_validated, r.version, r.created_at, t)
         for r in revisions)
+
+
+def build_session_plan_views(
+    conn,
+    session_id: int,
+    t: Localizer,
+) -> tuple[PlanRevisionView, ...]:
+    rows = conn.execute(
+        "SELECT id FROM research_runs WHERE session_id = ? ORDER BY id DESC",
+        (session_id,),
+    ).fetchall()
+    return tuple(
+        view
+        for row in rows
+        for view in reversed(build_plan_views(conn, row["id"], t))
+    )
 
 
 # ============================================================================
@@ -372,7 +397,10 @@ def build_evidence_tab_view(conn, session_id: int, t: Localizer, page: int = 1) 
 
     items_by_id = get_evidence_items(conn, item_ids)
     curation = list_evidence_curation(conn, item_ids)
-    sources_by_id = {s.id: s for s in list_research_sources(conn, session_id)}
+    sources_by_id = {
+        source.id: source
+        for source in list_research_sources(conn, session_id, include_inactive=True)
+    }
 
     def _is_excluded(item_id: int) -> bool:
         entry = curation.get(item_id)
@@ -649,12 +677,146 @@ def safe_session_error_message(t: Localizer, _exc: Exception) -> str:
 
 @dataclass(frozen=True)
 class SourceRowView:
+    id: int
     label: str
+    origin_label: str
 
 
 def build_source_rows(sources: list[ResearchSource], t: Localizer) -> tuple[SourceRowView, ...]:
-    return tuple(SourceRowView(label=_connector_label(s.connector_type, s.config, t))
-                 for s in sources)
+    return tuple(
+        SourceRowView(
+            id=s.id or 0,
+            label=_connector_label(s.connector_type, s.config, t),
+            origin_label=t.text(f"web.research.source_origin.{s.origin.value}"),
+        )
+        for s in sources
+    )
+
+
+@dataclass(frozen=True)
+class ResearchRunHistoryRowView:
+    id: int
+    kind_label: str
+    status_label: str
+    requested_label: str
+    duration_label: str
+    deep_fetch_count: int
+    attempt_count: int
+    plan_count: int
+
+
+@dataclass(frozen=True)
+class ResearchSnapshotHistoryRowView:
+    id: int
+    sequence: int
+    run_id: int
+    status_label: str
+    item_count: int
+    created_label: str
+
+
+@dataclass(frozen=True)
+class ResearchSynthesisHistoryRowView:
+    id: int
+    version: int
+    run_id: int
+    sufficiency_label: str
+    model: str
+    created_label: str
+
+
+@dataclass(frozen=True)
+class ResearchHistoryView:
+    runs: tuple[ResearchRunHistoryRowView, ...]
+    snapshots: tuple[ResearchSnapshotHistoryRowView, ...]
+    syntheses: tuple[ResearchSynthesisHistoryRowView, ...]
+
+
+def build_research_history_view(
+    conn,
+    session_id: int,
+    t: Localizer,
+) -> ResearchHistoryView:
+    run_rows = conn.execute(
+        "SELECT r.id, r.run_kind, r.status, r.requested_at, r.started_at, "
+        "r.completed_at, r.attempt_count, r.deep_fetch_count, "
+        "(SELECT COUNT(*) FROM research_plan_revisions p WHERE p.run_id = r.id) "
+        "AS plan_count "
+        "FROM research_runs r WHERE r.session_id = ? ORDER BY r.id DESC",
+        (session_id,),
+    ).fetchall()
+    runs: list[ResearchRunHistoryRowView] = []
+    for row in run_rows:
+        started_at = datetime.fromisoformat(row["started_at"]) if row["started_at"] else None
+        completed_at = (
+            datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
+        )
+        if started_at is not None and completed_at is not None:
+            seconds = max(0, int((completed_at - started_at).total_seconds()))
+            duration_label = t.text(
+                "web.research.history.duration",
+                minutes=seconds // 60,
+                seconds=seconds % 60,
+            )
+        else:
+            duration_label = t.text("web.research.history.duration_pending")
+        runs.append(
+            ResearchRunHistoryRowView(
+                id=row["id"],
+                kind_label=t.text(f"web.research.run_kind.{row['run_kind']}"),
+                status_label=t.text(f"web.research.run_status.{row['status']}"),
+                requested_label=host_local_time_label(row["requested_at"]),
+                duration_label=duration_label,
+                deep_fetch_count=row["deep_fetch_count"],
+                attempt_count=row["attempt_count"],
+                plan_count=row["plan_count"],
+            )
+        )
+    snapshot_rows = conn.execute(
+        "SELECT s.id, s.sequence_number AS sequence, s.run_id, s.status, s.created_at, "
+        "(SELECT COUNT(*) FROM research_snapshot_items i WHERE i.snapshot_id = s.id) "
+        "AS item_count FROM research_snapshots s WHERE s.session_id = ? "
+        "ORDER BY s.sequence_number DESC",
+        (session_id,),
+    ).fetchall()
+    snapshots = tuple(
+        ResearchSnapshotHistoryRowView(
+            id=row["id"],
+            sequence=row["sequence"],
+            run_id=row["run_id"],
+            status_label=t.text(f"web.research.snapshot_status.{row['status']}"),
+            item_count=row["item_count"],
+            created_label=host_local_time_label(row["created_at"]),
+        )
+        for row in snapshot_rows
+    )
+    synthesis_rows = conn.execute(
+        "SELECT sy.id, sy.version, sn.run_id, sy.sufficiency_state, sy.model, "
+        "sy.created_at FROM research_syntheses sy "
+        "JOIN research_evidence_state_revisions er "
+        "ON er.id = sy.evidence_state_revision_id "
+        "JOIN research_snapshots sn ON sn.id = er.snapshot_id "
+        "WHERE sy.session_id = ? ORDER BY sy.version DESC",
+        (session_id,),
+    ).fetchall()
+    syntheses = tuple(
+        ResearchSynthesisHistoryRowView(
+            id=row["id"],
+            version=row["version"],
+            run_id=row["run_id"],
+            sufficiency_label=t.text(
+                f"web.research.sufficiency.{row['sufficiency_state']}"
+            ),
+            model=row["model"],
+            created_label=host_local_time_label(row["created_at"]),
+        )
+        for row in synthesis_rows
+    )
+    return ResearchHistoryView(
+        runs=tuple(runs),
+        snapshots=snapshots,
+        syntheses=syntheses,
+    )
 
 
 def utcnow() -> datetime:

@@ -1,11 +1,15 @@
 import html
+import json
 import re
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
+from beehive.channels.views import MonitorSort, TrackerDeadline, TrackerStatus
 from beehive.connectors.base import RawItem
 from beehive.db import app_state
 from beehive.db.channels import create_channel
@@ -16,6 +20,7 @@ from beehive.db.sources import create_source, record_fetch_success
 from beehive.db.votes import upsert_vote
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
+from beehive.web.public import _monitor_page_url, _tracker_page_url
 from scripts.set_admin_password import set_admin_password
 
 
@@ -49,6 +54,68 @@ def authed_client(db_path, conn):
     )
     client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
     return client
+
+
+def test_monitor_pagination_url_preserves_monitor_filters():
+    page = SimpleNamespace(
+        channel_id=6,
+        sort=MonitorSort.DISCOUNT,
+        pagination=SimpleNamespace(page=1),
+        history_pagination=SimpleNamespace(page=3),
+        on_sale_only=True,
+        vendor="Arc'teryx",
+        source="example.com/outlet",
+        search="shell jacket",
+        criteria=SimpleNamespace(showing_below_threshold=True),
+    )
+
+    url = _monitor_page_url(page, active_page=2)
+
+    assert urlsplit(url).path == "/channels/6"
+    assert parse_qs(urlsplit(url).query) == {
+        "sort": ["discount"],
+        "page": ["2"],
+        "history_page": ["3"],
+        "on_sale": ["1"],
+        "vendor": ["Arc'teryx"],
+        "source": ["example.com/outlet"],
+        "q": ["shell jacket"],
+        "show_below": ["1"],
+    }
+
+
+def test_tracker_pagination_url_preserves_tracker_filters():
+    page = SimpleNamespace(
+        channel_id=7,
+        ending_pagination=SimpleNamespace(page=1),
+        upcoming_pagination=SimpleNamespace(page=2),
+        history_pagination=SimpleNamespace(page=3),
+        search="workshop tools",
+        source="All About Auctions",
+        category="General Goods",
+        status=TrackerStatus.ENDING,
+        deadline=TrackerDeadline.DAY,
+        minimum_score=80,
+        maximum_price=250.0,
+        criteria=SimpleNamespace(showing_below_threshold=True),
+    )
+
+    url = _tracker_page_url(page, ending_page=2)
+
+    assert urlsplit(url).path == "/channels/7"
+    assert parse_qs(urlsplit(url).query) == {
+        "ending_page": ["2"],
+        "upcoming_page": ["2"],
+        "history_page": ["3"],
+        "q": ["workshop tools"],
+        "source": ["All About Auctions"],
+        "category": ["General Goods"],
+        "status": ["ending"],
+        "deadline": ["day"],
+        "min_score": ["80"],
+        "max_price": ["250.0"],
+        "show_below": ["1"],
+    }
 
 
 def _create_auction_item(c, *, external_id="lot-1", closes_in_hours=2):
@@ -100,7 +167,7 @@ def _create_auction_item(c, *, external_id="lot-1", closes_in_hours=2):
     ).fetchone()[0]
 
 
-def test_dashboard_channel_tab_has_no_secondary_popup_action(conn, client):
+def test_dashboard_channel_tab_has_no_secondary_popup_action(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(
@@ -112,7 +179,7 @@ def test_dashboard_channel_tab_has_no_secondary_popup_action(conn, client):
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
     record_fetch_success(c, source_id, "2026-07-09T00:00:00+00:00")
 
-    resp = client.get("/")
+    resp = authed_client.get("/")
     assert resp.status_code == 200
     assert "NZ Finance" in resp.text
     assert "RBNZ 降息" in resp.text
@@ -134,7 +201,7 @@ def test_public_pages_allow_https_listing_images(client):
     assert "img-src 'self' data: https:" in response.headers["content-security-policy"]
 
 
-def test_dashboard_shows_unread_count(conn, client):
+def test_dashboard_shows_unread_count(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -143,7 +210,7 @@ def test_dashboard_shows_unread_count(conn, client):
     update_ai_ranking(c, source_id, "t1", score=90, summary="A", rationale="r")
     update_ai_ranking(c, source_id, "t2", score=80, summary="B", rationale="r")
 
-    resp = client.get("/")
+    resp = authed_client.get("/")
     assert " · 2 new</span>" in resp.text
 
 
@@ -151,7 +218,7 @@ def test_dashboard_renders_with_no_channels(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert "Start with your first channel" in resp.text
-    assert " · 0 new</span>" in resp.text
+    assert " · 0 new</span>" not in resp.text
 
 
 def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
@@ -164,7 +231,7 @@ def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
     resp = fresh_client.get("/")
     assert resp.status_code == 200
     assert "Start with your first channel" in resp.text
-    assert " · 0 new</span>" in resp.text
+    assert " · 0 new</span>" not in resp.text
 
 
 def test_channel_drilldown_shows_item_with_source_badge_and_link(conn, client):
@@ -604,6 +671,47 @@ def test_channel_drilldown_uses_configured_highlight_count(conn, client):
     assert len(resp.context["page"].folded) == 1
 
 
+def test_editorial_channel_paginates_folded_items_and_preserves_search(conn, client):
+    _, c = conn
+    channel_id = create_channel(
+        c,
+        "NZ Finance",
+        "economic news",
+        highlight_count=1,
+        minimum_score=0,
+    )
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for index in range(27):
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=f"rates-{index}",
+                title=f"Rates {index}",
+                url=f"https://x/{index}",
+            ),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            f"rates-{index}",
+            score=100 - index,
+            summary=f"Rates summary {index}",
+            rationale="r",
+        )
+
+    first = client.get(f"/channels/{channel_id}?q=Rates")
+    second = client.get(f"/channels/{channel_id}?q=Rates&page=2")
+
+    assert first.status_code == 200
+    assert len(first.context["page"].highlighted) == 1
+    assert len(first.context["page"].folded) == 24
+    assert f"/channels/{channel_id}?q=Rates&amp;page=2" in first.text
+    assert second.context["page"].highlighted == ()
+    assert len(second.context["page"].folded) == 2
+    assert "Rates summary 0" not in second.text
+
+
 def test_channel_drilldown_hides_items_below_configured_minimum_score(conn, client):
     _, c = conn
     channel_id = create_channel(
@@ -636,6 +744,42 @@ def test_channel_drilldown_hides_items_below_configured_minimum_score(conn, clie
 
     assert "high summary" in resp.text
     assert "low summary" not in resp.text
+
+
+def test_owner_can_explain_and_show_items_below_channel_threshold(
+    conn, authed_client
+):
+    _, c = conn
+    channel_id = create_channel(
+        c,
+        "NZ Finance",
+        "economic news",
+        minimum_score=80,
+    )
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, score in (("low", 79), ("high", 80)):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url="https://x"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=score,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+
+    filtered = authed_client.get(f"/channels/{channel_id}")
+    expanded = authed_client.get(f"/channels/{channel_id}?show_below=1")
+
+    assert "1 of 2 collected items match" in filtered.text
+    assert "Show 1 below threshold" in filtered.text
+    assert "low summary" not in filtered.text
+    assert "low summary" in expanded.text
+    assert "Apply threshold" in expanded.text
 
 
 def test_channel_drilldown_folded_item_links_to_the_original_post_in_a_new_tab(
@@ -886,7 +1030,9 @@ def test_folded_hackernews_item_keeps_point_and_comment_engagement(conn, client)
     assert "55 points · 12 comments" in resp.text
 
 
-def test_channel_drilldown_shows_unread_count_and_source_summary(conn, client):
+def test_channel_drilldown_shows_unread_count_and_source_summary(
+    conn, authed_client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(
@@ -897,7 +1043,7 @@ def test_channel_drilldown_shows_unread_count_and_source_summary(conn, client):
     )
     update_ai_ranking(c, source_id, "t1", score=91, summary="RBNZ 降息", rationale="r")
 
-    resp = client.get(f"/channels/{channel_id}")
+    resp = authed_client.get(f"/channels/{channel_id}")
     assert "1 new item" in resp.text
     assert "Sources: r/PersonalFinanceNZ" in resp.text
 
@@ -1181,7 +1327,7 @@ def test_vote_route_rejects_wrong_csrf(conn, authed_client, db_path):
     )
 
 
-def test_viewing_drilldown_as_owner_marks_items_read_for_next_visit(
+def test_viewing_drilldown_as_owner_does_not_implicitly_mark_items_read(
     conn, authed_client
 ):
     _, c = conn
@@ -1193,14 +1339,12 @@ def test_viewing_drilldown_as_owner_marks_items_read_for_next_visit(
     update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
 
     first = authed_client.get(f"/channels/{channel_id}")
-    assert (
-        "1 new item" in first.text
-    )  # THIS render still shows the pre-visit unread count
-
     second = authed_client.get(f"/channels/{channel_id}")
-    assert (
-        "0 new items" in second.text
-    )  # the NEXT render reflects last visit's mark-read
+
+    assert "1 new item" in first.text
+    assert "1 new item" in second.text
+    item = c.execute("SELECT is_read FROM items WHERE external_id='t1'").fetchone()
+    assert item["is_read"] == 0
 
 
 def test_viewing_drilldown_anonymously_does_not_mark_items_read(conn, client):
@@ -1294,7 +1438,83 @@ def test_mark_all_read_route_requires_session(conn, client):
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/admin/login"
+    assert resp.headers["location"] == (
+        "/admin/login?next=%2Fadmin%2F%3Freauth%3D1"
+    )
+
+
+def test_owner_can_mark_editorial_item_read_and_unread(conn, authed_client, db_path):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="T", url="https://x"))
+    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+
+    marked = authed_client.post(
+        f"/items/{item_id}/read-state",
+        data={
+            "csrf_token": "csrf1",
+            "is_read": "true",
+            "next_url": f"/channels/{channel_id}",
+        },
+    )
+    assert marked.status_code == 303
+    assert marked.headers["location"] == f"/channels/{channel_id}"
+
+    unmarked = authed_client.post(
+        f"/items/{item_id}/read-state",
+        data={
+            "csrf_token": "csrf1",
+            "is_read": "false",
+            "next_url": "/archive",
+        },
+    )
+    assert unmarked.status_code == 303
+    assert unmarked.headers["location"] == "/archive"
+
+    conn2 = connect(db_path)
+    assert conn2.execute(
+        "SELECT is_read FROM items WHERE id = ?", (item_id,)
+    ).fetchone()["is_read"] == 0
+
+
+def test_read_state_route_rejects_snapshot_item(conn, authed_client):
+    _, c = conn
+    channel_id = create_channel(c, "Outlet", "deals", kind="monitor")
+    source_id = create_source(
+        c,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    insert_new(c, source_id, RawItem(external_id="p1", title="Product", url="https://x"))
+    item_id = c.execute("SELECT id FROM items WHERE external_id='p1'").fetchone()[0]
+
+    response = authed_client.post(
+        f"/items/{item_id}/read-state",
+        data={"csrf_token": "csrf1", "is_read": "true"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_read_state_route_requires_owner(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="T", url="https://x"))
+    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+
+    response = client.post(
+        f"/items/{item_id}/read-state",
+        data={"csrf_token": "x", "is_read": "true"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        "/admin/login?next=%2Fadmin%2F%3Freauth%3D1"
+    )
 
 
 def test_archive_shows_items_across_channels_grouped_by_day(conn, client):
@@ -1375,6 +1595,43 @@ def test_archive_excludes_monitor_and_tracker_items_and_filters(conn, client):
     assert all(channel["kind"] == "editorial" for channel in response.context["channels"])
 
 
+def test_global_search_finds_items_across_all_channel_workflows(conn, client):
+    _, c = conn
+    editorial_id = create_channel(c, "News", "needle", kind="editorial")
+    monitor_id = create_channel(c, "Shop", "needle", kind="monitor")
+    tracker_id = create_channel(c, "Auctions", "needle", kind="tracker")
+    editorial_source = create_source(
+        c, editorial_id, "reddit_subreddit", {"subreddit": "x"}
+    )
+    monitor_source = create_source(
+        c,
+        monitor_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    tracker_source = create_source(c, tracker_id, "all_about_auctions", {})
+    for source_id, external_id, title in (
+        (editorial_source, "news", "Needle policy update"),
+        (monitor_source, "product", "Needle hiking jacket"),
+        (tracker_source, "lot", "Needle workshop lot"),
+    ):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=title, url="https://example.com"),
+        )
+
+    response = client.get("/search?q=Needle")
+
+    assert response.status_code == 200
+    assert "Needle policy update" in response.text
+    assert "Needle hiking jacket" in response.text
+    assert "Needle workshop lot" in response.text
+    assert "Editorial" in response.text
+    assert "Monitor" in response.text
+    assert "Tracker" in response.text
+
+
 def test_archive_never_marks_anything_read(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
@@ -1410,6 +1667,45 @@ def test_archive_paginates_with_page_query_param(conn, client):
     assert first_page.status_code == 200
     assert second_page.status_code == 200
     assert first_page.text != second_page.text
+
+
+def test_archive_pagination_preserves_active_filters(conn, authed_client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for index in range(31):
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=f"rates-{index}",
+                title=f"Rates update {index}",
+                url="https://x",
+            ),
+        )
+        c.execute(
+            "UPDATE items SET fetched_at = '2026-07-05T08:00:00' "
+            "WHERE external_id = ?",
+            (f"rates-{index}",),
+        )
+    c.commit()
+
+    response = authed_client.get(
+        "/archive",
+        params={
+            "channel": channel_id,
+            "from": "2026-07-01",
+            "to": "2026-07-10",
+            "read_state": "unread",
+            "q": "Rates",
+        },
+    )
+
+    assert response.status_code == 200
+    assert (
+        f"/archive?channel={channel_id}&amp;from=2026-07-01&amp;to=2026-07-10"
+        "&amp;read_state=unread&amp;q=Rates&amp;page=2"
+    ) in response.text
 
 
 def test_archive_strips_vote_reason_from_render_context(conn, client):
@@ -1556,7 +1852,7 @@ def test_interaction_helper_is_served(client):
     assert resp.headers["content-type"].startswith("text/javascript")
 
 
-def test_dashboard_shows_ranked_signal_table(conn, client):
+def test_dashboard_shows_ranked_signal_table(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(
@@ -1575,7 +1871,7 @@ def test_dashboard_shows_ranked_signal_table(conn, client):
         c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r"
     )
 
-    resp = client.get("/")
+    resp = authed_client.get("/")
     assert resp.status_code == 200
     assert '<table class="signal-table">' in resp.text
     assert '<th scope="col" data-column-header="score">Score' in resp.text
@@ -1855,7 +2151,7 @@ def test_dashboard_respects_each_channels_minimum_score(conn, client):
     assert "strict summary" not in response.text
 
 
-def test_dashboard_channel_tab_count_excludes_subthreshold_items(conn, client):
+def test_dashboard_channel_tab_count_excludes_subthreshold_items(conn, authed_client):
     _, c = conn
     channel_id = create_channel(
         c,
@@ -1881,12 +2177,12 @@ def test_dashboard_channel_tab_count_excludes_subthreshold_items(conn, client):
             rationale="r",
         )
 
-    response = client.get("/")
+    response = authed_client.get("/")
 
     assert 'aria-label="Strict, 1 new item"' in response.text
 
 
-def test_dashboard_filters_and_counts_read_state(conn, client):
+def test_dashboard_filters_and_counts_read_state(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -1912,9 +2208,9 @@ def test_dashboard_filters_and_counts_read_state(conn, client):
     c.execute("UPDATE items SET is_read = 1 WHERE external_id = 'read'")
     c.commit()
 
-    all_response = client.get("/")
-    unread_response = client.get("/?view=unread")
-    read_response = client.get("/?view=read")
+    all_response = authed_client.get("/")
+    unread_response = authed_client.get("/?view=unread")
+    read_response = authed_client.get("/?view=read")
 
     assert "All 2" in all_response.text
     assert "Unread 1" in all_response.text
@@ -1925,6 +2221,38 @@ def test_dashboard_filters_and_counts_read_state(conn, client):
     assert "fresh item" not in read_response.text
     assert 'class="signal-row is-read' in all_response.text
     assert 'class="signal-row is-unread' in all_response.text
+
+
+def test_anonymous_dashboard_does_not_expose_owner_read_state(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id in ("unread", "read"):
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=external_id, url="https://x"),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=90,
+            summary=f"{external_id} summary",
+            rationale="r",
+        )
+    c.execute("UPDATE items SET is_read = 1 WHERE external_id = 'read'")
+    c.commit()
+
+    response = client.get("/?view=unread")
+
+    assert "unread summary" in response.text
+    assert "read summary" in response.text
+    assert "Unread 1" not in response.text
+    assert "Read 1" not in response.text
+    assert "is-unread" not in response.text
+    assert "is-read" not in response.text
+    assert 'data-column-header="state"' not in response.text
 
 
 def test_dashboard_never_shows_vote_controls(conn, client, authed_client):
@@ -1979,10 +2307,17 @@ def test_dashboard_requests_twenty_four_ranked_signals(conn, client):
     assert resp.status_code == 200
     assert len(resp.context["highlights"]) == 24
     assert resp.context["has_more_signals"] is True
-    assert "<span>24+</span>" in resp.text
-    assert "<b>24+ / 25</b>" in resp.text
+    assert "<span>24</span>" in resp.text
+    assert "<b>24 / 25</b>" in resp.text
+    assert 'href="/?page=2"' in resp.text
     assert "摘要 24" in resp.text
     assert "摘要 0" not in resp.text
+
+    second = client.get("/?page=2")
+    assert second.status_code == 200
+    assert len(second.context["highlights"]) == 1
+    assert "摘要 0" in second.text
+    assert 'href="/"' in second.text
 
 
 def test_dashboard_counts_all_pending_high_priority_signals(conn, client):
@@ -2014,7 +2349,7 @@ def test_dashboard_counts_all_pending_high_priority_signals(conn, client):
     assert resp.context["high_priority_count"] == 25
     assert resp.context["pending_signal_count"] == 25
     assert "≥90 25" in resp.text
-    assert "<b>24+ / 25</b>" in resp.text
+    assert "<b>24 / 25</b>" in resp.text
 
 
 def test_dashboard_high_priority_tab_filters_signals(conn, client):
@@ -2127,7 +2462,7 @@ def test_dashboard_teaser_carries_an_exact_time_tooltip(conn, client, monkeypatc
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get("/")
-    assert 'title="2026-07-09 12:00"' in resp.text
+    assert 'title="2026-07-09 12:00 NZST"' in resp.text
 
 
 def test_dashboard_shows_each_channels_own_next_fetch_countdown(
@@ -2196,7 +2531,7 @@ def test_dashboard_freshness_has_exact_time_tooltip(conn, client):
     record_fetch_success(c, source_id, "2026-07-09T03:00:00")
 
     resp = client.get("/")
-    assert 'title="2026-07-09 15:00 ·' in resp.text  # NZST = UTC+12 in July
+    assert 'title="2026-07-09 15:00 NZST ·' in resp.text
 
 
 def test_channel_drilldown_freshness_has_exact_time_tooltip(conn, client):
@@ -2206,10 +2541,12 @@ def test_channel_drilldown_freshness_has_exact_time_tooltip(conn, client):
     record_fetch_success(c, source_id, "2026-07-09T03:00:00")
 
     resp = client.get(f"/channels/{channel_id}")
-    assert 'title="2026-07-09 15:00"' in resp.text  # NZST = UTC+12 in July
+    assert 'title="2026-07-09 15:00 NZST"' in resp.text
 
 
-def test_open_item_route_redirects_to_the_real_url_and_marks_it_read(conn, client):
+def test_open_item_route_redirects_to_the_real_url_and_marks_it_read(
+    conn, authed_client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -2224,7 +2561,7 @@ def test_open_item_route_redirects_to_the_real_url_and_marks_it_read(conn, clien
     )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
-    resp = client.get(f"/items/{item_id}/open", follow_redirects=False)
+    resp = authed_client.get(f"/items/{item_id}/open", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "https://reddit.com/r/x/comments/t1"
 
@@ -2233,6 +2570,31 @@ def test_open_item_route_redirects_to_the_real_url_and_marks_it_read(conn, clien
     ).fetchone()
     assert row["opened_at"] is not None
     assert row["is_read"] == 1
+
+
+def test_anonymous_open_redirect_does_not_mutate_owner_state(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(
+        c,
+        source_id,
+        RawItem(
+            external_id="t1",
+            title="Rates fall",
+            url="https://reddit.com/r/x/comments/t1",
+        ),
+    )
+    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+
+    response = client.get(f"/items/{item_id}/open", follow_redirects=False)
+
+    assert response.status_code == 302
+    row = c.execute(
+        "SELECT opened_at, is_read FROM items WHERE id = ?", (item_id,)
+    ).fetchone()
+    assert row["opened_at"] is None
+    assert row["is_read"] == 0
 
 
 @pytest.mark.parametrize(
@@ -2247,7 +2609,7 @@ def test_open_item_route_redirects_to_the_real_url_and_marks_it_read(conn, clien
     ],
 )
 def test_open_item_records_snapshot_open_without_marking_it_read(
-    conn, client, kind, source_type, config
+    conn, authed_client, kind, source_type, config
 ):
     _, c = conn
     channel_id = create_channel(c, f"{kind} Channel", "profile", kind=kind)
@@ -2265,7 +2627,7 @@ def test_open_item_records_snapshot_open_without_marking_it_read(
         "SELECT id FROM items WHERE external_id = ?", (f"{kind}-1",)
     ).fetchone()[0]
 
-    response = client.get(f"/items/{item_id}/open", follow_redirects=False)
+    response = authed_client.get(f"/items/{item_id}/open", follow_redirects=False)
 
     assert response.status_code == 302
     row = c.execute(
@@ -2311,7 +2673,7 @@ def test_dashboard_shows_fetch_stats(conn, client):
     assert "50" in resp.text and "20" in resp.text and "40%" in resp.text
 
 
-def test_channel_drilldown_hides_read_items_by_default(conn, client):
+def test_channel_drilldown_hides_read_items_by_default(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -2325,14 +2687,16 @@ def test_channel_drilldown_hides_read_items_by_default(conn, client):
     c.execute("UPDATE items SET is_read = 1 WHERE id = ?", (item_id,))
     c.commit()
 
-    resp = client.get(f"/channels/{channel_id}")
+    resp = authed_client.get(f"/channels/{channel_id}")
     assert "Unread item" in resp.text
     assert "Read item" not in resp.text
     assert "Show 1 read item" in resp.text
     assert f'href="/channels/{channel_id}?show_read=1"' in resp.text
 
 
-def test_channel_drilldown_shows_read_items_when_show_read_param_present(conn, client):
+def test_channel_drilldown_shows_read_items_when_show_read_param_present(
+    conn, authed_client
+):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -2346,12 +2710,30 @@ def test_channel_drilldown_shows_read_items_when_show_read_param_present(conn, c
     c.execute("UPDATE items SET is_read = 1 WHERE id = ?", (item_id,))
     c.commit()
 
-    resp = client.get(f"/channels/{channel_id}?show_read=1")
+    resp = authed_client.get(f"/channels/{channel_id}?show_read=1")
     assert "Unread item" in resp.text
     assert "Read item" in resp.text
 
 
-def test_channel_drilldown_no_reveal_line_when_nothing_is_read(conn, client):
+def test_anonymous_channel_shows_all_items_without_owner_read_state(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="unread", title="Unread", url="https://x"))
+    insert_new(c, source_id, RawItem(external_id="read", title="Read", url="https://y"))
+    c.execute("UPDATE items SET is_read = 1 WHERE external_id = 'read'")
+    c.commit()
+
+    response = client.get(f"/channels/{channel_id}")
+
+    assert "Unread" in response.text
+    assert "Read" in response.text
+    assert "new item" not in response.text
+    assert "Show 1 read item" not in response.text
+    assert "/read-state" not in response.text
+
+
+def test_channel_drilldown_no_reveal_line_when_nothing_is_read(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -2359,7 +2741,7 @@ def test_channel_drilldown_no_reveal_line_when_nothing_is_read(conn, client):
         c, source_id, RawItem(external_id="t1", title="Unread item", url="https://x")
     )
 
-    resp = client.get(f"/channels/{channel_id}")
+    resp = authed_client.get(f"/channels/{channel_id}")
     assert 'class="channel-read-link"' not in resp.text
 
 
@@ -2678,8 +3060,135 @@ def test_watchlist_is_owner_only_and_orders_lots_by_closing_time(
     assert page.text.index(f"watchlist-item-{earlier_id}") < page.text.index(
         f"watchlist-item-{later_id}"
     )
-    assert 'href="/admin/settings"' in page.text
+    assert 'href="/admin/?tab=delivery"' in page.text
     assert f'hx-post="/items/{earlier_id}/watch"' in page.text
+    assert "Active" in page.text
+    assert "Remove selected" in page.text
+
+
+def test_watchlist_bulk_removal_and_closed_filter(conn, authed_client):
+    _, c = conn
+    active_id = _create_auction_item(c, external_id="active-watch", closes_in_hours=4)
+    closed_id = _create_auction_item(c, external_id="closed-watch", closes_in_hours=2)
+    for item_id in (active_id, closed_id):
+        authed_client.post(
+            f"/items/{item_id}/watch",
+            data={"csrf_token": "csrf1"},
+        )
+
+    row = c.execute(
+        "SELECT raw_metadata FROM items WHERE id = ?", (closed_id,)
+    ).fetchone()
+    metadata = json.loads(row["raw_metadata"])
+    metadata["closing_at"] = (
+        datetime.now(timezone.utc) - timedelta(minutes=5)
+    ).isoformat()
+    c.execute(
+        "UPDATE items SET raw_metadata = ? WHERE id = ?",
+        (json.dumps(metadata), closed_id),
+    )
+    c.commit()
+
+    closed_page = authed_client.get("/watchlist?status=closed")
+    assert f"watchlist-item-{closed_id}" in closed_page.text
+    assert f"watchlist-item-{active_id}" not in closed_page.text
+
+    removed = authed_client.post(
+        "/watchlist/remove-selected",
+        data={
+            "csrf_token": "csrf1",
+            "item_ids": str(closed_id),
+            "next_url": "/watchlist?status=closed",
+        },
+    )
+    assert removed.status_code == 303
+    assert removed.headers["location"] == "/watchlist?status=closed&removed=1"
+    assert c.execute(
+        "SELECT 1 FROM auction_watches WHERE item_id = ?", (closed_id,)
+    ).fetchone() is None
+
+
+def test_watchlist_retry_route_sends_only_requested_reminder(
+    conn, authed_client, monkeypatch
+):
+    _, c = conn
+    item_id = _create_auction_item(c, external_id="retry-watch", closes_in_hours=0.5)
+    authed_client.post(
+        f"/items/{item_id}/watch",
+        data={"csrf_token": "csrf1"},
+    )
+    c.execute(
+        "UPDATE auction_watches SET last_error = ? WHERE item_id = ?",
+        ("provider down", item_id),
+    )
+    c.commit()
+
+    sent: list[int] = []
+    monkeypatch.setattr(
+        "beehive.web.public.resolve_default_email",
+        lambda *_: type("Recipient", (), {"address": "owner@example.com"})(),
+    )
+    monkeypatch.setattr("beehive.web.public.build_notifier", lambda *_: object())
+    monkeypatch.setattr(
+        "beehive.web.public.send_tracker_reminder_for_item",
+        lambda _conn, _notifier, _recipient, _t, requested_id: sent.append(requested_id)
+        or 1,
+    )
+
+    response = authed_client.post(
+        f"/items/{item_id}/retry-reminder",
+        data={
+            "csrf_token": "csrf1",
+            "next_url": "/watchlist?status=active",
+        },
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/watchlist?status=active&retry=sent"
+    assert sent == [item_id]
+
+
+def test_owner_can_record_relevance_feedback_on_tracker_items(conn, authed_client):
+    _, c = conn
+    item_id = _create_auction_item(c, external_id="feedback-lot", closes_in_hours=3)
+    channel_id = c.execute(
+        """
+        SELECT sources.channel_id
+        FROM items
+        JOIN sources ON sources.id = items.source_id
+        WHERE items.id = ?
+        """,
+        (item_id,),
+    ).fetchone()["channel_id"]
+
+    page = authed_client.get(f"/channels/{channel_id}")
+    assert "Not relevant" in page.text
+
+    response = authed_client.post(
+        f"/items/{item_id}/relevance",
+        data={
+            "csrf_token": "csrf1",
+            "value": "-1",
+            "next_url": f"/channels/{channel_id}",
+        },
+    )
+    assert response.status_code == 303
+    assert c.execute(
+        "SELECT value FROM votes WHERE item_id = ?", (item_id,)
+    ).fetchone()["value"] == -1
+
+    toggled_off = authed_client.post(
+        f"/items/{item_id}/relevance",
+        data={
+            "csrf_token": "csrf1",
+            "value": "-1",
+            "next_url": f"/channels/{channel_id}",
+        },
+    )
+    assert toggled_off.status_code == 303
+    assert c.execute(
+        "SELECT 1 FROM votes WHERE item_id = ?", (item_id,)
+    ).fetchone() is None
 
 
 def test_owner_navigation_links_to_watchlist(client, authed_client):

@@ -7,6 +7,7 @@ still require an authenticated session and CSRF validation.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -21,11 +22,16 @@ from beehive.channels.tracker import adapter_for_source
 from beehive.channels.views import (
     EditorialPage,
     EditorialItemView,
+    EditorialQuery,
     MonitorPage,
     MonitorQuery,
     MonitorSort,
+    Pagination,
     TrackerPage,
+    TrackerDeadline,
     TrackerQuery,
+    TrackerStatus,
+    WatchlistQuery,
     build_channel_page,
     build_tracker_item_view,
     build_watchlist_page,
@@ -34,9 +40,12 @@ from beehive.collector.deep_read_trigger import request_deep_read_worker
 from beehive.db.tracker_watches import (
     add_tracker_watch,
     get_watched_item_ids,
+    remove_closed_tracker_watches,
     remove_tracker_watch,
+    remove_tracker_watches,
 )
 from beehive.email_routing import resolve_default_email
+from beehive.notify import build_notifier
 from beehive.db.channels import get_channel, list_channels
 from beehive.db.deep_reads import (
     get_deep_read,
@@ -49,9 +58,12 @@ from beehive.db.items import (
     list_archive,
     list_by_channel,
     list_dashboard_highlights,
+    list_search_results,
+    mark_dashboard_signals_read,
     mark_channel_read,
     mark_item_opened,
     mark_read,
+    mark_unread,
 )
 from beehive.db.sources import get_source, list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
@@ -82,9 +94,11 @@ from beehive.web.formatting import (
 from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.link_safety import safe_external_href
 from beehive.web.official_feed_labels import official_feed_label
+from beehive.tracker_reminders import send_tracker_reminder_for_item
 
 
 router = APIRouter()
+_LOGGER = logging.getLogger(__name__)
 
 DASHBOARD_SIGNAL_COUNT = 24
 
@@ -209,10 +223,23 @@ def _source_summary(sources: list[dict], t: Localizer) -> str:
     return t.text("web.channel.source_list_separator").join(labels)
 
 
-def _monitor_page_url(page: MonitorPage, page_number: int) -> str:
+def _monitor_page_url(
+    page: MonitorPage,
+    *,
+    active_page: int | None = None,
+    history_page: int | None = None,
+) -> str:
     params: dict[str, str] = {"sort": page.sort.value}
-    if page_number != 1:
-        params["page"] = str(page_number)
+    active_page = active_page if active_page is not None else page.pagination.page
+    history_page = (
+        history_page
+        if history_page is not None
+        else page.history_pagination.page
+    )
+    if active_page != 1:
+        params["page"] = str(active_page)
+    if history_page != 1:
+        params["history_page"] = str(history_page)
     if page.on_sale_only:
         params["on_sale"] = "1"
     if page.vendor:
@@ -221,6 +248,8 @@ def _monitor_page_url(page: MonitorPage, page_number: int) -> str:
         params["source"] = page.source
     if page.search:
         params["q"] = page.search
+    if page.criteria.showing_below_threshold:
+        params["show_below"] = "1"
     return f"/channels/{page.channel_id}?{urlencode(params)}"
 
 
@@ -254,6 +283,22 @@ def _tracker_page_url(
         ),
     }
     params = {key: str(value) for key, value in pages.items() if value != 1}
+    if page.search:
+        params["q"] = page.search
+    if page.source:
+        params["source"] = page.source
+    if page.category:
+        params["category"] = page.category
+    if page.status is not TrackerStatus.ALL:
+        params["status"] = page.status.value
+    if page.deadline is not TrackerDeadline.ALL:
+        params["deadline"] = page.deadline.value
+    if page.minimum_score is not None:
+        params["min_score"] = str(page.minimum_score)
+    if page.maximum_price is not None:
+        params["max_price"] = str(page.maximum_price)
+    if page.criteria.showing_below_threshold:
+        params["show_below"] = "1"
     query = urlencode(params)
     return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
 
@@ -270,13 +315,96 @@ def _time_label(iso_str: str) -> str:
     return datetime.fromisoformat(iso_str).strftime("%H:%M")
 
 
-def _dashboard_url(view: str, minimum_score: int | None) -> str:
+def _dashboard_url(
+    view: str, minimum_score: int | None, page: int = 1
+) -> str:
     params: dict[str, str | int] = {}
     if view != "all":
         params["view"] = view
     if minimum_score is not None:
         params["minimum_score"] = minimum_score
+    if page != 1:
+        params["page"] = page
     return f"/?{urlencode(params)}" if params else "/"
+
+
+def _archive_page_url(
+    page: int,
+    *,
+    channel_id: int | None,
+    date_from: str | None,
+    date_to: str | None,
+    read_state: str | None,
+    search: str | None,
+) -> str:
+    params: dict[str, str | int] = {}
+    if channel_id is not None:
+        params["channel"] = channel_id
+    if date_from:
+        params["from"] = date_from
+    if date_to:
+        params["to"] = date_to
+    if read_state:
+        params["read_state"] = read_state
+    if search:
+        params["q"] = search
+    if page != 1:
+        params["page"] = page
+    query = urlencode(params)
+    return f"/archive?{query}" if query else "/archive"
+
+
+def _editorial_page_url(
+    page: EditorialPage,
+    page_number: int,
+    *,
+    include_read_filter: bool,
+) -> str:
+    params: dict[str, str | int] = {}
+    if include_read_filter and page.show_read:
+        params["show_read"] = 1
+    if page.search:
+        params["q"] = page.search
+    if page.criteria.showing_below_threshold:
+        params["show_below"] = 1
+    if page_number != 1:
+        params["page"] = page_number
+    query = urlencode(params)
+    return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
+
+
+def _editorial_show_read_url(page: EditorialPage) -> str:
+    params: dict[str, str | int] = {"show_read": 1}
+    if page.search:
+        params["q"] = page.search
+    if page.criteria.showing_below_threshold:
+        params["show_below"] = 1
+    return f"/channels/{page.channel_id}?{urlencode(params)}"
+
+
+def _safe_return_url(value: str | None, fallback: str) -> str:
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return fallback
+    return value
+
+
+def _criteria_toggle_url(request: Request, *, showing_below: bool) -> str:
+    params = dict(request.query_params)
+    for page_key in ("page", "ending_page", "upcoming_page", "history_page"):
+        params.pop(page_key, None)
+    if showing_below:
+        params.pop("show_below", None)
+    else:
+        params["show_below"] = "1"
+    query = urlencode(params)
+    return f"{request.url.path}?{query}" if query else request.url.path
+
+
+def _search_url(search: str, page: int = 1) -> str:
+    params: dict[str, str | int] = {"q": search}
+    if page != 1:
+        params["page"] = page
+    return f"/search?{urlencode(params)}"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -284,10 +412,13 @@ def dashboard(
     request: Request,
     view: Literal["all", "unread", "read"] = Query(default="all"),
     minimum_score: int | None = Query(default=None, ge=0, le=100),
+    page: int = Query(default=1, ge=1),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
 ):
+    is_admin = session is not None
+    effective_view = view if is_admin else "all"
     now = datetime.now(timezone.utc)
     featured_window_days = load_featured_window_days(conn)
     published_from, published_to = featured_utc_bounds(now, featured_window_days)
@@ -302,18 +433,23 @@ def dashboard(
     pending_signal_count = count_dashboard_signals(
         conn,
         minimum_score=minimum_score,
-        read_state=view,
+        read_state=effective_view,
         **day_filters,
+    )
+    pagination = Pagination(
+        page=page,
+        per_page=DASHBOARD_SIGNAL_COUNT,
+        total=pending_signal_count,
     )
     highlights = list_dashboard_highlights(
         conn,
         limit=DASHBOARD_SIGNAL_COUNT,
+        offset=pagination.offset,
         minimum_score=minimum_score,
         published_from=published_from,
         published_to=published_to,
-        read_state=view,
+        read_state=effective_view,
     )
-    has_more_signals = pending_signal_count > DASHBOARD_SIGNAL_COUNT
     for item in highlights:
         _decorate_item(item, t)
     channels = []
@@ -338,11 +474,10 @@ def dashboard(
             ),
             "fetch_stats": fetch_stats_label(sources, t),
         }
-        if definition.read_model is ReadModel.TRACKED:
+        if is_admin and definition.read_model is ReadModel.TRACKED:
             nav_channel["unread_count"] = sum(1 for item in items if not item["is_read"])
         channels.append(nav_channel)
 
-    is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
     deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in highlights])
     for item in highlights:
@@ -357,7 +492,18 @@ def dashboard(
         {
             "channels": channels,
             "highlights": highlights,
-            "has_more_signals": has_more_signals,
+            "has_more_signals": pagination.has_next,
+            "pagination": pagination,
+            "previous_url": (
+                _dashboard_url(effective_view, minimum_score, page - 1)
+                if pagination.has_previous
+                else None
+            ),
+            "next_url": (
+                _dashboard_url(effective_view, minimum_score, page + 1)
+                if pagination.has_next
+                else None
+            ),
             "high_priority_count": count_dashboard_signals(
                 conn,
                 minimum_score=90,
@@ -370,7 +516,7 @@ def dashboard(
             "read_signal_count": signal_counts["read"],
             "dashboard_time": host_local_time_label(now.isoformat())[-5:],
             "featured_window_days": featured_window_days,
-            "view": view,
+            "view": effective_view,
             "minimum_score": minimum_score,
             "all_url": _dashboard_url("all", None),
             "unread_url": _dashboard_url("unread", None),
@@ -379,18 +525,24 @@ def dashboard(
             "total_unread": signal_counts["unread"],
             "is_admin": is_admin,
             "csrf_token": csrf_token,
+            "return_url": _dashboard_url(effective_view, minimum_score, page),
         },
     )
 
 
 @router.get("/items/{item_id}/open")
-def open_item(item_id: int, conn: sqlite3.Connection = Depends(get_db)):
+def open_item(
+    item_id: int,
+    session: dict | None = Depends(get_optional_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
     item = get_item(conn, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
-    mark_item_opened(conn, item_id)
-    if item["channel_kind"] == "editorial":
-        mark_read(conn, item_id)
+    if session is not None:
+        mark_item_opened(conn, item_id)
+        if item["channel_kind"] == "editorial":
+            mark_read(conn, item_id)
     return RedirectResponse(safe_external_href(item["url"]), status_code=302)
 
 
@@ -404,7 +556,13 @@ def channel_drilldown(
     on_sale: bool = False,
     vendor: str | None = None,
     source: str | None = None,
+    category: str | None = None,
     q: str | None = None,
+    show_below: bool = False,
+    tracker_status: TrackerStatus = Query(TrackerStatus.ALL, alias="status"),
+    deadline: TrackerDeadline = TrackerDeadline.ALL,
+    min_score: int | None = Query(None, ge=0, le=100),
+    max_price: float | None = Query(None, ge=0),
     ending_page: int = Query(1, ge=1),
     upcoming_page: int = Query(1, ge=1),
     history_page: int = Query(1, ge=1),
@@ -425,9 +583,12 @@ def channel_drilldown(
         now=now,
         is_owner=is_admin,
         csrf_token=csrf_token,
-        show_read=bool(show_read),
+        show_read=bool(show_read) if is_admin else True,
+        show_below_score=is_admin and show_below,
+        editorial_query=EditorialQuery(page=page_number, search=q),
         monitor_query=MonitorQuery(
             page=page_number,
+            history_page=history_page,
             sort=sort,
             on_sale_only=on_sale,
             vendor=vendor,
@@ -438,12 +599,17 @@ def channel_drilldown(
             ending_page=ending_page,
             upcoming_page=upcoming_page,
             history_page=history_page,
+            search=q,
+            source=source,
+            category=category,
+            status=tracker_status,
+            deadline=deadline,
+            minimum_score=min_score,
+            maximum_price=max_price,
         ),
     )
 
     sources = list_sources(conn, channel_id)
-    if is_admin and isinstance(page, EditorialPage):
-        mark_channel_read(conn, channel_id)
 
     templates = request.app.state.templates
     context = {
@@ -457,21 +623,57 @@ def channel_drilldown(
         "csrf_token": csrf_token,
         "monitor_previous_url": None,
         "monitor_next_url": None,
+        "monitor_history_previous_url": None,
+        "monitor_history_next_url": None,
+        "editorial_previous_url": None,
+        "editorial_next_url": None,
         "tracker_ending_previous_url": None,
         "tracker_ending_next_url": None,
         "tracker_upcoming_previous_url": None,
         "tracker_upcoming_next_url": None,
         "tracker_history_previous_url": None,
         "tracker_history_next_url": None,
+        "return_url": str(request.url.path)
+        + (f"?{request.url.query}" if request.url.query else ""),
+        "criteria_toggle_url": _criteria_toggle_url(
+            request,
+            showing_below=page.criteria.showing_below_threshold,
+        ),
     }
+    if isinstance(page, EditorialPage):
+        if page.folded_pagination.has_previous:
+            context["editorial_previous_url"] = _editorial_page_url(
+                page,
+                page.folded_pagination.page - 1,
+                include_read_filter=is_admin,
+            )
+        if page.folded_pagination.has_next:
+            context["editorial_next_url"] = _editorial_page_url(
+                page,
+                page.folded_pagination.page + 1,
+                include_read_filter=is_admin,
+            )
+        context["editorial_page"] = page.folded_pagination.page
+        context["editorial_show_read"] = page.show_read
+        context["editorial_show_below"] = page.criteria.showing_below_threshold
+        context["editorial_search"] = page.search or ""
+        context["editorial_show_read_url"] = _editorial_show_read_url(page)
     if isinstance(page, MonitorPage):
         if page.pagination.has_previous:
             context["monitor_previous_url"] = _monitor_page_url(
-                page, page.pagination.page - 1
+                page, active_page=page.pagination.page - 1
             )
         if page.pagination.has_next:
             context["monitor_next_url"] = _monitor_page_url(
-                page, page.pagination.page + 1
+                page, active_page=page.pagination.page + 1
+            )
+        if page.history_pagination.has_previous:
+            context["monitor_history_previous_url"] = _monitor_page_url(
+                page, history_page=page.history_pagination.page - 1
+            )
+        if page.history_pagination.has_next:
+            context["monitor_history_next_url"] = _monitor_page_url(
+                page, history_page=page.history_pagination.page + 1
             )
     if isinstance(page, TrackerPage):
         if page.ending_pagination.has_previous:
@@ -504,27 +706,149 @@ def channel_drilldown(
 @router.get("/watchlist", response_class=HTMLResponse)
 def watchlist(
     request: Request,
+    q: str = Query("", max_length=200),
+    status: Literal["active", "closed", "all"] = Query("active"),
+    reminder: Literal[
+        "all", "scheduled", "due", "sent", "error", "inactive"
+    ] = Query("all"),
+    page: int = Query(1, ge=1),
+    retry: str | None = Query(None),
+    removed: int | None = Query(None, ge=0),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
 ):
     now = datetime.now(timezone.utc)
-    page = build_watchlist_page(conn, t=t, now=now)
+    watchlist_page = build_watchlist_page(
+        conn,
+        t=t,
+        now=now,
+        query=WatchlistQuery(
+            search=q,
+            status=status,
+            reminder=reminder,
+            page=page,
+        ),
+    )
+
+    def page_url(target_page: int) -> str:
+        params = dict(request.query_params)
+        params["page"] = str(target_page)
+        params.pop("retry", None)
+        params.pop("removed", None)
+        return f"/watchlist?{urlencode(params)}"
+
+    def status_url(target_status: str) -> str:
+        params = dict(request.query_params)
+        params["status"] = target_status
+        params.pop("page", None)
+        params.pop("retry", None)
+        params.pop("removed", None)
+        return f"/watchlist?{urlencode(params)}"
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
         "watchlist.html",
         {
-            "page": page,
+            "page": watchlist_page,
             "default_email": resolve_default_email(
                 conn,
                 os.environ.get("DIGEST_EMAIL_TO"),
             ).address,
             "is_admin": True,
             "csrf_token": session["csrf_token"],
+            "retry_result": retry,
+            "removed_count": removed,
+            "watchlist_previous_url": (
+                page_url(watchlist_page.pagination.page - 1)
+                if watchlist_page.pagination.has_previous
+                else None
+            ),
+            "watchlist_next_url": (
+                page_url(watchlist_page.pagination.page + 1)
+                if watchlist_page.pagination.has_next
+                else None
+            ),
+            "watchlist_return_url": str(
+                request.url.path
+                if not request.url.query
+                else f"{request.url.path}?{request.url.query}"
+            ),
+            "watchlist_active_url": status_url("active"),
+            "watchlist_closed_url": status_url("closed"),
+            "watchlist_all_url": status_url("all"),
+            "watchlist_range_start": (
+                watchlist_page.pagination.offset + 1
+                if watchlist_page.pagination.total
+                else 0
+            ),
+            "watchlist_range_end": min(
+                watchlist_page.pagination.offset + len(watchlist_page.items),
+                watchlist_page.pagination.total,
+            ),
         },
     )
+
+
+@router.post("/watchlist/remove-selected")
+def remove_selected_watches(
+    csrf_token: str = Form(...),
+    item_ids: list[int] | None = Form(None),
+    next_url: str | None = Form(None),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    removed = remove_tracker_watches(conn, item_ids or [])
+    target = _safe_return_url(next_url, "/watchlist")
+    separator = "&" if "?" in target else "?"
+    return RedirectResponse(f"{target}{separator}removed={removed}", status_code=303)
+
+
+@router.post("/watchlist/clear-closed")
+def clear_closed_watches(
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    removed = remove_closed_tracker_watches(conn, datetime.now(timezone.utc))
+    return RedirectResponse(
+        f"/watchlist?status=closed&removed={removed}",
+        status_code=303,
+    )
+
+
+@router.post("/items/{item_id}/retry-reminder")
+def retry_tracker_reminder(
+    item_id: int,
+    csrf_token: str = Form(...),
+    next_url: str | None = Form(None),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    recipient = resolve_default_email(conn, os.environ.get("DIGEST_EMAIL_TO"))
+    if recipient.address is None:
+        result = "no_recipient"
+    else:
+        try:
+            sent = send_tracker_reminder_for_item(
+                conn,
+                build_notifier(dict(os.environ), recipient.address),
+                recipient,
+                t,
+                item_id,
+            )
+            result = "sent" if sent else "unavailable"
+        except Exception:
+            _LOGGER.exception("Tracker reminder retry failed for item %s", item_id)
+            result = "failed"
+    target = _safe_return_url(next_url, "/watchlist")
+    separator = "&" if "?" in target else "?"
+    return RedirectResponse(f"{target}{separator}retry={result}", status_code=303)
 
 
 @router.post("/items/{item_id}/watch", response_class=HTMLResponse)
@@ -593,6 +917,10 @@ def vote_on_item(
     csrf_token: str = Form(...),
     reason: str | None = Form(None),
     origin: str = Form("channel"),
+    editorial_page: int = Form(1),
+    editorial_show_read: bool = Form(False),
+    editorial_show_below: bool = Form(False),
+    editorial_search: str | None = Form(None),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -627,7 +955,12 @@ def vote_on_item(
         now=datetime.now(timezone.utc),
         is_owner=True,
         csrf_token=session["csrf_token"],
-        show_read=True,
+        show_read=editorial_show_read,
+        show_below_score=editorial_show_below,
+        editorial_query=EditorialQuery(
+            page=max(1, editorial_page),
+            search=editorial_search,
+        ),
     )
     if not isinstance(page, EditorialPage):
         raise HTTPException(
@@ -646,14 +979,122 @@ def vote_on_item(
         {
             "item": item_view,
             "csrf_token": session["csrf_token"],
+            "is_owner": True,
+            "editorial_page": max(1, editorial_page),
+            "editorial_show_read": editorial_show_read,
+            "editorial_show_below": editorial_show_below,
+            "editorial_search": editorial_search or "",
+            "return_url": _editorial_page_url(
+                page,
+                max(1, editorial_page),
+                include_read_filter=True,
+            ),
         },
     )
+
+
+@router.post("/items/{item_id}/relevance", response_class=HTMLResponse)
+def set_listing_relevance(
+    item_id: int,
+    request: Request,
+    value: int = Form(...),
+    csrf_token: str = Form(...),
+    next_url: str | None = Form(None),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    if value not in (1, -1):
+        raise HTTPException(status_code=422, detail="value must be 1 or -1")
+    item = get_item(conn, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    channel_id = _item_channel_id(conn, item)
+    channel = get_channel(conn, channel_id) if channel_id is not None else None
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    definition = get_definition(require_channel_kind(channel["kind"]))
+    if definition.read_model is ReadModel.TRACKED:
+        raise HTTPException(
+            status_code=422,
+            detail="Use Editorial feedback controls for this item",
+        )
+
+    existing = get_vote(conn, item_id)
+    if existing is not None and existing["value"] == value:
+        delete_vote(conn, item_id)
+        feedback_value = None
+    else:
+        upsert_vote(conn, item_id, value)
+        feedback_value = value
+
+    if request.headers.get("HX-Request") == "true":
+        return request.app.state.templates.TemplateResponse(
+            request,
+            "_listing_feedback_control.html",
+            {
+                "item": {"id": item_id, "feedback_value": feedback_value},
+                "csrf_token": session["csrf_token"],
+                "return_url": _safe_return_url(next_url, f"/channels/{channel_id}"),
+                "feedback_hx": True,
+            },
+        )
+    return RedirectResponse(
+        _safe_return_url(next_url, f"/channels/{channel_id}"),
+        status_code=303,
+    )
+
+
+@router.post("/items/{item_id}/read-state")
+def set_item_read_state(
+    item_id: int,
+    csrf_token: str = Form(...),
+    is_read: bool = Form(...),
+    next_url: str | None = Form(None),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    item = get_item(conn, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    _require_editorial_item(item)
+    if is_read:
+        mark_read(conn, item_id)
+    else:
+        mark_unread(conn, item_id)
+    return RedirectResponse(_safe_return_url(next_url, "/"), status_code=303)
+
+
+@router.post("/dashboard/mark-all-read")
+def mark_dashboard_read_route(
+    csrf_token: str = Form(...),
+    minimum_score: int | None = Form(None),
+    next_url: str | None = Form(None),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    now = datetime.now(timezone.utc)
+    published_from, published_to = featured_utc_bounds(
+        now, load_featured_window_days(conn)
+    )
+    mark_dashboard_signals_read(
+        conn,
+        minimum_score=minimum_score,
+        published_from=published_from,
+        published_to=published_to,
+        read_state="unread",
+    )
+    return RedirectResponse(_safe_return_url(next_url, "/"), status_code=303)
 
 
 @router.post("/channels/{channel_id}/mark-all-read")
 def mark_all_read_route(
     channel_id: int,
     csrf_token: str = Form(...),
+    next_url: str | None = Form(None),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -668,10 +1109,62 @@ def mark_all_read_route(
             detail="This Channel does not use read state",
         )
     mark_channel_read(conn, channel_id)
-    return RedirectResponse(f"/channels/{channel_id}", status_code=303)
+    return RedirectResponse(
+        _safe_return_url(next_url, f"/channels/{channel_id}"),
+        status_code=303,
+    )
 
 
 _ARCHIVE_PAGE_SIZE = 30
+_SEARCH_PAGE_SIZE = 30
+
+
+@router.get("/search", response_class=HTMLResponse)
+def search(
+    request: Request,
+    q: str = "",
+    page: int = Query(1, ge=1),
+    session: dict | None = Depends(get_optional_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    items, total = list_search_results(
+        conn,
+        search=q,
+        page=page,
+        page_size=_SEARCH_PAGE_SIZE,
+    )
+    is_admin = session is not None
+    csrf_token = session["csrf_token"] if is_admin else None
+    for item in items:
+        _decorate_item(item, t)
+        item["time_label"] = _time_label(item["fetched_at"])
+        item["vote_reason"] = None
+        item["workflow_label"] = t.text(
+            f"web.channel.{item['channel_kind']}_label"
+        )
+
+    previous_url = _search_url(q, page - 1) if page > 1 else None
+    next_url = (
+        _search_url(q, page + 1)
+        if page * _SEARCH_PAGE_SIZE < total
+        else None
+    )
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "search.html",
+        {
+            "items": items,
+            "query": q,
+            "total": total,
+            "page": page,
+            "previous_url": previous_url,
+            "next_url": next_url,
+            "is_admin": is_admin,
+            "csrf_token": csrf_token,
+            "return_url": _search_url(q, page),
+        },
+    )
 
 
 @router.get("/archive", response_class=HTMLResponse)
@@ -682,7 +1175,7 @@ def archive(
     to: str | None = None,
     read_state: str | None = None,
     q: str | None = None,
-    page: int = 1,
+    page: int = Query(1, ge=1),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -703,17 +1196,18 @@ def archive(
         channel_id = None
     from_ = from_ or None
     to = to or None
+    is_admin = session is not None
+    effective_read_state = read_state if is_admin else None
     items, total = list_archive(
         conn,
         channel_id=channel_id,
         date_from=from_,
         date_to=to,
-        read_state=read_state,
+        read_state=effective_read_state,
         search=q,
         page=page,
         page_size=_ARCHIVE_PAGE_SIZE,
     )
-    is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
     deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in items])
     for item in items:
@@ -737,13 +1231,45 @@ def archive(
             "page": page,
             "has_prev": page > 1,
             "has_next": page * _ARCHIVE_PAGE_SIZE < total,
+            "previous_url": (
+                _archive_page_url(
+                    page - 1,
+                    channel_id=channel_id,
+                    date_from=from_,
+                    date_to=to,
+                    read_state=effective_read_state,
+                    search=q,
+                )
+                if page > 1
+                else None
+            ),
+            "next_url": (
+                _archive_page_url(
+                    page + 1,
+                    channel_id=channel_id,
+                    date_from=from_,
+                    date_to=to,
+                    read_state=effective_read_state,
+                    search=q,
+                )
+                if page * _ARCHIVE_PAGE_SIZE < total
+                else None
+            ),
             "selected_channel": channel_id,
             "selected_from": from_ or "",
             "selected_to": to or "",
-            "selected_read_state": read_state or "",
+            "selected_read_state": effective_read_state or "",
             "selected_search": q or "",
             "is_admin": is_admin,
             "csrf_token": csrf_token,
+            "return_url": _archive_page_url(
+                page,
+                channel_id=channel_id,
+                date_from=from_,
+                date_to=to,
+                read_state=effective_read_state,
+                search=q,
+            ),
         },
     )
 
