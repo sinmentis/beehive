@@ -13,19 +13,11 @@ same response also tells us `window.page.totalPagesJs`, an authoritative page co
 API never gives us, so -- unlike shopify_collection's pure "did we get a short page back"
 guess -- this connector can stop exactly at the real last page.
 
-A full /sale or /outlet listing runs to ~76 pages (~1,976 products) -- a different order of
-magnitude from the Shopify stores' clearance-only collections (a few hundred at most), so
-_MAX_PAGES bounds worst-case cost the same way shopify_collection's cap does, but the more
-useful lever for a large storefront like this is scope, not depth: the site's own on-page
-Filters panel (checkboxes rendered with e.g. `name="brands" value="85"`) narrows /sale or
-/outlet down server-side to a `?brands=85` or `?categories=2` (comma-joined for multiple)
-URL -- confirmed live (?brands=85 on /sale: 5 pages instead of 76, all Patagonia). Pointing a
-Source's collection_url at one of those filtered URLs (copied straight from the site's address
-bar after applying filters there) tracks that slice completely, well within _MAX_PAGES, instead
-of relying on this cap to sample an arbitrary chunk of an unfiltered, unbounded catalog. This
-connector doesn't need to know brands/categories are the filter mechanism -- it just always
-preserves whatever query string the configured collection_url already carries, adding only
-pgNmbr for pagination.
+A full /sale listing runs to ~76 pages (~1,976 products), a different order of magnitude from
+the Shopify stores' clearance-only collections. _MAX_PAGES is therefore high enough to follow
+the site's known full catalog while still bounding a bogus or runaway page count. The site's
+optional filter query parameters (for example `?brands=85` or `?categories=2`) are preserved
+when configured, but an unfiltered Source must still fetch every authoritative page.
 
 Tests inject a fake fetch_html and never touch the network."""
 from __future__ import annotations
@@ -43,9 +35,8 @@ from beehive.domain.channels import ChannelKind
 _USER_AGENT = "beehive/0.1 (personal information hub)"
 _REQUEST_TIMEOUT_SECONDS = 20
 _PAGE_SIZE = 26
-# See module docstring: this is a cost/safety cap for an unfiltered listing, not the expected
-# common case -- a Source scoped with ?brands=/?categories= should finish well under it.
-_MAX_PAGES = 10
+# Covers the site's known ~76-page full catalog while bounding erroneous pagination metadata.
+_MAX_PAGES = 100
 
 _PRODUCT_TILES_RE = re.compile(r"window\.page\.productTiles\s*=\s*(\[.*?\]);", re.DOTALL)
 _TOTAL_PAGES_RE = re.compile(r"window\.page\.totalPagesJs\s*=\s*(\d+)")

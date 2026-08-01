@@ -275,6 +275,24 @@ def test_fetch_stops_using_the_authoritative_total_pages_count():
     assert len(items) == 52
 
 
+def test_fetch_follows_authoritative_total_beyond_ten_pages():
+    calls = []
+
+    def fetch_html(url):
+        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
+        calls.append(page)
+        item_count = 2 if page == 16 else 26
+        tiles = [_tile(tile_id=page * 1000 + i) for i in range(item_count)]
+        return _page_html(tiles, total_pages=16)
+
+    items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )
+
+    assert calls == list(range(1, 17))
+    assert len(items) == 392
+
+
 def test_fetch_falls_back_to_a_short_page_when_total_pages_is_missing():
     full_page = [_tile(tile_id=i) for i in range(26)]
     short_page = [_tile(tile_id=100)]
@@ -299,14 +317,14 @@ def test_fetch_caps_pagination_at_max_pages_even_if_more_data_is_claimed():
     def fetch_html(url):
         page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
         calls.append(page)
-        # Claims 76 total pages, far more than the connector should ever actually request.
-        return _page_html([_tile(tile_id=page * 1000 + i) for i in range(26)], total_pages=76)
+        # Claims more pages than the connector should ever actually request.
+        return _page_html([_tile(tile_id=page * 1000 + i) for i in range(26)], total_pages=176)
 
     items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
         {"collection_url": _COLLECTION_URL}
     )
-    assert len(calls) == 10
-    assert len(items) == 260
+    assert len(calls) == 100
+    assert len(items) == 2600
 
 
 def test_default_html_fetch_uses_user_agent_and_timeout():
