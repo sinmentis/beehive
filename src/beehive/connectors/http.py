@@ -8,10 +8,11 @@ What this centralizes, and why each rule exists:
   target from a `<link href>` that arrived in a feed and was then stored in the database, so
   without this check a `file://`, `http://127.0.0.1:8000/...` or link-local URL was reachable.
   Callers that know the provider pass `allowed_hosts` for a much tighter control.
-- **A response-size cap.** `response.read()` with no argument was previously used by all seven
-  urllib connectors, so one oversized or hostile response could exhaust the 512 MB container
-  (`land_sea_collection`'s module docstring records that this already happened once). Reading
-  `cap + 1` bytes and rejecting past the cap makes the failure a clean, per-source error.
+- **Raw and decompressed response-size caps.** `response.read()` with no argument was previously
+  used by all seven urllib connectors, so one oversized or hostile response could exhaust the
+  512 MB container (`land_sea_collection`'s module docstring records that this already happened
+  once). Reading `cap + 1` raw bytes and applying the same cap while decoding gzip/deflate makes
+  both oversized responses and compression bombs clean, per-source errors.
 - **Retry with jittered backoff, honouring `Retry-After`.** Previously only
   `shopify_collection` retried, and only on `HTTPError` -- so `URLError`, `socket.timeout`, and
   connection resets, which are the common transients, lost the source for a whole
@@ -35,6 +36,7 @@ import random
 import time
 import urllib.error
 import urllib.request
+import zlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -55,6 +57,8 @@ _MAX_BACKOFF_SECONDS = 30.0
 # park a collector process for hours. Past this we give up on the attempt instead of sleeping.
 _MAX_HONORED_RETRY_AFTER_SECONDS = 60.0
 _RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+_SUPPORTED_CONTENT_ENCODINGS = frozenset({"", "identity", "gzip", "x-gzip", "deflate"})
+_GZIP_WBITS = zlib.MAX_WBITS | 16
 
 
 class ConnectorHttpErrorKind(str, Enum):
@@ -134,6 +138,77 @@ def _backoff_seconds(attempt: int) -> float:
     return random.uniform(0.0, ceiling)
 
 
+def _decompress_capped(
+    body: bytes,
+    *,
+    wbits: int,
+    max_bytes: int,
+    url: str,
+) -> bytes:
+    decompressor = zlib.decompressobj(wbits)
+    decoded = decompressor.decompress(body, max_bytes + 1)
+    if len(decoded) > max_bytes:
+        raise ConnectorHttpError(
+            ConnectorHttpErrorKind.TOO_LARGE,
+            f"{url}: decompressed response body exceeds the {max_bytes} byte cap",
+        )
+    decoded += decompressor.flush(max_bytes - len(decoded) + 1)
+    if len(decoded) > max_bytes:
+        raise ConnectorHttpError(
+            ConnectorHttpErrorKind.TOO_LARGE,
+            f"{url}: decompressed response body exceeds the {max_bytes} byte cap",
+        )
+    if not decompressor.eof or decompressor.unused_data:
+        raise zlib.error("compressed response is incomplete or has trailing data")
+    return decoded
+
+
+def _decode_content_encoding(
+    body: bytes,
+    *,
+    encoding: str,
+    max_bytes: int,
+    url: str,
+) -> bytes:
+    normalized = encoding.strip().lower()
+    if normalized in ("", "identity"):
+        return body
+    if normalized not in _SUPPORTED_CONTENT_ENCODINGS:
+        raise ConnectorHttpError(
+            ConnectorHttpErrorKind.PROTOCOL,
+            f"{url}: unsupported Content-Encoding {normalized!r}",
+        )
+    try:
+        if normalized in ("gzip", "x-gzip"):
+            return _decompress_capped(
+                body,
+                wbits=_GZIP_WBITS,
+                max_bytes=max_bytes,
+                url=url,
+            )
+        try:
+            return _decompress_capped(
+                body,
+                wbits=zlib.MAX_WBITS,
+                max_bytes=max_bytes,
+                url=url,
+            )
+        except zlib.error:
+            return _decompress_capped(
+                body,
+                wbits=-zlib.MAX_WBITS,
+                max_bytes=max_bytes,
+                url=url,
+            )
+    except ConnectorHttpError:
+        raise
+    except zlib.error as exc:
+        raise ConnectorHttpError(
+            ConnectorHttpErrorKind.PROTOCOL,
+            f"{url}: invalid {normalized} response body: {exc}",
+        ) from exc
+
+
 def _read_capped(response, max_bytes: int, url: str) -> bytes:
     declared = response.headers.get("Content-Length")
     if declared is not None:
@@ -149,7 +224,12 @@ def _read_capped(response, max_bytes: int, url: str) -> bytes:
         raise ConnectorHttpError(
             ConnectorHttpErrorKind.TOO_LARGE,
             f"{url}: response body exceeds the {max_bytes} byte cap")
-    return body
+    return _decode_content_encoding(
+        body,
+        encoding=response.headers.get("Content-Encoding") or "identity",
+        max_bytes=max_bytes,
+        url=url,
+    )
 
 
 def fetch_bytes(

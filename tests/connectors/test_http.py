@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gzip
+import zlib
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
@@ -115,6 +117,69 @@ def test_a_malformed_content_length_is_not_itself_fatal():
     with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
         urlopen.return_value = urlopen_response(b"ok", headers={"Content-Length": "banana"})
         assert fetch_bytes(_URL, max_bytes=10).body == b"ok"
+
+
+def test_gzip_content_encoding_is_decompressed_before_json_parsing():
+    body = gzip.compress(b'{"products": [{"id": 1}]}')
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = urlopen_response(
+            body,
+            headers={"Content-Encoding": "gzip"},
+        )
+
+        assert fetch_json(_URL) == {"products": [{"id": 1}]}
+
+
+def test_deflate_content_encoding_is_decompressed_before_text_decoding():
+    body = zlib.compress(b"<html>products</html>")
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = urlopen_response(
+            body,
+            headers={"Content-Encoding": "deflate"},
+        )
+
+        assert fetch_text(_URL) == "<html>products</html>"
+
+
+def test_decompressed_body_over_the_cap_is_rejected():
+    body = gzip.compress(b"x" * 1_000)
+    assert len(body) < 50
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = urlopen_response(
+            body,
+            headers={"Content-Encoding": "gzip"},
+        )
+
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            fetch_bytes(_URL, max_bytes=50)
+
+    assert excinfo.value.kind is ConnectorHttpErrorKind.TOO_LARGE
+
+
+def test_malformed_compressed_body_is_a_protocol_error():
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = urlopen_response(
+            b"not gzip",
+            headers={"Content-Encoding": "gzip"},
+        )
+
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            fetch_bytes(_URL)
+
+    assert excinfo.value.kind is ConnectorHttpErrorKind.PROTOCOL
+
+
+def test_unrequested_content_encoding_is_a_protocol_error():
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = urlopen_response(
+            b"opaque",
+            headers={"Content-Encoding": "br"},
+        )
+
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            fetch_bytes(_URL)
+
+    assert excinfo.value.kind is ConnectorHttpErrorKind.PROTOCOL
 
 
 # --------------------------------------------------------------------------
