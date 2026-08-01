@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 from beehive.connectors.base import CommentFetchTarget
+from beehive.connectors.http import ConnectorHttpError, ConnectorHttpErrorKind
+from tests.connectors.http_stubs import urlopen_response as _urlopen_response
 from beehive.connectors.hackernews import (
     HackerNewsQueryConnector,
     HackerNewsStoriesConnector,
@@ -97,19 +99,20 @@ def test_stories_maps_outbound_story_fields_and_metadata():
 
 
 def test_default_json_fetch_uses_user_agent_and_timeout():
-    response = MagicMock()
-    response.__enter__.return_value.read.return_value = b'{"ok": true}'
-
-    with patch(
-        "beehive.connectors.hackernews.urllib.request.urlopen",
-        return_value=response,
-    ) as urlopen:
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = _urlopen_response(b'{"ok": true}')
         payload = _default_fetch_json(f"{_OFFICIAL_BASE}/topstories.json")
 
     request = urlopen.call_args.args[0]
     assert request.get_header("User-agent") == "beehive/0.1 (personal information hub)"
     assert urlopen.call_args.kwargs["timeout"] == 15
     assert payload == {"ok": True}
+
+
+def test_default_json_fetch_rejects_a_host_outside_hacker_news():
+    with pytest.raises(ConnectorHttpError) as excinfo:
+        _default_fetch_json("https://evil.example.com/v0/topstories.json")
+    assert excinfo.value.kind is ConnectorHttpErrorKind.UNSAFE_URL
 
 
 def test_stories_caps_plain_text_body_at_fifteen_hundred_characters():

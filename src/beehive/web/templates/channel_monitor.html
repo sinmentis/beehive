@@ -61,6 +61,22 @@
         </div>
       </details>
     </fieldset>
+    <fieldset class="monitor-multi-filter">
+      <legend>{{ t('web.monitor.gender_label') }}</legend>
+      <details class="monitor-multiselect" name="monitor-filter">
+        <summary title="{{ page.gender_labels|join(', ') if page.gender_labels else t('web.monitor.all_genders') }}">
+          <span>{{ page.gender_labels|join(', ') if page.gender_labels else t('web.monitor.all_genders') }}</span>
+        </summary>
+        <div class="monitor-multiselect-options" role="group" aria-label="{{ t('web.monitor.gender_label') }}">
+          {% for option in page.gender_options %}
+          <label class="monitor-multiselect-option">
+            <input type="checkbox" name="gender" value="{{ option.value }}"{% if option.selected %} checked{% endif %}>
+            <span>{{ option.label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </details>
+    </fieldset>
     <label>
       <span>{{ t('web.monitor.sort_label') }}</span>
       <select name="sort">
@@ -98,7 +114,7 @@
     </div>
     {% else %}
     <div class="channel-panel-empty">
-      {% if page.search or page.sources or page.vendors or page.on_sale_only %}
+      {% if page.search or page.sources or page.vendors or page.genders or page.on_sale_only %}
       <h3>{{ t('web.monitor.empty_filtered_heading') }}</h3>
       <p>{{ t('web.monitor.empty_filtered_body') }}</p>
       {% else %}

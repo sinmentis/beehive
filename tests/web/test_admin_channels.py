@@ -33,9 +33,9 @@ def authed_client(db_path):
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
-    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
+    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret-at-least-32-characters-long"))
     return client
 
 
@@ -90,7 +90,7 @@ def test_channels_list_shows_a_kind_label_for_every_channel(authed_client, db_pa
 
 def test_new_channel_form_requires_session(db_path):
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
     resp = client.get("/admin/channels/new")
     assert resp.status_code == 303
@@ -670,7 +670,7 @@ def test_clear_channel_data_requires_session(db_path):
     conn.close()
 
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
     resp = client.post(
         f"/admin/channels/{channel_id}/clear-data",
@@ -784,7 +784,7 @@ def test_duplicate_channel_requires_session(db_path):
     conn.close()
 
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
     resp = client.post(
         f"/admin/channels/{channel_id}/duplicate", data={"csrf_token": "x"}
@@ -885,7 +885,7 @@ def test_trigger_fetch_requires_session(db_path):
     conn.close()
 
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
     resp = client.post(
         f"/admin/channels/{channel_id}/trigger-fetch", data={"csrf_token": "x"}
@@ -998,7 +998,7 @@ def test_bulk_fetch_requires_session(db_path):
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"),
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
         follow_redirects=False,
     )
 

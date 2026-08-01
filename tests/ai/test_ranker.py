@@ -18,7 +18,7 @@ _FAKE_RESPONSE = """```json
 async def test_rank_channel_builds_prompt_calls_llm_and_parses():
     candidates = [ItemCandidate(item_key="t1", title="Rates fall", body="",
                                  score=100, num_comments=20)]
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
         result = await rank_channel(profile="economic news", votes=[], candidates=candidates,
                                      language=_EN)
 
@@ -34,7 +34,7 @@ async def test_rank_channel_builds_prompt_calls_llm_and_parses():
 @pytest.mark.asyncio
 async def test_rank_channel_passes_model_through():
     candidates = [ItemCandidate(item_key="t1", title="x", body="", score=1, num_comments=0)]
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
         await rank_channel(profile="p", votes=[], candidates=candidates, language=_EN,
                             model="claude-opus-4.8")
     assert mock_run.await_args.kwargs["model"] == "claude-opus-4.8"
@@ -45,7 +45,7 @@ async def test_rank_channel_passes_selected_language_into_the_prompt():
     candidates = [ItemCandidate(item_key="t1", title="Rates fall", body="",
                                  score=100, num_comments=20)]
     japanese = localizer_for("ja").language
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
         await rank_channel(profile="p", votes=[], candidates=candidates, language=japanese)
     called_prompt = mock_run.await_args.args[0]
     assert japanese.llm_name in called_prompt
@@ -53,7 +53,7 @@ async def test_rank_channel_passes_selected_language_into_the_prompt():
 
 @pytest.mark.asyncio
 async def test_rank_channel_returns_empty_list_without_calling_llm_for_no_candidates():
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock()) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock()) as mock_run:
         result = await rank_channel(profile="p", votes=[], candidates=[], language=_EN)
     assert result == []
     mock_run.assert_not_called()
@@ -70,7 +70,7 @@ def _product(**overrides) -> ProductCandidate:
 @pytest.mark.asyncio
 async def test_rank_monitor_channel_builds_prompt_calls_llm_and_parses():
     candidates = [_product()]
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
         result = await rank_monitor_channel(profile="rain jackets on sale", candidates=candidates,
                                              language=_EN)
 
@@ -86,7 +86,7 @@ async def test_rank_monitor_channel_builds_prompt_calls_llm_and_parses():
 @pytest.mark.asyncio
 async def test_rank_monitor_channel_passes_model_through():
     candidates = [_product(item_key="p1")]
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
         await rank_monitor_channel(profile="p", candidates=candidates, language=_EN,
                                     model="claude-opus-4.8")
     assert mock_run.await_args.kwargs["model"] == "claude-opus-4.8"
@@ -96,7 +96,7 @@ async def test_rank_monitor_channel_passes_model_through():
 async def test_rank_monitor_channel_passes_selected_language_into_the_prompt():
     candidates = [_product(item_key="p1")]
     japanese = localizer_for("ja").language
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock(return_value=_FAKE_RESPONSE)) as mock_run:
         await rank_monitor_channel(profile="p", candidates=candidates, language=japanese)
     called_prompt = mock_run.await_args.args[0]
     assert japanese.llm_name in called_prompt
@@ -104,7 +104,18 @@ async def test_rank_monitor_channel_passes_selected_language_into_the_prompt():
 
 @pytest.mark.asyncio
 async def test_rank_monitor_channel_returns_empty_list_without_calling_llm_for_no_candidates():
-    with patch("beehive.ai.ranker.run_prompt", new=AsyncMock()) as mock_run:
+    with patch("beehive.ai.ranker.run_data_only_prompt", new=AsyncMock()) as mock_run:
         result = await rank_monitor_channel(profile="p", candidates=[], language=_EN)
     assert result == []
     mock_run.assert_not_called()
+
+
+def test_ranker_never_imports_a_tool_permissive_entry_point():
+    """A ranking prompt interpolates connector-fetched, publisher-controlled item titles and
+    bodies verbatim (prompt_builder._render_candidates), so it is untrusted text and must go
+    through the tool-free entry point. A static guard, not just a mocking assertion: the name
+    must not exist on the module at all."""
+    import beehive.ai.ranker as ranker_module
+
+    assert not hasattr(ranker_module, "run_prompt")
+    assert hasattr(ranker_module, "run_data_only_prompt")

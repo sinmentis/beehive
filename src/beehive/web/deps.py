@@ -37,9 +37,14 @@ SESSION_COOKIE_NAME = "admin_session"
 
 def get_db(request: Request) -> Generator[sqlite3.Connection, None, None]:
     conn = connect(request.app.state.db_path)
+    # Stashed so app.py's template context processor can render over this same connection
+    # instead of opening a second one per page (it runs inside the handler, while this is still
+    # open). Cleared on the way out so nothing can reach a closed connection through it.
+    request.state.db = conn
     try:
         yield conn
     finally:
+        request.state.db = None
         conn.close()
 
 

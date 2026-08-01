@@ -40,9 +40,9 @@ def authed_client(db_path):
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
-    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
+    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret-at-least-32-characters-long"))
     return client
 
 
@@ -51,7 +51,7 @@ def test_new_source_form_requires_session(db_path):
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
     resp = client.get(f"/admin/channels/{channel_id}/sources/new")
     assert resp.status_code == 303
@@ -144,7 +144,7 @@ def test_create_source_rejects_wrong_csrf(authed_client, db_path):
 
     resp = authed_client.post(
         f"/admin/channels/{channel_id}/sources/new",
-        data={"type": "reddit_subreddit", "subreddit": "x", "csrf_token": "wrong"},
+        data={"type": "reddit_subreddit", "subreddit": "xx", "csrf_token": "wrong"},
     )
     assert resp.status_code == 403
 
@@ -154,7 +154,7 @@ def test_delete_source_removes_it_and_redirects_to_parent_channel(
 ):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     conn.close()
 
     resp = authed_client.post(
@@ -186,7 +186,7 @@ def test_delete_source_404_for_missing_source(authed_client):
 def test_delete_source_rejects_wrong_csrf(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     conn.close()
 
     resp = authed_client.post(
@@ -899,7 +899,7 @@ def test_create_source_rejects_incompatible_type_with_localized_400(
 
     resp = authed_client.post(
         f"/admin/channels/{channel_id}/sources/new",
-        data={"type": "reddit_subreddit", "subreddit": "x", "csrf_token": "csrf1"},
+        data={"type": "reddit_subreddit", "subreddit": "xx", "csrf_token": "csrf1"},
     )
 
     assert resp.status_code == 400
@@ -917,10 +917,10 @@ def test_create_source_rejects_incompatible_type_with_localized_400(
 def test_edit_source_form_requires_session(db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     conn.close()
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
     resp = client.get(f"/admin/sources/{source_id}/edit")
     assert resp.status_code == 303
@@ -1001,7 +1001,7 @@ def test_edit_source_rejects_incompatible_type_with_localized_400(authed_client,
 
     resp = authed_client.post(
         f"/admin/sources/{source_id}/edit",
-        data={"type": "reddit_subreddit", "subreddit": "x", "csrf_token": "csrf1"},
+        data={"type": "reddit_subreddit", "subreddit": "xx", "csrf_token": "csrf1"},
     )
     assert resp.status_code == 400
     assert "added to this channel type." in resp.text
@@ -1031,12 +1031,12 @@ def test_edit_source_rejects_wrong_csrf(authed_client, db_path):
 def test_edit_source_saving_unchanged_is_not_a_self_duplicate(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     conn.close()
 
     resp = authed_client.post(
         f"/admin/sources/{source_id}/edit",
-        data={"type": "reddit_subreddit", "subreddit": "x", "csrf_token": "csrf1"},
+        data={"type": "reddit_subreddit", "subreddit": "xx", "csrf_token": "csrf1"},
     )
     assert resp.status_code == 303
 
@@ -1067,19 +1067,19 @@ def test_create_source_rejects_duplicate_with_localized_400(authed_client, db_pa
 def test_edit_source_rejects_duplicate_of_another_source(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "a"})
-    editable_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "b"})
+    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "aa"})
+    editable_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "bb"})
     conn.close()
 
     resp = authed_client.post(
         f"/admin/sources/{editable_id}/edit",
-        data={"type": "reddit_subreddit", "subreddit": "a", "csrf_token": "csrf1"},
+        data={"type": "reddit_subreddit", "subreddit": "aa", "csrf_token": "csrf1"},
     )
     assert resp.status_code == 400
     assert "already has a source" in resp.text
 
     conn = connect(db_path)
-    assert json.loads(get_source(conn, editable_id)["config"])["subreddit"] == "b"
+    assert json.loads(get_source(conn, editable_id)["config"])["subreddit"] == "bb"
     conn.close()
 
 
@@ -1092,7 +1092,7 @@ def test_create_source_persists_optional_display_name(authed_client, db_path):
         f"/admin/channels/{channel_id}/sources/new",
         data={
             "type": "reddit_subreddit",
-            "subreddit": "x",
+            "subreddit": "xx",
             "source_name": "My label",
             "csrf_token": "csrf1",
         },
@@ -1112,7 +1112,7 @@ def test_create_source_persists_optional_display_name(authed_client, db_path):
 def test_pause_source_sets_paused_and_redirects(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     conn.close()
 
     resp = authed_client.post(
@@ -1129,7 +1129,7 @@ def test_pause_source_sets_paused_and_redirects(authed_client, db_path):
 def test_resume_source_clears_paused_and_redirects(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     set_source_paused(conn, source_id, True, now_iso="2026-07-01T00:00:00")
     conn.close()
 
@@ -1151,7 +1151,7 @@ def test_pause_source_404_for_missing_source(authed_client):
 def test_pause_source_rejects_wrong_csrf(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     conn.close()
 
     resp = authed_client.post(
@@ -1167,7 +1167,7 @@ def test_pause_source_rejects_wrong_csrf(authed_client, db_path):
 def test_edit_channel_shows_paused_status_and_resume_control(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     set_source_paused(conn, source_id, True, now_iso="2026-07-01T00:00:00")
     conn.close()
 
@@ -1182,7 +1182,7 @@ def test_edit_channel_shows_paused_status_and_resume_control(authed_client, db_p
 def test_edit_channel_shows_source_fetch_observability(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     record_fetch_success(conn, source_id, "2026-07-09T03:00:00", raw_count=30, new_count=4)
     conn.close()
 
@@ -1195,7 +1195,7 @@ def test_edit_channel_shows_source_fetch_observability(authed_client, db_path):
 def test_edit_channel_shows_current_source_error(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
-    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "xx"})
     record_fetch_error(conn, source_id, "boom upstream", "2026-07-09T03:00:00")
     conn.close()
 

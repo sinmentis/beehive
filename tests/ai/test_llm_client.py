@@ -3,6 +3,7 @@ import pytest
 
 pytest.importorskip("copilot")
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from beehive.ai.llm_client import (
@@ -10,41 +11,22 @@ from beehive.ai.llm_client import (
     _reject_user_input,
     _require_tool_free_capability,
     run_data_only_prompt,
-    run_prompt,
 )
 
 
-@pytest.mark.asyncio
-async def test_run_prompt_returns_response_content():
-    from copilot.session_events import AssistantMessageData
+def test_module_exposes_no_tool_permissive_entry_point():
+    """The tool-free guarantee is structural, not a convention: there is no second, tool-
+    permissive entry point a future caller could reach for. A ranking prompt embeds
+    publisher-controlled item titles and bodies (prompt_builder._render_candidates) and a
+    comment-summary prompt embeds a raw third-party comment, so no caller in this app has a
+    "trusted prompt" that would justify one."""
+    import beehive.ai.llm_client as llm_client
 
-    fake_response = MagicMock()
-    fake_response.data = AssistantMessageData(content="42", message_id="m1")
-    fake_session = AsyncMock()
-    fake_session.send_and_wait.return_value = fake_response
-    fake_client = AsyncMock()
-    fake_client.create_session.return_value = fake_session
-
-    with patch("copilot.CopilotClient", return_value=fake_client):
-        result = await run_prompt("what is 6*7", model="claude-haiku-4.5", timeout=30.0)
-
-    assert result == "42"
-    fake_client.start.assert_awaited_once()
-    fake_client.stop.assert_awaited_once()
-    fake_session.send_and_wait.assert_awaited_once_with("what is 6*7", timeout=30.0)
+    assert not hasattr(llm_client, "run_prompt")
+    source = Path(llm_client.__file__).read_text()
+    assert "PermissionHandler" not in source
 
 
-@pytest.mark.asyncio
-async def test_run_prompt_raises_on_none_response():
-    fake_session = AsyncMock()
-    fake_session.send_and_wait.return_value = None
-    fake_client = AsyncMock()
-    fake_client.create_session.return_value = fake_session
-
-    with patch("copilot.CopilotClient", return_value=fake_client):
-        with pytest.raises(RuntimeError, match="no response"):
-            await run_prompt("x", model="claude-haiku-4.5")
-    fake_client.stop.assert_awaited_once()
 
 
 # ============================================================================

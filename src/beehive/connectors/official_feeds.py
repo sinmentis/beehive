@@ -8,7 +8,6 @@ non-empty config so a stored URL can never redirect the trusted endpoint. Tests 
 fetch_bytes and never touch the network."""
 from __future__ import annotations
 
-import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -16,6 +15,7 @@ from html.parser import HTMLParser
 from typing import Any, Callable
 
 from beehive.connectors.base import RawItem
+from beehive.connectors import http
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -63,12 +63,8 @@ def _html_to_text(value: Any) -> str:
 
 
 def _default_fetch_bytes(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(  # noqa: S310 (module holds fixed HTTPS official-feed URLs)
-        request,
-        timeout=_REQUEST_TIMEOUT_SECONDS,
-    ) as response:
-        return response.read()
+    return http.fetch_bytes(
+        url, user_agent=_USER_AGENT, timeout=_REQUEST_TIMEOUT_SECONDS).body
 
 
 def _text_or_none(element) -> str | None:

@@ -10,17 +10,18 @@ resolution endpoint is exactly the kind of scraping fragility this project avoid
 Tests inject a fake fetch_rss and never touch the network."""
 from __future__ import annotations
 
-import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlencode
 
 from beehive.connectors.base import RawItem
+from beehive.connectors.http import fetch_bytes
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
 _FETCH_LIMIT = 50
 _USER_AGENT = "beehive/0.1 (by /u/sinmentis)"
+_GOOGLE_NEWS_HOSTS = frozenset({"news.google.com"})
 
 
 def _default_fetch_rss(query: str, limit: int) -> bytes:
@@ -29,9 +30,7 @@ def _default_fetch_rss(query: str, limit: int) -> bytes:
     # the cap is enforced client-side in fetch() after parsing instead.
     params = urlencode({"q": query, "hl": "en-NZ", "gl": "NZ", "ceid": "NZ:en"})
     url = f"https://news.google.com/rss/search?{params}"
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 (https only)
-        return response.read()
+    return fetch_bytes(url, allowed_hosts=_GOOGLE_NEWS_HOSTS, user_agent=_USER_AGENT).body
 
 
 def _to_raw_item(item) -> RawItem:

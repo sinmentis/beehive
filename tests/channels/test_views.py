@@ -17,6 +17,7 @@ from beehive.channels.views import (
     MAX_PER_PAGE,
     EditorialQuery,
     EditorialPage,
+    MonitorGender,
     MonitorPage,
     MonitorQuery,
     MonitorSort,
@@ -515,6 +516,84 @@ def test_monitor_blank_vendor_filter_is_no_filter(conn):
         monitor_query=MonitorQuery(vendors=("   ",)),
     )
     assert len(page.items) == 2
+
+
+def test_monitor_gender_filter_is_multiselect_and_uses_available_product_signals(conn):
+    channel, source_id = _monitor_channel(conn)
+    _add_item(
+        conn,
+        source_id,
+        "women",
+        title="Women's Beta Jacket",
+        raw_metadata=_shopify_metadata(10.0, None, on_sale=False),
+        score=80,
+    )
+    mens_metadata = _shopify_metadata(20.0, None, on_sale=False)
+    mens_metadata["tags"] = ["Mens"]
+    _add_item(
+        conn,
+        source_id,
+        "men",
+        title="Beta Jacket",
+        raw_metadata=mens_metadata,
+        score=79,
+    )
+    _add_item(
+        conn,
+        source_id,
+        "kids",
+        title="Quest Shell",
+        raw_metadata=_shopify_metadata(
+            30.0,
+            None,
+            on_sale=False,
+            product_type="Kids Jackets",
+        ),
+        score=78,
+    )
+    _add_item(
+        conn,
+        source_id,
+        "unspecified",
+        title="Bird Word Trucker",
+        raw_metadata=_shopify_metadata(40.0, None, on_sale=False),
+        score=77,
+    )
+
+    page = build_channel_page(
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        monitor_query=MonitorQuery(
+            genders=(MonitorGender.WOMEN, MonitorGender.KIDS),
+        ),
+    )
+
+    assert {item.title for item in page.items} == {
+        "Women's Beta Jacket",
+        "Quest Shell",
+    }
+    assert page.genders == (MonitorGender.WOMEN, MonitorGender.KIDS)
+    assert page.gender_labels == ("Women", "Kids")
+    assert [
+        (option.value, option.selected)
+        for option in page.gender_options
+    ] == [
+        ("women", True),
+        ("men", False),
+        ("kids", True),
+        ("unisex", False),
+    ]
+
+    unspecified = build_channel_page(
+        conn,
+        channel,
+        t=_EN,
+        now=_NOW,
+        monitor_query=MonitorQuery(genders=(MonitorGender.UNISEX,)),
+    )
+    assert [item.title for item in unspecified.items] == ["Bird Word Trucker"]
 
 
 def test_monitor_search_source_filter_and_options(conn):

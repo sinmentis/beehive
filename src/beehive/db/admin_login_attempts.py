@@ -23,6 +23,15 @@ def count_recent_failures(conn: sqlite3.Connection, ip: str, since_iso: str) -> 
     return row[0]
 
 
+def count_recent_failures_all(conn: sqlite3.Connection, since_iso: str) -> int:
+    """Failures across every source address, for the global ceiling in auth/rate_limit.py -- a
+    per-IP count alone is defeated by simply rotating the source address."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM admin_login_attempts WHERE success = 0 AND attempted_at > ?",
+        (since_iso,)).fetchone()
+    return row[0]
+
+
 def get_most_recent_attempt(conn: sqlite3.Connection) -> dict | None:
     row = conn.execute(
         "SELECT * FROM admin_login_attempts ORDER BY attempted_at DESC, id DESC LIMIT 1"

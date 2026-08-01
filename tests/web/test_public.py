@@ -9,7 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
-from beehive.channels.views import MonitorSort, TrackerDeadline, TrackerStatus
+from beehive.channels.views import (
+    MonitorGender,
+    MonitorSort,
+    TrackerDeadline,
+    TrackerStatus,
+)
 from beehive.connectors.base import RawItem
 from beehive.db import app_state
 from beehive.db.channels import create_channel
@@ -18,7 +23,7 @@ from beehive.db.items import insert_new, update_ai_ranking
 from beehive.db.sessions import create_session
 from beehive.db.sources import create_source, record_fetch_success
 from beehive.db.votes import upsert_vote
-from beehive.web.app import create_app
+from beehive.web.app import InsecureSessionSecretError, create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
 from beehive.web.public import (
     _criteria_toggle_url,
@@ -55,9 +60,9 @@ def authed_client(db_path, conn):
     set_admin_password(db_path, "correct-password")
     create_session(c, "sess1", "csrf1", "2099-01-01T00:00:00")
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"), follow_redirects=False
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"), follow_redirects=False
     )
-    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
+    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret-at-least-32-characters-long"))
     return client
 
 
@@ -70,6 +75,7 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         on_sale_only=True,
         vendors=("Arc'teryx", "Patagonia"),
         sources=("example.com/outlet", "second.example/sale"),
+        genders=(MonitorGender.WOMEN, MonitorGender.KIDS),
         search="shell jacket",
         criteria=SimpleNamespace(showing_below_threshold=True),
     )
@@ -84,6 +90,7 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         "on_sale": ["1"],
         "vendor": ["Arc'teryx", "Patagonia"],
         "source": ["example.com/outlet", "second.example/sale"],
+        "gender": ["women", "kids"],
         "q": ["shell jacket"],
         "show_below": ["1"],
     }
@@ -99,7 +106,8 @@ def test_criteria_toggle_url_preserves_repeated_monitor_filters():
             "raw_path": b"/channels/6",
             "query_string": (
                 b"vendor=Arc%27teryx&vendor=Patagonia"
-                b"&source=example.com%2Foutlet&source=second.example%2Fsale&page=2"
+                b"&source=example.com%2Foutlet&source=second.example%2Fsale"
+                b"&gender=women&gender=kids&page=2"
             ),
             "headers": [],
             "client": ("testclient", 50000),
@@ -112,6 +120,7 @@ def test_criteria_toggle_url_preserves_repeated_monitor_filters():
     assert parse_qs(urlsplit(url).query) == {
         "vendor": ["Arc'teryx", "Patagonia"],
         "source": ["example.com/outlet", "second.example/sale"],
+        "gender": ["women", "kids"],
         "show_below": ["1"],
     }
 
@@ -502,6 +511,64 @@ def test_channel_drilldown_land_sea_collection_item_not_on_sale_shows_vendor(
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "Teva" in resp.text
+
+
+def test_channel_drilldown_gender_filter_accepts_multiple_values(conn, client):
+    _, c = conn
+    channel_id = create_channel(
+        c, "Outdoor Outlet", "watch outdoor products", kind="monitor"
+    )
+    source_id = create_source(
+        c,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    products = (
+        ("women", "Women's Rain Jacket", "Jackets", []),
+        ("men", "Alpine Shell", "Jackets", ["Mens"]),
+        ("kids", "Quest Shell", "Kids Jackets", []),
+        ("unisex", "Bird Word Trucker", "Hats", []),
+    )
+    for external_id, title, product_type, tags in products:
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=external_id,
+                title=title,
+                url=f"https://example.com/products/{external_id}",
+                raw_metadata={
+                    "price": 100.0,
+                    "compare_at_price": None,
+                    "on_sale": False,
+                    "available": True,
+                    "vendor": "Example",
+                    "product_type": product_type,
+                    "tags": tags,
+                },
+            ),
+        )
+        update_ai_ranking(
+            c,
+            source_id,
+            external_id,
+            score=80,
+            summary="Available",
+            rationale="r",
+        )
+
+    resp = client.get(
+        f"/channels/{channel_id}?gender=women&gender=kids"
+    )
+
+    assert resp.status_code == 200
+    assert "Women&#39;s Rain Jacket" in resp.text or "Women's Rain Jacket" in resp.text
+    assert "Quest Shell" in resp.text
+    assert "Alpine Shell" not in resp.text
+    assert "Bird Word Trucker" not in resp.text
+    assert 'name="gender" value="women" checked' in resp.text
+    assert 'name="gender" value="kids" checked' in resp.text
 
 
 def test_channel_drilldown_shows_all_about_auctions_context(conn, client):
@@ -1094,15 +1161,33 @@ def test_unknown_route_uses_branded_not_found_page(client):
 
 
 def test_create_app_reads_session_secret_from_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("SESSION_SECRET", "env-secret")
+    monkeypatch.setenv("SESSION_SECRET", "env-secret-at-least-32-characters-long")
     fresh_app = create_app(str(tmp_path / "t.db"))
-    assert fresh_app.state.session_secret == "env-secret"
+    assert fresh_app.state.session_secret == "env-secret-at-least-32-characters-long"
 
 
 def test_create_app_accepts_explicit_session_secret_override(tmp_path, monkeypatch):
-    monkeypatch.setenv("SESSION_SECRET", "env-secret")
-    fresh_app = create_app(str(tmp_path / "t2.db"), session_secret="explicit-secret")
-    assert fresh_app.state.session_secret == "explicit-secret"
+    monkeypatch.setenv("SESSION_SECRET", "env-secret-at-least-32-characters-long")
+    fresh_app = create_app(
+        str(tmp_path / "t2.db"), session_secret="explicit-secret-at-least-32-chars-long")
+    assert fresh_app.state.session_secret == "explicit-secret-at-least-32-chars-long"
+
+
+@pytest.mark.parametrize("secret", ["", "   ", "too-short", "x" * 31])
+def test_create_app_refuses_to_start_without_a_usable_session_secret(
+    tmp_path, monkeypatch, secret
+):
+    """An empty secret is not a degraded mode: `sign_session_id` HMACs with an empty key, so
+    anyone can mint a valid-looking admin cookie. Failing at startup is the only safe outcome."""
+    monkeypatch.setenv("SESSION_SECRET", secret)
+    with pytest.raises(InsecureSessionSecretError):
+        create_app(str(tmp_path / "insecure.db"))
+
+
+def test_create_app_refuses_a_short_explicit_session_secret(tmp_path, monkeypatch):
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    with pytest.raises(InsecureSessionSecretError):
+        create_app(str(tmp_path / "insecure2.db"), session_secret="short")
 
 
 def test_response_includes_security_headers(client):
@@ -1114,6 +1199,32 @@ def test_response_includes_security_headers(client):
     assert "cookie" in {
         value.strip().lower() for value in resp.headers["vary"].split(",")
     }
+
+
+@pytest.mark.parametrize("accept", ["text/html", "application/json"])
+def test_an_unhandled_error_response_still_carries_the_security_headers(
+    db_path, accept, caplog
+):
+    """Starlette serves a 500 from ServerErrorMiddleware, which wraps the middleware stack from
+    the OUTSIDE -- so the response never passes back through _SecurityHeadersMiddleware. The
+    error page used to ship with no CSP, no nosniff, and no `Cache-Control: private, no-store`
+    on an HTML page a shared cache was then free to store."""
+    app = create_app(db_path)
+
+    @app.get("/boom-for-test")
+    def boom():
+        raise RuntimeError("kaboom")
+
+    error_client = TestClient(app, raise_server_exceptions=False)
+    with caplog.at_level("CRITICAL"):
+        resp = error_client.get("/boom-for-test", headers={"accept": accept})
+
+    assert resp.status_code == 500
+    assert "script-src 'self'" in resp.headers["content-security-policy"]
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert resp.headers["x-frame-options"] == "DENY"
+    assert resp.headers["x-robots-tag"] == "noindex, nofollow"
+    assert resp.headers["cache-control"] == "private, no-store"
 
 
 def test_response_disallows_search_indexing(client):

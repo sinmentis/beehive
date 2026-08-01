@@ -32,11 +32,11 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.request
 from typing import Callable
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from beehive.connectors.base import RawItem
+from beehive.connectors.http import fetch_text
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -67,12 +67,7 @@ HtmlFetcher = Callable[[str], str]
 
 
 def _default_fetch_html(url: str) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(  # noqa: S310 (module only ever builds http(s) URLs)
-        request,
-        timeout=_REQUEST_TIMEOUT_SECONDS,
-    ) as response:
-        return response.read().decode("utf-8", errors="replace")
+    return fetch_text(url, user_agent=_USER_AGENT, timeout=_REQUEST_TIMEOUT_SECONDS)
 
 
 def _parse_page(html: str) -> tuple[list[dict], int | None]:

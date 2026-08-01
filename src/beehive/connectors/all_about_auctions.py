@@ -18,13 +18,13 @@ import html
 import json
 import re
 import time
-import urllib.request
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any, Callable
 from urllib.parse import urlencode, urljoin, urlparse
 
 from beehive.connectors.base import RawItem
+from beehive.connectors.http import fetch_text
 from beehive.connectors.registry import register
 from beehive.channels.tracker import AllAboutAuctionsTrackerAdapter
 from beehive.domain.channels import ChannelKind
@@ -34,6 +34,7 @@ _UPCOMING_AUCTIONS_URL = f"{_ORIGIN}/"
 _AJAX_LOTS_URL = f"{_ORIGIN}/ajax/lots/"
 _USER_AGENT = "beehive/0.1 (personal information hub)"
 _REQUEST_TIMEOUT_SECONDS = 20
+_ALLOWED_HOSTS = frozenset({"auctions.allaboutauctions.co.nz"})
 _CRAWL_DELAY_SECONDS = 10
 _MAX_UPCOMING_AUCTIONS = 30
 _LOT_PAGE_SIZE = 100
@@ -78,12 +79,13 @@ def _default_fetch_text(url: str) -> str:
                 "X-Requested-With": "XMLHttpRequest",
             }
         )
-    request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(  # noqa: S310 (connector only requests its fixed HTTPS origin)
-        request,
+    return fetch_text(
+        url,
+        allowed_hosts=_ALLOWED_HOSTS,
+        user_agent=_USER_AGENT,
+        extra_headers=headers,
         timeout=_REQUEST_TIMEOUT_SECONDS,
-    ) as response:
-        return response.read().decode("utf-8", errors="replace")
+    )
 
 
 def _normalize_text(value: str) -> str:

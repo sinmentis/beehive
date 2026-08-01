@@ -10,12 +10,14 @@ ranking prompt's "community engagement" prior just reads 0 for every item instea
 crashing. Tests inject a fake fetch_rss and never touch the network."""
 from __future__ import annotations
 
-import urllib.request
+import logging
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from html.parser import HTMLParser
 
-from beehive.connectors.base import CommentFetchTarget, RawItem
+from beehive.connectors.base import CommentFetchTarget, RawItem, as_utc
+from beehive.connectors.http import fetch_bytes
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -23,6 +25,12 @@ _BODY_CHAR_CAP = 1500
 _FETCH_LIMIT = 50
 _ATOM_NS = "{http://www.w3.org/2005/Atom}"
 _USER_AGENT = "beehive/0.1 (by /u/sinmentis)"
+_LOGGER = logging.getLogger(__name__)
+# fetch_comments builds its URL from a stored `<link href>` that arrived inside a feed, so it is
+# externally influenced input, not something this module constructed. Constraining it to Reddit
+# is both the SSRF control and a correctness one: appending "/.rss" is only meaningful on a
+# Reddit permalink in the first place.
+_REDDIT_HOSTS = frozenset({"reddit.com"})
 
 
 class _MarkdownBodyExtractor(HTMLParser):
@@ -89,29 +97,44 @@ def _extract_author(entry) -> str:
 
 def _default_fetch_rss(subreddit: str, limit: int) -> bytes:
     url = f"https://www.reddit.com/r/{subreddit}/hot/.rss?limit={limit}"
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 (https only)
-        return response.read()
+    return fetch_bytes(url, allowed_hosts=_REDDIT_HOSTS, user_agent=_USER_AGENT).body
 
 
 def _default_fetch_comment_rss(item_url: str) -> bytes:
+    """`item_url` is a stored `<link href>` from a previously fetched feed entry, so it is
+    validated (scheme, port, no credentials, Reddit host, globally routable address) before any
+    request is made -- an unvalidated urlopen here reached `file://` and loopback URLs."""
     url = f"{item_url.rstrip('/')}/.rss"
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 (https only)
-        return response.read()
+    return fetch_bytes(url, allowed_hosts=_REDDIT_HOSTS, user_agent=_USER_AGENT).body
 
 
 def _to_raw_item(entry) -> RawItem:
     published_el = entry.find(f"{_ATOM_NS}published")
-    created_at = datetime.fromisoformat(published_el.text) if published_el is not None else None
+    created_at = None
+    if published_el is not None and published_el.text:
+        try:
+            created_at = as_utc(datetime.fromisoformat(published_el.text.strip()))
+        except ValueError:
+            created_at = None
+    id_el = entry.find(f"{_ATOM_NS}id")
+    title_el = entry.find(f"{_ATOM_NS}title")
+    link_el = entry.find(f"{_ATOM_NS}link")
+    if id_el is None or not id_el.text:
+        raise ValueError("Atom entry has no <id>")
+    href = link_el.get("href") if link_el is not None else None
+    if not href:
+        raise ValueError(f"Atom entry {id_el.text!r} has no <link href>")
     return RawItem(
-        external_id=entry.find(f"{_ATOM_NS}id").text,
-        title=entry.find(f"{_ATOM_NS}title").text,
-        url=entry.find(f"{_ATOM_NS}link").get("href"),
+        external_id=id_el.text,
+        title=(title_el.text or "") if title_el is not None else "",
+        url=href,
         body=_extract_entry_body(entry),
         created_at=created_at,
         raw_metadata={"author": _extract_author(entry)},
     )
+
+
+_SUBREDDIT_RE = re.compile(r"\A[A-Za-z0-9_]{2,21}\Z")
 
 
 class RedditSubredditConnector:
@@ -123,15 +146,30 @@ class RedditSubredditConnector:
         self._fetch_comment_rss = fetch_comment_rss
 
     def validate_config(self, config: dict) -> None:
-        if not config.get("subreddit"):
+        subreddit = config.get("subreddit")
+        if not subreddit:
             raise ValueError("reddit_subreddit config needs a non-empty 'subreddit' key")
+        # The value is interpolated straight into a URL path, so anything outside Reddit's own
+        # subreddit charset is either a typo or an attempt to reach a different endpoint
+        # ("r/../../user/x/..."). Rejecting it here means the admin sees the error at save time.
+        if not _SUBREDDIT_RE.fullmatch(str(subreddit)):
+            raise ValueError(
+                "reddit_subreddit 'subreddit' must be 2-21 characters of A-Z, a-z, 0-9 or _"
+            )
 
     def fetch(self, config: dict) -> list[RawItem]:
         subreddit_name = config["subreddit"]
         raw_xml = self._fetch_rss(subreddit_name, _FETCH_LIMIT)
-        root = ET.fromstring(raw_xml)  # noqa: S314 (Reddit's own feed, not user input)
-        entries = root.findall(f"{_ATOM_NS}entry")
-        return [_to_raw_item(entry) for entry in entries]
+        root = ET.fromstring(raw_xml)  # noqa: S314 (reddit.com-only, size-capped by fetch_bytes)
+        items = []
+        for entry in root.findall(f"{_ATOM_NS}entry"):
+            try:
+                items.append(_to_raw_item(entry))
+            except ValueError as exc:
+                # One malformed entry used to discard the whole cycle's worth of items for this
+                # channel. Reddit occasionally serves an entry with no <link href> (removed post).
+                _LOGGER.warning("Skipping malformed r/%s entry: %s", subreddit_name, exc)
+        return items
 
     def fetch_comments(self, target: CommentFetchTarget) -> list[str]:
         raw_xml = self._fetch_comment_rss(target.url)

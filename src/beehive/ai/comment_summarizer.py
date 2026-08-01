@@ -3,14 +3,19 @@
 parsing / orchestration), combined into one file since this feature's scope -- at most 3 items
 per cycle, one field to judge -- is much smaller than the main ranking pipeline. A comment
 judged not to add anything the post itself doesn't already say returns an empty string, not an
-error: "not valuable" is an expected, common outcome, never a failure."""
+error: "not valuable" is an expected, common outcome, never a failure.
+
+The LLM call goes through `run_data_only_prompt` (available_tools=[]): the prompt embeds a raw,
+unmodified third-party comment body, which is the single most attacker-influenceable text in the
+whole collector pipeline -- anyone can post a comment. It must never reach a tool-permissive
+session."""
 from __future__ import annotations
 
 import json
 import re
 from dataclasses import dataclass
 
-from beehive.ai.llm_client import run_prompt
+from beehive.ai.llm_client import run_data_only_prompt
 from beehive.ai.model_selection import DEFAULT_MODEL
 from beehive.localization import Language
 
@@ -101,6 +106,6 @@ async def summarize_comments(candidates: list[CommentCandidate], language: Langu
     if not candidates:
         return {}
     prompt = build_comment_summary_prompt(candidates, language)
-    raw_response = await run_prompt(prompt, model=model)
+    raw_response = await run_data_only_prompt(prompt, model=model)
     expected_ids = {candidate.item_key for candidate in candidates}
     return parse_comment_summary_response(raw_response, expected_ids)

@@ -39,9 +39,9 @@ def authed_client(db_path):
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
+    client = TestClient(create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
                          follow_redirects=False)
-    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
+    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret-at-least-32-characters-long"))
     return client
 
 
@@ -51,7 +51,7 @@ def authed_client(db_path):
 
 
 def test_groups_tab_requires_session(db_path):
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
+    client = TestClient(create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
                          follow_redirects=False)
     resp = client.get("/admin/?tab=groups")
     assert resp.status_code == 303
@@ -71,7 +71,7 @@ def test_groups_tab_shows_empty_state_when_only_default_has_zero_channels(authed
 
 
 def test_new_email_group_form_requires_session(db_path):
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
+    client = TestClient(create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
                          follow_redirects=False)
     resp = client.get("/admin/email-groups/new")
     assert resp.status_code == 303
@@ -255,7 +255,7 @@ def test_edit_email_group_form_requires_session(db_path):
     group_id = create_email_group(conn, "Weekly", "Weekly \u00b7 {date}")
     conn.close()
 
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
+    client = TestClient(create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
                          follow_redirects=False)
     resp = client.get(f"/admin/email-groups/{group_id}/edit")
     assert resp.status_code == 303

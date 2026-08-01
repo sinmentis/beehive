@@ -123,15 +123,30 @@ def test_timer_files_reference_a_service_with_a_matching_container_file():
 
 
 def test_web_container_has_session_secret():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-web.container")
-    secret_line = parser["Container"]["Secret"]
-    assert "target=SESSION_SECRET" in secret_line
+    # Read the raw text rather than through configparser: systemd allows a key to repeat (each
+    # `Secret=` line adds one secret), but configparser keeps only the last occurrence.
+    content = (_QUADLET_DIR / "beehive-web.container").read_text()
+    assert "target=SESSION_SECRET" in content
 
 
 def test_web_container_has_digest_email_fallback():
     content = (_QUADLET_DIR / "beehive-web.container").read_text()
     assert "Environment=DIGEST_EMAIL_TO=you@example.com" in content
+
+
+def test_every_container_that_can_send_email_carries_the_acs_secret():
+    """The admin UI's Email Group "Test send" route calls the same `build_notifier` the digest
+    worker does, so the web container needs the same credential. It did not have it, and
+    `build_notifier` falls back to logging instead of failing, so a test send silently did
+    nothing while the digest it was previewing would have delivered fine."""
+    for name in (
+        "beehive-web.container",
+        "beehive-digest.container",
+        "beehive-auction-reminders.container",
+    ):
+        content = (_QUADLET_DIR / name).read_text()
+        assert "target=ACS_CONNECTION_STRING" in content, f"{name}: no ACS secret"
+        assert "DIGEST_EMAIL_FROM=" in content, f"{name}: no sender address"
 
 
 def test_expected_path_unit_exists():

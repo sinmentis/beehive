@@ -19,7 +19,7 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def client(db_path):
-    return TestClient(create_app(db_path, session_secret="test-secret"),
+    return TestClient(create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
                        follow_redirects=False)
 
 
@@ -86,6 +86,38 @@ def test_lockout_after_max_failed_attempts(client):
     resp = client.post("/admin/login", data={"password": "correct-password"})
     assert resp.status_code == 429
     assert "Too many login attempts" in resp.text
+
+
+def test_a_spoofed_forwarded_header_cannot_reset_the_lockout(client):
+    """`CF-Connecting-IP` used to be trusted unconditionally, and the lockout keys on it, so an
+    attacker who simply changed the header on every request was never rate-limited at all. It is
+    now honoured only when the direct peer is in TRUSTED_PROXY_IPS, which is unset here."""
+    from beehive.auth.rate_limit import MAX_FAILED_ATTEMPTS
+
+    for attempt in range(MAX_FAILED_ATTEMPTS):
+        client.post(
+            "/admin/login",
+            data={"password": "wrong-password"},
+            headers={"CF-Connecting-IP": f"203.0.113.{attempt}"},
+        )
+
+    resp = client.post(
+        "/admin/login",
+        data={"password": "correct-password"},
+        headers={"CF-Connecting-IP": "203.0.113.250"},
+    )
+    assert resp.status_code == 429
+
+
+def test_country_is_not_recorded_from_an_untrusted_peer(client, db_path):
+    client.post(
+        "/admin/login",
+        data={"password": "wrong-password"},
+        headers={"CF-IPCountry": "XX"},
+    )
+
+    conn = connect(db_path)
+    assert conn.execute("SELECT country FROM admin_login_attempts").fetchone()["country"] is None
 
 
 def test_logout_deletes_session_and_redirects(client):

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from beehive.connectors.http import ConnectorHttpError, ConnectorHttpErrorKind
+from tests.connectors.http_stubs import urlopen_response as _urlopen_response
 from beehive.connectors.shopify_collection import (
     ShopifyCollectionConnector,
     _default_fetch_json,
@@ -494,13 +496,8 @@ def test_fetch_caps_pagination_at_four_pages_even_if_more_data_is_available():
 
 
 def test_default_json_fetch_uses_user_agent_and_timeout():
-    response = MagicMock()
-    response.__enter__.return_value.read.return_value = b'{"products": []}'
-
-    with patch(
-        "beehive.connectors.shopify_collection.urllib.request.urlopen",
-        return_value=response,
-    ) as urlopen:
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = _urlopen_response(b'{"products": []}')
         payload = _default_fetch_json(f"{_COLLECTION_URL}/products.json")
 
     request = urlopen.call_args.args[0]
@@ -511,37 +508,42 @@ def test_default_json_fetch_uses_user_agent_and_timeout():
 
 def test_default_json_fetch_retries_a_transient_service_error():
     url = f"{_COLLECTION_URL}/products.json"
-    response = MagicMock()
-    response.__enter__.return_value.read.return_value = b'{"products": []}'
-    service_unavailable = HTTPError(
-        url,
-        503,
-        "Service Unavailable",
-        hdrs=None,
-        fp=None,
-    )
+    service_unavailable = HTTPError(url, 503, "Service Unavailable", hdrs=None, fp=None)
 
     with (
         patch(
-            "beehive.connectors.shopify_collection.urllib.request.urlopen",
-            side_effect=[service_unavailable, response],
+            "beehive.connectors.http.urllib.request.urlopen",
+            side_effect=[service_unavailable, _urlopen_response(b'{"products": []}')],
         ) as urlopen,
-        patch("beehive.connectors.shopify_collection.time", create=True) as time_module,
+        patch("beehive.connectors.http.time.sleep") as sleep,
     ):
         payload = _default_fetch_json(url)
 
     assert payload == {"products": []}
     assert urlopen.call_count == 2
-    time_module.sleep.assert_called_once_with(1)
+    sleep.assert_called_once()
+
+
+def test_default_json_fetch_gives_up_after_the_configured_attempts():
+    url = f"{_COLLECTION_URL}/products.json"
+    service_unavailable = HTTPError(url, 503, "Service Unavailable", hdrs=None, fp=None)
+
+    with (
+        patch(
+            "beehive.connectors.http.urllib.request.urlopen",
+            side_effect=[service_unavailable] * 3,
+        ) as urlopen,
+        patch("beehive.connectors.http.time.sleep"),
+    ):
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            _default_fetch_json(url)
+
+    assert urlopen.call_count == 3
+    assert excinfo.value.kind is ConnectorHttpErrorKind.TRANSIENT
 
 
 def test_default_json_fetch_raises_on_invalid_json():
-    response = MagicMock()
-    response.__enter__.return_value.read.return_value = b"not json"
-
-    with patch(
-        "beehive.connectors.shopify_collection.urllib.request.urlopen",
-        return_value=response,
-    ):
-        with pytest.raises(ValueError, match="invalid JSON"):
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = _urlopen_response(b"not json")
+        with pytest.raises(ConnectorHttpError, match="not valid JSON"):
             _default_fetch_json(f"{_COLLECTION_URL}/products.json")

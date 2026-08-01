@@ -54,9 +54,9 @@ def authed_client(db_path, conn):
     _, c = conn
     set_admin_password(db_path, "correct-password")
     create_session(c, "sess1", "csrf1", "2099-01-01T00:00:00")
-    client = TestClient(create_app(db_path, session_secret="test-secret"),
+    client = TestClient(create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
                          follow_redirects=False)
-    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret"))
+    client.cookies.set(SESSION_COOKIE_NAME, sign_session_id("sess1", "test-secret-at-least-32-characters-long"))
     return client
 
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
+from beehive.connectors.http import ConnectorHttpError, ConnectorHttpErrorKind
+from tests.connectors.http_stubs import urlopen_response as _urlopen_response
 from beehive.connectors.all_about_auctions import (
     AllAboutAuctionsConnector,
     _BUYER_PREMIUM_RATE,
@@ -536,14 +538,10 @@ def test_fetch_raises_when_upcoming_auctions_have_no_usable_lots():
 
 
 def test_default_text_fetch_uses_ajax_headers_and_timeout():
-    response = MagicMock()
-    response.__enter__.return_value.read.return_value = b'{"ok": true}'
     url = _lot_page_url("1-A", 0)
 
-    with patch(
-        "beehive.connectors.all_about_auctions.urllib.request.urlopen",
-        return_value=response,
-    ) as urlopen:
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = _urlopen_response(b'{"ok": true}')
         payload = _default_fetch_text(url)
 
     request = urlopen.call_args.args[0]
@@ -552,3 +550,9 @@ def test_default_text_fetch_uses_ajax_headers_and_timeout():
     assert request.get_header("Referer") == "https://auctions.allaboutauctions.co.nz/"
     assert urlopen.call_args.kwargs["timeout"] == 20
     assert payload == '{"ok": true}'
+
+
+def test_default_text_fetch_rejects_a_host_outside_the_auction_origin():
+    with pytest.raises(ConnectorHttpError) as excinfo:
+        _default_fetch_text("https://evil.example.com/ajax/lots/")
+    assert excinfo.value.kind is ConnectorHttpErrorKind.UNSAFE_URL

@@ -23,6 +23,7 @@ from beehive.channels.views import (
     EditorialPage,
     EditorialItemView,
     EditorialQuery,
+    MonitorGender,
     MonitorPage,
     MonitorQuery,
     MonitorSort,
@@ -54,9 +55,9 @@ from beehive.db.deep_reads import (
 )
 from beehive.db.items import (
     count_dashboard_signals,
+    count_unread_by_channel,
     get_item,
     list_archive,
-    list_by_channel,
     list_dashboard_highlights,
     list_search_results,
     mark_dashboard_signals_read,
@@ -244,6 +245,7 @@ def _monitor_page_url(
         params.append(("on_sale", "1"))
     params.extend(("vendor", vendor) for vendor in page.vendors)
     params.extend(("source", source) for source in page.sources)
+    params.extend(("gender", gender.value) for gender in page.genders)
     if page.search:
         params.append(("q", page.search))
     if page.criteria.showing_below_threshold:
@@ -454,11 +456,6 @@ def dashboard(
     channels = []
     for channel in list_channels(conn):
         definition = get_definition(require_channel_kind(channel["kind"]))
-        items = [
-            item
-            for item in list_by_channel(conn, channel["id"])
-            if item["ai_score"] is None or item["ai_score"] >= channel["minimum_score"]
-        ]
         sources = list_sources(conn, channel["id"])
         nav_channel = {
             "id": channel["id"],
@@ -474,7 +471,9 @@ def dashboard(
             "fetch_stats": fetch_stats_label(sources, t),
         }
         if is_admin and definition.read_model is ReadModel.TRACKED:
-            nav_channel["unread_count"] = sum(1 for item in items if not item["is_read"])
+            nav_channel["unread_count"] = count_unread_by_channel(
+                conn, channel["id"], channel["minimum_score"]
+            )
         channels.append(nav_channel)
 
     csrf_token = session["csrf_token"] if is_admin else None
@@ -555,6 +554,7 @@ def channel_drilldown(
     on_sale: bool = False,
     vendor: list[str] | None = Query(None),
     source: list[str] | None = Query(None),
+    gender: list[MonitorGender] | None = Query(None),
     category: str | None = None,
     q: str | None = None,
     show_below: bool = False,
@@ -592,6 +592,7 @@ def channel_drilldown(
             on_sale_only=on_sale,
             vendors=tuple(vendor or ()),
             sources=tuple(source or ()),
+            genders=tuple(gender or ()),
             search=q,
         ),
         tracker_query=TrackerQuery(

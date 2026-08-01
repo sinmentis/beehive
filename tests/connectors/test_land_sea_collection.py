@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from tests.connectors.http_stubs import urlopen_response as _urlopen_response
 from beehive.connectors.land_sea_collection import (
     LandSeaCollectionConnector,
     _default_fetch_html,
@@ -309,13 +310,8 @@ def test_fetch_caps_pagination_at_max_pages_even_if_more_data_is_claimed():
 
 
 def test_default_html_fetch_uses_user_agent_and_timeout():
-    response = MagicMock()
-    response.__enter__.return_value.read.return_value = "<html>ok</html>".encode("utf-8")
-
-    with patch(
-        "beehive.connectors.land_sea_collection.urllib.request.urlopen",
-        return_value=response,
-    ) as urlopen:
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = _urlopen_response(b"<html>ok</html>")
         html = _default_fetch_html(_COLLECTION_URL)
 
     request = urlopen.call_args.args[0]

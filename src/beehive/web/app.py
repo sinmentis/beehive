@@ -3,6 +3,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -17,6 +20,7 @@ from beehive.db.connection import connect, init_schema
 from beehive.db.research_sessions import count_unread_completed_research_sessions
 from beehive.localization import load_localizer
 from beehive.web import admin, public, research
+from beehive.web.client_ip import parse_trusted_proxies
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -24,6 +28,28 @@ _LOGGER = logging.getLogger(__name__)
 
 _CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
         "script-src 'self'; frame-ancestors 'none'")
+# `deploy/README.md` tells the operator to generate this with `openssl rand -hex 32` (64 chars),
+# so 32 is a floor well under any legitimate value.
+MIN_SESSION_SECRET_LENGTH = 32
+
+
+class InsecureSessionSecretError(RuntimeError):
+    """`SESSION_SECRET` is missing or too short to sign a session cookie with.
+
+    Raised at startup rather than tolerated, because the failure is otherwise silent and total:
+    `sign_session_id` HMACs with whatever it is given, so an empty secret means anybody can mint
+    `<any-session-id>.<hmac-with-empty-key>` and `require_admin_session` accepts it. The app came
+    up looking healthy, served `/admin/*` to the world, and nothing in the logs said why.
+    """
+
+
+def _resolve_session_secret(explicit: str | None) -> str:
+    secret = explicit if explicit is not None else os.environ.get("SESSION_SECRET", "")
+    if len(secret.strip()) < MIN_SESSION_SECRET_LENGTH:
+        raise InsecureSessionSecretError(
+            f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_LENGTH} characters; "
+            "generate one with `openssl rand -hex 32` (see deploy/README.md)")
+    return secret
 
 
 def _static_asset_version() -> str:
@@ -50,11 +76,8 @@ def _localization_context(request: Request) -> dict:
     is_owner = getattr(request.state, "is_owner", False)
     research_unread_count = 0
     if is_owner:
-        conn = connect(request.app.state.db_path)
-        try:
+        with _request_db(request) as conn:
             research_unread_count = count_unread_completed_research_sessions(conn)
-        finally:
-            conn.close()
     return {
         "t": localizer.text, "localizer": localizer, "locale": localizer.code,
         "is_owner": is_owner,
@@ -63,24 +86,52 @@ def _localization_context(request: Request) -> dict:
     }
 
 
+@contextmanager
+def _request_db(request: Request) -> Iterator[sqlite3.Connection]:
+    """The request's existing connection, or a short-lived one when there is none.
+
+    Rendering happens inside the route handler, so get_db's connection (deps.py stashes it on
+    request.state) is still open and can be reused. Opening a second one per render meant every
+    owner page paid an extra sqlite3.connect plus the WAL/foreign-key PRAGMAs just to read one
+    integer. The fallback matters for the error handlers, which render without ever running a
+    dependency."""
+    existing = getattr(request.state, "db", None)
+    if existing is not None:
+        yield existing
+        return
+    conn = connect(request.app.state.db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _apply_security_headers(request: Request, response: Response) -> Response:
+    response.headers["Content-Security-Policy"] = _CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    if not request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        vary = response.headers.get("Vary")
+        if not vary:
+            response.headers["Vary"] = "Cookie"
+        elif "cookie" not in {value.strip().lower() for value in vary.split(",")}:
+            response.headers["Vary"] = f"{vary}, Cookie"
+    return response
+
+
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """App-wide, not admin-only: a same-origin XSS on the *public* Dashboard/drill-down could
-    otherwise pivot into stealing the *admin* session cookie now that one exists (Slice 3)."""
+    otherwise pivot into stealing the *admin* session cookie now that one exists (Slice 3).
+
+    This covers every response the routing layer produces, including the 403/404/422 handlers --
+    but NOT an unhandled exception. Starlette serves those from ServerErrorMiddleware, which wraps
+    the whole middleware stack from the outside, so a 500 response never travels back through
+    here. The 500 handler therefore calls _apply_security_headers itself."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        response = await call_next(request)
-        response.headers["Content-Security-Policy"] = _CSP
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-Robots-Tag"] = "noindex, nofollow"
-        if not request.url.path.startswith("/static/"):
-            response.headers["Cache-Control"] = "private, no-store"
-            vary = response.headers.get("Vary")
-            if not vary:
-                response.headers["Vary"] = "Cookie"
-            elif "cookie" not in {value.strip().lower() for value in vary.split(",")}:
-                response.headers["Vary"] = f"{vary}, Cookie"
-        return response
+        return _apply_security_headers(request, await call_next(request))
 
 
 def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
@@ -93,8 +144,8 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     app = FastAPI()
     app.add_middleware(_SecurityHeadersMiddleware)
     app.state.db_path = db_path
-    app.state.session_secret = (session_secret if session_secret is not None
-                                 else os.environ.get("SESSION_SECRET", ""))
+    app.state.session_secret = _resolve_session_secret(session_secret)
+    app.state.trusted_proxies = parse_trusted_proxies(os.environ.get("TRUSTED_PROXY_IPS"))
     app.state.templates = Jinja2Templates(
         directory=str(_TEMPLATES_DIR),
         context_processors=[_localization_context],
@@ -105,11 +156,8 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     def _load_request_localizer(request: Request) -> None:
         if hasattr(request.state, "localizer"):
             return
-        request_conn = connect(app.state.db_path)
-        try:
+        with _request_db(request) as request_conn:
             request.state.localizer = load_localizer(request_conn)
-        finally:
-            request_conn.close()
 
     def _wants_html(request: Request) -> bool:
         return (
@@ -194,16 +242,23 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
             "Unhandled web request error",
             exc_info=(type(exc), exc, exc.__traceback__),
         )
+        # Starlette serves this from ServerErrorMiddleware, outside _SecurityHeadersMiddleware,
+        # so the response has to pick up the headers here or it ships with none at all -- no CSP,
+        # no nosniff, and no `Cache-Control: private, no-store` on an HTML page that a shared
+        # cache would then be free to store.
         if not _wants_html(request):
-            return JSONResponse(
-                {"detail": "Internal server error"},
-                status_code=500,
+            return _apply_security_headers(
+                request,
+                JSONResponse({"detail": "Internal server error"}, status_code=500),
             )
-        return _error_page(
+        return _apply_security_headers(
             request,
-            status_code=500,
-            title_key="web.error.internal_title",
-            message_key="web.error.internal_message",
+            _error_page(
+                request,
+                status_code=500,
+                title_key="web.error.internal_title",
+                message_key="web.error.internal_message",
+            ),
         )
 
     app.include_router(public.router)

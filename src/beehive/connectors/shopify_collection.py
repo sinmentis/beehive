@@ -24,15 +24,12 @@ which only recognises 'limit'/'page'), so there is no URL to build that would fi
 Tests inject a fake fetch_json and never touch the network."""
 from __future__ import annotations
 
-import json
-import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlencode, urlparse
 
 from beehive.connectors.base import RawItem
+from beehive.connectors.http import fetch_json
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -48,25 +45,12 @@ JsonFetcher = Callable[[str], Any]
 
 
 def _default_fetch_json(url: str) -> Any:
-    for attempt in range(1, _REQUEST_ATTEMPTS + 1):
-        request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-        try:
-            with urllib.request.urlopen(  # noqa: S310 (only builds http(s) URLs)
-                request,
-                timeout=_REQUEST_TIMEOUT_SECONDS,
-            ) as response:
-                payload = response.read()
-            break
-        except urllib.error.HTTPError as exc:
-            retryable = exc.code == 429 or 500 <= exc.code <= 599
-            if not retryable or attempt == _REQUEST_ATTEMPTS:
-                raise
-            exc.close()
-            time.sleep(attempt)
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Shopify collection returned invalid JSON from {url}") from exc
+    return fetch_json(
+        url,
+        user_agent=_USER_AGENT,
+        timeout=_REQUEST_TIMEOUT_SECONDS,
+        max_attempts=_REQUEST_ATTEMPTS,
+    )
 
 
 def _parse_timestamp(value: Any) -> datetime | None:

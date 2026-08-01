@@ -1,4 +1,4 @@
-import urllib.request
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from html import escape
 
@@ -10,6 +10,7 @@ from beehive.connectors.official_feeds import (
     OfficialFeedConnector,
 )
 from beehive.connectors.registry import get
+from tests.connectors.http_stubs import urlopen_response as _urlopen_response
 
 _RSS_HEADER = (
     '<?xml version="1.0" encoding="UTF-8"?>'
@@ -74,31 +75,15 @@ def test_requests_definition_url():
     assert captured["url"] == "https://www.rbnz.govt.nz/feeds/news"
 
 
-def test_default_fetch_uses_descriptive_user_agent_and_timeout(monkeypatch):
-    captured = {}
+def test_default_fetch_uses_descriptive_user_agent_and_timeout():
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = _urlopen_response(_feed(_item()))
+        OfficialFeedConnector(_RBNZ).fetch({})
 
-    class _Response:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, traceback):
-            return False
-
-        def read(self):
-            return _feed(_item())
-
-    def fake_urlopen(request, timeout):
-        captured["request"] = request
-        captured["timeout"] = timeout
-        return _Response()
-
-    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-
-    OfficialFeedConnector(_RBNZ).fetch({})
-
-    assert captured["request"].full_url == _RBNZ.url
-    assert captured["request"].headers["User-agent"] == "beehive/0.1 (by /u/sinmentis)"
-    assert captured["timeout"] == 30
+    request = urlopen.call_args.args[0]
+    assert request.full_url == _RBNZ.url
+    assert request.get_header("User-agent") == "beehive/0.1 (by /u/sinmentis)"
+    assert urlopen.call_args.kwargs["timeout"] == 30
 
 
 def test_html_description_is_cleaned_to_plain_text():

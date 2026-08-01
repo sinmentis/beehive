@@ -26,17 +26,17 @@ def db_path(tmp_path):
 @pytest.fixture
 def authed_client(db_path):
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"),
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
         follow_redirects=False)
     client.cookies.set(
         SESSION_COOKIE_NAME,
-        sign_session_id("sess1", "test-secret"))
+        sign_session_id("sess1", "test-secret-at-least-32-characters-long"))
     return client
 
 
 def test_admin_root_requires_session(db_path):
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"),
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
         follow_redirects=False)
     response = client.get("/admin/")
     assert response.status_code == 303
@@ -376,7 +376,7 @@ def test_save_language_is_not_coupled_to_email_validation(authed_client, db_path
 
 def test_save_language_requires_session(db_path):
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"),
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
         follow_redirects=False)
     response = client.post("/admin/language", data={
         "language": "zh-CN",
@@ -455,7 +455,7 @@ def test_save_model_is_not_coupled_to_email_validation(authed_client, db_path):
 
 def test_save_model_requires_session(db_path):
     client = TestClient(
-        create_app(db_path, session_secret="test-secret"),
+        create_app(db_path, session_secret="test-secret-at-least-32-characters-long"),
         follow_redirects=False)
     response = client.post("/admin/model", data={
         "model": "gpt-5.6-sol",

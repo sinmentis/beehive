@@ -159,6 +159,7 @@ the sealed evidence itself remains fully valid; only the synthesis attempt faile
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -200,7 +201,6 @@ from beehive.research.limits import (MAX_DEEP_FETCHES_PER_ROUND, MAX_ERROR_DETAI
                                       MAX_REVISION_ROUNDS, NOVELTY_STOP_ROUNDS)
 from beehive.research.planner import (ResearchPlan, build_initial_plan_prompt,
                                        build_revision_plan_prompt, parse_plan_response)
-from beehive.research.structured_response import StructuredResponseError
 from beehive.research.sufficiency import (EvidenceProjection, build_sufficiency_prompt,
                                            parse_sufficiency_response)
 from beehive.research.synthesis import (SynthesisCancelledError, SynthesisClaimLostError,
@@ -214,6 +214,15 @@ _MIN_AI_CALL_TIMEOUT_SECONDS = 1.0
 # call cannot silently spend the run's entire remaining budget with nothing left for
 # finalization (clustering/sealing/pinning) to run afterward.
 _MAX_AI_CALL_TIMEOUT_SECONDS = 110.0
+_LOGGER = logging.getLogger(__name__)
+# Failures of a planning/assessment AI call that must degrade the round rather than kill the run.
+# Only `StructuredResponseError` was caught, but that is the *least* likely of these: an SDK
+# timeout, a transport error, or a rate-limit response all raise something else, and each of them
+# discarded an in-flight run's entire evidence set (no `_finalize`, so nothing was sealed) and left
+# the run row in 'processing' until the reconcile sweep expired its lease. Neither `_generate_plan`
+# nor `_assess` touches the database, so this cannot mask a `_ClaimLost`/`_RunCancelled`, and
+# `asyncio.CancelledError` is a BaseException, so a real cancellation still propagates as it must.
+_RECOVERABLE_AI_FAILURES = Exception
 
 
 class RunOutcomeStatus(str, Enum):
@@ -969,10 +978,11 @@ async def run_research_orchestration(
             plan = await _generate_plan(
                 question, prior_plan, gaps, localizer, planner_model,
                 _ai_call_timeout(run, now_fn()), client=client)
-        except StructuredResponseError:
-            # A malformed Research Plan response cannot safely be used to collect anything
-            # this round -- treat it the same as "no new plan this round" and fall through
-            # to assessment/finalization with whatever evidence already exists.
+        except _RECOVERABLE_AI_FAILURES:
+            # A Research Plan we cannot use cannot safely collect anything this round -- treat it
+            # the same as "no new plan this round" and fall through to assessment/finalization
+            # with whatever evidence already exists.
+            _LOGGER.exception("Research run %s: planning failed, finalizing early", run_id)
             break
 
         try:
@@ -1150,9 +1160,10 @@ async def run_research_orchestration(
             assessment = await _assess(
                 question, projections, gaps, localizer, sufficiency_model,
                 _ai_call_timeout(run, now_fn()), client=client)
-        except StructuredResponseError:
-            # A malformed Evidence Sufficiency response cannot safely drive another revision
+        except _RECOVERABLE_AI_FAILURES:
+            # An Evidence Sufficiency result we cannot use cannot safely drive another revision
             # round -- stop here with whatever evidence/assessment already exists.
+            _LOGGER.exception("Research run %s: assessment failed, finalizing early", run_id)
             stop_status = RunOutcomeStatus.LIMITS_REACHED
             break
 

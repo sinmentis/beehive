@@ -124,6 +124,7 @@ from beehive.web.formatting import (
     relative_time,
 )
 from beehive.web.hackernews_labels import hackernews_source_label
+from beehive.web.client_ip import resolve_client_ip
 from beehive.web.link_safety import safe_external_href
 from beehive.web.official_feed_labels import official_feed_icon, official_feed_label
 
@@ -178,12 +179,16 @@ def _email_error_message(error: EmailConfigurationError, t: Localizer) -> str:
 
 
 def _client_ip(request: Request) -> str:
-    return request.headers.get("CF-Connecting-IP") or (
-        request.client.host if request.client else "unknown"
+    return resolve_client_ip(
+        request.client.host if request.client else None,
+        request.headers,
+        getattr(request.app.state, "trusted_proxies", ()),
     )
 
 
 def _client_country(request: Request) -> str | None:
+    if not getattr(request.app.state, "trusted_proxies", ()):
+        return None
     return request.headers.get("CF-IPCountry")
 
 

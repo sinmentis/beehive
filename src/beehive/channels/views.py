@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -35,6 +36,7 @@ from beehive.db.tracker_watches import get_watched_item_ids, list_tracker_watche
 from beehive.domain.channels import ChannelKind
 from beehive.localization import Localizer
 from beehive.scheduling import HOST_TZ
+from beehive.url_safety import is_safe_external_href, safe_external_href
 
 Row = Mapping[str, object]
 
@@ -46,7 +48,6 @@ MAX_PER_PAGE = 100
 # configurable.
 ENDING_SOON_WINDOW = timedelta(hours=24)
 
-_SAFE_URL_SCHEMES = frozenset({"http", "https"})
 _DEEP_READ_ORIGIN = "channel"
 
 # Reproduced from web/official_feed_labels.py and web/hackernews_labels.py (which web/ keeps as
@@ -151,18 +152,10 @@ def _plain_display_text(value: object) -> str:
     return (_clean_text(value) or "").replace("**", "")
 
 
-def _is_safe_url(url: str) -> bool:
-    """True only for an http/https URL -- the one scheme set safe to emit as a real link or an
-    image `src`. Mirrors web/link_safety.safe_external_href's rule, reproduced here because a
-    lower layer must not import web/."""
-    try:
-        return urlparse(url).scheme in _SAFE_URL_SCHEMES
-    except ValueError:
-        return False
-
-
-def _safe_external_href(url: str) -> str:
-    return url if _is_safe_url(url) else "#"
+# The render-safety rule itself lives in `beehive.url_safety`; these are local names for it so
+# the rest of this module reads unchanged.
+_is_safe_url = is_safe_external_href
+_safe_external_href = safe_external_href
 
 
 def _safe_image_url(value: object) -> str | None:
@@ -540,6 +533,41 @@ class MonitorSort(str, Enum):
     DISCOUNT = "discount"
 
 
+class MonitorGender(str, Enum):
+    WOMEN = "women"
+    MEN = "men"
+    KIDS = "kids"
+    UNISEX = "unisex"
+
+
+_MONITOR_GENDER_PATTERNS = (
+    (
+        MonitorGender.WOMEN,
+        re.compile(
+            r"\b(?:women(?:'s|s)?|woman(?:'s|s)?|lad(?:y|ies)|female)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        MonitorGender.MEN,
+        re.compile(r"\b(?:men(?:'s|s)?|male)\b", re.IGNORECASE),
+    ),
+    (
+        MonitorGender.KIDS,
+        re.compile(
+            r"\b(?:kid(?:'s|s)?|child(?:ren|'s)?|boy(?:'s|s)?|girl(?:'s|s)?|"
+            r"youth|junior(?:'s|s)?|toddler(?:'s|s)?|bab(?:y|ies)|"
+            r"infant(?:'s|s)?)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        MonitorGender.UNISEX,
+        re.compile(r"\bunisex\b", re.IGNORECASE),
+    ),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class MonitorQuery:
     """The route-supplied catalogue view: which page of the active listing to show, how to sort
@@ -555,6 +583,7 @@ class MonitorQuery:
     on_sale_only: bool = False
     vendors: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
+    genders: tuple[MonitorGender, ...] = ()
     search: str | None = None
 
 
@@ -597,8 +626,16 @@ class MonitorItemView:
     is_available: bool
     vendor: str | None
     product_type: str | None
+    genders: frozenset[MonitorGender]
     change: MonitorChangeMarker | None
     feedback_value: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorGenderOption:
+    value: str
+    label: str
+    selected: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -614,9 +651,12 @@ class MonitorPage:
     on_sale_only: bool
     vendors: tuple[str, ...]
     sources: tuple[str, ...]
+    genders: tuple[MonitorGender, ...]
+    gender_labels: tuple[str, ...]
     search: str | None
     vendor_options: tuple[str, ...]
     source_options: tuple[str, ...]
+    gender_options: tuple[MonitorGenderOption, ...]
     criteria: ChannelCriteriaView
 
 
@@ -645,8 +685,33 @@ def _monitor_change_marker(event: Row | None) -> MonitorChangeMarker | None:
     )
 
 
+def _monitor_genders(
+    title: str,
+    metadata: Mapping[str, object],
+) -> frozenset[MonitorGender]:
+    parts = [title]
+    product_type = _clean_text(metadata.get("product_type"))
+    if product_type:
+        parts.append(product_type)
+    tags = metadata.get("tags")
+    if isinstance(tags, list):
+        parts.extend(
+            tag.strip()
+            for tag in tags
+            if isinstance(tag, str) and tag.strip()
+        )
+    text = " ".join(parts)
+    matched = frozenset(
+        gender
+        for gender, pattern in _MONITOR_GENDER_PATTERNS
+        if pattern.search(text)
+    )
+    return matched or frozenset({MonitorGender.UNISEX})
+
+
 def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView:
     item_id = _req_int(item, "id")
+    title = _req_str(item, "title")
     url = _req_str(item, "url")
     metadata = _metadata(item)
     price = _as_number(metadata.get("price"))
@@ -654,7 +719,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
     on_sale = bool(metadata.get("on_sale"))
     return MonitorItemView(
         id=item_id,
-        title=_req_str(item, "title"),
+        title=title,
         open_url=_open_url(item_id, url),
         safe_url=_safe_external_href(url),
         image_url=_safe_image_url(metadata.get("image_url")),
@@ -672,6 +737,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
         is_available=bool(metadata.get("available")),
         vendor=_clean_text(metadata.get("vendor")),
         product_type=_clean_text(metadata.get("product_type")),
+        genders=_monitor_genders(title, metadata),
         change=_monitor_change_marker(event),
         feedback_value=_feedback_value(item),
     )
@@ -710,18 +776,35 @@ def _canonical_filter_values(
     return tuple(selected)
 
 
+def _canonical_monitor_genders(
+    values: tuple[MonitorGender, ...],
+) -> tuple[MonitorGender, ...]:
+    selected: list[MonitorGender] = []
+    seen: set[MonitorGender] = set()
+    for value in values:
+        if not isinstance(value, MonitorGender):
+            raise ValueError(f"unknown monitor gender: {value!r}")
+        if value not in seen:
+            seen.add(value)
+            selected.append(value)
+    return tuple(selected)
+
+
 def _passes_monitor_filters(
     view: MonitorItemView,
     query: MonitorQuery,
     *,
     vendor_keys: frozenset[str],
     source_keys: frozenset[str],
+    genders: frozenset[MonitorGender],
 ) -> bool:
     if query.on_sale_only and not view.is_on_sale:
         return False
     if vendor_keys and (view.vendor or "").casefold() not in vendor_keys:
         return False
     if source_keys and view.source_label.casefold() not in source_keys:
+        return False
+    if genders and view.genders.isdisjoint(genders):
         return False
     return _matches_search(
         query.search,
@@ -772,8 +855,22 @@ def _build_monitor_page(
     )
     selected_vendors = _canonical_filter_values(query.vendors, vendor_options)
     selected_sources = _canonical_filter_values(query.sources, source_options)
+    selected_genders = _canonical_monitor_genders(query.genders)
     vendor_keys = frozenset(value.casefold() for value in selected_vendors)
     source_keys = frozenset(value.casefold() for value in selected_sources)
+    genders = frozenset(selected_genders)
+    gender_labels = {
+        gender: t.text(f"web.monitor.gender_{gender.value}")
+        for gender in MonitorGender
+    }
+    gender_options = tuple(
+        MonitorGenderOption(
+            value=gender.value,
+            label=gender_labels[gender],
+            selected=gender in genders,
+        )
+        for gender in MonitorGender
+    )
 
     sort_key = _monitor_sort_key(query.sort)
     # Apply the same filters to active and historical listings so a search or Source/vendor choice
@@ -787,6 +884,7 @@ def _build_monitor_page(
                 query,
                 vendor_keys=vendor_keys,
                 source_keys=source_keys,
+                genders=genders,
             )
         ),
         key=sort_key,
@@ -800,6 +898,7 @@ def _build_monitor_page(
                 query,
                 vendor_keys=vendor_keys,
                 source_keys=source_keys,
+                genders=genders,
             )
         ),
         key=sort_key,
@@ -829,9 +928,12 @@ def _build_monitor_page(
         on_sale_only=query.on_sale_only,
         vendors=selected_vendors,
         sources=selected_sources,
+        genders=selected_genders,
+        gender_labels=tuple(gender_labels[gender] for gender in selected_genders),
         search=query.search,
         vendor_options=vendor_options,
         source_options=source_options,
+        gender_options=gender_options,
         criteria=criteria,
     )
 

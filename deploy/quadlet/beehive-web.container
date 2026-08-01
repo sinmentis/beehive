@@ -7,7 +7,16 @@ ContainerName=beehive-web
 Volume=beehive-data.volume:/data
 Environment=DB_PATH=/data/beehive.db
 Environment=DIGEST_EMAIL_TO=you@example.com
+Environment=DIGEST_EMAIL_FROM=beehive@example.com
+# Addresses this container will accept a CF-Connecting-IP / X-Forwarded-For header from. Leave
+# unset (or wrong) and the login rate limiter attributes every attempt to the container network
+# gateway instead of the real client -- safe, but it lumps all remote clients together. Find the
+# value with `podman inspect beehive-web --format '{{.NetworkSettings.Gateway}}'`.
+#Environment=TRUSTED_PROXY_IPS=10.88.0.1
 Secret=beehive-session-secret,type=env,target=SESSION_SECRET
+# The admin UI's Email Group "Test send" action sends through the same notifier as the digest
+# container, so it needs the same credential; without it a test send only logged.
+Secret=beehive-acs-connection,type=env,target=ACS_CONNECTION_STRING
 PublishPort=127.0.0.1:8095:8000
 Exec=-m scripts.run_web
 

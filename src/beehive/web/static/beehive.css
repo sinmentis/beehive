@@ -1685,7 +1685,7 @@ select{
   display:grid;
   padding:.75rem .6875rem;
   border-bottom:1px solid var(--border-strong);
-  grid-template-columns:minmax(14rem,1.8fr) repeat(3,minmax(9rem,1fr)) auto auto;
+  grid-template-columns:minmax(14rem,1.8fr) repeat(4,minmax(9rem,1fr)) auto auto;
   align-items:end;
   gap:.625rem;
   background:#151915;

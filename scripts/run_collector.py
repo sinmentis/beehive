@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import json
 import os
+import traceback
 from dataclasses import asdict
 
 from beehive.connectors import (  # noqa: F401  (registers the connectors)
@@ -93,9 +94,19 @@ async def run_fetch(db_path: str) -> None:
                     f"email, continuing with the other Channels: {exc}"
                 )
                 alert_delivery_failures.append(exc)
+            except Exception as exc:  # noqa: BLE001
+                # ADR-0002 promises per-Channel isolation, but only EmailConfigurationError was
+                # caught, so any other failure (a corrupt row, a ranking bug, a DB error) aborted
+                # the run and silently starved every Channel later in the list.
+                traceback.print_exc()
+                print(
+                    f'[fetch] Channel "{channel["name"]}" failed, continuing with the '
+                    f"other Channels: {exc}"
+                )
+                alert_delivery_failures.append(exc)
         if alert_delivery_failures:
             raise ExceptionGroup(
-                "One or more Channels could not deliver alert emails",
+                "One or more Channels failed during the fetch cycle",
                 alert_delivery_failures,
             )
     finally:
@@ -152,11 +163,18 @@ async def run_fetch_channel(db_path: str) -> None:
                         f"an alert email: {exc}"
                     )
                     alert_delivery_failures.append(exc)
+                except Exception as exc:  # noqa: BLE001 -- see run_fetch
+                    traceback.print_exc()
+                    print(
+                        f'[fetch-channel] Channel "{channel["name"]}" failed, continuing '
+                        f"with the other Channels: {exc}"
+                    )
+                    alert_delivery_failures.append(exc)
             if len(alert_delivery_failures) == 1:
                 raise alert_delivery_failures[0]
             if alert_delivery_failures:
                 raise ExceptionGroup(
-                    "Multiple manually fetched Channels could not deliver alert emails",
+                    "Multiple manually fetched Channels failed",
                     alert_delivery_failures,
                 )
         finally:

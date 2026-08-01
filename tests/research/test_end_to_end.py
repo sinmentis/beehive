@@ -23,9 +23,9 @@ realistic Research Session's whole lifecycle, which no single module's own tests
        directly to the cascade, not a re-run of test_research_concurrency.py's races).
 
 Every AI call is a scripted `run_data_only_prompt` fake, patched exactly where each module
-imports it (mirrors test_orchestrator.py/test_synthesis.py/test_conversation.py); the real,
-tool-capable `beehive.ai.llm_client.run_prompt` is patched for the whole test and asserted never
-called, and every connector fetch is served by an in-memory fake handed through
+imports it (mirrors test_orchestrator.py/test_synthesis.py/test_conversation.py); the real SDK
+entry point `copilot.CopilotClient` is patched for the whole test and asserted never
+constructed, and every connector fetch is served by an in-memory fake handed through
 `connector_resolver` -- `beehive.connectors.registry` is never consulted for a fetch."""
 from __future__ import annotations
 
@@ -228,7 +228,7 @@ async def _submit_and_process_chat(conn, session_id, content, now, aliases, memo
 
 @pytest.mark.asyncio
 async def test_research_session_full_lifecycle_end_to_end(conn):
-    with patch("beehive.ai.llm_client.run_prompt") as tool_capable_mock:
+    with patch("copilot.CopilotClient") as tool_capable_mock:
         # -- 1. Create Research Session + seed source + initial Research Run -----------------
         # Through the exact public seam the web layer uses: connector_policy validates the
         # Owner-selected source (real, but network-free schema/allowlist validation) before
@@ -458,6 +458,6 @@ async def test_research_session_full_lifecycle_end_to_end(conn):
             count = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
             assert count == 0, f"{table} still has {count} row(s) after hard delete"
 
-    # No real, tool-capable AI session was ever created -- every AI call throughout this whole
-    # lifecycle was the scripted, tool-free run_data_only_prompt fake above.
+    # No real AI session was ever created -- every AI call throughout this whole lifecycle was
+    # the scripted, tool-free run_data_only_prompt fake above.
     tool_capable_mock.assert_not_called()

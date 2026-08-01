@@ -37,7 +37,7 @@ from beehive.channels.source_policy import assert_source_allowed
 from beehive.connectors.base import CommentFetchTarget
 from beehive.connectors.registry import get as get_connector
 from beehive.db.items import (
-    list_by_channel,
+    list_unranked_by_channel,
     update_ai_ranking_by_id,
     update_best_comment,
 )
@@ -54,7 +54,7 @@ _COMMENT_FETCH_DELAY_SECONDS = 2
 # One LLM call must individually reason through every candidate's selected-language summary/
 # rationale, so its generation time scales with batch size (measured: ~40s for 5 items, ~96s
 # for 15 -- a 50-item batch reliably exceeded even a 280s timeout). Ranking the backlog in
-# fixed-size chunks keeps each call comfortably inside run_prompt's 120s timeout no matter how
+# fixed-size chunks keeps each call comfortably inside the LLM client's 120s timeout no matter how
 # large a channel's unscored backlog grows (e.g. from a freshly-added source dumping many
 # items at once), and each chunk's results are persisted immediately so a later chunk's
 # failure never discards work already done.
@@ -107,22 +107,33 @@ async def run_channel_cycle(
         # fetch error and is skipped, rather than fetching against the wrong ranking pipeline.
         try:
             assert_source_allowed(source["type"], collection.kind)
-        except ValueError as exc:
-            record_fetch_error(conn, source["id"], str(exc), now_iso)
-            continue
-        connector = get_connector(source["type"])
-        config = json.loads(source["config"])
-        try:
-            raw_items = connector.fetch(config)
+            connector = get_connector(source["type"])
+            config = json.loads(source["config"])
         except Exception as exc:
+            # `get_connector` (KeyError on a type dropped from the registry) and `json.loads`
+            # (ValueError on a corrupt config blob) both sat outside this guard, so either one
+            # aborted the whole Channel and starved every Source after it in the list.
             record_fetch_error(conn, source["id"], str(exc), now_iso)
             continue
-        # Persist and stage events only after a successful fetch: a MUTABLE_SNAPSHOT Channel
-        # reconciles absent listings to inactive inside ingest_fetch, which would wrongly retire
-        # everything a failed fetch (handled above by continue) could not return.
-        new_count = collection.ingest_fetch(
-            conn, source["id"], raw_items, now_iso=now_iso
-        )
+
+        try:
+            # Connectors are synchronous, blocking socket code. Called directly it would stall
+            # this coroutine's entire event loop for the request's full timeout, which matters
+            # because the same loop drives every other Channel in the cycle.
+            raw_items = await asyncio.to_thread(connector.fetch, config)
+            # Persist and stage events only after a successful fetch: a MUTABLE_SNAPSHOT Channel
+            # reconciles absent listings to inactive inside ingest_fetch, which would wrongly
+            # retire everything a failed fetch could not return.
+            new_count = collection.ingest_fetch(
+                conn, source["id"], raw_items, now_iso=now_iso
+            )
+        except Exception as exc:
+            # Persistence was previously outside the guard even though it is the more likely
+            # failure of the two (a constraint violation on one malformed item), and ADR-0002's
+            # per-Source isolation is the whole point of this loop.
+            record_fetch_error(conn, source["id"], str(exc), now_iso)
+            continue
+
         record_fetch_success(
             conn, source["id"], now_iso, raw_count=len(raw_items), new_count=new_count
         )
@@ -134,8 +145,7 @@ async def run_channel_cycle(
         collection.definition.ranking_mode is RankingMode.EDITORIAL
     )
 
-    all_items = list_by_channel(conn, channel["id"])
-    unscored = [i for i in all_items if i["ai_score"] is None]
+    unscored = list_unranked_by_channel(conn, channel["id"])
     if not unscored:
         return
 

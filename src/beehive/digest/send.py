@@ -16,6 +16,7 @@ raised as one ExceptionGroup, so one group's failure never blocks the others and
 untouched next cycle."""
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
@@ -44,6 +45,8 @@ from beehive.email_routing import (
 from beehive.localization import Localizer
 from beehive.notify import Notifier
 from beehive.scheduling import email_group_is_due
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class RecipientDeliveryError(RuntimeError):
@@ -180,9 +183,12 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
     failures: list[Exception] = []
 
     for group in list_email_groups(conn):
-        if not email_group_is_due(group, run_time):
-            continue
         try:
+            # The due-check is inside the try on purpose: it parses the group's own schedule
+            # config, so one malformed row used to raise here and abandon every group after it in
+            # the list -- a silent, ordering-dependent loss of unrelated digests.
+            if not email_group_is_due(group, run_time):
+                continue
             _deliver_due_group(
                 conn, group, notifier, default_recipient, localizer,
                 checkpoint=checkpoint, digest_date=digest_date)
@@ -203,6 +209,13 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
                 error=str(exc.error),
                 failed_at=checkpoint,
             )
+            failures.append(exc)
+        except Exception as exc:  # noqa: BLE001 -- see below
+            # Anything else (a rendering bug, a corrupt row, a transient DB error) is still one
+            # group's problem. Without this, a single bad group stopped the whole run, and the
+            # groups it starved were never marked as failed either, so nothing showed why.
+            _LOGGER.exception('Email group "%s" failed unexpectedly', group["name"])
+            mark_error(conn, group["id"], error=str(exc), failed_at=checkpoint)
             failures.append(exc)
 
     if failures:

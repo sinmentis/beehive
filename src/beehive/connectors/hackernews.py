@@ -6,8 +6,6 @@ Tests inject fetch_json and never use the network.
 """
 from __future__ import annotations
 
-import json
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -15,6 +13,7 @@ from typing import Any, Callable
 from urllib.parse import urlencode, urlparse
 
 from beehive.connectors.base import CommentFetchTarget, RawItem
+from beehive.connectors.http import fetch_json
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -22,6 +21,7 @@ _OFFICIAL_BASE = "https://hacker-news.firebaseio.com/v0"
 _ALGOLIA_BASE = "https://hn.algolia.com/api/v1"
 _USER_AGENT = "beehive/0.1 (personal information hub)"
 _REQUEST_TIMEOUT_SECONDS = 15
+_HACKER_NEWS_HOSTS = frozenset({"hacker-news.firebaseio.com", "hn.algolia.com"})
 _DETAIL_BATCH_TIMEOUT_SECONDS = 35
 _DETAIL_WORKERS = 8
 _STORY_FETCH_LIMIT = 30
@@ -74,16 +74,12 @@ def _html_to_text(value: Any) -> str:
 
 
 def _default_fetch_json(url: str) -> Any:
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(  # noqa: S310 (module constructs fixed HTTPS provider URLs)
-        request,
+    return fetch_json(
+        url,
+        allowed_hosts=_HACKER_NEWS_HOSTS,
+        user_agent=_USER_AGENT,
         timeout=_REQUEST_TIMEOUT_SECONDS,
-    ) as response:
-        payload = response.read()
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Hacker News returned invalid JSON from {url}") from exc
+    )
 
 
 def _discussion_url(item_id: int) -> str:

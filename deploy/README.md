@@ -58,9 +58,10 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
   --query primaryConnectionString -o tsv | podman secret create beehive-acs-connection -
 ```
 
-- `beehive-session-secret` → `SESSION_SECRET` (admin session cookie signing, ADR-0005 — the web
-  container cannot protect `/admin/*` or write actions meaningfully without it, though it does not
-  crash outright; see `web/deps.py`'s `require_admin_session`).
+- `beehive-session-secret` → `SESSION_SECRET` (admin session cookie signing, ADR-0005). The web
+  app **refuses to start** without it, or with a value under 32 characters. An empty secret is not
+  a degraded mode: `sign_session_id` HMACs with an empty key, so anyone could mint a valid-looking
+  admin cookie.
 - `beehive-copilot-github-token` → `COPILOT_GITHUB_TOKEN` (the fetch container's AI ranking call,
   the deep-read container's article brief generation, and the always-on Research worker's plan/
   sufficiency/synthesis/chat AI calls, all via `ai/llm_client.py`). The web container and the
@@ -68,7 +69,25 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
   expired leases, it never calls the AI.
 - `beehive-acs-connection` → `ACS_CONNECTION_STRING` (Email Group, Research-completion, and
   Tracker-reminder delivery, paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM`
-  `Environment=` values on those containers). Omit this secret to log delivery instead.
+  `Environment=` values on those containers). Omit this secret to log delivery instead. The **web**
+  container needs it too: the admin UI's Email Group "Test send" goes through the same notifier.
+
+## Reverse proxy and client addresses
+
+The login rate limiter locks out a source address after five failed attempts. It reads the source
+from the TCP peer by default, and only honours a `CF-Connecting-IP` or `X-Forwarded-For` header
+when the peer is listed in `TRUSTED_PROXY_IPS` (comma-separated addresses or CIDR blocks). Without
+that, any client could send its own header and get a fresh five-attempt budget per request.
+
+Set it to the address your proxy's traffic arrives from **as seen inside the container**, which is
+the container network gateway, not the proxy's public address:
+
+```bash
+podman inspect beehive-web --format '{{.NetworkSettings.Gateway}}'
+```
+
+Leaving it unset is safe; it just means every remote client is attributed to that one gateway
+address, so the per-IP limit behaves like a global one.
 
 No Reddit credential is needed: the fetch container's Reddit connector reads Reddit's public,
 unauthenticated Atom RSS feed (`https://www.reddit.com/r/<subreddit>/hot/.rss`), not the OAuth

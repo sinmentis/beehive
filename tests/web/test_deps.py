@@ -27,7 +27,7 @@ def db_path(tmp_path):
 def app(db_path):
     test_app = FastAPI()
     test_app.state.db_path = db_path
-    test_app.state.session_secret = "test-secret"
+    test_app.state.session_secret = "test-secret-at-least-32-characters-long"
 
     @test_app.get("/protected")
     def protected(session: dict = Depends(require_admin_session)):
@@ -40,7 +40,7 @@ def test_valid_session_cookie_grants_access(app, db_path):
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
-    signed = sign_session_id("sess1", "test-secret")
+    signed = sign_session_id("sess1", "test-secret-at-least-32-characters-long")
 
     client = TestClient(app)
     client.cookies.set(SESSION_COOKIE_NAME, signed)
@@ -62,7 +62,7 @@ def test_tampered_cookie_redirects_to_login(app, db_path):
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
-    signed = sign_session_id("sess1", "test-secret")
+    signed = sign_session_id("sess1", "test-secret-at-least-32-characters-long")
     tampered = signed[:-1] + ("0" if signed[-1] != "0" else "1")
 
     client = TestClient(app, follow_redirects=False)
@@ -75,7 +75,7 @@ def test_expired_session_redirects_to_login(app, db_path):
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2000-01-01T00:00:00")  # already expired
     conn.close()
-    signed = sign_session_id("sess1", "test-secret")
+    signed = sign_session_id("sess1", "test-secret-at-least-32-characters-long")
 
     client = TestClient(app, follow_redirects=False)
     client.cookies.set(SESSION_COOKIE_NAME, signed)
@@ -84,7 +84,7 @@ def test_expired_session_redirects_to_login(app, db_path):
 
 
 def test_deleted_or_nonexistent_session_redirects_to_login(app):
-    signed = sign_session_id("never-existed", "test-secret")
+    signed = sign_session_id("never-existed", "test-secret-at-least-32-characters-long")
     client = TestClient(app, follow_redirects=False)
     client.cookies.set(SESSION_COOKIE_NAME, signed)
     resp = client.get("/protected")
@@ -95,7 +95,7 @@ def test_deleted_or_nonexistent_session_redirects_to_login(app):
 def optional_app(db_path):
     test_app = FastAPI()
     test_app.state.db_path = db_path
-    test_app.state.session_secret = "test-secret"
+    test_app.state.session_secret = "test-secret-at-least-32-characters-long"
 
     @test_app.get("/optional")
     def optional(session: dict | None = Depends(get_optional_session)):
@@ -115,7 +115,7 @@ def test_optional_session_returns_session_with_valid_cookie(optional_app, db_pat
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
-    signed = sign_session_id("sess1", "test-secret")
+    signed = sign_session_id("sess1", "test-secret-at-least-32-characters-long")
 
     client = TestClient(optional_app)
     client.cookies.set(SESSION_COOKIE_NAME, signed)
@@ -128,7 +128,7 @@ def test_optional_session_returns_none_for_tampered_cookie(optional_app, db_path
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2099-01-01T00:00:00")
     conn.close()
-    signed = sign_session_id("sess1", "test-secret")
+    signed = sign_session_id("sess1", "test-secret-at-least-32-characters-long")
     tampered = signed[:-1] + ("0" if signed[-1] != "0" else "1")
 
     client = TestClient(optional_app)
@@ -142,7 +142,7 @@ def test_optional_session_returns_none_for_expired_session(optional_app, db_path
     conn = connect(db_path)
     create_session(conn, "sess1", "csrf1", "2000-01-01T00:00:00")  # already expired
     conn.close()
-    signed = sign_session_id("sess1", "test-secret")
+    signed = sign_session_id("sess1", "test-secret-at-least-32-characters-long")
 
     client = TestClient(optional_app)
     client.cookies.set(SESSION_COOKIE_NAME, signed)
@@ -155,7 +155,7 @@ def test_optional_session_returns_none_for_expired_session(optional_app, db_path
 def localizer_app(db_path):
     test_app = FastAPI()
     test_app.state.db_path = db_path
-    test_app.state.session_secret = "test-secret"
+    test_app.state.session_secret = "test-secret-at-least-32-characters-long"
 
     @test_app.get("/localized")
     def localized(request: Request, localizer=Depends(get_localizer)):

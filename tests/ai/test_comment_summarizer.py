@@ -104,7 +104,7 @@ async def test_summarize_comments_builds_prompt_calls_llm_and_parses():
     candidates = [CommentCandidate(item_key="t1", title="Rates fall",
                                     comment_text="new info here")]
     fake_response = '```json\n{"judged": [{"id": "t1", "summary": "s"}]}\n```'
-    with patch("beehive.ai.comment_summarizer.run_prompt",
+    with patch("beehive.ai.comment_summarizer.run_data_only_prompt",
                new=AsyncMock(return_value=fake_response)) as mock_run:
         result = await summarize_comments(candidates, language=_EN)
 
@@ -116,7 +116,7 @@ async def test_summarize_comments_builds_prompt_calls_llm_and_parses():
 
 @pytest.mark.asyncio
 async def test_summarize_comments_returns_empty_dict_without_calling_llm_for_no_candidates():
-    with patch("beehive.ai.comment_summarizer.run_prompt", new=AsyncMock()) as mock_run:
+    with patch("beehive.ai.comment_summarizer.run_data_only_prompt", new=AsyncMock()) as mock_run:
         result = await summarize_comments([], language=_EN)
     assert result == {}
     mock_run.assert_not_called()
@@ -126,7 +126,7 @@ async def test_summarize_comments_returns_empty_dict_without_calling_llm_for_no_
 async def test_summarize_comments_passes_model_through():
     candidates = [CommentCandidate(item_key="t1", title="x", comment_text="y")]
     fake_response = '```json\n{"judged": [{"id": "t1", "summary": ""}]}\n```'
-    with patch("beehive.ai.comment_summarizer.run_prompt",
+    with patch("beehive.ai.comment_summarizer.run_data_only_prompt",
                new=AsyncMock(return_value=fake_response)) as mock_run:
         await summarize_comments(candidates, language=_EN, model="claude-opus-4.8")
     assert mock_run.await_args.kwargs["model"] == "claude-opus-4.8"
@@ -137,8 +137,18 @@ async def test_summarize_comments_passes_selected_language_into_the_prompt():
     candidates = [CommentCandidate(item_key="t1", title="Rates fall", comment_text="new info")]
     german = localizer_for("de").language
     fake_response = '```json\n{"judged": [{"id": "t1", "summary": ""}]}\n```'
-    with patch("beehive.ai.comment_summarizer.run_prompt",
+    with patch("beehive.ai.comment_summarizer.run_data_only_prompt",
                new=AsyncMock(return_value=fake_response)) as mock_run:
         await summarize_comments(candidates, language=german)
     called_prompt = mock_run.await_args.args[0]
     assert german.llm_name in called_prompt
+
+
+def test_comment_summarizer_never_imports_a_tool_permissive_entry_point():
+    """A comment-summary prompt embeds a raw third-party comment body -- the most freely
+    attacker-supplied text in the collector pipeline -- so it must go through the tool-free
+    entry point. Static guard: the tool-permissive name must not exist on the module."""
+    import beehive.ai.comment_summarizer as summarizer_module
+
+    assert not hasattr(summarizer_module, "run_prompt")
+    assert hasattr(summarizer_module, "run_data_only_prompt")

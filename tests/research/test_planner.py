@@ -451,8 +451,9 @@ def test_injection_payload_in_rationale_is_treated_as_inert_capped_text():
 
 def test_injection_payload_in_config_value_is_still_subject_to_connector_policy():
     """An injected config value is just an ordinary string as far as connector_policy is
-    concerned -- for reddit_subreddit that means it is accepted as a (harmless, if unusual)
-    subreddit name, never specially interpreted or given tool access."""
+    concerned -- never specially interpreted, never given tool access. It is now also rejected
+    outright, because the value is interpolated into a request URL and reddit_subreddit
+    constrains it to Reddit's own subreddit charset."""
     bad = f"""```json
 {{"plan_summary": "x", "sources": [
   {{"connector_type": "reddit_subreddit",
@@ -460,8 +461,19 @@ def test_injection_payload_in_config_value_is_still_subject_to_connector_policy(
    "rationale": "x"}}
 ]}}
 ```"""
-    plan = parse_plan_response(bad)
-    assert plan.sources[0].config["subreddit"] == _INJECTION_PAYLOAD
+    with pytest.raises(ConnectorPolicyError, match="config rejected by connector"):
+        parse_plan_response(bad)
+
+
+def test_an_ordinary_subreddit_name_in_a_planned_config_is_accepted():
+    good = """```json
+{"plan_summary": "x", "sources": [
+  {"connector_type": "reddit_subreddit",
+   "config": {"subreddit": "PersonalFinanceNZ"},
+   "rationale": "x"}
+]}
+```"""
+    assert parse_plan_response(good).sources[0].config["subreddit"] == "PersonalFinanceNZ"
 
 
 @pytest.mark.asyncio

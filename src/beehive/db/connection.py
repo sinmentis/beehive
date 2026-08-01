@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
@@ -19,6 +21,14 @@ _LEGACY_PRICE_SUFFIX_RE = re.compile(r"\d+\.\d{1,2}")
 # CREATE TABLE already defines these for brand-new databases -- this list only matters for
 # upgrading an EXISTING database in place, so init_schema() stays safe to call on every
 # process start (as it already is) without needing a separate manual migration step.
+#
+# The DDL fragment here MUST match schema.sql's definition of the same column exactly, including
+# its CHECK constraint. Three of them did not (schedule_mode, is_active, run_kind), so an upgraded
+# database accepted values a fresh one rejected -- the kind of divergence that only shows up in
+# production, since every test starts from a fresh schema. `tests/db/test_schema_parity.py` now
+# fails the build on any new mismatch. (SQLite's ALTER TABLE ADD COLUMN does allow a CHECK; it
+# just does not re-validate the rows that already exist, which is fine for a column that is
+# being introduced with a valid default.)
 _COLUMNS_TO_ENSURE = [
     ("items", "opened_at", "TEXT"),
     ("sources", "last_fetch_raw_count", "INTEGER"),
@@ -56,7 +66,11 @@ _COLUMNS_TO_ENSURE = [
     ("items", "superseded_at", "TEXT"),
     # Regular Email Group event-scan watermark (item_events path), distinct from last_sent_at.
     ("email_groups", "last_checked_at", "TEXT"),
-    ("email_groups", "schedule_mode", "TEXT NOT NULL DEFAULT 'interval'"),
+    (
+        "email_groups",
+        "schedule_mode",
+        "TEXT NOT NULL DEFAULT 'interval' CHECK (schedule_mode IN ('interval', 'calendar'))",
+    ),
     (
         "email_groups",
         "schedule_timezone",
@@ -71,8 +85,16 @@ _COLUMNS_TO_ENSURE = [
     ("email_groups", "last_error", "TEXT"),
     ("email_groups", "last_error_at", "TEXT"),
     ("research_sessions", "last_viewed_at", "TEXT"),
-    ("research_sources", "is_active", "INTEGER NOT NULL DEFAULT 1"),
-    ("research_runs", "run_kind", "TEXT NOT NULL DEFAULT 'full'"),
+    (
+        "research_sources",
+        "is_active",
+        "INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1))",
+    ),
+    (
+        "research_runs",
+        "run_kind",
+        "TEXT NOT NULL DEFAULT 'full' CHECK (run_kind IN ('full', 'synthesis'))",
+    ),
 ]
 
 _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"
@@ -103,6 +125,23 @@ _INDEXES_TO_ENSURE = [
     (
         "idx_items_source_lifecycle",
         "items(source_id, superseded_at, inactive_at)",
+    ),
+    # The collector's ranking backlog ("current items this Channel has not scored yet"). A partial
+    # index holds only the handful of rows that are actually unranked at any moment, rather than
+    # every item ever fetched, so the lookup costs the size of the backlog instead of the size of
+    # the table. Measured on 50k items with a 100-item backlog: 4.8ms -> 0.28ms, against +2.8ms
+    # per 5000 inserts. Indexing (id) alone rather than (source_id, id) is deliberate -- the wider
+    # key made the planner prefer idx_items_source_lifecycle and re-sort, which was slower than
+    # having no index at all.
+    (
+        "idx_items_ranking_backlog",
+        "items(id) WHERE ai_score IS NULL AND superseded_at IS NULL",
+    ),
+    # sources.channel_id is a foreign key that every Channel page, digest and collector cycle
+    # filters on, and that ON DELETE CASCADE walks; SQLite does not index foreign keys for you.
+    (
+        "idx_sources_channel",
+        "sources(channel_id)",
     ),
 ]
 
@@ -166,6 +205,38 @@ def connect(db_path: str) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@contextmanager
+def write_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """Run a read-modify-write against the database as one atomic step.
+
+    WAL lets the collector, the scheduler and the web container write the same file at the same
+    time (ADR-0004), and sqlite3's default (deferred) transaction only takes the write lock at the
+    first *write* statement. So a "SELECT the current row, decide, then UPDATE it" sequence has a
+    window where a second process can slip its own write in between: both readers see no row and
+    both INSERT (one gets an IntegrityError on UNIQUE(source_id, external_id)), or both read the
+    same pre-image and the second silently overwrites the first's decision.
+
+    BEGIN IMMEDIATE takes the write lock up front, so the read and the write see the same
+    snapshot. A second writer blocks on it for up to busy_timeout (5s) rather than racing.
+
+    Exiting normally commits; any exception rolls the whole step back, so a partially-applied
+    multi-statement change is no longer possible either.
+    """
+    if conn.in_transaction:
+        # sqlite3's legacy isolation_level opens a deferred transaction on the caller's behalf at
+        # their first write. Flushing it keeps that work durable (which is what the trailing
+        # commit in each of these functions used to do) and lets BEGIN IMMEDIATE start cleanly --
+        # SQLite has no nested transactions, so "BEGIN inside BEGIN" is an error.
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
