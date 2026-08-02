@@ -81,6 +81,7 @@
       <span>{{ t('web.monitor.sort_label') }}</span>
       <select name="sort">
         <option value="score"{% if page.sort.value == 'score' %} selected{% endif %}>{{ t('web.monitor.sort_score') }}</option>
+        <option value="newest"{% if page.sort.value == 'newest' %} selected{% endif %}>{{ t('web.monitor.sort_newest') }}</option>
         <option value="discount"{% if page.sort.value == 'discount' %} selected{% endif %}>{{ t('web.monitor.sort_discount') }}</option>
         <option value="price_asc"{% if page.sort.value == 'price_asc' %} selected{% endif %}>{{ t('web.monitor.sort_price_low') }}</option>
         <option value="price_desc"{% if page.sort.value == 'price_desc' %} selected{% endif %}>{{ t('web.monitor.sort_price_high') }}</option>

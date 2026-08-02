@@ -532,6 +532,7 @@ def _build_editorial_page(
 # --------------------------------------------------------------------------------------------
 class MonitorSort(str, Enum):
     SCORE = "score"
+    NEWEST = "newest"
     PRICE_ASC = "price_asc"
     PRICE_DESC = "price_desc"
     DISCOUNT = "discount"
@@ -609,6 +610,7 @@ class MonitorChangeMarker:
 @dataclass(frozen=True, slots=True)
 class MonitorItemView:
     id: int
+    fetched_at: str
     title: str
     open_url: str
     safe_url: str
@@ -730,6 +732,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
     currency_code = _clean_text(metadata.get("currency_code"))
     return MonitorItemView(
         id=item_id,
+        fetched_at=_req_str(item, "fetched_at"),
         title=title,
         open_url=_open_url(item_id, url),
         safe_url=_safe_external_href(url),
@@ -754,8 +757,17 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
     )
 
 
+def _monitor_fetch_timestamp(value: str) -> float:
+    fetched_at = datetime.fromisoformat(value)
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
+    return fetched_at.timestamp()
+
+
 def _monitor_sort_key(sort: MonitorSort):
     # Every key ends in the item id so ties break deterministically and pagination is stable.
+    if sort is MonitorSort.NEWEST:
+        return lambda v: (-_monitor_fetch_timestamp(v.fetched_at), -v.id)
     if sort is MonitorSort.PRICE_ASC:
         return lambda v: (v.price is None, v.price if v.price is not None else 0.0, v.id)
     if sort is MonitorSort.PRICE_DESC:

@@ -331,6 +331,23 @@ def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client
     assert "This recommendation was useful" not in resp.text
 
 
+def test_monitor_channel_accepts_newest_fetched_sort(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Outlet", "new products", kind="monitor")
+    create_source(
+        c,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+
+    resp = client.get(f"/channels/{channel_id}?sort=newest")
+
+    assert resp.status_code == 200
+    assert '<option value="newest" selected>' in resp.text
+    assert "Newest fetched" in resp.text
+
+
 def test_monitor_channel_appears_in_dashboard_and_channel_nav(conn, client):
     """Monitor Channels are reachable via the same channel-shelf nav as editorial Channels --
     they are no longer a URL-only, unlinked page."""

@@ -710,12 +710,21 @@ def test_monitor_uses_the_retailer_name_for_international_clearance_sources(conn
 
 def test_monitor_sort_orders_are_deterministic(conn):
     channel, source_id = _monitor_channel(conn)
-    _add_item(conn, source_id, "cheap", raw_metadata=_shopify_metadata(
+    cheap_id = _add_item(conn, source_id, "cheap", raw_metadata=_shopify_metadata(
         10.0, 40.0, on_sale=True), score=50)  # 75% off
-    _add_item(conn, source_id, "mid", raw_metadata=_shopify_metadata(
+    mid_id = _add_item(conn, source_id, "mid", raw_metadata=_shopify_metadata(
         20.0, 25.0, on_sale=True), score=90)  # 20% off
-    _add_item(conn, source_id, "dear", raw_metadata=_shopify_metadata(
+    dear_id = _add_item(conn, source_id, "dear", raw_metadata=_shopify_metadata(
         30.0, None, on_sale=False), score=70)
+    conn.executemany(
+        "UPDATE items SET fetched_at = ? WHERE id = ?",
+        [
+            ("2026-01-03T00:00:00+00:00", cheap_id),
+            ("2026-01-01T00:00:00+00:00", mid_id),
+            ("2026-01-02T00:00:00+00:00", dear_id),
+        ],
+    )
+    conn.commit()
 
     def prices(sort):
         page = build_channel_page(
@@ -727,6 +736,8 @@ def test_monitor_sort_orders_are_deterministic(conn):
     assert prices(MonitorSort.PRICE_DESC) == [30.0, 20.0, 10.0]
     # SCORE: highest first.
     assert prices(MonitorSort.SCORE) == [20.0, 30.0, 10.0]
+    # NEWEST: latest fetch first.
+    assert prices(MonitorSort.NEWEST) == [10.0, 30.0, 20.0]
     # DISCOUNT: highest percent-off first, undiscounted last.
     assert prices(MonitorSort.DISCOUNT) == [10.0, 20.0, 30.0]
 
