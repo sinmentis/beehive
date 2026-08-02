@@ -196,6 +196,7 @@ async def run_channel_cycle(
                 estimate_high=item["raw_metadata"].get("estimate_high"),
                 sold_price=item["raw_metadata"].get("sold_price"),
                 status=item["raw_metadata"].get("status"),
+                discount_percent=item["raw_metadata"].get("discount_percent"),
             )
             for item in unscored
         ]

@@ -351,8 +351,11 @@ def test_monitor_prompt_includes_currency_for_retail_prices():
         product_type="Coats",
         tags=["final sale"],
         currency_code="EUR",
+        discount_percent=60.0,
     )
 
     prompt = build_monitor_ranking_prompt("profile", [candidate], _EN)
 
     assert "price: EUR 600 (was EUR 1500, on sale)" in prompt
+    assert "discount: 60% off" in prompt
+    assert "90% off means paying 10%, not 90%" in prompt
