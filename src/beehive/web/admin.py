@@ -37,6 +37,7 @@ from beehive.connectors import (  # noqa: F401 (registers the connectors)
     all_about_auctions,
     google_news,
     hackernews,
+    international_clearance,
     land_sea_collection,
     official_feeds,
     reddit,
@@ -1214,6 +1215,7 @@ _SOURCE_TYPE_ICONS = {
     "federal_reserve_news": official_feed_icon("federal_reserve_news"),
     "shopify_collection": "🛍️",
     "land_sea_collection": "🌊",
+    "international_clearance": "IC",
     "all_about_auctions": "AA",
 }
 
@@ -1279,6 +1281,12 @@ def _source_type_options(t: Localizer) -> tuple[dict, ...]:
             "label": t.text("web.source_type.land_sea_collection"),
         },
         {
+            "type_key": "international_clearance",
+            "input_id": "type-international-clearance",
+            "icon": _SOURCE_TYPE_ICONS["international_clearance"],
+            "label": t.text("web.source_type.international_clearance"),
+        },
+        {
             "type_key": "all_about_auctions",
             "input_id": "type-all-about-auctions",
             "icon": _SOURCE_TYPE_ICONS["all_about_auctions"],
@@ -1300,6 +1308,14 @@ def _admin_source_label(source: dict, t: Localizer) -> str:
         url = config.get("collection_url", "")
         parsed = urlparse(url)
         return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
+    if source["type"] == "international_clearance":
+        retailer = config.get("retailer")
+        label = international_clearance.RETAILER_LABELS.get(
+            retailer,
+            str(retailer or source["type"]),
+        )
+        minimum = config.get("minimum_discount_percent", 70)
+        return f"{label} · {minimum}%+"
     official_label = official_feed_label(source["type"])
     if official_label is not None:
         return official_label
@@ -2151,6 +2167,9 @@ _SOURCE_ERROR_KEYS = {
     "shopify_collection config needs 'collection_url' to be a valid http(s) URL": "web.source_error.shopify_collection_url_invalid",
     "land_sea_collection config needs a non-empty 'collection_url' key": "web.source_error.land_sea_collection_url_required",
     "land_sea_collection config needs 'collection_url' to be a valid http(s) URL": "web.source_error.land_sea_collection_url_invalid",
+    "international_clearance config needs 'retailer' to be one of: the_outnet, mytheresa, end, yoox": "web.source_error.international_clearance_retailer_invalid",
+    "international_clearance config needs 'minimum_discount_percent' to be an integer from 50 to 90": "web.source_error.international_clearance_discount_invalid",
+    "international_clearance Mytheresa sources support discounts up to 70": "web.source_error.international_clearance_mytheresa_discount_invalid",
 }
 
 
@@ -2175,6 +2194,8 @@ def _source_config_from_form(
     shopify_collection_url: str,
     shopify_collection_vendors: str,
     land_sea_collection_url: str,
+    international_clearance_retailer: str,
+    international_clearance_minimum_discount_percent: str,
 ) -> dict:
     if source_type == "reddit_subreddit":
         return {"subreddit": subreddit}
@@ -2196,6 +2217,20 @@ def _source_config_from_form(
         return config
     if source_type == "land_sea_collection":
         return {"collection_url": land_sea_collection_url}
+    if source_type == "international_clearance":
+        try:
+            minimum_discount_percent = int(
+                international_clearance_minimum_discount_percent
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "international_clearance config needs 'minimum_discount_percent' "
+                "to be an integer from 50 to 90"
+            ) from exc
+        return {
+            "retailer": international_clearance_retailer,
+            "minimum_discount_percent": minimum_discount_percent,
+        }
     if source_type in {
         "rbnz_news",
         "nz_government_news",
@@ -2225,6 +2260,8 @@ _SOURCE_FORM_DEFAULTS = {
     "shopify_collection_url": "",
     "shopify_collection_vendors": "",
     "land_sea_collection_url": "",
+    "international_clearance_retailer": "mytheresa",
+    "international_clearance_minimum_discount_percent": "70",
 }
 
 
@@ -2249,6 +2286,14 @@ def _form_values_from_source(source: dict) -> dict:
         values["shopify_collection_vendors"] = ", ".join(config.get("vendors", []))
     elif source_type == "land_sea_collection":
         values["land_sea_collection_url"] = config.get("collection_url", "")
+    elif source_type == "international_clearance":
+        values["international_clearance_retailer"] = config.get(
+            "retailer",
+            "mytheresa",
+        )
+        values["international_clearance_minimum_discount_percent"] = str(
+            config.get("minimum_discount_percent", 70)
+        )
     return values
 
 
@@ -2436,6 +2481,8 @@ def new_source_submit(
     shopify_collection_url: str = Form(""),
     shopify_collection_vendors: str = Form(""),
     land_sea_collection_url: str = Form(""),
+    international_clearance_retailer: str = Form("mytheresa"),
+    international_clearance_minimum_discount_percent: str = Form("70"),
     source_name: str = Form(""),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
@@ -2455,6 +2502,10 @@ def new_source_submit(
         "shopify_collection_url": shopify_collection_url,
         "shopify_collection_vendors": shopify_collection_vendors,
         "land_sea_collection_url": land_sea_collection_url,
+        "international_clearance_retailer": international_clearance_retailer,
+        "international_clearance_minimum_discount_percent": (
+            international_clearance_minimum_discount_percent
+        ),
     }
     config, error = _validated_source_config(conn, channel, type, form_values, t)
     if error is not None:
@@ -2522,6 +2573,8 @@ def edit_source_submit(
     shopify_collection_url: str = Form(""),
     shopify_collection_vendors: str = Form(""),
     land_sea_collection_url: str = Form(""),
+    international_clearance_retailer: str = Form("mytheresa"),
+    international_clearance_minimum_discount_percent: str = Form("70"),
     source_name: str = Form(""),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
@@ -2544,6 +2597,10 @@ def edit_source_submit(
         "shopify_collection_url": shopify_collection_url,
         "shopify_collection_vendors": shopify_collection_vendors,
         "land_sea_collection_url": land_sea_collection_url,
+        "international_clearance_retailer": international_clearance_retailer,
+        "international_clearance_minimum_discount_percent": (
+            international_clearance_minimum_discount_percent
+        ),
     }
     config, error = _validated_source_config(
         conn, channel, type, form_values, t, exclude_source_id=source_id

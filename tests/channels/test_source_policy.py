@@ -25,7 +25,11 @@ _EXPECTED = {
         "nz_government_news",
         "federal_reserve_news",
     },
-    ChannelKind.MONITOR: {"shopify_collection", "land_sea_collection"},
+    ChannelKind.MONITOR: {
+        "shopify_collection",
+        "land_sea_collection",
+        "international_clearance",
+    },
     ChannelKind.TRACKER: {"all_about_auctions"},
 }
 _ALL_REAL_TYPES = set().union(*_EXPECTED.values())

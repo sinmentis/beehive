@@ -964,3 +964,10 @@ def test_official_feed_connectors_are_registered_for_the_collector():
 
     for type_key in ("rbnz_news", "nz_government_news", "federal_reserve_news"):
         assert get(type_key).type_key == type_key
+
+
+def test_international_clearance_connector_is_registered_for_the_collector():
+    import scripts.run_collector  # noqa: F401
+    from beehive.connectors.registry import get
+
+    assert get("international_clearance").type_key == "international_clearance"

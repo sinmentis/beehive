@@ -35,6 +35,29 @@ def test_price_drop_fires_with_old_and_new_price():
     ]
 
 
+def test_price_drop_carries_the_current_currency_code():
+    events = detect_snapshot_events(
+        {"price": 50.0, "currency_code": "EUR"},
+        {"price": 40.0, "currency_code": "EUR"},
+        _MONITOR,
+    )
+
+    assert events == [
+        DetectedEvent(
+            EmailEventType.PRICE_DROP,
+            {"old_price": 50.0, "new_price": 40.0, "currency_code": "EUR"},
+        )
+    ]
+
+
+def test_price_drop_does_not_compare_different_currencies():
+    assert detect_snapshot_events(
+        {"price": 50.0, "currency_code": "EUR"},
+        {"price": 40.0, "currency_code": "USD"},
+        _MONITOR,
+    ) == []
+
+
 def test_price_increase_does_not_fire():
     assert detect_snapshot_events({"price": 40.0}, {"price": 50.0}, _MONITOR) == []
 

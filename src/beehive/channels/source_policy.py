@@ -19,6 +19,7 @@ from beehive.connectors import (  # noqa: F401 (import side effect: registers th
     all_about_auctions,
     google_news,
     hackernews,
+    international_clearance,
     land_sea_collection,
     official_feeds,
     reddit,

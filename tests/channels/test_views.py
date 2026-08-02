@@ -423,6 +423,34 @@ def test_monitor_active_history_split_and_price_presentation(conn):
     assert gone.is_available is False
 
 
+def test_monitor_price_labels_include_the_listing_currency(conn):
+    channel, source_id = _monitor_channel(conn)
+    metadata = _shopify_metadata(600.0, 1500.0, on_sale=True)
+    metadata["currency_code"] = "EUR"
+    item_id = _add_item(
+        conn,
+        source_id,
+        "international",
+        title="Archive Coat",
+        raw_metadata=metadata,
+        score=90,
+    )
+    _record_event(
+        conn,
+        item_id,
+        "price_drop",
+        {"old_price": 800.0, "new_price": 600.0, "currency_code": "EUR"},
+    )
+
+    item = build_channel_page(conn, channel, t=_EN, now=_NOW).items[0]
+
+    assert item.price_label == "EUR 600"
+    assert item.compare_at_price_label == "EUR 1,500"
+    assert item.change is not None
+    assert item.change.old_price_label == "EUR 800"
+    assert item.change.new_price_label == "EUR 600"
+
+
 def test_monitor_present_out_of_stock_goes_to_history_with_present_flag(conn):
     channel, source_id = _monitor_channel(conn)
     # Present in the latest snapshot (no inactive_at) but out of stock -> Unavailable history,
@@ -651,6 +679,33 @@ def test_monitor_search_source_filter_and_options(conn):
         "example.com/collections/outlet",
         "land-sea.example/sale",
     )
+
+
+def test_monitor_uses_the_retailer_name_for_international_clearance_sources(conn):
+    channel, _source_id = _monitor_channel(conn)
+    source_id = create_source(
+        conn,
+        channel["id"],
+        "international_clearance",
+        {"retailer": "mytheresa", "minimum_discount_percent": 70},
+    )
+    _add_item(
+        conn,
+        source_id,
+        "coat",
+        title="Archive Coat",
+        raw_metadata={
+            **_shopify_metadata(300.0, 1000.0, on_sale=True),
+            "currency_code": "EUR",
+        },
+        score=90,
+    )
+
+    page = build_channel_page(conn, channel, t=_EN, now=_NOW)
+
+    item = next(item for item in page.items if item.title == "Archive Coat")
+    assert item.source_label == "Mytheresa"
+    assert "Mytheresa" in page.source_options
 
 
 def test_monitor_sort_orders_are_deterministic(conn):

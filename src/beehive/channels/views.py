@@ -29,6 +29,7 @@ from urllib.parse import urlencode, urlparse
 from beehive.auction import format_auction_amount
 from beehive.channels.definitions import ChannelDefinition, get_definition, require_channel_kind
 from beehive.channels.tracker import adapter_for_source
+from beehive.connectors.international_clearance import RETAILER_LABELS
 from beehive.db.deep_reads import DeepRead, get_deep_reads_for_items
 from beehive.db.item_events import latest_actionable_events_for_items
 from beehive.db.items import list_by_channel
@@ -212,6 +213,9 @@ def _source_label(item: Row, t: Localizer) -> str:
         return "All About Auctions"
     if source_type in {"shopify_collection", "land_sea_collection"}:
         return _collection_host_label(config)
+    if source_type == "international_clearance":
+        retailer = config.get("retailer")
+        return RETAILER_LABELS.get(retailer, str(retailer or source_type))
     official = _OFFICIAL_FEED_LABELS.get(source_type)
     if official is not None:
         return official
@@ -663,7 +667,10 @@ class MonitorPage:
 _MONITOR_EVENT_TYPES = frozenset({"discovered", "price_drop", "back_in_stock"})
 
 
-def _monitor_change_marker(event: Row | None) -> MonitorChangeMarker | None:
+def _monitor_change_marker(
+    event: Row | None,
+    currency_code: str | None,
+) -> MonitorChangeMarker | None:
     if event is None:
         return None
     event_type = event.get("event_type")
@@ -676,12 +683,15 @@ def _monitor_change_marker(event: Row | None) -> MonitorChangeMarker | None:
         if isinstance(payload, dict):
             old_price = _as_number(payload.get("old_price"))
             new_price = _as_number(payload.get("new_price"))
+            payload_currency = _clean_text(payload.get("currency_code"))
+            if payload_currency:
+                currency_code = payload_currency
     return MonitorChangeMarker(
         event_type=event_type,
         old_price=old_price,
-        old_price_label=format_auction_amount(old_price, None),
+        old_price_label=format_auction_amount(old_price, currency_code),
         new_price=new_price,
-        new_price_label=format_auction_amount(new_price, None),
+        new_price_label=format_auction_amount(new_price, currency_code),
     )
 
 
@@ -717,6 +727,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
     price = _as_number(metadata.get("price"))
     compare_at_price = _as_number(metadata.get("compare_at_price"))
     on_sale = bool(metadata.get("on_sale"))
+    currency_code = _clean_text(metadata.get("currency_code"))
     return MonitorItemView(
         id=item_id,
         title=title,
@@ -728,9 +739,9 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
         ai_summary=_clean_text(item.get("ai_summary")),
         ai_rationale=_clean_text(item.get("ai_rationale")),
         price=price,
-        price_label=format_auction_amount(price, None),
+        price_label=format_auction_amount(price, currency_code),
         compare_at_price=compare_at_price,
-        compare_at_price_label=format_auction_amount(compare_at_price, None),
+        compare_at_price_label=format_auction_amount(compare_at_price, currency_code),
         discount_percent=_discount_percent(price, compare_at_price, on_sale),
         is_on_sale=on_sale,
         is_present=_opt_str(item, "inactive_at") is None,
@@ -738,7 +749,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
         vendor=_clean_text(metadata.get("vendor")),
         product_type=_clean_text(metadata.get("product_type")),
         genders=_monitor_genders(title, metadata),
-        change=_monitor_change_marker(event),
+        change=_monitor_change_marker(event, currency_code),
         feedback_value=_feedback_value(item),
     )
 

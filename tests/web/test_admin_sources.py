@@ -741,6 +741,123 @@ def test_edit_channel_shows_land_sea_collection_label_and_icon(authed_client, db
     assert "🌊" in html
 
 
+def test_new_source_form_lists_international_clearance_option(
+    authed_client,
+    db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Designer clearance", "profile", kind="monitor")
+    conn.close()
+
+    html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
+
+    assert 'value="international_clearance"' in html
+    assert "International clearance — Designer retailers" in html
+    assert '<span class="source-icon">IC</span>' in html
+    assert 'id="international-clearance-retailer"' in html
+    assert 'id="international-clearance-minimum-discount"' in html
+    assert '<option value="the_outnet" >THE OUTNET</option>' in html
+    assert '<option value="mytheresa" selected>Mytheresa</option>' in html
+    assert 'min="50" max="90" step="1"' in html
+
+
+def test_create_international_clearance_source_persists_retailer_and_threshold(
+    authed_client,
+    db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Designer clearance", "profile", kind="monitor")
+    conn.close()
+
+    response = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={
+            "type": "international_clearance",
+            "international_clearance_retailer": "the_outnet",
+            "international_clearance_minimum_discount_percent": "88",
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert response.status_code == 303
+    conn = connect(db_path)
+    row = conn.execute(
+        "SELECT type, config FROM sources WHERE channel_id = ?",
+        (channel_id,),
+    ).fetchone()
+    assert row["type"] == "international_clearance"
+    assert json.loads(row["config"]) == {
+        "retailer": "the_outnet",
+        "minimum_discount_percent": 88,
+    }
+
+
+@pytest.mark.parametrize(
+    "retailer,discount,error",
+    [
+        ("unknown", "70", "Please choose a supported clearance retailer"),
+        ("end", "not-a-number", "Enter a whole-number discount from 50 to 90"),
+        ("end", "91", "Enter a whole-number discount from 50 to 90"),
+        ("mytheresa", "80", "Mytheresa supports discounts up to 70%"),
+    ],
+)
+def test_create_international_clearance_source_rejects_invalid_config(
+    authed_client,
+    db_path,
+    retailer,
+    discount,
+    error,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Designer clearance", "profile", kind="monitor")
+    conn.close()
+
+    response = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={
+            "type": "international_clearance",
+            "international_clearance_retailer": retailer,
+            "international_clearance_minimum_discount_percent": discount,
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert response.status_code == 400
+    assert error in response.text
+    conn = connect(db_path)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM sources WHERE channel_id = ?",
+        (channel_id,),
+    ).fetchone()[0] == 0
+
+
+def test_edit_international_clearance_source_prefills_and_labels_config(
+    authed_client,
+    db_path,
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Designer clearance", "profile", kind="monitor")
+    source_id = create_source(
+        conn,
+        channel_id,
+        "international_clearance",
+        {"retailer": "end", "minimum_discount_percent": 60},
+    )
+    conn.close()
+
+    edit_html = authed_client.get(f"/admin/sources/{source_id}/edit").text
+    channel_html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
+
+    assert '<option value="end" selected>END.</option>' in edit_html
+    assert (
+        'name="international_clearance_minimum_discount_percent"'
+        in edit_html
+    )
+    assert 'value="60"' in edit_html
+    assert "END. · 60%+" in channel_html
+    assert '<span class="source-name">IC END. · 60%+</span>' in channel_html
+
+
 def test_edit_channel_copy_button_exposes_full_land_sea_filter_url(
     authed_client, db_path
 ):

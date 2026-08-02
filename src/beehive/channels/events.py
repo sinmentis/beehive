@@ -38,6 +38,12 @@ def _numeric(value: object) -> float | None:
     return None
 
 
+def _currency_code(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip().upper()
+    return None
+
+
 def detect_discovered(
     permitted: Collection[EmailEventType],
 ) -> list[DetectedEvent]:
@@ -66,11 +72,26 @@ def detect_snapshot_events(
     if EmailEventType.PRICE_DROP in permitted:
         old_price = _numeric(before_metadata.get("price"))
         new_price = _numeric(after_metadata.get("price"))
-        if old_price is not None and new_price is not None and new_price < old_price:
+        old_currency = _currency_code(before_metadata.get("currency_code"))
+        new_currency = _currency_code(after_metadata.get("currency_code"))
+        same_currency = (
+            old_currency is None
+            or new_currency is None
+            or old_currency == new_currency
+        )
+        if (
+            old_price is not None
+            and new_price is not None
+            and new_price < old_price
+            and same_currency
+        ):
+            payload = {"old_price": old_price, "new_price": new_price}
+            if new_currency is not None:
+                payload["currency_code"] = new_currency
             events.append(
                 DetectedEvent(
                     EmailEventType.PRICE_DROP,
-                    {"old_price": old_price, "new_price": new_price},
+                    payload,
                 )
             )
 

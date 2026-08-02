@@ -93,6 +93,7 @@ Article briefs use a queued worker, so fetching and AI synthesis never block the
 | Federal Reserve | Official RSS | Editorial |
 | Shopify storefronts | Public collection JSON | Monitor |
 | Land & Sea | Public server-rendered listing data | Monitor |
+| International designer clearance | Official THE OUTNET, Mytheresa, END., and YOOX sale catalogues | Monitor |
 | All About Auctions | Public upcoming-auction and paginated lot data, including bids and RRP | Tracker |
 
 ## Research Sessions

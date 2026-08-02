@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader
 
+from beehive.auction import format_auction_amount
 from beehive.localization import Localizer
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -47,16 +48,13 @@ def _accent_for_kind(kind: str) -> str:
     return _KIND_ACCENTS.get(kind, _DEFAULT_ACCENT)
 
 
-def _format_amount(value: object) -> str:
+def _format_amount(value: object, currency_code: object = None) -> str:
     """A price payload number as a compact human string: 40.0 -> "40", 39.9 -> "39.9",
     39.99 -> "39.99". Non-numbers (a malformed payload) fall back to str() so rendering never
     raises. bool is treated as non-numeric -- it is never a real price."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return str(value)
-    number = float(value)
-    if number.is_integer():
-        return str(int(number))
-    return f"{number:.2f}".rstrip("0").rstrip(".")
+    return format_auction_amount(value, currency_code) or str(value)
 
 
 @dataclass(frozen=True)
@@ -98,10 +96,13 @@ def build_event_view(event: dict, localizer: Localizer) -> EventView:
         label = localizer.text("background.digest_event_price_drop")
         payload = event.get("payload") or {}
         if "old_price" in payload and "new_price" in payload:
+            currency_code = payload.get("currency_code")
+            if not currency_code:
+                currency_code = (event.get("item_raw_metadata") or {}).get("currency_code")
             detail = localizer.text(
                 "background.digest_event_price_detail",
-                old=_format_amount(payload["old_price"]),
-                new=_format_amount(payload["new_price"]),
+                old=_format_amount(payload["old_price"], currency_code),
+                new=_format_amount(payload["new_price"], currency_code),
             )
     elif event_type == "back_in_stock":
         label = localizer.text("background.digest_event_back_in_stock")

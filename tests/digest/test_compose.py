@@ -65,6 +65,23 @@ def test_monitor_price_drop_shows_old_and_new_numbers():
     assert view.detail == "50 \u2192 39.99"  # whole old price trimmed, fractional kept
 
 
+def test_monitor_price_drop_includes_currency_code():
+    view = build_event_view(
+        _event(
+            channel_kind="monitor",
+            event_type="price_drop",
+            payload={
+                "old_price": 1500.0,
+                "new_price": 600.0,
+                "currency_code": "EUR",
+            },
+        ),
+        _EN,
+    )
+
+    assert view.detail == "EUR 1,500 \u2192 EUR 600"
+
+
 def test_monitor_back_in_stock_is_labelled():
     view = build_event_view(
         _event(channel_kind="monitor", event_type="back_in_stock"), _EN)

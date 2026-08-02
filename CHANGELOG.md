@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   email previews and test sends.
 - Research Source management, enforced work-budget previews, run/snapshot/synthesis history,
   synthesis-only retries, unread completion state, and localized completion emails.
+- International designer-clearance monitoring for THE OUTNET, Mytheresa, END., and YOOX, with
+  verified markdown thresholds and listing-currency preservation.
 
 ### Changed
 

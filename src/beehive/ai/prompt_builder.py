@@ -212,10 +212,15 @@ def _render_product_candidates(candidates: list[ProductCandidate]) -> str:
             if c.status:
                 lines.append(f"auction status: {c.status}")
         else:
-            price = _format_price(c.price) if c.price is not None else "unknown"
+            price = (
+                _format_money(c.price, c.currency_code)
+                if c.price is not None
+                else "unknown"
+            )
             if c.on_sale and c.compare_at_price is not None:
                 lines.append(
-                    f"price: {price} (was {_format_price(c.compare_at_price)}, on sale)"
+                    "price: "
+                    f"{price} (was {_format_money(c.compare_at_price, c.currency_code)}, on sale)"
                 )
             else:
                 lines.append(f"price: {price}")

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import gzip
 import zlib
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
 
 import pytest
@@ -13,6 +14,8 @@ from beehive.connectors.http import (
     fetch_bytes,
     fetch_json,
     fetch_text,
+    post_json,
+    post_json_browser_tls,
 )
 from tests.connectors.http_stubs import urlopen_response
 
@@ -81,6 +84,84 @@ def test_extra_headers_are_merged_into_the_request():
         fetch_bytes(_URL, extra_headers={"X-Requested-With": "XMLHttpRequest"})
 
     assert urlopen.call_args.args[0].get_header("X-requested-with") == "XMLHttpRequest"
+
+
+def test_post_json_sends_a_json_body_with_the_requested_content_type():
+    with patch("beehive.connectors.http.urllib.request.urlopen") as urlopen:
+        urlopen.return_value = urlopen_response(b'{"ok": true}')
+
+        result = post_json(
+            _URL,
+            {"page": 2},
+            content_type="application/x-www-form-urlencoded",
+        )
+
+    request = urlopen.call_args.args[0]
+    assert request.get_method() == "POST"
+    assert request.data == b'{"page":2}'
+    assert request.get_header("Content-type") == "application/x-www-form-urlencoded"
+    assert result == {"ok": True}
+
+
+def test_browser_tls_post_keeps_ssrf_and_size_controls():
+    response = SimpleNamespace(
+        status_code=200,
+        iter_content=lambda **kwargs: [b'{"products": [{"id": 1}]}'],
+        close=Mock(),
+    )
+    with patch(
+        "beehive.connectors.http.browser_requests.post",
+        return_value=response,
+    ) as post:
+        result = post_json_browser_tls(
+            _URL,
+            {"page": 1},
+            allowed_hosts=frozenset({"example.com"}),
+            extra_headers={"X-Store": "EURO"},
+        )
+
+    assert result == {"products": [{"id": 1}]}
+    assert post.call_args.kwargs["impersonate"] == "chrome"
+    assert post.call_args.kwargs["json"] == {"page": 1}
+    assert post.call_args.kwargs["headers"]["X-Store"] == "EURO"
+    assert post.call_args.kwargs["allow_redirects"] is False
+    assert post.call_args.kwargs["stream"] is True
+    response.close.assert_called_once_with()
+
+
+def test_browser_tls_post_rejects_an_oversized_stream():
+    response = SimpleNamespace(
+        status_code=200,
+        iter_content=lambda **kwargs: [b"123456", b"78901"],
+        close=Mock(),
+    )
+    with patch(
+        "beehive.connectors.http.browser_requests.post",
+        return_value=response,
+    ):
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            post_json_browser_tls(
+                _URL,
+                {"page": 1},
+                allowed_hosts=frozenset({"example.com"}),
+                max_bytes=10,
+            )
+
+    assert excinfo.value.kind is ConnectorHttpErrorKind.TOO_LARGE
+    response.close.assert_called_once_with()
+
+
+def test_browser_tls_post_rejects_a_host_outside_the_allow_list():
+    with patch("beehive.connectors.http.browser_requests.post") as post:
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            post_json_browser_tls(
+                _URL,
+                {"page": 1},
+                allowed_hosts=frozenset({"api.example.com"}),
+            )
+
+    assert excinfo.value.kind is ConnectorHttpErrorKind.UNSAFE_URL
+    post.assert_not_called()
 
 
 # --------------------------------------------------------------------------

@@ -337,3 +337,22 @@ def test_monitor_prompt_formats_prices_without_scientific_notation():
     assert "999999.99" in prompt
     assert "1234567.89" in prompt
     assert "e+0" not in prompt
+
+
+def test_monitor_prompt_includes_currency_for_retail_prices():
+    candidate = ProductCandidate(
+        item_key="p1",
+        title="Archive Coat",
+        price=600.0,
+        compare_at_price=1500.0,
+        on_sale=True,
+        available=True,
+        vendor="Example",
+        product_type="Coats",
+        tags=["final sale"],
+        currency_code="EUR",
+    )
+
+    prompt = build_monitor_ranking_prompt("profile", [candidate], _EN)
+
+    assert "price: EUR 600 (was EUR 1500, on sale)" in prompt

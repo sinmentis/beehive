@@ -12,7 +12,9 @@ What this centralizes, and why each rule exists:
   used by all seven urllib connectors, so one oversized or hostile response could exhaust the
   512 MB container (`land_sea_collection`'s module docstring records that this already happened
   once). Reading `cap + 1` raw bytes and applying the same cap while decoding gzip/deflate makes
-  both oversized responses and compression bombs clean, per-source errors.
+  both oversized responses and compression bombs clean, per-source errors. The narrowly scoped
+  browser-TLS POST transport used by Mytheresa applies the same cap while streaming its decoded
+  body.
 - **Retry with jittered backoff, honouring `Retry-After`.** Previously only
   `shopify_collection` retried, and only on `HTTPError` -- so `URLError`, `socket.timeout`, and
   connection resets, which are the common transients, lost the source for a whole
@@ -26,8 +28,8 @@ What this centralizes, and why each rule exists:
   from "this host does not exist, tell the Owner". `deep_read.fetch.FetchFailureReason` is the
   model this follows.
 
-Not a general-purpose HTTP library: it does exactly what the connectors need (GET, bounded body,
-no redirect-following beyond urllib's own same-scheme default) and nothing more.
+Not a general-purpose HTTP library: it does exactly what the connectors need (GET, JSON POST,
+bounded bodies, and one cookie-free browser-TLS POST) and nothing more.
 """
 from __future__ import annotations
 
@@ -42,6 +44,8 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from enum import Enum
 from typing import Any
+
+from curl_cffi import requests as browser_requests
 
 from beehive.url_safety import UnsafeUrlError, assert_fetchable_url
 
@@ -98,14 +102,18 @@ class HttpResponse:
     not_modified: bool = False
 
 
-def _classify_http_error(exc: urllib.error.HTTPError) -> ConnectorHttpErrorKind:
-    if exc.code in _RETRYABLE_STATUS_CODES:
+def _classify_status(code: int) -> ConnectorHttpErrorKind:
+    if code in _RETRYABLE_STATUS_CODES:
         return ConnectorHttpErrorKind.TRANSIENT
-    if exc.code in (401, 403):
+    if code in (401, 403):
         return ConnectorHttpErrorKind.ACCESS_DENIED
-    if exc.code == 404 or exc.code == 410:
+    if code in (404, 410):
         return ConnectorHttpErrorKind.NOT_FOUND
     return ConnectorHttpErrorKind.PROTOCOL
+
+
+def _classify_http_error(exc: urllib.error.HTTPError) -> ConnectorHttpErrorKind:
+    return _classify_status(exc.code)
 
 
 def _retry_after_seconds(exc: urllib.error.HTTPError) -> float | None:
@@ -244,14 +252,21 @@ def fetch_bytes(
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     etag: str | None = None,
     last_modified: str | None = None,
+    method: str = "GET",
+    body: bytes | None = None,
     sleep=None,
 ) -> HttpResponse:
-    """GETs `url` and returns its bounded body plus any cache validators it carried.
+    """Requests `url` and returns its bounded body plus any cache validators it carried.
 
     Raises `ConnectorHttpError` (never a bare urllib exception) so `record_fetch_error` stores a
     classified failure. Passing `etag`/`last_modified` from a previous fetch turns an unchanged
     resource into `HttpResponse(body=None, not_modified=True)` with no body transferred.
     """
+    method = method.upper()
+    if method not in {"GET", "POST"}:
+        raise ValueError(f"unsupported HTTP method: {method}")
+    if method != "GET" and (etag or last_modified):
+        raise ValueError("conditional validators are only supported for GET requests")
     try:
         assert_fetchable_url(url, allowed_hosts=allowed_hosts)
     except UnsafeUrlError as exc:
@@ -277,7 +292,7 @@ def fetch_bytes(
     # Resolved per call rather than bound as a default, so `time.sleep` stays patchable.
     sleep = sleep or time.sleep
     for attempt in range(max_attempts):
-        request = urllib.request.Request(url, headers=headers, method="GET")
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
                 return HttpResponse(
@@ -334,3 +349,106 @@ def fetch_json(url: str, **kwargs) -> Any:
     except json.JSONDecodeError as exc:
         raise ConnectorHttpError(
             ConnectorHttpErrorKind.PROTOCOL, f"{url}: response is not valid JSON: {exc}") from exc
+
+
+def post_json(
+    url: str,
+    payload: Any,
+    *,
+    content_type: str = "application/json",
+    **kwargs,
+) -> Any:
+    """POST a JSON-encoded payload and parse the bounded JSON response."""
+    extra_headers = dict(kwargs.pop("extra_headers", None) or {})
+    extra_headers.setdefault("Content-Type", content_type)
+    return fetch_json(
+        url,
+        method="POST",
+        body=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        accept="application/json",
+        extra_headers=extra_headers,
+        **kwargs,
+    )
+
+
+def post_json_browser_tls(
+    url: str,
+    payload: Any,
+    *,
+    allowed_hosts: frozenset[str] | None = None,
+    extra_headers: dict[str, str] | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    max_bytes: int = DEFAULT_MAX_BYTES,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    sleep=None,
+) -> Any:
+    """POST JSON using a browser TLS fingerprint for public storefront APIs that reject urllib.
+
+    The target still passes the same SSRF allow-list, retry taxonomy, timeout, and decoded-body
+    cap as the regular connector client. This transport is intentionally narrow: no cookies,
+    challenge solving, proxying, or arbitrary methods.
+    """
+    try:
+        assert_fetchable_url(url, allowed_hosts=allowed_hosts)
+    except UnsafeUrlError as exc:
+        raise ConnectorHttpError(ConnectorHttpErrorKind.UNSAFE_URL, str(exc)) from exc
+
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if extra_headers:
+        headers.update(extra_headers)
+
+    last_error: ConnectorHttpError | None = None
+    sleep = sleep or time.sleep
+    for attempt in range(max_attempts):
+        response = None
+        try:
+            response = browser_requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+                impersonate="chrome",
+                allow_redirects=False,
+                stream=True,
+            )
+            if 200 <= response.status_code < 300:
+                body = bytearray()
+                for chunk in response.iter_content():
+                    body.extend(chunk)
+                    if len(body) > max_bytes:
+                        raise ConnectorHttpError(
+                            ConnectorHttpErrorKind.TOO_LARGE,
+                            f"{url}: response body exceeds the {max_bytes} byte cap",
+                        )
+                try:
+                    return json.loads(bytes(body))
+                except json.JSONDecodeError as exc:
+                    raise ConnectorHttpError(
+                        ConnectorHttpErrorKind.PROTOCOL,
+                        f"{url}: response is not valid JSON: {exc}",
+                    ) from exc
+
+            kind = _classify_status(response.status_code)
+            last_error = ConnectorHttpError(
+                kind,
+                f"{url}: HTTP {response.status_code}",
+            )
+            if kind is not ConnectorHttpErrorKind.TRANSIENT:
+                raise last_error
+            delay = _backoff_seconds(attempt)
+        except browser_requests.RequestsError as exc:
+            last_error = ConnectorHttpError(
+                ConnectorHttpErrorKind.TRANSIENT,
+                f"{url}: {type(exc).__name__}: {exc}",
+            )
+            delay = _backoff_seconds(attempt)
+        finally:
+            if response is not None:
+                response.close()
+
+        if attempt == max_attempts - 1:
+            break
+        sleep(delay)
+
+    assert last_error is not None
+    raise last_error
