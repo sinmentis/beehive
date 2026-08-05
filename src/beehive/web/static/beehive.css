@@ -28,7 +28,7 @@
 }
 
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth;font-size:150%}
 body{
   min-height:100dvh;
   margin:0;
@@ -820,9 +820,9 @@ button.deep-read-chip{border-color:var(--border-strong)}
 .signal-summary-cell .deep-read-action--dense{margin-left:.4rem}
 .folded-item .deep-read-action--dense{justify-self:end}
 
-/* Channel highlighted cards: enough room to stay always visible, as its own line under the
-   headline (a secondary action, not a replacement for the title's direct source link). */
-.deep-read-action--card{display:flex;margin:.55rem 0 0}
+/* Channel highlighted items: keep the action immediately after the age in the metadata row. */
+.deep-read-action--meta{flex:none}
+.deep-read-action--meta:not(:has(.deep-read-chip)){display:none}
 
 /* Archive rows: always visible, inline with the time/vote-state column. */
 .deep-read-action--side{display:inline-flex;margin-left:.5rem;vertical-align:middle}
@@ -1191,6 +1191,8 @@ select{
 }
 .sr-only{
   position:absolute;
+  top:0;
+  left:0;
   width:1px;
   height:1px;
   padding:0;
@@ -1494,11 +1496,11 @@ select{
 .channel-section{margin:0}
 .channel-section-heading{
   display:flex;
-  min-height:1.875rem;
-  padding:0 .6875rem;
+  min-height:1.25rem;
+  padding:0 .4583rem;
   border-bottom:1px solid var(--border-strong);
   align-items:center;
-  gap:.625rem;
+  gap:.4167rem;
   background:#151915;
 }
 .channel-section-heading h2{
@@ -1542,7 +1544,7 @@ select{
 .channel-empty p{margin:0}
 .page-channel .item{
   margin:0;
-  padding:.625rem .6875rem;
+  padding:.35rem .4583rem;
   border:0;
   border-bottom:1px solid var(--border);
   border-radius:0;
@@ -1555,18 +1557,25 @@ select{
 .page-channel .meta-row{align-items:center;gap:.75rem}
 .page-channel .meta{
   display:flex;
+  flex:1;
   min-width:0;
   margin:0;
   align-items:center;
-  gap:.3125rem;
-  overflow:hidden;
+  gap:.25rem;
+  overflow:visible;
   color:var(--muted);
   font-size:.6875rem;
-  line-height:1.25;
+  line-height:1.3;
+  white-space:nowrap;
+}
+.page-channel .meta-copy{
+  min-width:0;
+  flex:1;
+  overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
 }
-.page-channel .meta a{overflow:hidden;text-overflow:ellipsis}
+.page-channel .meta-age{flex:none;font-variant-numeric:tabular-nums}
 .page-channel .item-score{
   flex:none;
   color:var(--accent);
@@ -1597,12 +1606,12 @@ select{
 }
 .page-channel .item-title{
   max-width:none;
-  margin:.3125rem 0 0;
+  margin:.14rem 0 0;
   font-family:var(--font-sans);
   font-size:.8125rem;
   font-weight:620;
   letter-spacing:0;
-  line-height:1.4;
+  line-height:1.3;
 }
 .page-channel .item-title a:hover{color:var(--accent)}
 .page-channel .auction-pricing{
@@ -1613,10 +1622,10 @@ select{
 .page-channel .auction-pricing span+span::before{margin-right:.5rem}
 .page-channel .best-comment{
   max-width:110ch;
-  margin:.25rem 0 0;
+  margin:.14rem 0 0;
   color:var(--text-soft);
   font-size:.8125rem;
-  line-height:1.4;
+  line-height:1.35;
 }
 .page-channel .comment-mark{margin-right:.25rem;color:var(--accent)}
 .page-channel .reason-box{
@@ -1629,12 +1638,12 @@ select{
 .page-channel .reason-box input{min-height:2rem;font-size:.75rem}
 .page-channel .folded-list{border-top:0}
 .page-channel .folded-item{
-  min-height:2rem;
-  padding:.3125rem .6875rem;
+  min-height:1.35rem;
+  padding:.1rem .4583rem;
   border-bottom:1px solid var(--border);
-  grid-template-columns:8rem minmax(0,1fr) auto auto;
+  grid-template-columns:5.3333rem minmax(0,1fr) auto auto;
   align-items:center;
-  gap:.75rem;
+  gap:.5rem;
 }
 .page-channel .folded-item:hover{background:var(--surface-hover)}
 .page-channel .folded-source,.page-channel .folded-engagement{
@@ -1680,6 +1689,7 @@ select{
 .page-channel .folded-votes button.active.down,
 .page-channel .folded-vote-state.down{background:rgba(204,112,103,.15);color:#d38a82}
 .page-channel .folded-actions .deep-read-action--dense{justify-self:auto}
+.page-channel .deep-read-chip{min-height:1.2rem;padding:.08rem .32rem}
 
 /* Monitor catalogue */
 .monitor-shell,.tracker-shell{padding-bottom:4rem}
@@ -2473,21 +2483,21 @@ select{
   .channel-panel-action{grid-column:3;grid-row:1}
   .channel-criteria{align-items:flex-start;flex-direction:column}
   .channel-criteria-actions{width:100%;justify-content:space-between}
-  .channel-section-heading{min-height:2rem;padding:0 .625rem}
+  .channel-section-heading{min-height:1.3333rem;padding:0 .4167rem}
   .channel-empty{padding:.625rem;align-items:flex-start;flex-direction:column;gap:.125rem}
-  .page-channel .item{padding:.625rem}
+  .page-channel .item{padding:.35rem .4167rem}
   .page-channel .meta-row{align-items:flex-start}
   .page-channel .meta{
-    display:block;
-    line-height:1.4;
-    white-space:normal;
+    display:flex;
+    line-height:1.3;
+    white-space:nowrap;
   }
   .page-channel .item-score,.page-channel .source-indicator{display:inline-block}
   .page-channel .source-indicator{margin:0 .3125rem .0625rem}
   .page-channel .item-title,.page-channel .best-comment{font-size:.8125rem}
   .page-channel .folded-item{
-    min-height:3.25rem;
-    padding:.4375rem .625rem;
+    min-height:2.1667rem;
+    padding:.2917rem .4167rem;
     grid-template-columns:minmax(0,1fr) auto;
     gap:.125rem .625rem;
   }
@@ -2559,9 +2569,10 @@ select{
   .mark-read-button,
   .page-channel .votes button,.page-channel .vote-state,
   .page-channel .folded-votes button,.page-channel .folded-vote-state{
-    min-width:2.75rem;
-    min-height:2.75rem;
+    min-width:1.8333rem;
+    min-height:1.8333rem;
   }
+  .page-channel .deep-read-chip{min-height:1.8333rem;padding:.2667rem .4667rem}
   .channel-back,.channel-read-link,.channel-panel-action,.mark-read-button{
     display:inline-flex;
     align-items:center;

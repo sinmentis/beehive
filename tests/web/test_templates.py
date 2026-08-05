@@ -141,6 +141,7 @@ def test_secondary_navigation_is_scoped_to_each_product_area():
 
 def test_dashboard_typography_is_readable_at_default_zoom():
     css = (_STATIC_DIR / "beehive.css").read_text()
+    assert "html{scroll-behavior:smooth;font-size:150%}" in css
     expected_sizes = {
         r"\.channel-shelf-link": ".72rem",
         r'\.dashboard-search input\[type="search"\]': ".6875rem",
@@ -155,7 +156,7 @@ def test_dashboard_typography_is_readable_at_default_zoom():
         assert f"font-size:{font_size}" in declaration.group(1)
 
 
-def test_editorial_channel_keeps_dense_visual_contract():
+def test_editorial_channel_keeps_compact_readability_contract():
     css = (_STATIC_DIR / "beehive.css").read_text()
     template = (_TEMPLATES_DIR / "channel_editorial.html").read_text()
 
@@ -176,6 +177,15 @@ def test_editorial_channel_keeps_dense_visual_contract():
     assert toolbar is not None
     assert "min-height:3.75rem" in toolbar.group(1)
     assert "padding:.45rem .6875rem" in toolbar.group(1)
+
+    metadata = re.search(r"\.page-channel \.meta\{([^}]*)\}", css)
+    assert metadata is not None
+    assert "flex:1" in metadata.group(1)
+    assert "white-space:nowrap" in metadata.group(1)
+
+    metadata_copy = re.search(r"\.page-channel \.meta-copy\{([^}]*)\}", css)
+    assert metadata_copy is not None
+    assert "text-overflow:ellipsis" in metadata_copy.group(1)
 
     expected_sizes = {
         r"\.channel-title": "1rem",

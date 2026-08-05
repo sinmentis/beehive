@@ -106,8 +106,8 @@ def test_shared_action_partial_is_wired_into_every_ranked_item_surface():
     # Dashboard rows and folded Channel items are dense: the control must stay hidden at rest.
     assert 'deep_read_variant = "dense"' in dashboard
     assert 'deep_read_variant = "dense"' in folded_item
-    # Highlighted Channel cards and Archive rows have room to keep it always visible.
-    assert 'deep_read_variant = "card"' in item_card
+    # Highlighted Channel items keep the action visible beside the age; Archive rows use the side.
+    assert 'deep_read_variant = "meta"' in item_card
     assert 'deep_read_variant = "side"' in archive
 
 
@@ -250,6 +250,17 @@ def test_folded_item_action_sits_outside_the_title_link():
     title_link_end = body.index("</a>")
     action_include_index = body.index('{% include "_deep_read_action.html" %}')
     assert action_include_index > title_link_end
+
+
+def test_channel_item_action_follows_the_age_in_the_metadata_row():
+    template = (_TEMPLATES_DIR / "_item_card.html").read_text()
+    metadata = re.search(r'<div class="meta">(.*?)</div>', template, re.DOTALL)
+    assert metadata is not None
+    body = metadata.group(1)
+    age_index = body.index('class="meta-age"')
+    action_include_index = body.index('{% include "_deep_read_action.html" %}')
+    assert action_include_index > age_index
+    assert 'deep_read_variant = "meta"' in body
 
 
 # ============================================================================
