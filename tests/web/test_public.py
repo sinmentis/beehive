@@ -629,6 +629,73 @@ def test_channel_drilldown_shows_all_about_auctions_context(conn, client):
     assert "Estimate: NZD 700–NZD 900" in resp.text
 
 
+def test_tracker_category_filter_accepts_blank_optional_numeric_fields(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "Auction watch", "Tile auctions", kind="tracker")
+    source_id = create_source(c, channel_id, "all_about_auctions", {})
+    category = (
+        "*MANUKAU* Timed Online Only Auction for Bath n Tile Ltd "
+        "(in liquidation) #1"
+    )
+    for external_id, title, auction_title in (
+        ("matching", "Matching tile lot", category),
+        ("other", "Other auction lot", "Other auction"),
+    ):
+        insert_new(
+            c,
+            source_id,
+            RawItem(
+                external_id=external_id,
+                title=title,
+                url=f"https://auctions.allaboutauctions.co.nz/lots/view/{external_id}",
+                raw_metadata={
+                    "listing_kind": "auction_lot",
+                    "auction_title": auction_title,
+                    "currency_code": "NZD",
+                    "current_bid": 50.0,
+                },
+            ),
+        )
+
+    resp = client.get(
+        f"/channels/{channel_id}",
+        params={
+            "category": category,
+            "min_score": "",
+            "max_price": "",
+        },
+    )
+
+    assert resp.status_code == 200
+    page = resp.context["page"]
+    assert page.category == category
+    assert page.minimum_score is None
+    assert page.maximum_price is None
+    visible_items = (*page.watched, *page.ending_soon, *page.upcoming, *page.history)
+    assert [item.title for item in visible_items] == ["Matching tile lot"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("min_score", "-1"),
+        ("min_score", "101"),
+        ("min_score", "invalid"),
+        ("max_price", "-0.01"),
+        ("max_price", "invalid"),
+    ),
+)
+def test_tracker_numeric_filters_reject_invalid_values(
+    conn, client, field, value
+):
+    _, c = conn
+    channel_id = create_channel(c, "Auction watch", "Tile auctions", kind="tracker")
+
+    resp = client.get(f"/channels/{channel_id}", params={field: value})
+
+    assert resp.status_code == 422
+
+
 def test_channel_drilldown_distinguishes_no_public_auction_bid_from_zero(conn, client):
     _, c = conn
     channel_id = create_channel(c, "Auction watch", "Makita tools", kind="tracker")

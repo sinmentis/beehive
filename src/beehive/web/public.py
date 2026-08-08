@@ -11,11 +11,12 @@ import logging
 import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BeforeValidator, Field
 
 from beehive.channels import get_definition, require_channel_kind
 from beehive.channels.tracker import adapter_for_source
@@ -102,6 +103,20 @@ router = APIRouter()
 _LOGGER = logging.getLogger(__name__)
 
 DASHBOARD_SIGNAL_COUNT = 24
+
+
+def _empty_string_to_none(value: object) -> object | None:
+    return None if value == "" else value
+
+
+_OptionalScoreQuery = Annotated[
+    Annotated[int, Field(ge=0, le=100)] | None,
+    BeforeValidator(_empty_string_to_none),
+]
+_OptionalPriceQuery = Annotated[
+    Annotated[float, Field(ge=0)] | None,
+    BeforeValidator(_empty_string_to_none),
+]
 
 
 def _source_label(item: dict, t: Localizer) -> str:
@@ -560,8 +575,8 @@ def channel_drilldown(
     show_below: bool = False,
     tracker_status: TrackerStatus = Query(TrackerStatus.ALL, alias="status"),
     deadline: TrackerDeadline = TrackerDeadline.ALL,
-    min_score: int | None = Query(None, ge=0, le=100),
-    max_price: float | None = Query(None, ge=0),
+    min_score: Annotated[_OptionalScoreQuery, Query()] = None,
+    max_price: Annotated[_OptionalPriceQuery, Query()] = None,
     ending_page: int = Query(1, ge=1),
     upcoming_page: int = Query(1, ge=1),
     history_page: int = Query(1, ge=1),
