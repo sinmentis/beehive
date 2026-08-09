@@ -50,9 +50,6 @@ _DUE_GRACE = timedelta(minutes=5)
 # re-attempted 96 times. Retry is deliberately independent of the schedule (it never moves the
 # calendar anchor) -- it only stops a failing Source from hammering an upstream site.
 FAILED_ATTEMPT_RETRY_BACKOFF = timedelta(hours=1)
-_FETCH_STATUS_ERROR = "error"
-
-
 class ScheduleMode(StrEnum):
     INTERVAL = "interval"
     CALENDAR = "calendar"
@@ -119,6 +116,7 @@ class CalendarSchedule:
 
     def _slot(self, now: datetime, *, direction: int) -> datetime:
         local_now = now.astimezone(self.zone)
+        utc_now = now.astimezone(timezone.utc)
         for day_offset in range(8):
             candidate_date = local_now.date() + timedelta(days=direction * day_offset)
             if candidate_date.weekday() not in self.weekdays:
@@ -131,10 +129,11 @@ class CalendarSchedule:
                 self.minute,
                 tzinfo=self.zone,
             )
-            if direction < 0 and candidate <= local_now:
-                return candidate.astimezone(timezone.utc)
-            if direction > 0 and candidate > local_now:
-                return candidate.astimezone(timezone.utc)
+            candidate_utc = candidate.astimezone(timezone.utc)
+            if direction < 0 and candidate_utc <= utc_now:
+                return candidate_utc
+            if direction > 0 and candidate_utc > utc_now:
+                return candidate_utc
         raise RuntimeError("could not calculate a calendar slot")
 
     def latest_slot_at_or_before(self, now: datetime) -> datetime:
@@ -205,13 +204,11 @@ class ChannelFetchSchedule:
 
 
 def _retry_backoff_until(source: dict) -> datetime | None:
-    """When a Source whose last attempt failed may be attempted again, or None if it did not."""
-    if source.get("last_fetch_status") != _FETCH_STATUS_ERROR:
+    """When a Source whose last automatic attempt failed may be retried."""
+    last_scheduled_error_at = source.get("last_scheduled_error_at")
+    if not last_scheduled_error_at:
         return None
-    last_attempt_at = source.get("last_attempt_at")
-    if not last_attempt_at:
-        return None
-    return _as_aware_utc(last_attempt_at) + FAILED_ATTEMPT_RETRY_BACKOFF
+    return _as_aware_utc(last_scheduled_error_at) + FAILED_ATTEMPT_RETRY_BACKOFF
 
 
 def _calendar_of(schedule: ChannelFetchSchedule) -> CalendarSchedule:
@@ -353,7 +350,9 @@ def _source_next_eligible_at(
         eligible_at = (
             utc_now
             if not last_fetch_at
-            else _as_aware_utc(last_fetch_at) + timedelta(hours=schedule.interval_hours)
+            else _as_aware_utc(last_fetch_at)
+            + timedelta(hours=schedule.interval_hours)
+            - _DUE_GRACE
         )
     backoff_until = _retry_backoff_until(source)
     if backoff_until is not None and backoff_until > eligible_at:
@@ -372,12 +371,13 @@ def next_channel_fetch_at(
     than the abstract schedule (a 05:07 daily slot runs at the 05:15 tick).
     """
     _require_aware(now)
-    if not sources:
+    active_sources = [source for source in sources if not source.get("paused_at")]
+    if not active_sources:
         return None
 
     utc_now = now.astimezone(timezone.utc)
     earliest_eligible = min(
-        _source_next_eligible_at(source, schedule, utc_now) for source in sources
+        _source_next_eligible_at(source, schedule, utc_now) for source in active_sources
     )
     return _next_timer_slot_at_or_after(
         max(earliest_eligible, utc_now),

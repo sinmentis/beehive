@@ -290,5 +290,6 @@ def test_fetch_timer_polls_far_more_often_than_the_smallest_channel_schedule():
     timer = _parser()
     timer.read(_QUADLET_DIR / "beehive-fetch.timer")
     assert timer["Timer"]["OnCalendar"] == "*:0/15"
+    assert timer["Timer"]["RandomizedDelaySec"] == "30s"
     assert timer["Timer"]["Persistent"] == "true"
     assert timer["Timer"]["Unit"] == "beehive-fetch.service"

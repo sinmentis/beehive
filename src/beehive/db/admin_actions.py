@@ -262,7 +262,9 @@ def clear_channel_with_undo(
             last_fetch_raw_count = NULL,
             last_fetch_new_count = NULL,
             last_attempt_at = NULL,
-            last_fetch_status = NULL
+            last_fetch_status = NULL,
+            last_scheduled_slot_at = NULL,
+            last_scheduled_error_at = NULL
         WHERE channel_id = ?
         """,
         (channel_id,),

@@ -74,6 +74,7 @@ def test_record_fetch_success_clears_error(conn, channel_id):
     row = list_by_channel(conn, channel_id)[0]
     assert row["last_fetch_error"] is None
     assert row["last_fetch_at"] == "2026-07-09T03:00:00"
+    assert row["last_scheduled_error_at"] is None
 
 
 def test_record_fetch_error_keeps_last_fetch_at(conn, channel_id):
@@ -262,6 +263,26 @@ def test_record_fetch_error_stamps_attempt_and_error_status_without_last_fetch_a
     assert row["last_attempt_at"] == "2026-07-09T03:00:00"  # attempt advances
     assert row["last_fetch_status"] == "error"
     assert row["last_fetch_at"] == "2026-07-09T00:00:00"  # last SUCCESS unchanged
+    assert row["last_scheduled_error_at"] == "2026-07-09T03:00:00"
+
+
+def test_manual_fetch_error_does_not_advance_the_scheduled_retry_checkpoint(
+    conn, channel_id
+):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_error(
+        conn,
+        source_id,
+        "manual timeout",
+        "2026-07-09T03:00:00",
+        scheduled=False,
+    )
+
+    row = get_source(conn, source_id)
+    assert row["last_fetch_error"] == "manual timeout"
+    assert row["last_attempt_at"] == "2026-07-09T03:00:00"
+    assert row["last_fetch_status"] == "error"
+    assert row["last_scheduled_error_at"] is None
 
 
 def test_reset_fetch_state_clears_attempt_and_status_but_not_pause_or_name(conn, channel_id):
@@ -275,6 +296,7 @@ def test_reset_fetch_state_clears_attempt_and_status_but_not_pause_or_name(conn,
     row = get_source(conn, source_id)
     assert row["last_attempt_at"] is None
     assert row["last_fetch_status"] is None
+    assert row["last_scheduled_error_at"] is None
     # Clearing fetched data must not resume a paused Source or forget its display name.
     assert row["paused_at"] == "2026-07-09T06:00:00"
     assert row["name"] == "Keep me"

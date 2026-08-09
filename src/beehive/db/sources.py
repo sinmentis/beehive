@@ -19,6 +19,10 @@ run took. record_fetch_success only writes it when the caller passes the slot it
 a manual "fetch now" and every interval-mode Channel leave it untouched (see
 beehive/scheduling.py and collector/run_cycle.py).
 
+last_scheduled_error_at is the retry-backoff checkpoint for automatic failures only. A manual
+failure still updates the visible error, attempt time, and status, but leaves this field untouched
+so it cannot delay the next automatic slot; any successful fetch clears it.
+
 paused_at and name are lifecycle/display state that outlive a fetch: paused_at, when set, takes a
 Source out of every collector cycle (see collector/run_cycle.py) and every warning summary without
 touching its config or history, and name is an optional Owner display label. Neither is cleared by
@@ -139,20 +143,22 @@ def record_fetch_success(conn: sqlite3.Connection, source_id: int, fetched_at: s
     """Record a successful fetch, and -- only when the run was serving a calendar slot -- advance
     the schedule anchor to that slot. scheduled_slot_at is None for an interval-mode Channel (which
     schedules off last_fetch_at) and for every manual "fetch now", so running a Channel by hand
-    never moves its future automatic schedule. The anchor is the intended slot, not `fetched_at`,
-    so a run that started late still leaves tomorrow's slot exactly where it was."""
+    never moves its future automatic schedule. Any success also clears the automatic-run failure
+    checkpoint used for retry backoff. The anchor is the intended slot, not `fetched_at`, so a run
+    that started late still leaves tomorrow's slot exactly where it was."""
     if scheduled_slot_at is None:
         conn.execute(
             "UPDATE sources SET last_fetch_at = ?, last_fetch_error = NULL, "
             "last_fetch_raw_count = ?, last_fetch_new_count = ?, "
-            "last_attempt_at = ?, last_fetch_status = ? WHERE id = ?",
+            "last_attempt_at = ?, last_fetch_status = ?, "
+            "last_scheduled_error_at = NULL WHERE id = ?",
             (fetched_at, raw_count, new_count, fetched_at, FETCH_STATUS_OK, source_id))
     else:
         conn.execute(
             "UPDATE sources SET last_fetch_at = ?, last_fetch_error = NULL, "
             "last_fetch_raw_count = ?, last_fetch_new_count = ?, "
-            "last_attempt_at = ?, last_fetch_status = ?, last_scheduled_slot_at = ? "
-            "WHERE id = ?",
+            "last_attempt_at = ?, last_fetch_status = ?, last_scheduled_slot_at = ?, "
+            "last_scheduled_error_at = NULL WHERE id = ?",
             (
                 fetched_at,
                 raw_count,
@@ -166,11 +172,19 @@ def record_fetch_success(conn: sqlite3.Connection, source_id: int, fetched_at: s
 
 
 def record_fetch_error(conn: sqlite3.Connection, source_id: int, error: str,
-                        attempted_at: str) -> None:
-    conn.execute(
-        "UPDATE sources SET last_fetch_error = ?, last_attempt_at = ?, "
-        "last_fetch_status = ? WHERE id = ?",
-        (error, attempted_at, FETCH_STATUS_ERROR, source_id))
+                        attempted_at: str, *, scheduled: bool = True) -> None:
+    """Record a visible failed attempt. Only an automatic failure advances the retry checkpoint;
+    a manual failure must not postpone the Channel's next scheduled slot."""
+    if scheduled:
+        conn.execute(
+            "UPDATE sources SET last_fetch_error = ?, last_attempt_at = ?, "
+            "last_fetch_status = ?, last_scheduled_error_at = ? WHERE id = ?",
+            (error, attempted_at, FETCH_STATUS_ERROR, attempted_at, source_id))
+    else:
+        conn.execute(
+            "UPDATE sources SET last_fetch_error = ?, last_attempt_at = ?, "
+            "last_fetch_status = ? WHERE id = ?",
+            (error, attempted_at, FETCH_STATUS_ERROR, source_id))
     conn.commit()
 
 
@@ -211,6 +225,6 @@ def reset_fetch_state_by_channel(conn: sqlite3.Connection, channel_id: int) -> N
         "UPDATE sources SET last_fetch_at = NULL, last_fetch_error = NULL, "
         "last_fetch_raw_count = NULL, last_fetch_new_count = NULL, "
         "last_attempt_at = NULL, last_fetch_status = NULL, "
-        "last_scheduled_slot_at = NULL WHERE channel_id = ?",
+        "last_scheduled_slot_at = NULL, last_scheduled_error_at = NULL WHERE channel_id = ?",
         (channel_id,))
     conn.commit()

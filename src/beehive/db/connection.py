@@ -44,6 +44,9 @@ _COLUMNS_TO_ENSURE = [
     # 'interval' fetch mode (see the channels columns below), which never reads this column, so
     # nothing about an existing Source's cadence changes until an Owner opts into calendar mode.
     ("sources", "last_scheduled_slot_at", "TEXT"),
+    # Retry backoff is based only on failures from automatic runs. Manual "fetch now" failures
+    # still update the visible attempt/error fields, but never postpone an upcoming scheduled slot.
+    ("sources", "last_scheduled_error_at", "TEXT"),
     ("items", "best_comment_summary", "TEXT"),
     ("channels", "digest_email", "TEXT"),
     ("channels", "last_digest_sent_at", "TEXT"),

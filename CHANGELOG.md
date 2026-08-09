@@ -78,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   headline, even when Google News republishes them under a new GUID on a later day.
 - Digest subjects and channel delivery dates now use each Email Group's configured timezone
   instead of the UTC date.
+- Failed manual fetches no longer delay the next automatic Channel slot, and paused Sources no
+  longer distort the next-fetch preview.
 
 ## [0.1.0] - 2026-07-14
 

@@ -99,6 +99,8 @@ CREATE TABLE IF NOT EXISTS email_group_channels (
 -- part of an automatic run. It is deliberately separate from last_fetch_at, which stays the
 -- freshness watermark -- a manual "fetch now" writes last_fetch_at and never this column, so
 -- running a Channel by hand cannot move its future automatic schedule.
+-- last_scheduled_error_at records only failed automatic attempts. Retry backoff reads this field,
+-- so a failed manual fetch remains visible without postponing the next calendar slot.
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -112,7 +114,8 @@ CREATE TABLE IF NOT EXISTS sources (
     paused_at TEXT,
     last_attempt_at TEXT,
     last_fetch_status TEXT,
-    last_scheduled_slot_at TEXT
+    last_scheduled_slot_at TEXT,
+    last_scheduled_error_at TEXT
 );
 
 -- external_id is the connector's stable identity for a listing. For an editorial (APPEND) feed

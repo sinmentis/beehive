@@ -17,6 +17,7 @@ def _source(last_fetch_at, *, last_scheduled_slot_at=None, **overrides):
     source = {
         "last_fetch_at": last_fetch_at,
         "last_scheduled_slot_at": last_scheduled_slot_at,
+        "last_scheduled_error_at": None,
     }
     source.update(overrides)
     return source
@@ -204,13 +205,35 @@ def test_future_due_time_after_a_boundary_uses_the_following_slot():
     now = datetime(2026, 7, 13, 3, 0, tzinfo=timezone.utc)
     source = _source("2026-07-12T04:00:30+00:00")
     assert next_channel_fetch_at([source], ChannelFetchSchedule.interval(24), now) == datetime(
-        2026, 7, 13, 4, 15, tzinfo=timezone.utc
+        2026, 7, 13, 4, 0, tzinfo=timezone.utc
     )
 
 
 def test_channel_without_sources_has_no_next_fetch():
     now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
     assert next_channel_fetch_at([], ChannelFetchSchedule.interval(24), now) is None
+
+
+def test_paused_sources_do_not_change_the_next_fetch_preview():
+    now = datetime(2026, 7, 13, 20, 0, tzinfo=timezone.utc)
+    sources = [
+        _source(None, paused_at="2026-07-13T19:00:00+00:00"),
+        _source(
+            "2026-07-13T17:02:00+00:00",
+            last_scheduled_slot_at="2026-07-13T17:00:00+00:00",
+        ),
+    ]
+
+    assert next_channel_fetch_at(sources, DAILY_5AM, now) == datetime(
+        2026, 7, 14, 17, 0, tzinfo=timezone.utc
+    )
+
+
+def test_channel_with_only_paused_sources_has_no_next_fetch():
+    now = datetime(2026, 7, 13, 20, 0, tzinfo=timezone.utc)
+    source = _source(None, paused_at="2026-07-13T19:00:00+00:00")
+
+    assert next_channel_fetch_at([source], DAILY_5AM, now) is None
 
 
 def test_scheduling_rejects_naive_now():
@@ -294,8 +317,7 @@ def test_failed_scheduled_run_retries_after_its_backoff_without_moving_the_ancho
     failed = _source(
         "2026-07-12T17:05:00+00:00",
         last_scheduled_slot_at="2026-07-12T17:00:00+00:00",
-        last_attempt_at="2026-07-13T17:05:00+00:00",
-        last_fetch_status="error",
+        last_scheduled_error_at="2026-07-13T17:05:00+00:00",
     )
 
     assert not source_is_due(failed, DAILY_5AM, datetime(2026, 7, 13, 17, 30, tzinfo=timezone.utc))
@@ -306,20 +328,17 @@ def test_failed_interval_run_also_waits_for_its_backoff():
     schedule = ChannelFetchSchedule.interval(3)
     failed = _source(
         "2026-07-13T06:00:00+00:00",
-        last_attempt_at="2026-07-13T09:00:00+00:00",
-        last_fetch_status="error",
+        last_scheduled_error_at="2026-07-13T09:00:00+00:00",
     )
 
     assert not source_is_due(failed, schedule, datetime(2026, 7, 13, 9, 30, tzinfo=timezone.utc))
     assert source_is_due(failed, schedule, datetime(2026, 7, 13, 10, 5, tzinfo=timezone.utc))
 
 
-def test_successful_source_is_never_held_back_by_the_retry_backoff():
+def test_source_without_a_scheduled_error_is_never_held_back_by_the_retry_backoff():
     schedule = ChannelFetchSchedule.interval(3)
     source = _source(
         "2026-07-13T06:00:00+00:00",
-        last_attempt_at="2026-07-13T06:00:00+00:00",
-        last_fetch_status="ok",
     )
 
     assert source_is_due(source, schedule, datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc))
@@ -348,13 +367,24 @@ def test_next_daily_fetch_previews_a_pending_retry_rather_than_tomorrow():
     failed = _source(
         "2026-07-12T17:05:00+00:00",
         last_scheduled_slot_at="2026-07-12T17:00:00+00:00",
-        last_attempt_at="2026-07-13T17:05:00+00:00",
-        last_fetch_status="error",
+        last_scheduled_error_at="2026-07-13T17:05:00+00:00",
     )
 
     assert next_channel_fetch_at(
         [failed], DAILY_5AM, datetime(2026, 7, 13, 17, 30, tzinfo=timezone.utc)
     ) == datetime(2026, 7, 13, 18, 15, tzinfo=timezone.utc)
+
+
+def test_dst_gap_schedule_never_returns_a_future_latest_slot():
+    schedule = ChannelFetchSchedule.daily(
+        timezone_name="Pacific/Auckland",
+        time_text="02:30",
+    )
+    # Auckland skips from 02:00 to 03:00 on 2026-09-27. The imaginary 02:30 local slot maps to
+    # 14:30 UTC, so at 14:00 UTC the latest arrived slot must still be the previous day's.
+    now = datetime(2026, 9, 26, 14, 0, tzinfo=timezone.utc)
+
+    assert schedule.slot_for(now) < now
 
 
 def test_channel_fetch_schedule_reads_its_stored_columns():

@@ -234,6 +234,53 @@ async def test_forced_cycle_fetches_a_recent_source(conn):
 
 
 @pytest.mark.asyncio
+async def test_failed_manual_fetch_does_not_delay_the_next_calendar_slot(conn):
+    manual_time = datetime(2026, 7, 13, 16, 50, tzinfo=timezone.utc)
+    slot_time = datetime(2026, 7, 13, 17, 0, tzinfo=timezone.utc)
+    channel_id = create_channel(
+        conn,
+        "Daily",
+        "profile",
+        fetch_schedule_mode="calendar",
+        fetch_schedule_time="05:00",
+    )
+    daily_channel = get_channel(conn, channel_id)
+    failing = _StubConnector(error=RuntimeError("provider down"))
+    register(failing)
+    source_id = create_source(conn, channel_id, "stub_test_source", {})
+    record_fetch_success(
+        conn,
+        source_id,
+        "2026-07-12T17:02:00+00:00",
+        scheduled_slot_at="2026-07-12T17:00:00+00:00",
+    )
+
+    await run_channel_cycle(
+        conn,
+        daily_channel,
+        LogNotifier(),
+        force_fetch=True,
+        now=manual_time,
+        localizer=_EN_LOCALIZER,
+    )
+
+    source = list_sources(conn, channel_id)[0]
+    assert source["last_scheduled_error_at"] is None
+
+    healthy = _StubConnector()
+    register(healthy)
+    await run_channel_cycle(
+        conn,
+        daily_channel,
+        LogNotifier(),
+        now=slot_time,
+        localizer=_EN_LOCALIZER,
+    )
+
+    assert healthy.fetch_calls == [{}]
+
+
+@pytest.mark.asyncio
 async def test_failed_due_source_keeps_its_previous_success_timestamp(conn):
     now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
     channel_id = create_channel(

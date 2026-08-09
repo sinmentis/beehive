@@ -115,7 +115,13 @@ async def run_channel_cycle(
             # `get_connector` (KeyError on a type dropped from the registry) and `json.loads`
             # (ValueError on a corrupt config blob) both sat outside this guard, so either one
             # aborted the whole Channel and starved every Source after it in the list.
-            record_fetch_error(conn, source["id"], str(exc), now_iso)
+            record_fetch_error(
+                conn,
+                source["id"],
+                str(exc),
+                now_iso,
+                scheduled=not force_fetch,
+            )
             continue
 
         try:
@@ -133,7 +139,13 @@ async def run_channel_cycle(
             # Persistence was previously outside the guard even though it is the more likely
             # failure of the two (a constraint violation on one malformed item), and ADR-0002's
             # per-Source isolation is the whole point of this loop.
-            record_fetch_error(conn, source["id"], str(exc), now_iso)
+            record_fetch_error(
+                conn,
+                source["id"],
+                str(exc),
+                now_iso,
+                scheduled=not force_fetch,
+            )
             continue
 
         record_fetch_success(

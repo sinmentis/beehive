@@ -4,6 +4,7 @@ Description=Evaluate Beehive channel fetch schedules every 15 minutes
 
 [Timer]
 OnCalendar=*:0/15
+RandomizedDelaySec=30s
 Persistent=true
 Unit=beehive-fetch.service
 
