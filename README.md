@@ -227,10 +227,17 @@ Channel's collected data, stores a compressed recovery copy for seven days. Undo
 original IDs and dependent rows in one transaction; an ID conflict fails without partially
 restoring data.
 
-Email Groups can run after a fixed interval or on selected weekdays at a local `HH:MM` time in an
-IANA timezone such as `Pacific/Auckland`. The admin shows the last check, last send, next due time,
+Each Channel picks its own fetch schedule: a fixed interval (every 3 or 6 hours) or a daily
+wall-clock time such as `05:00` in an IANA timezone like `Pacific/Auckland`. A daily schedule is
+anchored to its slot rather than to the last successful fetch, so a slow or late run never pushes
+the next day's fetch later, and a manual "fetch now" leaves the automatic schedule untouched.
+
+Email Groups are scheduled separately and can run after a fixed interval or on selected weekdays at
+a local `HH:MM` time in an IANA timezone. The admin shows the last check, last send, next due time,
 and the latest delivery error. Preview and test-send actions use current pending events and Source
-warnings without marking them delivered.
+warnings without marking them delivered. Editorial stories already delivered with the same
+publisher and exact headline are permanently suppressed if an upstream feed republishes them under
+a different item ID.
 
 ## Collect and digest
 

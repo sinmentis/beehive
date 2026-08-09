@@ -6,6 +6,13 @@ import sqlite3
 from beehive.channels import require_channel_kind
 from beehive.db.email_groups import assign_channel, get_channel_group
 from beehive.db.sources import create_source, list_by_channel
+from beehive.scheduling import (
+    DEFAULT_CHANNEL_FETCH_TIME,
+    DEFAULT_SCHEDULE_TIMEZONE,
+    CalendarSchedule,
+    ScheduleMode,
+    require_schedule_mode,
+)
 
 
 def _validate_display_settings(highlight_count: int, minimum_score: int) -> None:
@@ -13,6 +20,27 @@ def _validate_display_settings(highlight_count: int, minimum_score: int) -> None
         raise ValueError("highlight_count must be between 1 and 50")
     if not 0 <= minimum_score <= 100:
         raise ValueError("minimum_score must be between 0 and 100")
+
+
+def _validate_fetch_schedule(
+    fetch_schedule_mode: str,
+    fetch_schedule_timezone: str,
+    fetch_schedule_time: str,
+) -> tuple[str, str, str]:
+    """Reject a fetch schedule the scheduler could not later resolve, and return the normalized
+    values to store. Parsing goes through the same CalendarSchedule the collector uses, so an
+    unusable timezone or HH:MM can never reach the table -- validation happens even in interval
+    mode, since the stored calendar settings become live the moment an Owner switches modes."""
+    mode = require_schedule_mode(fetch_schedule_mode)
+    timezone_name = fetch_schedule_timezone.strip() or DEFAULT_SCHEDULE_TIMEZONE
+    time_text = fetch_schedule_time.strip() or DEFAULT_CHANNEL_FETCH_TIME
+    calendar = CalendarSchedule.parse(
+        timezone_name=timezone_name,
+        time_text=time_text,
+        weekdays_text=None,
+        default_time=DEFAULT_CHANNEL_FETCH_TIME,
+    )
+    return mode.value, timezone_name, f"{calendar.hour:02d}:{calendar.minute:02d}"
 
 
 def _validate_kind(kind: str) -> str:
@@ -24,14 +52,30 @@ def _validate_kind(kind: str) -> str:
 
 def create_channel(conn: sqlite3.Connection, name: str, profile: str,
                     fetch_interval_hours: int = 3, highlight_count: int = 8,
-                    minimum_score: int = 0, kind: str = "editorial") -> int:
+                    minimum_score: int = 0, kind: str = "editorial", *,
+                    fetch_schedule_mode: str = ScheduleMode.INTERVAL.value,
+                    fetch_schedule_timezone: str = DEFAULT_SCHEDULE_TIMEZONE,
+                    fetch_schedule_time: str = DEFAULT_CHANNEL_FETCH_TIME) -> int:
     _validate_display_settings(highlight_count, minimum_score)
     normalized_kind = _validate_kind(kind)
+    schedule_mode, schedule_timezone, schedule_time = _validate_fetch_schedule(
+        fetch_schedule_mode, fetch_schedule_timezone, fetch_schedule_time)
     cur = conn.execute(
         "INSERT INTO channels "
-        "(name, profile, fetch_interval_hours, highlight_count, minimum_score, kind) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (name, profile, fetch_interval_hours, highlight_count, minimum_score, normalized_kind))
+        "(name, profile, fetch_interval_hours, highlight_count, minimum_score, kind, "
+        "fetch_schedule_mode, fetch_schedule_timezone, fetch_schedule_time) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            name,
+            profile,
+            fetch_interval_hours,
+            highlight_count,
+            minimum_score,
+            normalized_kind,
+            schedule_mode,
+            schedule_timezone,
+            schedule_time,
+        ))
     conn.commit()
     return cur.lastrowid
 
@@ -57,8 +101,20 @@ def list_channels(conn: sqlite3.Connection, kind: str | None = None) -> list[dic
 def update_channel(conn: sqlite3.Connection, channel_id: int, name: str, profile: str,
                    fetch_interval_hours: int, digest_email: str | None,
                    highlight_count: int | None = None,
-                   minimum_score: int | None = None) -> None:
-    if highlight_count is None or minimum_score is None:
+                   minimum_score: int | None = None, *,
+                   fetch_schedule_mode: str | None = None,
+                   fetch_schedule_timezone: str | None = None,
+                   fetch_schedule_time: str | None = None) -> None:
+    """Any optional argument left as None keeps the Channel's stored value, so a caller that only
+    edits display settings never has to restate the fetch schedule (and vice versa)."""
+    optional = (
+        highlight_count,
+        minimum_score,
+        fetch_schedule_mode,
+        fetch_schedule_timezone,
+        fetch_schedule_time,
+    )
+    if any(value is None for value in optional):
         current = get_channel(conn, channel_id)
         if current is None:
             return
@@ -66,10 +122,29 @@ def update_channel(conn: sqlite3.Connection, channel_id: int, name: str, profile
             current["highlight_count"] if highlight_count is None else highlight_count
         )
         minimum_score = current["minimum_score"] if minimum_score is None else minimum_score
+        fetch_schedule_mode = (
+            current["fetch_schedule_mode"]
+            if fetch_schedule_mode is None
+            else fetch_schedule_mode
+        )
+        fetch_schedule_timezone = (
+            current["fetch_schedule_timezone"]
+            if fetch_schedule_timezone is None
+            else fetch_schedule_timezone
+        )
+        fetch_schedule_time = (
+            current["fetch_schedule_time"]
+            if fetch_schedule_time is None
+            else fetch_schedule_time
+        )
     _validate_display_settings(highlight_count, minimum_score)
+    schedule_mode, schedule_timezone, schedule_time = _validate_fetch_schedule(
+        fetch_schedule_mode, fetch_schedule_timezone, fetch_schedule_time)
     conn.execute(
         "UPDATE channels SET name = ?, profile = ?, fetch_interval_hours = ?, "
-        "digest_email = ?, highlight_count = ?, minimum_score = ? WHERE id = ?",
+        "digest_email = ?, highlight_count = ?, minimum_score = ?, "
+        "fetch_schedule_mode = ?, fetch_schedule_timezone = ?, fetch_schedule_time = ? "
+        "WHERE id = ?",
         (
             name,
             profile,
@@ -77,6 +152,9 @@ def update_channel(conn: sqlite3.Connection, channel_id: int, name: str, profile
             digest_email or None,
             highlight_count,
             minimum_score,
+            schedule_mode,
+            schedule_timezone,
+            schedule_time,
             channel_id,
         ))
     conn.commit()
@@ -160,6 +238,9 @@ def duplicate_channel(conn: sqlite3.Connection, channel_id: int) -> int | None:
         highlight_count=original["highlight_count"],
         minimum_score=original["minimum_score"],
         kind=original["kind"],
+        fetch_schedule_mode=original["fetch_schedule_mode"],
+        fetch_schedule_timezone=original["fetch_schedule_timezone"],
+        fetch_schedule_time=original["fetch_schedule_time"],
     )
     if original["digest_email"]:
         conn.execute(

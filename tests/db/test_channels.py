@@ -280,3 +280,103 @@ def test_duplicate_channel_without_a_group_leaves_the_copy_ungrouped(conn):
     new_id = duplicate_channel(conn, channel_id)
 
     assert get_channel_group(conn, new_id) is None
+
+
+def test_channel_defaults_to_the_interval_fetch_schedule(conn):
+    """Upgrade safety: a Channel created without schedule arguments keeps the pre-calendar
+    behavior (interval mode on its stored hour count)."""
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    row = get_channel(conn, channel_id)
+
+    assert row["fetch_schedule_mode"] == "interval"
+    assert row["fetch_schedule_timezone"] == "Pacific/Auckland"
+    assert row["fetch_schedule_time"] == "05:00"
+
+
+def test_create_channel_stores_a_calendar_fetch_schedule(conn):
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "economic news",
+        fetch_schedule_mode="calendar",
+        fetch_schedule_timezone="Asia/Tokyo",
+        fetch_schedule_time="06:30",
+    )
+    row = get_channel(conn, channel_id)
+
+    assert row["fetch_schedule_mode"] == "calendar"
+    assert row["fetch_schedule_timezone"] == "Asia/Tokyo"
+    assert row["fetch_schedule_time"] == "06:30"
+
+
+def test_create_channel_rejects_an_unusable_fetch_schedule(conn):
+    with pytest.raises(ValueError, match="unknown schedule mode"):
+        create_channel(conn, "A", "b", fetch_schedule_mode="cron")
+    with pytest.raises(ValueError, match="unknown schedule timezone"):
+        create_channel(conn, "A", "b", fetch_schedule_timezone="Mars/Olympus")
+    with pytest.raises(ValueError, match="valid HH:MM"):
+        create_channel(conn, "A", "b", fetch_schedule_time="25:61")
+    assert list_channels(conn) == []
+
+
+def test_update_channel_round_trips_the_fetch_schedule(conn):
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    update_channel(
+        conn,
+        channel_id,
+        "NZ Finance",
+        "economic news",
+        3,
+        None,
+        fetch_schedule_mode="calendar",
+        fetch_schedule_timezone="Europe/Berlin",
+        fetch_schedule_time="07:05",
+    )
+    row = get_channel(conn, channel_id)
+
+    assert row["fetch_schedule_mode"] == "calendar"
+    assert row["fetch_schedule_timezone"] == "Europe/Berlin"
+    assert row["fetch_schedule_time"] == "07:05"
+
+
+def test_update_channel_keeps_the_stored_schedule_when_not_supplied(conn):
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "economic news",
+        fetch_schedule_mode="calendar",
+        fetch_schedule_time="06:30",
+    )
+    update_channel(conn, channel_id, "Renamed", "economic news", 6, None)
+    row = get_channel(conn, channel_id)
+
+    assert row["name"] == "Renamed"
+    assert row["fetch_schedule_mode"] == "calendar"
+    assert row["fetch_schedule_time"] == "06:30"
+
+
+def test_update_channel_rejects_an_unusable_fetch_schedule(conn):
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    with pytest.raises(ValueError, match="valid HH:MM"):
+        update_channel(
+            conn, channel_id, "NZ Finance", "economic news", 3, None,
+            fetch_schedule_time="ten o'clock",
+        )
+    assert get_channel(conn, channel_id)["fetch_schedule_time"] == "05:00"
+
+
+def test_duplicate_channel_copies_the_fetch_schedule(conn):
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "economic news",
+        fetch_schedule_mode="calendar",
+        fetch_schedule_timezone="Asia/Tokyo",
+        fetch_schedule_time="06:30",
+    )
+    copy_id = duplicate_channel(conn, channel_id)
+    copy = get_channel(conn, copy_id)
+
+    assert copy["fetch_schedule_mode"] == "calendar"
+    assert copy["fetch_schedule_timezone"] == "Asia/Tokyo"
+    assert copy["fetch_schedule_time"] == "06:30"

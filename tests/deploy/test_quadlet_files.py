@@ -281,3 +281,14 @@ def test_research_reconcile_timer_references_the_reconcile_service():
 def test_containerfile_import_smoke_test_includes_research_worker():
     containerfile = (_QUADLET_DIR.parent.parent / "Containerfile").read_text()
     assert "scripts.run_research_worker" in containerfile
+
+
+def test_fetch_timer_polls_far_more_often_than_the_smallest_channel_schedule():
+    """Per-Channel calendar scheduling decides *inside* the collector which Channels are due, so
+    the timer only has to wake often enough that a chosen wall-clock time is never noticeably
+    late. Persistent=true keeps a missed tick (host asleep/offline) running on the next boot."""
+    timer = _parser()
+    timer.read(_QUADLET_DIR / "beehive-fetch.timer")
+    assert timer["Timer"]["OnCalendar"] == "*:0/15"
+    assert timer["Timer"]["Persistent"] == "true"
+    assert timer["Timer"]["Unit"] == "beehive-fetch.service"

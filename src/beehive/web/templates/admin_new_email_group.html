@@ -25,7 +25,7 @@
         <input id="new-group-subject" type="text" name="subject_template" value="{{ subject_template }}" placeholder="{{ t('web.admin.email_group.subject_placeholder') }}" required autocomplete="off">
         <p class="hint">{{ t('web.admin.email_group.subject_hint') }}</p>
       </div>
-      <fieldset class="field schedule-builder" data-schedule-builder>
+      <fieldset class="field schedule-builder" data-schedule-builder="schedule_mode">
         <legend>{{ t('web.admin.email_group.schedule_heading') }}</legend>
         <div class="choice-row">
           <label><input type="radio" name="schedule_mode" value="interval" {{ "checked" if schedule_mode == "interval" else "" }}> {{ t('web.admin.email_group.schedule_interval') }}</label>

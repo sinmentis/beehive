@@ -1361,3 +1361,229 @@ def test_edit_channel_shows_hackernews_icons_and_prefixed_labels(
     assert resp.text.count("🟧") == 2
     assert "HN · Top" in resp.text
     assert "HN search · local-first" in resp.text
+
+
+def test_new_channel_form_shows_both_schedule_modes(authed_client):
+    resp = authed_client.get("/admin/channels/new")
+
+    assert 'data-schedule-builder="fetch_schedule_mode"' in resp.text
+    # The builder hides the panel for the mode that is not selected, which only works when the
+    # page actually loads the shared script.
+    assert "/static/beehive.js" in resp.text
+    assert 'value="interval" checked' in resp.text
+    assert 'name="fetch_schedule_time"' in resp.text
+    assert "Pacific/Auckland" in resp.text
+    # "Once a day" is a calendar mode now, so it is no longer an interval-mode option.
+    assert "Every 3 hours" in resp.text
+    assert "Every 6 hours" in resp.text
+    assert '<option value="24"' not in resp.text
+
+
+def test_create_channel_saves_a_calendar_fetch_schedule(authed_client, db_path):
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "fetch_schedule_mode": "calendar",
+            "fetch_schedule_timezone": "Pacific/Auckland",
+            "fetch_schedule_time": "05:00",
+            "csrf_token": "csrf1",
+        },
+    )
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE name = 'NZ Finance'").fetchone()
+    assert row["fetch_schedule_mode"] == "calendar"
+    assert row["fetch_schedule_timezone"] == "Pacific/Auckland"
+    assert row["fetch_schedule_time"] == "05:00"
+
+
+def test_create_channel_defaults_to_interval_scheduling(authed_client, db_path):
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "6",
+            "csrf_token": "csrf1",
+        },
+    )
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE name = 'NZ Finance'").fetchone()
+    assert row["fetch_schedule_mode"] == "interval"
+    assert row["fetch_interval_hours"] == 6
+
+
+def test_create_channel_rejects_an_invalid_schedule_without_writing(authed_client, db_path):
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "fetch_schedule_mode": "calendar",
+            "fetch_schedule_timezone": "Mars/Olympus",
+            "fetch_schedule_time": "05:00",
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "Choose a valid timezone." in resp.text
+    assert "NZ Finance" in resp.text  # the submitted values survive the re-render
+    assert "economic news" in resp.text
+    conn = connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0] == 0
+
+
+def test_create_channel_rejects_an_invalid_schedule_time_without_writing(
+    authed_client, db_path
+):
+    resp = authed_client.post(
+        "/admin/channels/new",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "fetch_schedule_mode": "calendar",
+            "fetch_schedule_timezone": "Pacific/Auckland",
+            "fetch_schedule_time": "5am",
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "Choose a valid fetch time." in resp.text
+    conn = connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0] == 0
+
+
+def test_edit_channel_form_shows_the_saved_calendar_schedule(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "economic news",
+        fetch_schedule_mode="calendar",
+        fetch_schedule_timezone="Asia/Tokyo",
+        fetch_schedule_time="06:30",
+    )
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+
+    assert resp.status_code == 200
+    assert 'value="calendar" checked' in resp.text
+    assert 'value="06:30"' in resp.text
+    assert '<option value="Asia/Tokyo" selected>' in resp.text
+    assert "Daily at 06:30 (Asia/Tokyo)" in resp.text
+
+
+def test_edit_channel_page_previews_the_next_scheduled_fetch(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+
+    assert "Next fetch" in resp.text
+
+
+def test_channels_list_shows_a_calendar_schedule_label(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(
+        conn,
+        "Daily Channel",
+        "profile",
+        fetch_schedule_mode="calendar",
+        fetch_schedule_time="05:00",
+    )
+    create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    conn.close()
+
+    resp = authed_client.get("/admin/")
+
+    assert "Daily at 05:00 (Pacific/Auckland)" in resp.text
+    assert "Next fetch" in resp.text
+
+
+def test_update_channel_round_trips_its_fetch_schedule(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "NZ Finance", "economic news")
+    conn.close()
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/edit",
+        data={
+            "name": "NZ Finance",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "digest_email": "",
+            "fetch_schedule_mode": "calendar",
+            "fetch_schedule_timezone": "Europe/Berlin",
+            "fetch_schedule_time": "07:05",
+            "csrf_token": "csrf1",
+        },
+    )
+    assert resp.status_code == 303
+
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    assert row["fetch_schedule_mode"] == "calendar"
+    assert row["fetch_schedule_timezone"] == "Europe/Berlin"
+    assert row["fetch_schedule_time"] == "07:05"
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+    assert 'value="07:05"' in resp.text
+    assert '<option value="Europe/Berlin" selected>' in resp.text
+
+
+def test_update_channel_rejects_an_invalid_schedule_without_writing(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(
+        conn,
+        "NZ Finance",
+        "economic news",
+        fetch_schedule_mode="calendar",
+        fetch_schedule_time="05:00",
+    )
+    conn.close()
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/edit",
+        data={
+            "name": "Renamed",
+            "profile": "economic news",
+            "fetch_interval_hours": "3",
+            "digest_email": "",
+            "fetch_schedule_mode": "calendar",
+            "fetch_schedule_timezone": "Pacific/Auckland",
+            "fetch_schedule_time": "99:99",
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "Choose a valid fetch time." in resp.text
+    conn = connect(db_path)
+    row = conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    assert row["name"] == "NZ Finance"  # nothing was written
+    assert row["fetch_schedule_time"] == "05:00"
+
+
+def test_edit_channel_keeps_an_unusual_stored_interval_as_an_option(authed_client, db_path):
+    """A Channel saved before "once a day" moved to calendar mode still holds 24 hours: the
+    dropdown must offer it rather than silently rewriting the Owner's cadence on the next save."""
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Legacy", "profile", fetch_interval_hours=24)
+    conn.close()
+
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
+
+    assert '<option value="24" selected>' in resp.text

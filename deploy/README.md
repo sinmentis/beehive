@@ -28,7 +28,7 @@ the reverse proxy.
 | `../Containerfile` | Single shared image for every role; `ENTRYPOINT` is bare `python`, each unit supplies its own `-m scripts...` invocation |
 | `quadlet/beehive-data.volume` | Named Podman volume backing `/data` (the SQLite DB), shared by all containers below |
 | `quadlet/beehive-web.container` | Always-on web app — `PublishPort=127.0.0.1:8095:8000`, `Restart=always` |
-| `quadlet/beehive-fetch.container` + `.timer` | Fetch → dedup → AI-rank cycle, every 3 hours |
+| `quadlet/beehive-fetch.container` + `.timer` | Fetch → dedup → AI-rank cycle; the timer wakes every 15 minutes and each Channel's own interval or daily calendar schedule decides whether it runs |
 | `quadlet/beehive-fetch-manual.container` + `.path` | Manual per-Channel trigger — started only when the admin UI writes a trigger marker, never on a timer |
 | `quadlet/beehive-digest.container` + `.timer` | Evaluates Email Group interval/calendar schedules and pending Research-completion emails every 15 minutes |
 | `quadlet/beehive-auction-reminders.container` + `.timer` | Runs the generic Tracker reminder worker every 5 minutes; the current auction adapter claims watched lots inside the one-hour closing window |

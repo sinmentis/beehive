@@ -1,9 +1,9 @@
 # deploy/quadlet/beehive-fetch.timer
 [Unit]
-Description=Run the Beehive fetch/AI-rank cycle every 3 hours
+Description=Evaluate Beehive channel fetch schedules every 15 minutes
 
 [Timer]
-OnCalendar=*-*-* 01,04,07,10,13,16,19,22:00:00
+OnCalendar=*:0/15
 Persistent=true
 Unit=beehive-fetch.service
 

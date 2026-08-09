@@ -1,6 +1,8 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from beehive.db.connection import connect, init_schema
 from beehive.db.research_notifications import list_pending_completion_notifications
 
@@ -599,3 +601,69 @@ def test_fresh_database_skips_the_channels_kind_rebuild_but_marks_it_done(tmp_pa
     marker = conn.execute(
         "SELECT value FROM app_state WHERE key = 'channels_kind_tracker_migrated_v1'").fetchone()
     assert marker["value"] == "1"
+
+
+def test_init_schema_adds_channel_and_source_schedule_columns_preserving_behavior(tmp_path):
+    """Upgrade parity for calendar fetch scheduling: a database that predates the schedule columns
+    gains them with defaults that reproduce the old behavior exactly (interval mode on the stored
+    hour count, no slot checkpoint), so nothing about an existing Channel's cadence changes until
+    an Owner edits it."""
+    path = str(tmp_path / "old.db")
+    conn = connect(path)
+    conn.executescript(
+        "CREATE TABLE channels (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "name TEXT NOT NULL UNIQUE, profile TEXT NOT NULL DEFAULT '', "
+        "kind TEXT NOT NULL DEFAULT 'editorial' "
+        "CHECK (kind IN ('editorial', 'monitor', 'tracker')), "
+        "fetch_interval_hours INTEGER NOT NULL DEFAULT 3, "
+        "highlight_count INTEGER NOT NULL DEFAULT 8, minimum_score INTEGER NOT NULL DEFAULT 0);"
+        "CREATE TABLE sources (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER NOT NULL, "
+        "type TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', last_fetch_at TEXT, "
+        "last_fetch_error TEXT);"
+        "INSERT INTO channels (name, profile, fetch_interval_hours) VALUES ('News', 'p', 6);"
+        "INSERT INTO sources (channel_id, type, last_fetch_at) "
+        "VALUES (1, 'reddit_subreddit', '2026-07-09T00:00:00');"
+    )
+    conn.commit()
+    conn.close()
+
+    conn = connect(path)
+    init_schema(conn)
+
+    channel = conn.execute("SELECT * FROM channels WHERE name = 'News'").fetchone()
+    assert channel["fetch_interval_hours"] == 6  # untouched
+    assert channel["fetch_schedule_mode"] == "interval"
+    assert channel["fetch_schedule_timezone"] == "Pacific/Auckland"
+    assert channel["fetch_schedule_time"] == "05:00"
+    source = conn.execute("SELECT * FROM sources WHERE channel_id = 1").fetchone()
+    assert source["last_fetch_at"] == "2026-07-09T00:00:00"  # freshness state preserved
+    assert source["last_scheduled_slot_at"] is None
+
+
+def test_channels_kind_rebuild_keeps_the_fetch_schedule_columns(tmp_path):
+    """The tracker rebuild copies channels into a new table, so it must carry every schedule
+    column across -- otherwise upgrading a legacy database would silently drop them."""
+    path = str(tmp_path / "legacy.db")
+    _build_legacy_two_kind_db(path)
+    conn = connect(path)
+
+    init_schema(conn)
+    conn.execute(
+        "UPDATE channels SET fetch_schedule_mode = 'calendar', "
+        "fetch_schedule_timezone = 'Asia/Tokyo', fetch_schedule_time = '06:30' WHERE id = 1")
+    conn.commit()
+    init_schema(conn)  # a second start must not rebuild away the saved schedule
+
+    row = conn.execute("SELECT * FROM channels WHERE id = 1").fetchone()
+    assert row["fetch_schedule_mode"] == "calendar"
+    assert row["fetch_schedule_timezone"] == "Asia/Tokyo"
+    assert row["fetch_schedule_time"] == "06:30"
+
+
+def test_fresh_schema_rejects_an_unknown_channel_fetch_schedule_mode(tmp_path):
+    conn = connect(str(tmp_path / "fresh.db"))
+    init_schema(conn)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO channels (name, profile, fetch_schedule_mode) VALUES ('C', 'p', 'cron')")

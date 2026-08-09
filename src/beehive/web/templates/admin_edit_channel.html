@@ -110,14 +110,33 @@
           <textarea id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
           <p class="hint">{{ kind_display.profile_hint }}</p>
         </div>
-        <div class="field">
-          <label for="fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
-          <select id="fetch-interval" name="fetch_interval_hours">
-            <option value="3" {{ "selected" if channel.fetch_interval_hours == 3 else "" }}>{{ t('web.fetch_interval.every_n_hours', hours=3) }}</option>
-            <option value="6" {{ "selected" if channel.fetch_interval_hours == 6 else "" }}>{{ t('web.fetch_interval.every_n_hours', hours=6) }}</option>
-            <option value="24" {{ "selected" if channel.fetch_interval_hours == 24 else "" }}>{{ t('web.fetch_interval.daily') }}</option>
-          </select>
-        </div>
+        <fieldset class="field schedule-builder" data-schedule-builder="fetch_schedule_mode">
+          <legend>{{ t('web.admin.channel_schedule.heading') }}</legend>
+          <div class="choice-row">
+            <label><input type="radio" name="fetch_schedule_mode" value="interval" {{ "checked" if channel.fetch_schedule_mode == "interval" else "" }}> {{ t('web.admin.channel_schedule.interval') }}</label>
+            <label><input type="radio" name="fetch_schedule_mode" value="calendar" {{ "checked" if channel.fetch_schedule_mode == "calendar" else "" }}> {{ t('web.admin.channel_schedule.calendar') }}</label>
+          </div>
+          <div class="schedule-fields schedule-fields--interval" data-schedule-panel="interval">
+            <label for="fetch-interval">{{ t('web.admin.channel_new.interval_label') }}
+              <select id="fetch-interval" name="fetch_interval_hours">
+                {% for option in fetch_interval_options %}<option value="{{ option.value }}" {{ "selected" if option.selected else "" }}>{{ option.label }}</option>{% endfor %}
+              </select>
+            </label>
+          </div>
+          <div class="schedule-fields schedule-fields--calendar" data-schedule-panel="calendar">
+            <label for="fetch-time">{{ t('web.admin.channel_schedule.time_label') }}
+              <input id="fetch-time" type="time" name="fetch_schedule_time" value="{{ channel.fetch_schedule_time }}">
+            </label>
+            <label for="fetch-timezone">{{ t('web.admin.channel_schedule.timezone_label') }}
+              <select id="fetch-timezone" name="fetch_schedule_timezone">
+                {% for timezone in schedule_timezones %}<option value="{{ timezone }}" {{ "selected" if timezone == channel.fetch_schedule_timezone else "" }}>{{ timezone }}</option>{% endfor %}
+              </select>
+            </label>
+          </div>
+          <p class="hint">{{ t('web.admin.channel_schedule.hint') }}</p>
+          <p class="hint">{{ t('web.admin.channel_schedule.current_summary', schedule=schedule_label) }}{% if next_fetch_label %} · {{ t('web.admin.channel_schedule.next_fetch', time=next_fetch_label) }}{% endif %}</p>
+          {% if schedule_error %}<p class="error" role="alert">{{ schedule_error }}</p>{% endif %}
+        </fieldset>
         <div class="field-pair">
           <div class="field">
             <label for="highlight-count">{{ t('web.admin.channel_new.highlight_count_label') }}</label>

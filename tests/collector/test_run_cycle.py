@@ -1800,3 +1800,157 @@ async def test_paused_monitor_source_is_not_reconciled_inactive(conn):
         "SELECT COUNT(*) FROM items WHERE inactive_at IS NULL"
     ).fetchone()[0]
     assert active == 2  # nothing retired for a paused Source
+
+
+def _daily_channel(conn, name="Daily calendar", time_text="05:00"):
+    channel_id = create_channel(
+        conn,
+        name,
+        "profile",
+        fetch_interval_hours=24,
+        fetch_schedule_mode="calendar",
+        fetch_schedule_timezone="Pacific/Auckland",
+        fetch_schedule_time=time_text,
+    )
+    return get_channel(conn, channel_id)
+
+
+@pytest.mark.asyncio
+async def test_calendar_cycle_records_the_slot_it_served_not_the_run_time(conn):
+    # 05:00 Pacific/Auckland is 17:00 UTC the previous day in July. The run starts 40 minutes
+    # late; the anchor must still be the 17:00 slot so tomorrow's slot does not drift.
+    now = datetime(2026, 7, 13, 17, 40, tzinfo=timezone.utc)
+    channel = _daily_channel(conn)
+    register(_StubConnector())
+    create_source(conn, channel["id"], "stub_test_source", {})
+
+    await run_channel_cycle(conn, channel, LogNotifier(), now=now, localizer=_EN_LOCALIZER)
+
+    source = list_sources(conn, channel["id"])[0]
+    assert source["last_fetch_at"] == now.isoformat()
+    assert source["last_scheduled_slot_at"] == "2026-07-13T17:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_calendar_cycle_skips_a_slot_that_already_ran(conn):
+    channel = _daily_channel(conn)
+    connector = _StubConnector()
+    register(connector)
+    create_source(conn, channel["id"], "stub_test_source", {})
+
+    await run_channel_cycle(
+        conn,
+        channel,
+        LogNotifier(),
+        now=datetime(2026, 7, 13, 17, 5, tzinfo=timezone.utc),
+        localizer=_EN_LOCALIZER,
+    )
+    await run_channel_cycle(
+        conn,
+        channel,
+        LogNotifier(),
+        now=datetime(2026, 7, 13, 21, 0, tzinfo=timezone.utc),
+        localizer=_EN_LOCALIZER,
+    )
+
+    assert connector.fetch_calls == [{}]
+
+
+@pytest.mark.asyncio
+async def test_manual_fetch_does_not_move_the_calendar_schedule(conn):
+    channel = _daily_channel(conn)
+    connector = _StubConnector()
+    register(connector)
+    source_id = create_source(conn, channel["id"], "stub_test_source", {})
+    record_fetch_success(
+        conn,
+        source_id,
+        "2026-07-12T17:01:00+00:00",
+        scheduled_slot_at="2026-07-12T17:00:00+00:00",
+    )
+
+    await run_channel_cycle(
+        conn,
+        channel,
+        LogNotifier(),
+        force_fetch=True,
+        now=datetime(2026, 7, 13, 3, 0, tzinfo=timezone.utc),
+        localizer=_EN_LOCALIZER,
+    )
+
+    source = list_sources(conn, channel["id"])[0]
+    assert connector.fetch_calls == [{}]  # the manual run really happened
+    assert source["last_fetch_at"] == "2026-07-13T03:00:00+00:00"
+    assert source["last_scheduled_slot_at"] == "2026-07-12T17:00:00+00:00"  # anchor unmoved
+
+    # ...and today's 17:00 slot still runs on schedule afterwards.
+    await run_channel_cycle(
+        conn,
+        channel,
+        LogNotifier(),
+        now=datetime(2026, 7, 13, 17, 5, tzinfo=timezone.utc),
+        localizer=_EN_LOCALIZER,
+    )
+    assert connector.fetch_calls == [{}, {}]
+    assert (
+        list_sources(conn, channel["id"])[0]["last_scheduled_slot_at"]
+        == "2026-07-13T17:00:00+00:00"
+    )
+
+
+@pytest.mark.asyncio
+async def test_failed_calendar_fetch_keeps_the_slot_due_for_a_later_tick(conn):
+    channel = _daily_channel(conn)
+    failing = _StubConnector(error=RuntimeError("boom"))
+    register(failing)
+    create_source(conn, channel["id"], "stub_test_source", {})
+
+    await run_channel_cycle(
+        conn,
+        channel,
+        LogNotifier(),
+        now=datetime(2026, 7, 13, 17, 0, tzinfo=timezone.utc),
+        localizer=_EN_LOCALIZER,
+    )
+
+    source = list_sources(conn, channel["id"])[0]
+    assert source["last_fetch_status"] == "error"
+    assert source["last_scheduled_slot_at"] is None  # the slot was never served
+
+    # The retry backoff holds the next tick off, then the same slot is retried and succeeds.
+    register(_StubConnector())
+    await run_channel_cycle(
+        conn,
+        channel,
+        LogNotifier(),
+        now=datetime(2026, 7, 13, 17, 15, tzinfo=timezone.utc),
+        localizer=_EN_LOCALIZER,
+    )
+    assert list_sources(conn, channel["id"])[0]["last_scheduled_slot_at"] is None
+
+    await run_channel_cycle(
+        conn,
+        channel,
+        LogNotifier(),
+        now=datetime(2026, 7, 13, 18, 15, tzinfo=timezone.utc),
+        localizer=_EN_LOCALIZER,
+    )
+    assert (
+        list_sources(conn, channel["id"])[0]["last_scheduled_slot_at"]
+        == "2026-07-13T17:00:00+00:00"
+    )
+
+
+@pytest.mark.asyncio
+async def test_interval_cycle_never_records_a_scheduled_slot(conn):
+    now = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
+    channel_id = create_channel(conn, "Interval", "profile", fetch_interval_hours=3)
+    channel = get_channel(conn, channel_id)
+    register(_StubConnector())
+    create_source(conn, channel_id, "stub_test_source", {})
+
+    await run_channel_cycle(conn, channel, LogNotifier(), now=now, localizer=_EN_LOCALIZER)
+
+    source = list_sources(conn, channel_id)[0]
+    assert source["last_fetch_at"] == now.isoformat()
+    assert source["last_scheduled_slot_at"] is None

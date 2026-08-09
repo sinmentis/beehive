@@ -108,7 +108,15 @@ from beehive.localization import (
     save_language,
 )
 from beehive.notify import build_notifier
-from beehive.scheduling import next_email_group_due_at
+from beehive.scheduling import (
+    DEFAULT_CHANNEL_FETCH_TIME,
+    DEFAULT_SCHEDULE_TIMEZONE,
+    ChannelFetchSchedule,
+    ScheduleMode,
+    next_channel_fetch_at,
+    next_email_group_due_at,
+    require_schedule_mode,
+)
 from beehive.web.deps import (
     SESSION_COOKIE_NAME,
     get_db,
@@ -134,7 +142,11 @@ router = APIRouter(prefix="/admin")
 _PASSWORD_HASH_KEY = "admin_password_hash"
 _SESSION_LIFETIME_DAYS = 30
 _ADMIN_TABS = frozenset({"channels", "ai", "delivery", "system", "groups"})
-_EMAIL_TIMEZONES = (
+# Interval mode is for frequent polling only; a once-a-day Channel belongs in calendar mode, where
+# it gets a real wall-clock time instead of "24 hours after the last success".
+_FETCH_INTERVAL_CHOICES = (3, 6)
+# The IANA timezones offered by both schedule builders (Email Group delivery and Channel fetch).
+_SCHEDULE_TIMEZONES = (
     "Pacific/Auckland",
     "Australia/Sydney",
     "Asia/Tokyo",
@@ -337,9 +349,92 @@ def _fetch_interval_label(hours: int, t: Localizer) -> str:
     )
 
 
+def _fetch_interval_options(selected_hours: int, t: Localizer) -> tuple[dict, ...]:
+    """The interval-mode dropdown: the frequent cadences only. "Once a day" now belongs to
+    calendar mode (a real wall-clock time), but a Channel saved before that existed may still hold
+    24 -- or any other value -- so its stored cadence is appended rather than silently rewritten to
+    something the Owner never chose."""
+    hours = list(_FETCH_INTERVAL_CHOICES)
+    if selected_hours not in hours:
+        hours.append(selected_hours)
+    return tuple(
+        {
+            "value": value,
+            "label": _fetch_interval_label(value, t),
+            "selected": value == selected_hours,
+        }
+        for value in sorted(hours)
+    )
+
+
+def _schedule_timezone_options(selected: str) -> tuple[str, ...]:
+    """The curated timezone dropdown, plus the selected zone when it is not one of them. Any valid
+    IANA zone can be stored, so an edit round-trip must not silently drop an Owner's choice just
+    because the shortlist does not name it. An unusable zone is never offered: on a rejected save
+    the Owner picks again from the shortlist."""
+    if selected in _SCHEDULE_TIMEZONES:
+        return _SCHEDULE_TIMEZONES
+    try:
+        ZoneInfo(selected)
+    except (ZoneInfoNotFoundError, ValueError):
+        return _SCHEDULE_TIMEZONES
+    return (*_SCHEDULE_TIMEZONES, selected)
+
+
+def _normalize_channel_fetch_schedule(
+    *,
+    fetch_schedule_mode: str,
+    fetch_schedule_timezone: str,
+    fetch_schedule_time: str,
+) -> tuple[str, str, str]:
+    """Validate a submitted Channel fetch schedule, returning the values to store. Raises
+    ValueError carrying a translation key, exactly like _normalize_email_schedule."""
+    if fetch_schedule_mode not in {mode.value for mode in ScheduleMode}:
+        raise ValueError("web.admin.channel_schedule.error_mode")
+    timezone_name = fetch_schedule_timezone.strip() or DEFAULT_SCHEDULE_TIMEZONE
+    try:
+        ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError("web.admin.channel_schedule.error_timezone") from exc
+    try:
+        parsed_time = datetime.strptime(
+            fetch_schedule_time.strip() or DEFAULT_CHANNEL_FETCH_TIME, "%H:%M"
+        )
+    except ValueError as exc:
+        raise ValueError("web.admin.channel_schedule.error_time") from exc
+    return fetch_schedule_mode, timezone_name, parsed_time.strftime("%H:%M")
+
+
+def _channel_fetch_schedule_label(channel: dict, t: Localizer) -> str:
+    """"Every 3 hours" or "Daily at 05:00 (Pacific/Auckland)", from the Channel's stored mode."""
+    if require_schedule_mode(channel["fetch_schedule_mode"]) is ScheduleMode.INTERVAL:
+        return _fetch_interval_label(channel["fetch_interval_hours"], t)
+    return t.text(
+        "web.admin.channel_schedule.daily_summary",
+        time=channel["fetch_schedule_time"],
+        timezone=channel["fetch_schedule_timezone"],
+    )
+
+
+def _channel_next_fetch_label(
+    channel: dict,
+    sources: list[dict],
+    now: datetime,
+) -> str | None:
+    """The host-local timestamp of this Channel's next automatic fetch, or None when it has no
+    Source to fetch. Mirrors the Email Group list's next_due_label so both schedules read the
+    same way."""
+    next_fetch_at = next_channel_fetch_at(
+        sources, ChannelFetchSchedule.from_channel(channel), now
+    )
+    if next_fetch_at is None:
+        return None
+    return host_local_time_label(next_fetch_at.isoformat())
+
+
 def _email_group_frequency_label(hours: int, t: Localizer) -> str:
-    """Unlike _fetch_interval_label above (a fixed {3, 6, 24} dropdown where "24+" is always
-    "daily"), a group's send_interval_hours is a free-form number -- only exactly 24 should read
+    """Unlike _fetch_interval_label above (a small fixed dropdown where "24+" is always "daily"),
+    a group's send_interval_hours is a free-form number -- only exactly 24 should read
     as "Once a day"; anything else (including 48, 168, etc.) must show its actual hour count."""
     return (
         t.text("web.fetch_interval.daily")
@@ -439,6 +534,7 @@ def _build_admin_channel_rows(
     data_dir: str,
 ) -> list[dict]:
     manual_states = list_manual_trigger_states(data_dir)
+    now = datetime.now(timezone.utc)
     channels = []
     for channel in list_channels(conn):
         kind = require_channel_kind(channel["kind"])
@@ -473,9 +569,8 @@ def _build_admin_channel_rows(
                 "kind": kind.value,
                 "kind_label": _channel_kind_label(kind, t),
                 "source_count": len(sources),
-                "fetch_interval_label": _fetch_interval_label(
-                    channel["fetch_interval_hours"], t
-                ),
+                "fetch_interval_label": _channel_fetch_schedule_label(channel, t),
+                "next_fetch_label": _channel_next_fetch_label(channel, sources, now),
                 "freshness_label": freshness_label(sources, t),
                 "freshness_exact_label": freshness_exact_time(sources),
                 "fetch_stats_label": fetch_stats_label(sources, t),
@@ -1152,12 +1247,23 @@ def _channel_kind_display(kind: ChannelKind, t: Localizer) -> dict:
     }
 
 
-@router.get("/channels/new", response_class=HTMLResponse)
-def new_channel_form(
+def _render_new_channel_page(
     request: Request,
-    session: dict = Depends(require_admin_session),
-    t: Localizer = Depends(get_localizer),
-):
+    session: dict,
+    t: Localizer,
+    *,
+    name: str = "",
+    profile: str = "",
+    fetch_interval_hours: int = 3,
+    highlight_count: int = 8,
+    minimum_score: int = 0,
+    kind: str = ChannelKind.EDITORIAL.value,
+    fetch_schedule_mode: str = ScheduleMode.INTERVAL.value,
+    fetch_schedule_timezone: str = DEFAULT_SCHEDULE_TIMEZONE,
+    fetch_schedule_time: str = DEFAULT_CHANNEL_FETCH_TIME,
+    schedule_error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
@@ -1165,24 +1271,72 @@ def new_channel_form(
         {
             "csrf_token": session["csrf_token"],
             "kind_options": _channel_kind_options(t),
-            "selected_kind": ChannelKind.EDITORIAL.value,
+            "selected_kind": kind,
+            "name": name,
+            "profile": profile,
+            "highlight_count": highlight_count,
+            "minimum_score": minimum_score,
+            "fetch_schedule_mode": fetch_schedule_mode,
+            "fetch_schedule_timezone": fetch_schedule_timezone,
+            "fetch_schedule_time": fetch_schedule_time,
+            "fetch_interval_options": _fetch_interval_options(fetch_interval_hours, t),
+            "schedule_timezones": _schedule_timezone_options(fetch_schedule_timezone),
+            "schedule_error": schedule_error,
         },
+        status_code=status_code,
     )
+
+
+@router.get("/channels/new", response_class=HTMLResponse)
+def new_channel_form(
+    request: Request,
+    session: dict = Depends(require_admin_session),
+    t: Localizer = Depends(get_localizer),
+):
+    return _render_new_channel_page(request, session, t)
 
 
 @router.post("/channels/new")
 def new_channel_submit(
+    request: Request,
     name: str = Form(...),
     profile: str = Form(...),
-    fetch_interval_hours: int = Form(...),
+    fetch_interval_hours: int = Form(..., ge=1),
     highlight_count: int = Form(8, ge=1, le=50),
     minimum_score: int = Form(0, ge=0, le=100),
     kind: Literal["editorial", "monitor", "tracker"] = Form("editorial"),
+    fetch_schedule_mode: str = Form(ScheduleMode.INTERVAL.value),
+    fetch_schedule_timezone: str = Form(DEFAULT_SCHEDULE_TIMEZONE),
+    fetch_schedule_time: str = Form(DEFAULT_CHANNEL_FETCH_TIME),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
 ):
     verify_csrf(session, csrf_token)
+    try:
+        normalized_schedule = _normalize_channel_fetch_schedule(
+            fetch_schedule_mode=fetch_schedule_mode,
+            fetch_schedule_timezone=fetch_schedule_timezone,
+            fetch_schedule_time=fetch_schedule_time,
+        )
+    except ValueError as exc:
+        return _render_new_channel_page(
+            request,
+            session,
+            t,
+            name=name,
+            profile=profile,
+            fetch_interval_hours=fetch_interval_hours,
+            highlight_count=highlight_count,
+            minimum_score=minimum_score,
+            kind=kind,
+            fetch_schedule_mode=fetch_schedule_mode,
+            fetch_schedule_timezone=fetch_schedule_timezone,
+            fetch_schedule_time=fetch_schedule_time,
+            schedule_error=t.text(str(exc)),
+            status_code=400,
+        )
     channel_id = create_channel(
         conn,
         name,
@@ -1191,6 +1345,9 @@ def new_channel_submit(
         highlight_count=highlight_count,
         minimum_score=minimum_score,
         kind=kind,
+        fetch_schedule_mode=normalized_schedule[0],
+        fetch_schedule_timezone=normalized_schedule[1],
+        fetch_schedule_time=normalized_schedule[2],
     )
     record_admin_action(
         conn,
@@ -1423,9 +1580,11 @@ def _render_edit_channel_page(
     undo_action_id: int | None = None,
     undone: bool = False,
     fetch_requested: bool = False,
+    schedule_error: str | None = None,
 ) -> HTMLResponse:
     sources = []
-    for source in list_sources(conn, channel["id"]):
+    source_rows = list_sources(conn, channel["id"])
+    for source in source_rows:
         label = _admin_source_label(source, t)
         sources.append(
             {
@@ -1447,6 +1606,12 @@ def _render_edit_channel_page(
         effective = resolve_channel_email(source_channel, default_recipient).address
     except EmailConfigurationError:
         effective = None
+    # Same rule as the effective recipient above: the next-run preview describes the *saved*
+    # schedule, so a rejected submission (kept only in the display `channel`) cannot show a
+    # countdown for a schedule that was never stored.
+    next_fetch_label = _channel_next_fetch_label(
+        source_channel, source_rows, datetime.now(timezone.utc)
+    )
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
@@ -1468,6 +1633,15 @@ def _render_edit_channel_page(
             "undo_action_id": undo_action_id,
             "undone": undone,
             "fetch_requested": fetch_requested,
+            "schedule_error": schedule_error,
+            "fetch_interval_options": _fetch_interval_options(
+                channel["fetch_interval_hours"], t
+            ),
+            "schedule_timezones": _schedule_timezone_options(
+                channel["fetch_schedule_timezone"]
+            ),
+            "schedule_label": _channel_fetch_schedule_label(source_channel, t),
+            "next_fetch_label": next_fetch_label,
             "stale_recovery": _channel_has_stale_fetch(request, channel["id"]),
             "current_group": get_channel_group(conn, channel["id"]),
             "impact": channel_impact_counts(conn, channel["id"]),
@@ -1516,10 +1690,13 @@ def edit_channel_submit(
     request: Request,
     name: str = Form(...),
     profile: str = Form(...),
-    fetch_interval_hours: int = Form(...),
+    fetch_interval_hours: int = Form(..., ge=1),
     highlight_count: int | None = Form(None, ge=1, le=50),
     minimum_score: int | None = Form(None, ge=0, le=100),
     digest_email: str = Form(""),
+    fetch_schedule_mode: str = Form(ScheduleMode.INTERVAL.value),
+    fetch_schedule_timezone: str = Form(DEFAULT_SCHEDULE_TIMEZONE),
+    fetch_schedule_time: str = Form(DEFAULT_CHANNEL_FETCH_TIME),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
@@ -1529,11 +1706,11 @@ def edit_channel_submit(
     existing = get_channel(conn, channel_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-    submitted_email = digest_email.strip()
-    try:
-        normalized_email = validate_email(submitted_email) if submitted_email else None
-    except EmailConfigurationError as exc:
-        channel = {
+
+    def _submitted_channel() -> dict:
+        """The row as the Owner just submitted it, for re-rendering a rejected save without
+        losing their edits. Only ever used for display -- never written."""
+        return {
             **existing,
             "name": name,
             "profile": profile,
@@ -1547,15 +1724,40 @@ def edit_channel_submit(
                 existing["minimum_score"] if minimum_score is None else minimum_score
             ),
             "digest_email": digest_email,
+            "fetch_schedule_mode": fetch_schedule_mode,
+            "fetch_schedule_timezone": fetch_schedule_timezone,
+            "fetch_schedule_time": fetch_schedule_time,
         }
+
+    submitted_email = digest_email.strip()
+    try:
+        normalized_email = validate_email(submitted_email) if submitted_email else None
+    except EmailConfigurationError as exc:
         return _render_edit_channel_page(
             request,
             conn,
             session,
-            channel,
+            _submitted_channel(),
             t,
             effective_channel=existing,
             error=_email_error_message(exc, t),
+            status_code=400,
+        )
+    try:
+        normalized_schedule = _normalize_channel_fetch_schedule(
+            fetch_schedule_mode=fetch_schedule_mode,
+            fetch_schedule_timezone=fetch_schedule_timezone,
+            fetch_schedule_time=fetch_schedule_time,
+        )
+    except ValueError as exc:
+        return _render_edit_channel_page(
+            request,
+            conn,
+            session,
+            _submitted_channel(),
+            t,
+            effective_channel=existing,
+            schedule_error=t.text(str(exc)),
             status_code=400,
         )
     update_channel(
@@ -1567,6 +1769,9 @@ def edit_channel_submit(
         normalized_email,
         highlight_count=highlight_count,
         minimum_score=minimum_score,
+        fetch_schedule_mode=normalized_schedule[0],
+        fetch_schedule_timezone=normalized_schedule[1],
+        fetch_schedule_time=normalized_schedule[2],
     )
     record_admin_action(
         conn,
@@ -1722,7 +1927,7 @@ def _render_new_email_group_page(
             "schedule_mode": schedule_mode,
             "schedule_timezone": schedule_timezone,
             "schedule_time": schedule_time,
-            "schedule_timezones": _EMAIL_TIMEZONES,
+            "schedule_timezones": _SCHEDULE_TIMEZONES,
             "schedule_weekdays": _email_weekday_rows(
                 t,
                 set(range(7)) if schedule_weekdays is None else schedule_weekdays,
@@ -1901,7 +2106,7 @@ def _render_edit_email_group_page(
             "schedule_time": (
                 group["schedule_time"] if schedule_time is None else schedule_time
             ),
-            "schedule_timezones": _EMAIL_TIMEZONES,
+            "schedule_timezones": _SCHEDULE_TIMEZONES,
             "schedule_weekdays": _email_weekday_rows(
                 t,
                 (

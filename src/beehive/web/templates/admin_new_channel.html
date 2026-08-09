@@ -17,7 +17,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="field">
         <label for="new-channel-name">{{ t('web.admin.channel_new.name_label') }}</label>
-        <input id="new-channel-name" type="text" name="name" placeholder="{{ t('web.admin.channel_new.name_placeholder') }}" required autocomplete="off">
+        <input id="new-channel-name" type="text" name="name" value="{{ name }}" placeholder="{{ t('web.admin.channel_new.name_placeholder') }}" required autocomplete="off">
       </div>
       <fieldset class="field channel-kind-field">
         <legend>{{ t('web.admin.channel_new.kind_label') }}</legend>
@@ -37,30 +37,48 @@
       </fieldset>
       <div class="field">
         <label for="new-channel-profile">{{ t('web.admin.channel_new.profile_label') }}</label>
-        <textarea id="new-channel-profile" name="profile" placeholder="{{ t('web.admin.channel_new.profile_placeholder') }}" required></textarea>
+        <textarea id="new-channel-profile" name="profile" placeholder="{{ t('web.admin.channel_new.profile_placeholder') }}" required>{{ profile }}</textarea>
         <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.profile_hint') }}</p>
         <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.profile_hint_monitor') }}</p>
         <p class="hint kind-only-tracker">{{ t('web.admin.channel_new.profile_hint_tracker') }}</p>
       </div>
-      <div class="field">
-        <label for="new-fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
-        <select id="new-fetch-interval" name="fetch_interval_hours">
-          <option value="3">{{ t('web.fetch_interval.every_n_hours', hours=3) }}</option>
-          <option value="6">{{ t('web.fetch_interval.every_n_hours', hours=6) }}</option>
-          <option value="24">{{ t('web.fetch_interval.daily') }}</option>
-        </select>
-      </div>
+      <fieldset class="field schedule-builder" data-schedule-builder="fetch_schedule_mode">
+        <legend>{{ t('web.admin.channel_schedule.heading') }}</legend>
+        <div class="choice-row">
+          <label><input type="radio" name="fetch_schedule_mode" value="interval" {{ "checked" if fetch_schedule_mode == "interval" else "" }}> {{ t('web.admin.channel_schedule.interval') }}</label>
+          <label><input type="radio" name="fetch_schedule_mode" value="calendar" {{ "checked" if fetch_schedule_mode == "calendar" else "" }}> {{ t('web.admin.channel_schedule.calendar') }}</label>
+        </div>
+        <div class="schedule-fields schedule-fields--interval" data-schedule-panel="interval">
+          <label for="new-fetch-interval">{{ t('web.admin.channel_new.interval_label') }}
+            <select id="new-fetch-interval" name="fetch_interval_hours">
+              {% for option in fetch_interval_options %}<option value="{{ option.value }}" {{ "selected" if option.selected else "" }}>{{ option.label }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="schedule-fields schedule-fields--calendar" data-schedule-panel="calendar">
+          <label for="new-fetch-time">{{ t('web.admin.channel_schedule.time_label') }}
+            <input id="new-fetch-time" type="time" name="fetch_schedule_time" value="{{ fetch_schedule_time }}">
+          </label>
+          <label for="new-fetch-timezone">{{ t('web.admin.channel_schedule.timezone_label') }}
+            <select id="new-fetch-timezone" name="fetch_schedule_timezone">
+              {% for timezone in schedule_timezones %}<option value="{{ timezone }}" {{ "selected" if timezone == fetch_schedule_timezone else "" }}>{{ timezone }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <p class="hint">{{ t('web.admin.channel_schedule.hint') }}</p>
+        {% if schedule_error %}<p class="error" role="alert">{{ schedule_error }}</p>{% endif %}
+      </fieldset>
       <div class="field-pair">
         <div class="field">
           <label for="new-highlight-count">{{ t('web.admin.channel_new.highlight_count_label') }}</label>
-          <input id="new-highlight-count" type="number" name="highlight_count" value="8" min="1" max="50" required>
+          <input id="new-highlight-count" type="number" name="highlight_count" value="{{ highlight_count }}" min="1" max="50" required>
           <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.highlight_count_hint') }}</p>
           <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.highlight_count_hint_monitor') }}</p>
           <p class="hint kind-only-tracker">{{ t('web.admin.channel_new.highlight_count_hint_tracker') }}</p>
         </div>
         <div class="field">
           <label for="new-minimum-score">{{ t('web.admin.channel_new.minimum_score_label') }}</label>
-          <input id="new-minimum-score" type="number" name="minimum_score" value="0" min="0" max="100" required>
+          <input id="new-minimum-score" type="number" name="minimum_score" value="{{ minimum_score }}" min="0" max="100" required>
           <p class="hint kind-only-editorial">{{ t('web.admin.channel_new.minimum_score_hint') }}</p>
           <p class="hint kind-only-monitor">{{ t('web.admin.channel_new.minimum_score_hint_monitor') }}</p>
           <p class="hint kind-only-tracker">{{ t('web.admin.channel_new.minimum_score_hint_tracker') }}</p>
@@ -73,4 +91,7 @@
     </form>
   </section>
 </main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
 {% endblock %}

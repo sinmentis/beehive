@@ -25,6 +25,7 @@ from beehive.db.items import insert_new, update_ai_ranking
 from beehive.db.sessions import create_session
 from beehive.db.sources import create_source, record_fetch_success
 from beehive.localization import SUPPORTED_LANGUAGES, localizer_for, save_language
+from beehive.scheduling import ChannelFetchSchedule
 from beehive.web.admin import _fetch_interval_label, _source_type_options
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
@@ -427,9 +428,15 @@ def test_formatting_and_label_helpers_produce_text_in_every_supported_language(
     assert fetch_stats_label(sources, t)
     # A channel with sources but nothing fetched yet is imminently due -- countdown must not
     # raise or return an empty string for any locale.
-    assert next_fetch_countdown(sources, 24, now, t) is not None
+    assert next_fetch_countdown(sources, ChannelFetchSchedule.interval(24), now, t) is not None
     assert _fetch_interval_label(24, t)
     assert _fetch_interval_label(6, t)
+    assert next_fetch_countdown(
+        sources,
+        ChannelFetchSchedule.daily(timezone_name="Pacific/Auckland", time_text="05:00"),
+        now,
+        t,
+    )
 
     for option in _source_type_options(t):
         assert option["label"]

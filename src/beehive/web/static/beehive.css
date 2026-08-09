@@ -3133,6 +3133,13 @@ select{
 .channel-admin-name .trigger-flash{color:var(--success)}
 .channel-admin-name .fetch-status-queued,.channel-admin-name .fetch-status-running{color:var(--accent-strong)}
 .channel-admin-name .fetch-status-stale,.channel-admin-name .fetch-status-failed{color:var(--danger)}
+.channel-next-fetch{
+  display:block;
+  margin-top:.2rem;
+  color:var(--muted-2);
+  font-size:.64rem;
+  line-height:1.35;
+}
 .channel-kind-cell{display:flex;align-items:center}
 .channel-edit-cell{text-align:right}
 .channel-edit-link{

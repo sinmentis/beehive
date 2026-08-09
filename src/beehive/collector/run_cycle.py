@@ -47,7 +47,7 @@ from beehive.db.votes import get_vote_examples_for_channel
 from beehive.domain.channels import RankingMode
 from beehive.localization import Localizer
 from beehive.notify import Notifier, format_llm_failure
-from beehive.scheduling import source_is_due
+from beehive.scheduling import ChannelFetchSchedule, source_is_due
 
 _COMMENT_FETCH_COUNT = 3
 _COMMENT_FETCH_DELAY_SECONDS = 2
@@ -86,6 +86,12 @@ async def run_channel_cycle(
     # definition, so nothing below branches on the raw kind string. Building it also validates the
     # stored kind, so an unknown kind fails loudly here rather than defaulting.
     collection = ChannelCollection.for_channel(channel)
+    # Resolved once per cycle, so a corrupt schedule fails before any Source is fetched. On a
+    # forced run the intended slot is deliberately not recorded: a manual fetch must not move the
+    # Channel's future automatic schedule (see db/sources.py::record_fetch_success).
+    schedule = ChannelFetchSchedule.from_channel(channel)
+    scheduled_slot = None if force_fetch else schedule.slot_for(cycle_now)
+    scheduled_slot_iso = None if scheduled_slot is None else scheduled_slot.isoformat()
 
     for source in list_sources(conn, channel["id"]):
         # A paused Source is dormant: skip it entirely, before the due-check and before any fetch,
@@ -94,11 +100,7 @@ async def run_channel_cycle(
         # fetch history until an Owner resumes it.
         if source["paused_at"]:
             continue
-        if not force_fetch and not source_is_due(
-            source,
-            channel["fetch_interval_hours"],
-            cycle_now,
-        ):
+        if not force_fetch and not source_is_due(source, schedule, cycle_now):
             continue
         # Defense in depth: a persisted Source that is incompatible with its Channel's kind (an
         # unknown Source type, or one the compatibility policy no longer allows for this kind)
@@ -135,7 +137,12 @@ async def run_channel_cycle(
             continue
 
         record_fetch_success(
-            conn, source["id"], now_iso, raw_count=len(raw_items), new_count=new_count
+            conn,
+            source["id"],
+            now_iso,
+            raw_count=len(raw_items),
+            new_count=new_count,
+            scheduled_slot_at=scheduled_slot_iso,
         )
 
     # An editorial Channel ranks community-signal ItemCandidates with past votes; a monitor/tracker

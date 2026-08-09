@@ -72,6 +72,7 @@ from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.featured import featured_utc_bounds, load_featured_window_days
 from beehive.domain.channels import ReadModel
 from beehive.localization import Localizer
+from beehive.scheduling import ChannelFetchSchedule
 from beehive.web.deep_read_view import (
     ALLOWED_ORIGINS,
     brief_url,
@@ -479,7 +480,7 @@ def dashboard(
             "freshness_exact": freshness_exact_time(sources),
             "next_fetch": next_fetch_countdown(
                 sources,
-                channel["fetch_interval_hours"],
+                ChannelFetchSchedule.from_channel(channel),
                 now,
                 t,
             ),

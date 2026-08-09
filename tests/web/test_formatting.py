@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from beehive.localization import localizer_for
+from beehive.scheduling import ChannelFetchSchedule
 from beehive.web.formatting import fetch_stats_label, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time
 
 EN = localizer_for("en")
@@ -64,44 +65,57 @@ def test_freshness_label_uses_the_selected_locale():
     assert label == "刚刚抓取"
 
 
-def _fetch_source(last_fetch_at=None):
-    return {"last_fetch_at": last_fetch_at}
+def _fetch_source(last_fetch_at=None, **overrides):
+    source = {"last_fetch_at": last_fetch_at, "last_scheduled_slot_at": None}
+    source.update(overrides)
+    return source
 
 
-def test_next_fetch_countdown_just_before_a_boundary():
-    now = datetime(2026, 7, 9, 3, 45, tzinfo=timezone.utc)
-    assert next_fetch_countdown([_fetch_source()], 24, now, EN) == "Fetching in 15 minutes"
+DAILY = ChannelFetchSchedule.interval(24)
 
 
-def test_next_fetch_countdown_just_after_a_boundary():
+def test_next_fetch_countdown_waits_for_the_next_timer_tick():
     now = datetime(2026, 7, 9, 4, 5, tzinfo=timezone.utc)
-    assert next_fetch_countdown([_fetch_source()], 24, now, EN) == "Fetching in 2 hours"
+    assert next_fetch_countdown([_fetch_source()], DAILY, now, EN) == "Fetching in 10 minutes"
 
 
-def test_next_fetch_countdown_wraps_to_tomorrow_after_the_last_slot():
-    now = datetime(2026, 7, 9, 10, 30, tzinfo=timezone.utc)
-    assert next_fetch_countdown([_fetch_source()], 24, now, EN) == "Fetching in 2 hours"
+def test_next_fetch_countdown_is_zero_on_a_timer_tick():
+    now = datetime(2026, 7, 9, 3, 45, tzinfo=timezone.utc)
+    assert next_fetch_countdown([_fetch_source()], DAILY, now, EN) == "Fetching in 0 minutes"
 
 
 def test_next_fetch_countdown_never_goes_negative_right_at_a_boundary():
     now = datetime(2026, 7, 9, 4, 0, 0, 500000, tzinfo=timezone.utc)
-    assert next_fetch_countdown([_fetch_source()], 24, now, EN) == "Fetching in 0 minutes"
+    assert next_fetch_countdown([_fetch_source()], DAILY, now, EN) == "Fetching in 0 minutes"
 
 
 def test_next_fetch_countdown_uses_the_channels_interval():
     now = datetime(2026, 7, 13, 9, 59, tzinfo=timezone.utc)
     source = _fetch_source("2026-07-13T07:00:00+00:00")
-    assert next_fetch_countdown([source], 24, now, EN) == "Fetching in 21 hours"
+    assert next_fetch_countdown([source], DAILY, now, EN) == "Fetching in 21 hours"
+
+
+def test_next_fetch_countdown_uses_a_calendar_schedules_slot():
+    # 05:00 Pacific/Auckland is 17:00 UTC the previous day in July.
+    now = datetime(2026, 7, 13, 15, 0, tzinfo=timezone.utc)
+    source = _fetch_source(
+        "2026-07-12T17:01:00+00:00", last_scheduled_slot_at="2026-07-12T17:00:00+00:00"
+    )
+    schedule = ChannelFetchSchedule.daily(
+        timezone_name="Pacific/Auckland", time_text="05:00"
+    )
+
+    assert next_fetch_countdown([source], schedule, now, EN) == "Fetching in 2 hours"
 
 
 def test_next_fetch_countdown_is_empty_without_sources():
     now = datetime(2026, 7, 13, 9, 59, tzinfo=timezone.utc)
-    assert next_fetch_countdown([], 24, now, EN) == ""
+    assert next_fetch_countdown([], DAILY, now, EN) == ""
 
 
 def test_next_fetch_countdown_uses_the_selected_locale():
-    now = datetime(2026, 7, 9, 3, 45, tzinfo=timezone.utc)
-    assert next_fetch_countdown([_fetch_source()], 24, now, ZH) == "15 分钟后抓取"
+    now = datetime(2026, 7, 9, 4, 5, tzinfo=timezone.utc)
+    assert next_fetch_countdown([_fetch_source()], DAILY, now, ZH) == "10 分钟后抓取"
 
 
 def test_freshness_exact_time_is_empty_when_never_fetched():

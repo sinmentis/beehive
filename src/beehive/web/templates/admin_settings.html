@@ -84,7 +84,9 @@
             {% include "_channel_kind_label.html" %}
           </span>
           <span role="cell">{{ t('web.admin.settings.source_count', count=channel.source_count) }}</span>
-          <span role="cell">{{ channel.fetch_interval_label }}</span>
+          <span role="cell">{{ channel.fetch_interval_label }}
+            {% if channel.next_fetch_label %}<small class="channel-next-fetch">{{ t('web.admin.channel_schedule.next_fetch', time=channel.next_fetch_label) }}</small>{% endif %}
+          </span>
           <span role="cell" title="{{ channel.freshness_exact_label }}">{{ channel.freshness_label }}</span>
           <span class="channel-edit-cell" role="cell">
             <a class="channel-edit-link" href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.settings.edit_channel') }}</a>

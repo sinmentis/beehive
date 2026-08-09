@@ -19,12 +19,23 @@
 -- digest_email only overrides the recipient for this channel's own fetch/AI-ranking failure
 -- alert emails (see run_channel_cycle); periodic digest recipients are controlled entirely by
 -- email_groups.recipient_email instead (see below), independent of this column.
+-- fetch_schedule_mode picks how this Channel's Sources become due (beehive.scheduling):
+-- 'interval' keeps the historical elapsed-duration cadence (last successful fetch +
+-- fetch_interval_hours) and is the default so an upgraded database behaves exactly as before;
+-- 'calendar' means "every day at fetch_schedule_time in fetch_schedule_timezone", anchored on the
+-- intended wall-clock slot rather than on the previous completion, so latency cannot make the
+-- daily fetch drift later day after day. fetch_interval_hours stays populated in either mode --
+-- switching back to 'interval' restores the cadence the Owner last chose.
 CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     profile TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL DEFAULT 'editorial' CHECK (kind IN ('editorial', 'monitor', 'tracker')),
     fetch_interval_hours INTEGER NOT NULL DEFAULT 3,
+    fetch_schedule_mode TEXT NOT NULL DEFAULT 'interval'
+        CHECK (fetch_schedule_mode IN ('interval', 'calendar')),
+    fetch_schedule_timezone TEXT NOT NULL DEFAULT 'Pacific/Auckland',
+    fetch_schedule_time TEXT NOT NULL DEFAULT '05:00',
     highlight_count      INTEGER NOT NULL DEFAULT 8 CHECK (highlight_count BETWEEN 1 AND 50),
     minimum_score        INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100),
     digest_email          TEXT,
@@ -37,8 +48,9 @@ CREATE TABLE IF NOT EXISTS channels (
 -- email_group_channels below), not per-channel -- this replaced the old fixed once-daily digest.
 -- subject_template is formatted with .format(date=...) at send time (see digest/compose.py);
 -- send_interval_hours + last_sent_at drive scheduling.email_group_is_due exactly like
--- sources.last_fetch_at drives source_is_due. recipient_email is optional: a blank/NULL value
--- falls back to the same global-default resolver channels already use
+-- sources.last_fetch_at (or last_scheduled_slot_at in calendar mode) drives source_is_due.
+-- recipient_email is optional: a blank/NULL value falls back to the same global-default resolver
+-- channels already use
 -- (email_routing.resolve_default_email) -- see digest/send.py. last_checked_at is a separate
 -- watermark for the mutable-item event path (item_events): it records when this group last
 -- scanned its Channels for deliverable events, independent of last_sent_at (a scan can find
@@ -82,6 +94,11 @@ CREATE TABLE IF NOT EXISTS email_group_channels (
 -- record the outcome of the most recent fetch attempt regardless of success (status 'ok' on a
 -- successful cycle, 'error' on a failure that left last_fetch_at untouched), so the Channel editor
 -- can show "attempted Nm ago, last succeeded Nh ago" even while a Source is failing.
+-- last_scheduled_slot_at is the schedule anchor for a Channel in calendar fetch mode: the intended
+-- wall-clock slot (not the moment work finished) that this Source last completed successfully as
+-- part of an automatic run. It is deliberately separate from last_fetch_at, which stays the
+-- freshness watermark -- a manual "fetch now" writes last_fetch_at and never this column, so
+-- running a Channel by hand cannot move its future automatic schedule.
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -94,7 +111,8 @@ CREATE TABLE IF NOT EXISTS sources (
     last_fetch_new_count INTEGER,
     paused_at TEXT,
     last_attempt_at TEXT,
-    last_fetch_status TEXT
+    last_fetch_status TEXT,
+    last_scheduled_slot_at TEXT
 );
 
 -- external_id is the connector's stable identity for a listing. For an editorial (APPEND) feed
@@ -159,7 +177,8 @@ CREATE TABLE IF NOT EXISTS votes (
 --   observed_at  -- when the collector detected this event (caller-supplied, like deep_reads).
 --   ready_at     -- set once AI scoring keeps the Item; a NULL ready_at event is still pending
 --                   and must not be delivered. suppressed_at is the opposite verdict.
---   suppressed_at-- set when AI scoring drops the Item, so the pending event is never delivered.
+--   suppressed_at-- set when AI scoring or a delivery policy drops the Item, so the pending event
+--                   is never delivered.
 --   delivered_at -- set when the event has actually gone out in a group email.
 -- The partial unique index below allows at most ONE undelivered, unsuppressed event per
 -- (item_id, event_type). db/item_events.py coalesces a fresh observation into that single open

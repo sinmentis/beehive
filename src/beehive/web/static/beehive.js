@@ -252,8 +252,11 @@
   });
 
   document.querySelectorAll("[data-schedule-builder]").forEach((builder) => {
+    // The radio group's field name differs per surface (Email Group delivery uses
+    // "schedule_mode", Channel fetching "fetch_schedule_mode"), so the builder names its own.
+    const modeField = builder.dataset.scheduleBuilder || "schedule_mode";
     const modeInputs = [
-      ...builder.querySelectorAll('input[name="schedule_mode"]'),
+      ...builder.querySelectorAll(`input[name="${modeField}"]`),
     ];
     const panels = [...builder.querySelectorAll("[data-schedule-panel]")];
     const syncScheduleFields = () => {

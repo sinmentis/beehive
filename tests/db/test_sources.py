@@ -278,3 +278,45 @@ def test_reset_fetch_state_clears_attempt_and_status_but_not_pause_or_name(conn,
     # Clearing fetched data must not resume a paused Source or forget its display name.
     assert row["paused_at"] == "2026-07-09T06:00:00"
     assert row["name"] == "Keep me"
+
+
+def test_record_fetch_success_leaves_the_scheduled_slot_alone_by_default(conn, channel_id):
+    """A manual "fetch now" and every interval-mode fetch pass no slot, so the calendar anchor
+    stays where the last scheduled run left it."""
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_success(
+        conn, source_id, "2026-07-13T17:02:00+00:00",
+        scheduled_slot_at="2026-07-13T17:00:00+00:00",
+    )
+
+    record_fetch_success(conn, source_id, "2026-07-13T20:00:00+00:00")
+
+    row = get_source(conn, source_id)
+    assert row["last_fetch_at"] == "2026-07-13T20:00:00+00:00"
+    assert row["last_scheduled_slot_at"] == "2026-07-13T17:00:00+00:00"
+
+
+def test_record_fetch_success_advances_the_scheduled_slot_when_given_one(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+
+    record_fetch_success(
+        conn, source_id, "2026-07-13T18:40:00+00:00",
+        scheduled_slot_at="2026-07-13T17:00:00+00:00",
+    )
+
+    row = get_source(conn, source_id)
+    # The anchor is the slot the run served, not when it happened to finish.
+    assert row["last_scheduled_slot_at"] == "2026-07-13T17:00:00+00:00"
+    assert row["last_fetch_at"] == "2026-07-13T18:40:00+00:00"
+
+
+def test_reset_fetch_state_by_channel_clears_the_scheduled_slot(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_success(
+        conn, source_id, "2026-07-13T17:02:00+00:00",
+        scheduled_slot_at="2026-07-13T17:00:00+00:00",
+    )
+
+    reset_fetch_state_by_channel(conn, channel_id)
+
+    assert get_source(conn, source_id)["last_scheduled_slot_at"] is None

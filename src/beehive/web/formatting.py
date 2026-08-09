@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from beehive.localization import Localizer
-from beehive.scheduling import HOST_TZ, next_channel_fetch_at
+from beehive.scheduling import HOST_TZ, ChannelFetchSchedule, next_channel_fetch_at
 
 
 def _as_aware_utc(iso_str: str) -> datetime:
@@ -57,15 +57,11 @@ def freshness_exact_time(sources: list[dict]) -> str:
 
 def next_fetch_countdown(
     sources: list[dict],
-    fetch_interval_hours: int,
+    schedule: ChannelFetchSchedule,
     now: datetime,
     t: Localizer,
 ) -> str:
-    next_fetch_at = next_channel_fetch_at(
-        sources,
-        fetch_interval_hours,
-        now,
-    )
+    next_fetch_at = next_channel_fetch_at(sources, schedule, now)
     if next_fetch_at is None:
         return ""
     minutes = max(

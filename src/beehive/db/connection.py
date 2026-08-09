@@ -40,6 +40,10 @@ _COLUMNS_TO_ENSURE = [
     ("sources", "paused_at", "TEXT"),
     ("sources", "last_attempt_at", "TEXT"),
     ("sources", "last_fetch_status", "TEXT"),
+    # Calendar-schedule anchor, NULL on every legacy row: a Channel upgraded in place stays in
+    # 'interval' fetch mode (see the channels columns below), which never reads this column, so
+    # nothing about an existing Source's cadence changes until an Owner opts into calendar mode.
+    ("sources", "last_scheduled_slot_at", "TEXT"),
     ("items", "best_comment_summary", "TEXT"),
     ("channels", "digest_email", "TEXT"),
     ("channels", "last_digest_sent_at", "TEXT"),
@@ -59,6 +63,22 @@ _COLUMNS_TO_ENSURE = [
         "kind",
         "TEXT NOT NULL DEFAULT 'editorial' CHECK (kind IN ('editorial', 'monitor', 'tracker'))",
     ),
+    # Per-Channel fetch schedule. The 'interval' default is what preserves existing behavior on
+    # upgrade: every Channel that predates calendar scheduling keeps being due at
+    # last_fetch_at + fetch_interval_hours until an Owner switches it over, and the timezone/time
+    # defaults are only consulted once calendar mode is chosen.
+    (
+        "channels",
+        "fetch_schedule_mode",
+        "TEXT NOT NULL DEFAULT 'interval' "
+        "CHECK (fetch_schedule_mode IN ('interval', 'calendar'))",
+    ),
+    (
+        "channels",
+        "fetch_schedule_timezone",
+        "TEXT NOT NULL DEFAULT 'Pacific/Auckland'",
+    ),
+    ("channels", "fetch_schedule_time", "TEXT NOT NULL DEFAULT '05:00'"),
     # Mutable-snapshot lifecycle (monitor/tracker Channels). All NULL for editorial items, so the
     # APPEND path is unchanged; see items table + db/items.py for the semantics.
     ("items", "last_seen_at", "TEXT"),
@@ -165,6 +185,10 @@ CREATE TABLE channels_kind_migration (
     kind TEXT NOT NULL DEFAULT 'editorial'
         CHECK (kind IN ('editorial', 'monitor', 'tracker')),
     fetch_interval_hours INTEGER NOT NULL DEFAULT 3,
+    fetch_schedule_mode TEXT NOT NULL DEFAULT 'interval'
+        CHECK (fetch_schedule_mode IN ('interval', 'calendar')),
+    fetch_schedule_timezone TEXT NOT NULL DEFAULT 'Pacific/Auckland',
+    fetch_schedule_time TEXT NOT NULL DEFAULT '05:00',
     highlight_count INTEGER NOT NULL DEFAULT 8 CHECK (highlight_count BETWEEN 1 AND 50),
     minimum_score INTEGER NOT NULL DEFAULT 0 CHECK (minimum_score BETWEEN 0 AND 100),
     digest_email TEXT,
@@ -174,13 +198,16 @@ CREATE TABLE channels_kind_migration (
 )
 """
 _CHANNELS_REBUILD_COLUMNS = (
-    "id, name, profile, kind, fetch_interval_hours, highlight_count, minimum_score, "
+    "id, name, profile, kind, fetch_interval_hours, fetch_schedule_mode, "
+    "fetch_schedule_timezone, fetch_schedule_time, highlight_count, minimum_score, "
     "digest_email, last_digest_sent_at, last_digest_date, created_at"
 )
 # Same column order as above, but defensively fills a NULL created_at (a shape older than the
-# NOT NULL DEFAULT) so the copy into the rebuilt NOT NULL column can never fail.
+# NOT NULL DEFAULT) so the copy into the rebuilt NOT NULL column can never fail. The schedule
+# columns are guaranteed present (and non-NULL) by the _ensure_column backfill that runs first.
 _CHANNELS_REBUILD_SELECT = (
-    "id, name, profile, kind, fetch_interval_hours, highlight_count, minimum_score, "
+    "id, name, profile, kind, fetch_interval_hours, fetch_schedule_mode, "
+    "fetch_schedule_timezone, fetch_schedule_time, highlight_count, minimum_score, "
     "digest_email, last_digest_sent_at, last_digest_date, "
     "COALESCE(created_at, strftime('%Y-%m-%dT%H:%M:%S', 'now'))"
 )

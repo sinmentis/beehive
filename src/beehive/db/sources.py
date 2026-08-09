@@ -12,6 +12,13 @@ last_attempt_at and sets last_fetch_status to 'ok' or 'error', so the Channel ed
 exception to all of the above is reset_fetch_state_by_channel, which blanks every one of these
 fetch fields at once as part of the admin "clear channel data" action.
 
+last_scheduled_slot_at is schedule state rather than freshness state: for a Channel on a calendar
+fetch schedule it holds the intended wall-clock slot that a scheduled run last completed
+successfully, so the next slot is computed from the calendar and not from how long the previous
+run took. record_fetch_success only writes it when the caller passes the slot it was serving --
+a manual "fetch now" and every interval-mode Channel leave it untouched (see
+beehive/scheduling.py and collector/run_cycle.py).
+
 paused_at and name are lifecycle/display state that outlive a fetch: paused_at, when set, takes a
 Source out of every collector cycle (see collector/run_cycle.py) and every warning summary without
 touching its config or history, and name is an optional Owner display label. Neither is cleared by
@@ -127,12 +134,34 @@ def set_source_paused(conn: sqlite3.Connection, source_id: int, paused: bool,
 
 
 def record_fetch_success(conn: sqlite3.Connection, source_id: int, fetched_at: str,
-                          raw_count: int = 0, new_count: int = 0) -> None:
-    conn.execute(
-        "UPDATE sources SET last_fetch_at = ?, last_fetch_error = NULL, "
-        "last_fetch_raw_count = ?, last_fetch_new_count = ?, "
-        "last_attempt_at = ?, last_fetch_status = ? WHERE id = ?",
-        (fetched_at, raw_count, new_count, fetched_at, FETCH_STATUS_OK, source_id))
+                          raw_count: int = 0, new_count: int = 0,
+                          *, scheduled_slot_at: str | None = None) -> None:
+    """Record a successful fetch, and -- only when the run was serving a calendar slot -- advance
+    the schedule anchor to that slot. scheduled_slot_at is None for an interval-mode Channel (which
+    schedules off last_fetch_at) and for every manual "fetch now", so running a Channel by hand
+    never moves its future automatic schedule. The anchor is the intended slot, not `fetched_at`,
+    so a run that started late still leaves tomorrow's slot exactly where it was."""
+    if scheduled_slot_at is None:
+        conn.execute(
+            "UPDATE sources SET last_fetch_at = ?, last_fetch_error = NULL, "
+            "last_fetch_raw_count = ?, last_fetch_new_count = ?, "
+            "last_attempt_at = ?, last_fetch_status = ? WHERE id = ?",
+            (fetched_at, raw_count, new_count, fetched_at, FETCH_STATUS_OK, source_id))
+    else:
+        conn.execute(
+            "UPDATE sources SET last_fetch_at = ?, last_fetch_error = NULL, "
+            "last_fetch_raw_count = ?, last_fetch_new_count = ?, "
+            "last_attempt_at = ?, last_fetch_status = ?, last_scheduled_slot_at = ? "
+            "WHERE id = ?",
+            (
+                fetched_at,
+                raw_count,
+                new_count,
+                fetched_at,
+                FETCH_STATUS_OK,
+                scheduled_slot_at,
+                source_id,
+            ))
     conn.commit()
 
 
@@ -175,12 +204,13 @@ def source_impact_counts(conn: sqlite3.Connection, source_id: int) -> dict[str, 
 def reset_fetch_state_by_channel(conn: sqlite3.Connection, channel_id: int) -> None:
     """Clears every Source's fetch bookkeeping for this Channel, pairing with
     items.delete_by_channel so a "clear channel data" admin action leaves no stale
-    last_fetch_*/error/count/attempt/status fields behind -- the next fetch (manual or scheduled)
-    starts as if the Sources were freshly added. Deliberately does NOT touch paused_at or name:
-    clearing fetched data must not resume a paused Source or forget its display name."""
+    last_fetch_*/error/count/attempt/status/slot fields behind -- the next fetch (manual or
+    scheduled) starts as if the Sources were freshly added. Deliberately does NOT touch paused_at
+    or name: clearing fetched data must not resume a paused Source or forget its display name."""
     conn.execute(
         "UPDATE sources SET last_fetch_at = NULL, last_fetch_error = NULL, "
         "last_fetch_raw_count = NULL, last_fetch_new_count = NULL, "
-        "last_attempt_at = NULL, last_fetch_status = NULL WHERE channel_id = ?",
+        "last_attempt_at = NULL, last_fetch_status = NULL, "
+        "last_scheduled_slot_at = NULL WHERE channel_id = ?",
         (channel_id,))
     conn.commit()

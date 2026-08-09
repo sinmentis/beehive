@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-Channel fetch scheduling: each Channel now chooses either a fixed interval (every 3 or 6
+  hours) or a daily wall-clock time in its own IANA timezone, defaulting to `Pacific/Auckland`. A
+  daily schedule is anchored to its calendar slot instead of the last successful fetch, so a late
+  run never pushes the next day's fetch later, and a manual "fetch now" does not move the
+  automatic schedule. Existing Channels keep their current interval behavior on upgrade.
 - Owner-only Research Sessions: a persistent, one-time question investigated with the existing
   credentialless connectors, a visible AI-proposed Research Plan, durable asynchronous evidence
   collection and clustering, a conclusion-first citation-backed Research Synthesis, stable
@@ -54,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Tracker sections without sending empty scheduled messages.
 - The digest timer now evaluates Email Group schedules and Research completion notifications every
   15 minutes. Individual groups remain governed by their own interval or calendar schedule.
+- The fetch timer now runs every 15 minutes as well. Individual Channels remain governed by their
+  own interval or daily calendar schedule, and a Source whose last attempt failed waits an hour
+  before being retried.
 - New ranking summaries state the strongest evidence-supported conclusion in one sentence instead
   of only describing the article topic.
 - Failed article briefs now identify the failing stage, explain whether the LLM ran, and provide a
@@ -63,6 +71,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Featured now ranks only content published during a configurable Auckland calendar-day window,
   defaulting to three days and falling back to fetch time when publication time is unavailable.
 - Featured table columns can be resized with pointer dragging or the keyboard.
+
+### Fixed
+
+- Editorial digests permanently suppress repeated stories with the same publisher and exact
+  headline, even when Google News republishes them under a new GUID on a later day.
+- Digest subjects and channel delivery dates now use each Email Group's configured timezone
+  instead of the UTC date.
 
 ## [0.1.0] - 2026-07-14
 
