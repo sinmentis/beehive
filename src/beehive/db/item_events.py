@@ -8,12 +8,13 @@ permits only DISCOVERED, stages just that. Regular Email Group delivery is entir
 the legacy Channel digest timestamps remain observability fields, not content watermarks.
 
 The lifecycle of one row is: recorded (observed_at set, ready_at/suppressed_at/delivered_at all
-NULL) -> either marked ready (AI kept the Item) or suppressed (AI dropped it) -> if ready, listed
-for delivery and finally marked delivered. The partial unique index idx_item_events_open_unique
-guarantees at most one *open* (undelivered, unsuppressed) event per (item_id, event_type), so
-record_or_coalesce_event folds a fresh observation into that single open row instead of inserting
-a duplicate: a listing whose price ticks down repeatedly between two sends still delivers one
-up-to-date price_drop, while a delivered event never blocks the next genuinely new one.
+NULL) -> either marked ready (AI kept the Item) or suppressed (AI or a delivery policy dropped it)
+-> if ready, listed for delivery and finally marked delivered. The partial unique index
+idx_item_events_open_unique guarantees at most one *open* (undelivered, unsuppressed) event per
+(item_id, event_type), so record_or_coalesce_event folds a fresh observation into that single open
+row instead of inserting a duplicate: a listing whose price ticks down repeatedly between two
+sends still delivers one up-to-date price_drop, while a delivered event never blocks the next
+genuinely new one.
 
 Every *_at value is a caller-supplied timestamp string (the deep_reads / research convention), so
 ordering and readiness stay deterministic under frozen time in tests; this module never reads the
@@ -110,6 +111,23 @@ def suppress_item_events(
     return cur.rowcount
 
 
+def suppress_events(
+    conn: sqlite3.Connection, event_ids: list[int], suppressed_at: str
+) -> int:
+    """Suppress selected open events that a delivery policy has intentionally excluded."""
+    if not event_ids:
+        return 0
+    placeholders = ", ".join("?" for _ in event_ids)
+    cur = conn.execute(
+        f"UPDATE item_events SET suppressed_at = ? "
+        f"WHERE id IN ({placeholders}) "
+        "AND suppressed_at IS NULL AND delivered_at IS NULL",
+        [suppressed_at, *event_ids],
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 def _row_to_event_dict(row: sqlite3.Row) -> dict:
     event = dict(row)
     event["payload"] = json.loads(event["payload"])
@@ -157,6 +175,33 @@ def list_ready_events_for_channels(
     events = []
     for row in rows:
         event = _row_to_event_dict(row)
+        event["item_raw_metadata"] = json.loads(event["item_raw_metadata"])
+        events.append(event)
+    return events
+
+
+def list_delivered_editorial_events_for_channels(
+    conn: sqlite3.Connection, channel_ids: list[int]
+) -> list[dict]:
+    """Delivered editorial discoveries used to suppress exact headline republications."""
+    if not channel_ids:
+        return []
+    placeholders = ", ".join("?" for _ in channel_ids)
+    rows = conn.execute(
+        "SELECT items.title AS item_title, items.raw_metadata AS item_raw_metadata "
+        "FROM item_events "
+        "JOIN items ON items.id = item_events.item_id "
+        "JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        "WHERE item_events.event_type = 'discovered' "
+        "AND item_events.delivered_at IS NOT NULL "
+        "AND channels.kind = 'editorial' "
+        f"AND channels.id IN ({placeholders})",
+        channel_ids,
+    ).fetchall()
+    events = []
+    for row in rows:
+        event = dict(row)
         event["item_raw_metadata"] = json.loads(event["item_raw_metadata"])
         events.append(event)
     return events

@@ -126,7 +126,7 @@ def test_ready_event_is_delivered_and_advances_checkpoints(conn):
         "SELECT last_digest_sent_at, last_digest_date FROM channels WHERE id = ?",
         (channel_id,)).fetchone()
     assert channel["last_digest_sent_at"] == _SENT_AT
-    assert channel["last_digest_date"] == "2026-07-13"
+    assert channel["last_digest_date"] == "2026-07-14"
 
 
 # --- Mixed three-kind group + labels/details --------------------------------------------------
@@ -239,6 +239,111 @@ def test_capped_out_event_is_delivered_on_the_next_due_evaluation(conn):
     assert "top pick" not in plain_text  # already delivered last interval
     assert _delivered_at(conn, top) == _SENT_AT
     assert _delivered_at(conn, second) == next_day.isoformat()
+
+
+def test_exact_google_news_republication_is_not_sent_again(conn):
+    channel_id = create_channel(conn, "NZ News", "profile")
+    source_id = create_source(
+        conn,
+        channel_id,
+        "google_news_query",
+        {"query": "New Zealand"},
+    )
+    title = "Juken Northland Mill closes, ending an era - NZ Herald"
+    _, first_event = _stage_event(
+        conn,
+        source_id,
+        "google-guid-1",
+        title=title,
+        raw_metadata={"source_name": "NZ Herald"},
+        summary="Mill closure reported",
+    )
+    group_id = _make_group(conn, channel_id, send_interval_hours=24)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_called_once()
+    assert _delivered_at(conn, first_event) == _SENT_AT
+    notifier.reset_mock()
+    _, repeated_event = _stage_event(
+        conn,
+        source_id,
+        "google-guid-2",
+        title=title,
+        raw_metadata={"source_name": "NZ Herald"},
+        summary="Same report republished",
+        observed_at=(RUN_TIME + timedelta(hours=1)).isoformat(),
+        ready_at=(RUN_TIME + timedelta(hours=2)).isoformat(),
+    )
+
+    next_day = RUN_TIME + timedelta(days=1)
+    send_email_group_digests(
+        conn,
+        notifier,
+        DEFAULT_RECIPIENT,
+        _EN,
+        now=next_day,
+    )
+
+    notifier.send.assert_not_called()
+    repeated = conn.execute(
+        "SELECT delivered_at, suppressed_at FROM item_events WHERE id = ?",
+        (repeated_event,),
+    ).fetchone()
+    assert repeated["delivered_at"] is None
+    assert repeated["suppressed_at"] == next_day.isoformat()
+    group = _group_row(conn, group_id)
+    assert group["last_checked_at"] == next_day.isoformat()
+    assert group["last_sent_at"] == _SENT_AT
+
+
+def test_same_headline_from_different_publishers_is_sent(conn):
+    channel_id = create_channel(conn, "NZ News", "profile")
+    source_id = create_source(
+        conn,
+        channel_id,
+        "google_news_query",
+        {"query": "New Zealand"},
+    )
+    title = "New Zealand economy expands"
+    _stage_event(
+        conn,
+        source_id,
+        "google-guid-1",
+        title=title,
+        raw_metadata={"source_name": "Publisher One"},
+        summary="First publisher report",
+    )
+    _make_group(conn, channel_id, send_interval_hours=24)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.reset_mock()
+    _, second_event = _stage_event(
+        conn,
+        source_id,
+        "google-guid-2",
+        title=title,
+        raw_metadata={"source_name": "Publisher Two"},
+        summary="Second publisher report",
+        observed_at=(RUN_TIME + timedelta(hours=1)).isoformat(),
+        ready_at=(RUN_TIME + timedelta(hours=2)).isoformat(),
+    )
+    next_day = RUN_TIME + timedelta(days=1)
+
+    send_email_group_digests(
+        conn,
+        notifier,
+        DEFAULT_RECIPIENT,
+        _EN,
+        now=next_day,
+    )
+
+    notifier.send.assert_called_once()
+    assert "Second publisher report" in notifier.send.call_args.args[1]
+    assert _delivered_at(conn, second_event) == next_day.isoformat()
 
 
 # --- Empty evaluation: last_checked only, and cadence -----------------------------------------
@@ -582,7 +687,7 @@ def test_stored_summary_text_is_never_translated_or_altered(conn):
 
 # --- Subject + recipient plumbing (unchanged from the group model) ----------------------------
 
-def test_subject_template_is_formatted_with_the_digest_date(conn):
+def test_subject_template_uses_the_email_groups_local_date(conn):
     channel_id = create_channel(conn, "NZ Finance", "profile")
     source_id = create_source(conn, channel_id, *_REDDIT)
     _stage_event(conn, source_id, "t1", summary="news")
@@ -591,7 +696,7 @@ def test_subject_template_is_formatted_with_the_digest_date(conn):
 
     send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
 
-    assert notifier.send.call_args.args[0] == "Weekly Roundup \u00b7 2026-07-13"
+    assert notifier.send.call_args.args[0] == "Weekly Roundup \u00b7 2026-07-14"
 
 
 def test_malformed_subject_template_falls_back_to_the_raw_template_text(conn):

@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from beehive.db.channels import mark_digest_sent
 from beehive.db.email_groups import (
@@ -30,7 +32,12 @@ from beehive.db.email_groups import (
     mark_error,
     mark_sent,
 )
-from beehive.db.item_events import list_ready_events_for_channels, mark_events_delivered
+from beehive.db.item_events import (
+    list_delivered_editorial_events_for_channels,
+    list_ready_events_for_channels,
+    mark_events_delivered,
+    suppress_events,
+)
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.digest.compose import (
     compose_channel_digest,
@@ -44,7 +51,7 @@ from beehive.email_routing import (
 )
 from beehive.localization import Localizer
 from beehive.notify import Notifier
-from beehive.scheduling import email_group_is_due
+from beehive.scheduling import DEFAULT_SCHEDULE_TIMEZONE, email_group_is_due
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,6 +77,7 @@ class EmailGroupDigestPreview:
 class _GroupDigestContent:
     channel_digests: list
     delivered_event_ids: list[int]
+    duplicate_event_ids: list[int]
     included_channel_ids: list[int]
     warning_count: int
 
@@ -83,6 +91,11 @@ def _format_subject(template: str, digest_date: str) -> str:
         return template
 
 
+def _digest_date(group: dict, run_time: datetime) -> str:
+    timezone_name = group.get("schedule_timezone") or DEFAULT_SCHEDULE_TIMEZONE
+    return run_time.astimezone(ZoneInfo(timezone_name)).date().isoformat()
+
+
 def _events_by_channel(events: list[dict]) -> dict[int, list[dict]]:
     """Group the flat, already-ordered deliverable events by their Channel id, preserving the
     (ai_score desc, observed_at asc, id asc) order the query established so a per-Channel slice
@@ -93,6 +106,37 @@ def _events_by_channel(events: list[dict]) -> dict[int, list[dict]]:
     return grouped
 
 
+def _fingerprint_part(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
+    return normalized or None
+
+
+def _news_fingerprint(
+    title: object, metadata: object
+) -> tuple[str, str] | None:
+    if not isinstance(metadata, dict):
+        return None
+    publisher = _fingerprint_part(metadata.get("source_name"))
+    normalized_title = _fingerprint_part(title)
+    if publisher is None or normalized_title is None:
+        return None
+    return publisher, normalized_title
+
+
+def _editorial_news_fingerprint(event: dict) -> tuple[str, str] | None:
+    if (
+        event.get("channel_kind") != "editorial"
+        or event.get("event_type") != "discovered"
+    ):
+        return None
+    return _news_fingerprint(
+        event.get("item_title"),
+        event.get("item_raw_metadata"),
+    )
+
+
 def _build_group_content(
     conn: sqlite3.Connection,
     group: dict,
@@ -101,12 +145,38 @@ def _build_group_content(
     member_channels = list_member_channels(conn, group["id"])
     channel_ids = [channel["id"] for channel in member_channels]
     grouped_events = _events_by_channel(list_ready_events_for_channels(conn, channel_ids))
+    delivered_fingerprints = {
+        fingerprint
+        for event in list_delivered_editorial_events_for_channels(conn, channel_ids)
+        if (
+            fingerprint := _news_fingerprint(
+                event.get("item_title"),
+                event.get("item_raw_metadata"),
+            )
+        )
+        is not None
+    }
+    selected_fingerprints: set[tuple[str, str]] = set()
     channel_digests = []
     delivered_event_ids: list[int] = []
+    duplicate_event_ids: list[int] = []
     included_channel_ids: list[int] = []
     warning_count = 0
     for channel in member_channels:
-        capped = grouped_events.get(channel["id"], [])[: channel["highlight_count"]]
+        capped = []
+        for event in grouped_events.get(channel["id"], []):
+            fingerprint = _editorial_news_fingerprint(event)
+            if fingerprint is not None and (
+                fingerprint in delivered_fingerprints
+                or fingerprint in selected_fingerprints
+            ):
+                duplicate_event_ids.append(event["id"])
+                continue
+            capped.append(event)
+            if fingerprint is not None:
+                selected_fingerprints.add(fingerprint)
+            if len(capped) >= channel["highlight_count"]:
+                break
         warnings = [
             localizer.text(
                 "background.source_fetch_warning",
@@ -133,6 +203,7 @@ def _build_group_content(
     return _GroupDigestContent(
         channel_digests=channel_digests,
         delivered_event_ids=delivered_event_ids,
+        duplicate_event_ids=duplicate_event_ids,
         included_channel_ids=included_channel_ids,
         warning_count=warning_count,
     )
@@ -146,7 +217,7 @@ def build_email_group_digest_preview(
     now: datetime | None = None,
 ) -> EmailGroupDigestPreview | None:
     run_time = now or datetime.now(timezone.utc)
-    digest_date = run_time.date().isoformat()
+    digest_date = _digest_date(group, run_time)
     content = _build_group_content(conn, group, localizer)
     if not content.channel_digests:
         return None
@@ -179,7 +250,6 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
                              now: datetime | None = None) -> None:
     run_time = now or datetime.now(timezone.utc)
     checkpoint = run_time.isoformat()
-    digest_date = run_time.date().isoformat()
     failures: list[Exception] = []
 
     for group in list_email_groups(conn):
@@ -189,6 +259,7 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
             # the list -- a silent, ordering-dependent loss of unrelated digests.
             if not email_group_is_due(group, run_time):
                 continue
+            digest_date = _digest_date(group, run_time)
             _deliver_due_group(
                 conn, group, notifier, default_recipient, localizer,
                 checkpoint=checkpoint, digest_date=digest_date)
@@ -234,6 +305,11 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
         # No ready events and no Source warnings anywhere (including a group with no member
         # Channels): nothing to send, but the group was genuinely evaluated, so pace it forward
         # without claiming an email went out and without touching any Channel watermark.
+        suppress_events(
+            conn,
+            content.duplicate_event_ids,
+            suppressed_at=checkpoint,
+        )
         mark_checked(conn, group["id"], checked_at=checkpoint)
         return
 
@@ -260,6 +336,11 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
         conn,
         content.delivered_event_ids,
         delivered_at=checkpoint,
+    )
+    suppress_events(
+        conn,
+        content.duplicate_event_ids,
+        suppressed_at=checkpoint,
     )
     mark_digest_sent(
         conn,
