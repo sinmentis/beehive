@@ -21,6 +21,7 @@ from beehive.db.research_sessions import count_unread_completed_research_session
 from beehive.localization import load_localizer
 from beehive.web import admin, public, research
 from beehive.web.client_ip import parse_trusted_proxies
+from beehive.web.readiness import check_readiness
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -152,6 +153,22 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     )
     app.state.templates.env.globals["asset_version"] = _static_asset_version()
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    @app.get("/readyz", include_in_schema=False)
+    def readyz() -> Response:
+        """Can this process serve a request right now? Asked over loopback by the dashboard
+        control plane, which decides from this one call whether a resume worked.
+
+        Owner-only surfaces are gated by the admin session (deps.py); this route is not, so it
+        carries nothing a visitor could not already learn by watching the port answer at all --
+        a status word and a fixed reason code. The reason exists so "the volume is not mounted"
+        and "the file is there but unreadable" are distinguishable without a shell on the host.
+
+        Reads `app.state.db_path` per call rather than closing over it, so the path stays a
+        single source of truth with the rest of the app.
+        """
+        result = check_readiness(app.state.db_path)
+        return JSONResponse(result.body(), status_code=result.status_code)
 
     def _load_request_localizer(request: Request) -> None:
         if hasattr(request.state, "localizer"):

@@ -40,6 +40,48 @@ The web container publishes to `127.0.0.1` only, so the app is reachable from th
 and from whatever reverse proxy or tunnel you place in front of it, not from the public internet
 directly.
 
+## Dashboard lifecycle contract
+
+The project-owned declaration is `../ops/dashboard/workload.declaration.json`. It names logical
+roles only — nine actionable ones (`web`, `research-worker`, and the five timers plus two path
+units) and six wait-only drain roles (the one-shot jobs behind those timers and paths). Concrete
+unit names, the host port, and the authority to act on any of it stay in the dashboard
+repository's trusted binding, which also owns the persistent pause gate. Nothing here grants
+itself permission; this file only describes what exists.
+
+Readiness is `/readyz` on the container's port 8000 (`GET`, expect `200`, 5s budget). It opens the
+SQLite database through the app's own connection seam, checks the core tables are present, and
+reads one row back, so a mounted-but-empty volume answers 503 instead of passing.
+
+**Pause** stops things in dependency order, newest work first:
+
+1. the five timers (`fetch`, `digest`, `auction-reminders`, `deep-read`, `research-reconcile`), so
+   no new scheduled run can begin;
+2. the two path units (`fetch-manual`, `deep-read`), so a trigger marker written a second ago no
+   longer starts a job;
+3. `beehive-web.service`, which is what writes those markers and enqueues research work;
+4. `beehive-research.service`, last, so it drains with its own graceful shutdown
+   (`TimeoutStopSec=60`) after nothing upstream can hand it more work.
+
+The six one-shot jobs are **wait-only**. The dashboard never sends them a stop. A fetch cycle, a
+deep-read brief, a digest send or a reminder claim is mid-transaction against the shared SQLite
+file, and killing one buys nothing that waiting does not. Pause reports success only once every
+actionable unit is stopped *and* every in-flight one-shot has exited on its own.
+
+**Resume** goes back the other way: `beehive-research.service`, then `beehive-web.service`, then
+the two path units, then the timers.
+
+Nothing queued is lost across a pause. Every trigger is a committed SQLite row (a pending
+`deep_reads` job, a `research_runs`/`research_chat_requests` entry, a Channel's due-time, an Email
+Group's watermark), not in-memory state, and the wakeup markers on disk outlive the pause too. On
+resume the worker picks its queue back up and reconciles any lease that expired while it was down.
+
+Expect a burst right after resume: all five timers are `Persistent=true`, so systemd runs one
+catch-up pass for the ticks missed during the pause rather than silently skipping them. That is a
+single run per timer, not one per missed interval, and each job re-derives what is actually due
+(per-Channel schedules for fetch, watermarks for digest, the closing window for reminders), so the
+catch-up costs one cycle rather than a backlog replay.
+
 ## Secrets (never in the image or git)
 
 Beehive reads its credentials from rootless Podman secrets, each mapped to an environment

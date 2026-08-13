@@ -1,0 +1,52 @@
+{
+  "apiVersion": "dash.shunlyu.com/v1alpha1",
+  "kind": "WorkloadDeclaration",
+  "metadata": {
+    "name": "news",
+    "displayName": "News Center"
+  },
+  "spec": {
+    "capabilities": {
+      "core.lifecycle": {
+        "version": 2,
+        "roles": [
+          "web",
+          "research-worker",
+          "fetch-timer",
+          "digest-timer",
+          "reminders-timer",
+          "deep-read-timer",
+          "reconcile-timer",
+          "fetch-manual-path",
+          "deep-read-path"
+        ],
+        "drainRoles": [
+          "fetch-job",
+          "fetch-manual-job",
+          "deep-read-job",
+          "digest-job",
+          "reminders-job",
+          "reconcile-job"
+        ]
+      },
+      "core.health": {
+        "version": 1,
+        "checks": [
+          {
+            "name": "ready",
+            "kind": "http",
+            "port": "http",
+            "path": "/readyz",
+            "expectStatus": 200,
+            "timeoutSeconds": 5
+          }
+        ]
+      }
+    },
+    "ports": {
+      "http": {
+        "containerPort": 8000
+      }
+    }
+  }
+}
