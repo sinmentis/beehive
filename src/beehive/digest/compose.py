@@ -79,6 +79,11 @@ class ChannelDigest:
     events: list[EventView]
     source_warnings: list[str]
     accent: str = _DEFAULT_ACCENT
+    # One-line health summary ("4/4 sources OK · 1873 listings tracked"), so a quiet Channel
+    # reads as "checked, nothing new" rather than looking broken.
+    status: str = ""
+    # "…and N more not shown" when eligible events were left for a later email by the cap.
+    remaining_note: str = ""
 
 
 def build_event_view(event: dict, localizer: Localizer) -> EventView:
@@ -134,17 +139,27 @@ def compose_channel_digest(
     events: list[dict],
     source_warnings: list[str],
     localizer: Localizer,
+    *,
+    status: str = "",
+    remaining_count: int = 0,
 ) -> ChannelDigest:
     """Build one Channel's section from its already-capped, already-ordered deliverable events.
     The caller (send.py) owns the highlight_count cap because it must mark exactly the included
     event ids delivered; this function renders whatever it is given, in order."""
     views = [build_event_view(event, localizer) for event in events]
+    remaining_note = (
+        localizer.text("background.digest_more_events", count=remaining_count)
+        if remaining_count
+        else ""
+    )
     return ChannelDigest(
         channel_name=channel_name,
         channel_kind=channel_kind,
         events=views,
         source_warnings=source_warnings,
         accent=_accent_for_kind(channel_kind),
+        status=status,
+        remaining_note=remaining_note,
     )
 
 
@@ -162,10 +177,14 @@ def render_digest_email(channel_digests: list[ChannelDigest], today_iso: str,
     lines = []
     for cd in channel_digests:
         lines.append(f"== {cd.channel_name} ==")
+        if cd.status:
+            lines.append(cd.status)
         for warning in cd.source_warnings:
             lines.append(f"! {warning}")
         for event in cd.events:
             lines.append(f"- {_event_meta_prefix(event)}{event.headline} ({event.url})")
+        if cd.remaining_note:
+            lines.append(cd.remaining_note)
         lines.append("")
     return subject, "\n".join(lines).rstrip()
 

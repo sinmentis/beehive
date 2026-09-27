@@ -338,6 +338,15 @@ def count_active_items(conn: sqlite3.Connection, source_id: int) -> int:
     ).fetchone()[0]
 
 
+def count_active_items_by_channel(conn: sqlite3.Connection, channel_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM items JOIN sources ON sources.id = items.source_id "
+        "WHERE sources.channel_id = ? AND sources.paused_at IS NULL "
+        "AND items.superseded_at IS NULL AND items.inactive_at IS NULL",
+        (channel_id,),
+    ).fetchone()[0]
+
+
 def mark_absent_items_inactive(
     conn: sqlite3.Connection,
     source_id: int,

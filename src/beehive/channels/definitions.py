@@ -11,7 +11,9 @@ ChannelKind has one definition, so a newly added kind that forgets its declarati
 on first import instead of silently defaulting."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import timedelta
 
 from beehive.domain.channels import (
     ChannelKind,
@@ -42,6 +44,10 @@ class ChannelDefinition:
     # snapshot confirms it. On for catalogues, where that pattern means a broken or partial
     # upstream response; off for trackers, whose lots legitimately vanish when an auction ends.
     guard_mass_retirement: bool
+    # How long a ready event stays eligible for an Email Group before it is closed unsent. News
+    # and listing changes stop being worth an email after a few days; a missing entry never
+    # expires (tracker lots are retired when their auction ends instead).
+    event_max_age: Mapping[EmailEventType, timedelta] = field(hash=False)
 
 
 _DEFINITIONS: tuple[ChannelDefinition, ...] = (
@@ -57,6 +63,7 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
         manual_watch=False,
         email_event_types=frozenset({EmailEventType.DISCOVERED}),
         guard_mass_retirement=False,
+        event_max_age={EmailEventType.DISCOVERED: timedelta(days=3)},
     ),
     ChannelDefinition(
         kind=ChannelKind.MONITOR,
@@ -76,6 +83,11 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
             }
         ),
         guard_mass_retirement=True,
+        event_max_age={
+            EmailEventType.DISCOVERED: timedelta(days=7),
+            EmailEventType.PRICE_DROP: timedelta(days=3),
+            EmailEventType.BACK_IN_STOCK: timedelta(days=3),
+        },
     ),
     ChannelDefinition(
         kind=ChannelKind.TRACKER,
@@ -89,6 +101,7 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
         manual_watch=True,
         email_event_types=frozenset({EmailEventType.DISCOVERED}),
         guard_mass_retirement=False,
+        event_max_age={},
     ),
 )
 

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -533,14 +534,17 @@ def test_preview_and_test_send_do_not_consume_pending_events(
         summary="The central bank held rates.",
         rationale="Relevant",
     )
+    # Relative to the real clock: the preview route ranks with datetime.now(), and an event past
+    # its max age would be left out of the preview.
+    observed_at = datetime.now(timezone.utc) - timedelta(hours=1)
     event_id = record_or_coalesce_event(
         conn,
         item_id,
         "discovered",
         {},
-        "2026-07-15T00:00:00+00:00",
+        observed_at.isoformat(),
     )
-    mark_item_events_ready(conn, item_id, "2026-07-15T00:01:00+00:00")
+    mark_item_events_ready(conn, item_id, (observed_at + timedelta(minutes=1)).isoformat())
     group_id = create_email_group(
         conn,
         "Daily",

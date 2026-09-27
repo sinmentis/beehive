@@ -8,9 +8,11 @@ time a due group is evaluated, even when it finds nothing to send) and last_sent
 when an email actually goes out). A due group with no ready events and no current Source warnings
 sends nothing and advances only last_checked_at, so scheduling.email_group_is_due still paces it
 without ever pretending an email was sent. A group that does have content sends exactly one email
-covering every member Channel with something to say, marks exactly the included event ids
-delivered, and advances both checkpoints; the events left beyond a Channel's highlight_count cap
-stay undelivered for the next due evaluation. Failures (a delivery error, or a missing recipient
+covering every member Channel (quiet ones get only their status line), marks exactly the included
+event ids delivered, and advances both checkpoints. Which events a Channel contributes is decided
+by digest/selection.py: expired events are closed unsent, events from a stale snapshot Source are
+held, and the events left beyond a Channel's highlight_count cap stay undelivered for a later
+email until they expire. Failures (a delivery error, or a missing recipient
 when content genuinely exists) are collected after every independent group has been attempted and
 raised as one ExceptionGroup, so one group's failure never blocks the others and its events retry
 untouched next cycle."""
@@ -18,12 +20,12 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from beehive.channels.definitions import get_definition, require_channel_kind
 from beehive.db.channels import mark_digest_sent
 from beehive.db.email_groups import (
     list_email_groups,
@@ -38,12 +40,15 @@ from beehive.db.item_events import (
     mark_events_delivered,
     suppress_events,
 )
+from beehive.db.items import count_active_items_by_channel
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.digest.compose import (
     compose_channel_digest,
     render_digest_email,
     render_digest_email_html,
 )
+from beehive.digest.selection import news_fingerprint, select_channel_events
+from beehive.domain.channels import PersistenceMode
 from beehive.email_routing import (
     EmailConfigurationError,
     ResolvedRecipient,
@@ -52,6 +57,7 @@ from beehive.email_routing import (
 from beehive.localization import Localizer
 from beehive.notify import Notifier
 from beehive.scheduling import DEFAULT_SCHEDULE_TIMEZONE, email_group_is_due
+from beehive.source_health import is_stale
 from beehive.web.source_labels import source_display_name
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,6 +85,7 @@ class _GroupDigestContent:
     channel_digests: list
     delivered_event_ids: list[int]
     duplicate_event_ids: list[int]
+    expired_event_ids: list[int]
     included_channel_ids: list[int]
     warning_count: int
 
@@ -98,44 +105,12 @@ def _digest_date(group: dict, run_time: datetime) -> str:
 
 
 def _events_by_channel(events: list[dict]) -> dict[int, list[dict]]:
-    """Group the flat, already-ordered deliverable events by their Channel id, preserving the
-    (ai_score desc, observed_at asc, id asc) order the query established so a per-Channel slice
-    keeps the highest-scored events."""
+    """Group the flat deliverable events by their Channel id; digest/selection.py ranks each
+    Channel's slice."""
     grouped: dict[int, list[dict]] = defaultdict(list)
     for event in events:
         grouped[event["channel_id"]].append(event)
     return grouped
-
-
-def _fingerprint_part(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = " ".join(unicodedata.normalize("NFKC", value).split()).casefold()
-    return normalized or None
-
-
-def _news_fingerprint(
-    title: object, metadata: object
-) -> tuple[str, str] | None:
-    if not isinstance(metadata, dict):
-        return None
-    publisher = _fingerprint_part(metadata.get("source_name"))
-    normalized_title = _fingerprint_part(title)
-    if publisher is None or normalized_title is None:
-        return None
-    return publisher, normalized_title
-
-
-def _editorial_news_fingerprint(event: dict) -> tuple[str, str] | None:
-    if (
-        event.get("channel_kind") != "editorial"
-        or event.get("event_type") != "discovered"
-    ):
-        return None
-    return _news_fingerprint(
-        event.get("item_title"),
-        event.get("item_raw_metadata"),
-    )
 
 
 def _local_date(timestamp: str, timezone_name: str) -> str:
@@ -167,79 +142,147 @@ def _source_warning(source: dict, localizer: Localizer, timezone_name: str) -> s
     return f"{warning} {streak}"
 
 
+def _channel_warnings(
+    channel: dict,
+    sources: list[dict],
+    localizer: Localizer,
+    timezone_name: str,
+    now: datetime,
+) -> list[str]:
+    snapshot = (
+        get_definition(require_channel_kind(channel["kind"])).persistence_mode
+        is PersistenceMode.MUTABLE_SNAPSHOT
+    )
+    warnings = []
+    for source in sources:
+        if source["paused_at"]:
+            continue
+        stale = snapshot and is_stale(source, channel, now)
+        if source["last_fetch_error"]:
+            warning = _source_warning(source, localizer, timezone_name)
+        elif stale:
+            warning = localizer.text(
+                "background.source_not_fetched_since",
+                source=source_display_name(source, localizer),
+                last_success=_local_date(source["last_fetch_at"], timezone_name),
+            )
+        else:
+            warning = None
+        if warning is not None:
+            if stale:
+                warning = f"{warning} {localizer.text('background.source_stale_hold')}"
+            warnings.append(warning)
+        if source.get("retire_hold_at"):
+            warnings.append(
+                localizer.text(
+                    "background.source_retire_hold",
+                    count=int(source.get("retire_hold_count") or 0),
+                    source=source_display_name(source, localizer),
+                )
+            )
+    return warnings
+
+
+def _channel_status(
+    conn: sqlite3.Connection,
+    channel: dict,
+    sources: list[dict],
+    localizer: Localizer,
+    *,
+    quiet: bool,
+) -> str:
+    """One line saying the Channel was checked: sources OK, listings tracked, and whether
+    anything changed. It is what makes "no news" distinguishable from "broken"."""
+    active = [source for source in sources if not source["paused_at"]]
+    healthy = sum(1 for source in active if not source["last_fetch_error"])
+    parts = [
+        localizer.text("background.digest_status_sources", ok=healthy, total=len(active))
+    ]
+    definition = get_definition(require_channel_kind(channel["kind"]))
+    if definition.persistence_mode is PersistenceMode.MUTABLE_SNAPSHOT:
+        parts.append(
+            localizer.text(
+                "background.digest_status_listings",
+                count=count_active_items_by_channel(conn, channel["id"]),
+            )
+        )
+    if quiet:
+        parts.append(localizer.text("background.digest_status_no_changes"))
+    return " \u00b7 ".join(parts)
+
+
 def _build_group_content(
     conn: sqlite3.Connection,
     group: dict,
     localizer: Localizer,
+    *,
+    now: datetime,
 ) -> _GroupDigestContent:
+    """Everything one group email would contain. Channels without events or warnings are still
+    listed with their status line when the email goes out for another Channel, but they never make
+    an email go out on their own."""
     group_timezone = group.get("schedule_timezone") or DEFAULT_SCHEDULE_TIMEZONE
     member_channels = list_member_channels(conn, group["id"])
     channel_ids = [channel["id"] for channel in member_channels]
     grouped_events = _events_by_channel(list_ready_events_for_channels(conn, channel_ids))
-    delivered_fingerprints = {
+    seen_fingerprints = frozenset(
         fingerprint
         for event in list_delivered_editorial_events_for_channels(conn, channel_ids)
         if (
-            fingerprint := _news_fingerprint(
+            fingerprint := news_fingerprint(
                 event.get("item_title"),
                 event.get("item_raw_metadata"),
             )
         )
         is not None
-    }
-    selected_fingerprints: set[tuple[str, str]] = set()
-    channel_digests = []
+    )
+    sections = []
     delivered_event_ids: list[int] = []
     duplicate_event_ids: list[int] = []
+    expired_event_ids: list[int] = []
     included_channel_ids: list[int] = []
     warning_count = 0
     for channel in member_channels:
-        capped = []
-        for event in grouped_events.get(channel["id"], []):
-            fingerprint = _editorial_news_fingerprint(event)
-            if fingerprint is not None and (
-                fingerprint in delivered_fingerprints
-                or fingerprint in selected_fingerprints
-            ):
-                duplicate_event_ids.append(event["id"])
-                continue
-            capped.append(event)
-            if fingerprint is not None:
-                selected_fingerprints.add(fingerprint)
-            if len(capped) >= channel["highlight_count"]:
-                break
-        warnings = []
-        for source in list_sources(conn, channel["id"]):
-            if source["paused_at"]:
-                continue
-            if source["last_fetch_error"]:
-                warnings.append(_source_warning(source, localizer, group_timezone))
-            if source.get("retire_hold_at"):
-                warnings.append(
-                    localizer.text(
-                        "background.source_retire_hold",
-                        count=int(source.get("retire_hold_count") or 0),
-                        source=source_display_name(source, localizer),
-                    )
-                )
-        if not capped and not warnings:
-            continue
-        channel_digests.append(
-            compose_channel_digest(
-                channel["name"],
-                channel["kind"],
-                capped,
-                warnings,
-                localizer,
+        sources = list_sources(conn, channel["id"])
+        selection = select_channel_events(
+            grouped_events.get(channel["id"], []),
+            channel,
+            {source["id"]: source for source in sources},
+            now=now,
+            seen_fingerprints=seen_fingerprints,
+        )
+        seen_fingerprints |= selection.fingerprints
+        duplicate_event_ids.extend(selection.duplicate_ids)
+        expired_event_ids.extend(selection.expired_ids)
+        warnings = _channel_warnings(channel, sources, localizer, group_timezone, now)
+        has_content = bool(selection.delivered or warnings)
+        sections.append(
+            (
+                compose_channel_digest(
+                    channel["name"],
+                    channel["kind"],
+                    selection.delivered,
+                    warnings,
+                    localizer,
+                    status=_channel_status(
+                        conn, channel, sources, localizer, quiet=not selection.delivered),
+                    remaining_count=selection.remaining_count,
+                ),
+                has_content,
             )
         )
-        delivered_event_ids.extend(event["id"] for event in capped)
-        included_channel_ids.append(channel["id"])
-        warning_count += len(warnings)
+        if has_content:
+            delivered_event_ids.extend(event["id"] for event in selection.delivered)
+            included_channel_ids.append(channel["id"])
+            warning_count += len(warnings)
+    channel_digests = (
+        [digest for digest, _ in sections] if included_channel_ids else []
+    )
     return _GroupDigestContent(
         channel_digests=channel_digests,
         delivered_event_ids=delivered_event_ids,
         duplicate_event_ids=duplicate_event_ids,
+        expired_event_ids=expired_event_ids,
         included_channel_ids=included_channel_ids,
         warning_count=warning_count,
     )
@@ -254,7 +297,7 @@ def build_email_group_digest_preview(
 ) -> EmailGroupDigestPreview | None:
     run_time = now or datetime.now(timezone.utc)
     digest_date = _digest_date(group, run_time)
-    content = _build_group_content(conn, group, localizer)
+    content = _build_group_content(conn, group, localizer, now=run_time)
     if not content.channel_digests:
         return None
     subject = _format_subject(group["subject_template"], digest_date)
@@ -298,7 +341,7 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
             digest_date = _digest_date(group, run_time)
             _deliver_due_group(
                 conn, group, notifier, default_recipient, localizer,
-                checkpoint=checkpoint, digest_date=digest_date)
+                checkpoint=checkpoint, digest_date=digest_date, run_time=run_time)
         except EmailConfigurationError as exc:
             print(f'[digest] Email group "{group["name"]}" has content to send but no valid '
                   f"email recipient, skipping it: {exc}")
@@ -331,19 +374,20 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
 
 def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier,
                        default_recipient: ResolvedRecipient, localizer: Localizer,
-                       *, checkpoint: str, digest_date: str) -> None:
+                       *, checkpoint: str, digest_date: str,
+                       run_time: datetime) -> None:
     """Evaluate one already-due group. Sends at most one email; raises EmailConfigurationError or
     RecipientDeliveryError (leaving every checkpoint untouched, so the exact events retry) when a
     group with real content cannot be delivered. A group with nothing deliverable advances only
     last_checked_at and returns normally."""
-    content = _build_group_content(conn, group, localizer)
+    content = _build_group_content(conn, group, localizer, now=run_time)
     if not content.channel_digests:
         # No ready events and no Source warnings anywhere (including a group with no member
         # Channels): nothing to send, but the group was genuinely evaluated, so pace it forward
         # without claiming an email went out and without touching any Channel watermark.
         suppress_events(
             conn,
-            content.duplicate_event_ids,
+            content.duplicate_event_ids + content.expired_event_ids,
             suppressed_at=checkpoint,
         )
         mark_checked(conn, group["id"], checked_at=checkpoint)
@@ -375,7 +419,7 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
     )
     suppress_events(
         conn,
-        content.duplicate_event_ids,
+        content.duplicate_event_ids + content.expired_event_ids,
         suppressed_at=checkpoint,
     )
     mark_digest_sent(

@@ -141,10 +141,9 @@ def list_ready_events_for_channels(
     """Every ready, unsuppressed, undelivered event whose Item belongs to one of channel_ids,
     joined to the item/source/channel context an email needs, with the payload decoded.
 
-    Ordered by channel, then the Item's AI score high-to-low, then oldest observed event and id.
-    That is exactly the priority the Email Group path caps each Channel at highlight_count on: the
-    highest-scored events go out first, and a deterministic (observed_at, id) tie-break keeps the
-    order stable so the events left beyond the cap are the same on the next due evaluation. An empty
+    Ordered by channel, then the Item's AI score high-to-low, then oldest observed event and id,
+    for a stable listing. The Email Group path re-ranks each Channel's events itself (see
+    digest/selection.py), which also decides expiry and the highlight_count cap. An empty
     channel_ids returns []."""
     if not channel_ids:
         return []
@@ -154,7 +153,7 @@ def list_ready_events_for_channels(
         "items.external_id AS item_external_id, items.title AS item_title, "
         "items.url AS item_url, items.body AS item_body, "
         "items.ai_score AS item_ai_score, items.ai_summary AS item_ai_summary, "
-        "items.raw_metadata AS item_raw_metadata, "
+        "items.raw_metadata AS item_raw_metadata, items.created_at AS item_created_at, "
         "sources.id AS source_id, sources.type AS source_type, "
         "sources.config AS source_config, "
         "channels.id AS channel_id, channels.name AS channel_name, "

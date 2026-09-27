@@ -59,8 +59,8 @@ def _make_group(conn, *channel_ids, name="Group", subject_template="Digest \u00b
 
 def _stage_event(conn, source_id, external_id, *, title="Item", url="https://x",
                  raw_metadata=None, event_type="discovered", payload=None,
-                 score=90, summary="summary", observed_at="2026-07-10T00:00:00",
-                 ready=True, ready_at="2026-07-10T01:00:00"):
+                 score=90, summary="summary", observed_at="2026-07-13T00:00:00",
+                 ready=True, ready_at="2026-07-13T01:00:00"):
     """Mirror the collector: insert an item, record its AI score, stage one actionable event, and
     (by default) settle it ready as AI scoring would. Returns (item_id, event_id)."""
     item_id = insert_new_returning_id(
@@ -178,8 +178,9 @@ def test_mixed_editorial_monitor_tracker_group_renders_in_one_email(conn):
 
 def test_only_channels_with_content_get_a_section_and_watermark(conn):
     """Requirement pin: in a group where one Channel has a deliverable event and another has
-    nothing, only the contributing Channel gets a section and its legacy digest watermark; the
-    silent Channel is left untouched even though the group as a whole did send."""
+    nothing, only the contributing Channel gets events and its legacy digest watermark. The quiet
+    Channel is still listed with its status line, so "nothing new" reads as checked rather than
+    broken, but it never advances its watermark or makes an email go out on its own."""
     with_content = create_channel(conn, "Has News", "profile")
     without_content = create_channel(conn, "No News", "profile")
     src = create_source(conn, with_content, "reddit_subreddit", {"subreddit": "a"})
@@ -192,8 +193,8 @@ def test_only_channels_with_content_get_a_section_and_watermark(conn):
 
     notifier.send.assert_called_once()
     _, plain_text, _ = notifier.send.call_args.args
-    assert "Has News" in plain_text
-    assert "No News" not in plain_text  # the silent Channel contributes no section
+    assert "== Has News ==\n1/1 sources OK\n- only news (https://x)" in plain_text
+    assert "== No News ==\n1/1 sources OK \u00b7 No changes since the last email" in plain_text
     watermarks = {
         row["name"]: row["last_digest_sent_at"]
         for row in conn.execute("SELECT name, last_digest_sent_at FROM channels")
@@ -772,3 +773,75 @@ def test_a_held_mass_retirement_is_reported_as_a_warning(conn):
         "s.example.com/collections/outlet: the latest fetch is missing 25 listings. "
         "Keeping them until the next fetch confirms."
     ) in plain_text
+
+
+# --- Delivery policy: expiry, stale sources, remaining count, status line ---------------------
+
+def _event_state(conn, event_id):
+    return conn.execute(
+        "SELECT delivered_at, suppressed_at FROM item_events WHERE id = ?", (event_id,)
+    ).fetchone()
+
+
+def test_an_expired_event_is_closed_even_when_nothing_is_sent(conn):
+    channel_id = create_channel(conn, "NZ", "profile")
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    _, old_event = _stage_event(conn, source_id, "old", observed_at="2026-07-09T00:00:00")
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_not_called()
+    assert _event_state(conn, old_event)["suppressed_at"] == _SENT_AT
+
+
+def test_a_stale_monitor_source_holds_its_events_and_says_so(conn):
+    channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    source_id = create_source(conn, channel_id, *_SHOPIFY)
+    record_fetch_success(conn, source_id, "2026-07-10T00:00:00+00:00")
+    record_fetch_error(conn, source_id, "HTTP 403", "2026-07-13T10:00:00+00:00")
+    _, event_id = _stage_event(conn, source_id, "1001", summary="Jacket")
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    plain_text = notifier.send.call_args.args[1]
+    assert "Jacket" not in plain_text
+    assert "Its updates are left out of emails until it recovers." in plain_text
+    assert _event_state(conn, event_id)["delivered_at"] is None
+    assert _event_state(conn, event_id)["suppressed_at"] is None
+
+
+def test_events_beyond_the_cap_are_counted_and_kept_for_later(conn):
+    channel_id = create_channel(conn, "Tech", "profile", highlight_count=1)
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    _stage_event(conn, source_id, "a", summary="best", score=95)
+    _, kept = _stage_event(conn, source_id, "b", summary="second", score=80)
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    plain_text = notifier.send.call_args.args[1]
+    assert "- best" in plain_text
+    assert "\u2026and 1 more not shown" in plain_text
+    assert _event_state(conn, kept)["delivered_at"] is None
+    assert _event_state(conn, kept)["suppressed_at"] is None
+
+
+def test_a_monitor_status_line_counts_the_listings_it_tracks(conn):
+    channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    source_id = create_source(conn, channel_id, *_SHOPIFY)
+    # Within two of the default 3-hour intervals, so the Source's data is current.
+    record_fetch_success(conn, source_id, "2026-07-13T19:00:00+00:00")
+    _stage_event(conn, source_id, "1001", summary="Jacket")
+    _stage_event(conn, source_id, "1002", summary="Boots")
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    assert "== Outlet ==\n1/1 sources OK \u00b7 2 listings tracked\n" in (
+        notifier.send.call_args.args[1])
