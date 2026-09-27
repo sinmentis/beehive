@@ -1742,7 +1742,9 @@ async def test_monitor_discovered_event_is_readied_at_or_above_threshold(conn):
             ]
         )
     )
-    create_source(conn, channel_id, "stub_test_source", {})
+    source_id = create_source(conn, channel_id, "stub_test_source", {})
+    # A prior successful fetch, so this cycle is not the Source's baseline snapshot.
+    record_fetch_success(conn, source_id, "2026-07-01T00:00:00+00:00")
 
     with patch(
         "beehive.collector.run_cycle.rank_monitor_channel",
@@ -1776,7 +1778,9 @@ async def test_monitor_discovered_event_is_suppressed_below_threshold(conn):
             ]
         )
     )
-    create_source(conn, channel_id, "stub_test_source", {})
+    source_id = create_source(conn, channel_id, "stub_test_source", {})
+    # A prior successful fetch, so this cycle is not the Source's baseline snapshot.
+    record_fetch_success(conn, source_id, "2026-07-01T00:00:00+00:00")
 
     with patch(
         "beehive.collector.run_cycle.rank_monitor_channel",
@@ -2032,3 +2036,33 @@ async def test_interval_cycle_never_records_a_scheduled_slot(conn):
     source = list_sources(conn, channel_id)[0]
     assert source["last_fetch_at"] == now.isoformat()
     assert source["last_scheduled_slot_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_new_catalogue_sources_first_snapshot_is_a_baseline(conn, capsys):
+    channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    monitor_channel = get_channel(conn, channel_id)
+    stock = [
+        RawItem(external_id=str(n), title=f"Item {n}", url=f"https://x/{n}",
+                raw_metadata={"price": 10.0, "available": True})
+        for n in range(3)
+    ]
+    connector = _StubConnector(items=stock)
+    register(connector)
+    create_source(conn, channel_id, "stub_test_source", {})
+    ranker = AsyncMock(side_effect=_echo_monitor_ranker([80, 80, 80, 80]))
+
+    with patch("beehive.collector.run_cycle.rank_monitor_channel", new=ranker):
+        await run_channel_cycle(conn, monitor_channel, LogNotifier(), localizer=_EN_LOCALIZER)
+    assert _item_events(conn) == []
+    assert "3 new (baseline, no discovery emails)" in capsys.readouterr().out
+
+    connector._items = stock + [
+        RawItem(external_id="new", title="Fresh", url="https://x/new",
+                raw_metadata={"price": 12.0, "available": True})
+    ]
+    with patch("beehive.collector.run_cycle.rank_monitor_channel", new=ranker):
+        await run_channel_cycle(
+            conn, monitor_channel, LogNotifier(), localizer=_EN_LOCALIZER, force_fetch=True)
+
+    assert [event["event_type"] for event in _item_events(conn)] == ["discovered"]

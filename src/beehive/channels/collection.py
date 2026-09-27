@@ -109,6 +109,7 @@ class ChannelCollection:
         raw_items: list[RawItem],
         *,
         now_iso: str,
+        baseline: bool = False,
     ) -> int:
         """Persist one complete, successful fetch for source_id and stage its actionable events.
         Returns the count of genuinely inserted rows (for last_fetch_new_count). MUST NOT be called
@@ -117,10 +118,15 @@ class ChannelCollection:
 
         The whole fetch is one transaction: readers never see a half-applied snapshot, a failure
         part-way leaves the previous state untouched, and the database commits once rather than
-        once per listing."""
+        once per listing.
+
+        baseline marks a snapshot Source's first successful fetch: its listings are recorded
+        without DISCOVERED events, because a catalogue's existing stock is not news. Without it,
+        adding a store queued its whole catalogue for email."""
         with write_transaction(conn):
             if self.is_mutable:
-                return self._ingest_snapshot(conn, source_id, raw_items, now_iso=now_iso)
+                return self._ingest_snapshot(
+                    conn, source_id, raw_items, now_iso=now_iso, baseline=baseline)
             return self._ingest_append(conn, source_id, raw_items, now_iso=now_iso)
 
     def _ingest_append(
@@ -148,6 +154,7 @@ class ChannelCollection:
         raw_items: list[RawItem],
         *,
         now_iso: str,
+        baseline: bool = False,
     ) -> int:
         permitted = self.definition.email_event_types
         new_count = 0
@@ -163,7 +170,7 @@ class ChannelCollection:
             )
             if result.outcome is MutableUpsertOutcome.INSERTED:
                 new_count += 1
-                events = detect_discovered(permitted)
+                events = [] if baseline else detect_discovered(permitted)
             else:
                 events = detect_snapshot_events(
                     result.before_metadata or {}, result.after_metadata, permitted

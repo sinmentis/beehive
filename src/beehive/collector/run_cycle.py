@@ -152,8 +152,9 @@ async def run_channel_cycle(
             # Persist and stage events only after a successful fetch: a MUTABLE_SNAPSHOT Channel
             # reconciles absent listings to inactive inside ingest_fetch, which would wrongly
             # retire everything a failed fetch could not return.
+            baseline = collection.is_mutable and not source.get("last_fetch_at")
             new_count = collection.ingest_fetch(
-                conn, source["id"], raw_items, now_iso=now_iso
+                conn, source["id"], raw_items, now_iso=now_iso, baseline=baseline
             )
         except Exception as exc:
             # Persistence was previously outside the guard even though it is the more likely
@@ -175,6 +176,7 @@ async def run_channel_cycle(
         print(
             f"[fetch] source {source['id']} ({source_display_name(source, localizer)}) ok: "
             f"{len(raw_items)} fetched, {new_count} new"
+            + (" (baseline, no discovery emails)" if baseline else "")
             + (f", recovered after {recovered} failed attempt(s)" if recovered else ""),
             flush=True,
         )
