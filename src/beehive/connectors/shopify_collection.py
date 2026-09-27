@@ -28,8 +28,9 @@ from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlencode, urlparse
 
-from beehive.connectors.base import RawItem, TruncatedSnapshotError
+from beehive.connectors.base import RawItem
 from beehive.connectors.http import fetch_json
+from beehive.connectors.paging import Page, collect_pages
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -189,25 +190,18 @@ class ShopifyCollectionConnector:
         parsed = urlparse(config["collection_url"].rstrip("/"))
         store_origin = f"{parsed.scheme}://{parsed.netloc}"
 
-        products: list[dict] = []
-        # One probe page past the cap tells a collection that exactly fills the cap apart from a
-        # larger one, which must fail instead of returning a partial snapshot.
-        for page in range(1, _MAX_PAGES + 2):
-            params = urlencode({"limit": _PAGE_SIZE, "page": page})
+        def fetch_page(number: int) -> Page[dict]:
+            params = urlencode({"limit": _PAGE_SIZE, "page": number})
             payload = self._fetch_json(f"{store_origin}{parsed.path}/products.json?{params}")
             if not isinstance(payload, dict) or not isinstance(payload.get("products"), list):
                 raise ValueError("Shopify collection response needs a 'products' list")
             page_products = payload["products"]
-            if not page_products:
-                break
-            if page > _MAX_PAGES:
-                raise TruncatedSnapshotError(
-                    f"Shopify collection exceeded the {_MAX_PAGES}-page cap "
-                    f"({_MAX_PAGES * _PAGE_SIZE} products)"
-                )
-            products.extend(page_products)
-            if len(page_products) < _PAGE_SIZE:
-                break
+            # products.json has no total or next link: only a short page marks the last one.
+            return Page(items=page_products, has_more=len(page_products) == _PAGE_SIZE)
+
+        products = collect_pages(
+            fetch_page, max_pages=_MAX_PAGES, label="Shopify collection"
+        )
 
         # Applied once, after every page is in hand, so pagination above still sees the true,
         # unfiltered page sizes -- filtering per-page would make a partial last page look short

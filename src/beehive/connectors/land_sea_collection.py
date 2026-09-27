@@ -15,9 +15,11 @@ guess -- this connector can stop exactly at the real last page.
 
 A full /sale listing runs to ~76 pages (~1,976 products), a different order of magnitude from
 the Shopify stores' clearance-only collections. _MAX_PAGES is therefore high enough to follow
-the site's known full catalog while still bounding a bogus or runaway page count. The site's
-optional filter query parameters (for example `?brands=85` or `?categories=2`) are preserved
-when configured, but an unfiltered Source must still fetch every authoritative page.
+the site's known full catalog while still bounding a bogus or runaway page count; a listing that
+reports more pages than that fails the fetch (connectors.paging) rather than returning a partial
+snapshot. The site's optional filter query parameters (for example `?brands=85` or
+`?categories=2`) are preserved when configured, but an unfiltered Source must still fetch every
+authoritative page.
 
 Tests inject a fake fetch_html and never touch the network."""
 from __future__ import annotations
@@ -29,6 +31,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from beehive.connectors.base import RawItem
 from beehive.connectors.http import fetch_text
+from beehive.connectors.paging import Page, collect_pages
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -154,21 +157,16 @@ class LandSeaCollectionConnector:
         store_origin = f"{parsed.scheme}://{parsed.netloc}"
         base_params = dict(parse_qsl(parsed.query))
 
-        tiles: list[dict] = []
-        page = 1
-        max_pages = _MAX_PAGES
-        while page <= max_pages:
-            params = {**base_params, "pgNmbr": str(page)}
+        def fetch_page(number: int) -> Page[dict]:
+            params = {**base_params, "pgNmbr": str(number)}
             page_url = f"{store_origin}{parsed.path}?{urlencode(params)}"
             page_tiles, total_pages = _parse_page(self._fetch_html(page_url))
-            if page == 1 and total_pages is not None:
-                max_pages = min(_MAX_PAGES, total_pages)
-            if not page_tiles:
-                break
-            tiles.extend(page_tiles)
-            if len(page_tiles) < _PAGE_SIZE:
-                break
-            page += 1
+            has_more = len(page_tiles) == _PAGE_SIZE and (
+                total_pages is None or number < total_pages
+            )
+            return Page(items=page_tiles, has_more=has_more, total_pages=total_pages)
+
+        tiles = collect_pages(fetch_page, max_pages=_MAX_PAGES, label="Land & Sea collection")
 
         items = []
         for index, tile in enumerate(tiles):

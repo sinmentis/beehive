@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from tests.connectors.http_stubs import urlopen_response as _urlopen_response
+from beehive.connectors.base import TruncatedSnapshotError
 from beehive.connectors.land_sea_collection import (
     LandSeaCollectionConnector,
     _default_fetch_html,
@@ -311,20 +312,35 @@ def test_fetch_falls_back_to_a_short_page_when_total_pages_is_missing():
     assert len(items) == 27
 
 
-def test_fetch_caps_pagination_at_max_pages_even_if_more_data_is_claimed():
+def test_fetch_raises_when_the_reported_total_exceeds_the_page_cap():
     calls = []
 
     def fetch_html(url):
         page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
         calls.append(page)
-        # Claims more pages than the connector should ever actually request.
         return _page_html([_tile(tile_id=page * 1000 + i) for i in range(26)], total_pages=176)
 
-    items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
-        {"collection_url": _COLLECTION_URL}
-    )
-    assert len(calls) == 100
-    assert len(items) == 2600
+    # Returning the first 100 pages would retire every listing past them on ingest.
+    with pytest.raises(TruncatedSnapshotError, match="176 pages, above the 100-page cap"):
+        LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
+            {"collection_url": _COLLECTION_URL}
+        )
+    assert calls == [1]
+
+
+def test_fetch_raises_at_the_cap_when_no_total_is_reported_and_pages_stay_full():
+    calls = []
+
+    def fetch_html(url):
+        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
+        calls.append(page)
+        return _page_html([_tile(tile_id=page * 1000 + i) for i in range(26)], total_pages=None)
+
+    with pytest.raises(TruncatedSnapshotError, match="exceeded the 100-page cap"):
+        LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
+            {"collection_url": _COLLECTION_URL}
+        )
+    assert calls == list(range(1, 102))
 
 
 def test_default_html_fetch_uses_user_agent_and_timeout():
