@@ -335,6 +335,8 @@ def test_existing_completed_research_runs_are_baselined_without_emailing(tmp_pat
         "WHERE key = 'research_completion_notifications_baselined_v1'"
     )
     conn.execute("DROP TABLE research_completion_notifications")
+    # A database that predates the baseline also predates schema versioning.
+    conn.execute("PRAGMA user_version = 0")
     completed_at = "2026-07-01T12:00:00+00:00"
     old_run_id = _insert_completed_research_run(
         conn,

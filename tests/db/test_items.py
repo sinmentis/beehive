@@ -1155,7 +1155,9 @@ def _insert_shopping_row(conn, source_id, external_id, fetched_at, *, title="Pro
 
 
 def _rerun_stable_shopping_migration(conn):
+    # A database that predates the migration also predates schema versioning.
     conn.execute("DELETE FROM app_state WHERE key = ?", (_STABLE_SHOPPING_MARKER,))
+    conn.execute("PRAGMA user_version = 0")
     conn.commit()
     init_schema(conn)
 

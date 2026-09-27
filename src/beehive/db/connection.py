@@ -12,6 +12,27 @@ from pathlib import Path
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
+# Schema versioning. PRAGMA user_version records the schema version this code last brought the
+# file to, the way Android's SQLiteOpenHelper does, and app_state keeps the oldest code version
+# that may still use it (the version/compatible-version pair of Chromium's sql::MetaTable).
+# init_schema() replays the idempotent reconcile only while a file is behind SCHEMA_VERSION, so
+# every later process start skips it, and code older than the file refuses to write to it unless
+# the file declares itself compatible.
+#
+# Any schema change (schema.sql, _COLUMNS_TO_ENSURE, _INDEXES_TO_ENSURE, or a new migration)
+# must bump SCHEMA_VERSION, otherwise databases already at the current version would never pick
+# it up. tests/db/test_schema_version.py fails until the bump and new fingerprint are recorded.
+# Raise COMPATIBLE_SCHEMA_VERSION to the new version only when older code cannot safely use the
+# new shape (a dropped or renamed column, a changed meaning). Additive changes leave it alone, so
+# rolling back to an older image keeps working.
+SCHEMA_VERSION = 1
+COMPATIBLE_SCHEMA_VERSION = 1
+_COMPATIBLE_VERSION_KEY = "schema_compatible_version"
+
+
+class SchemaTooNewError(RuntimeError):
+    """The database was migrated by a newer release that this code must not write to."""
+
 # The legacy "<product-id>:<price>" external_id suffix is a two-decimal price (connectors wrote
 # f"{price:.2f}"). Matching a decimal (not a bare integer) keeps a genuine numeric-only provider
 # id -- were one ever to contain a colon -- from being mistaken for a price and truncated.
@@ -518,7 +539,9 @@ def _migrate_stable_shopping_external_ids(conn: sqlite3.Connection) -> None:
         (_STABLE_SHOPPING_ID_MIGRATION_KEY,))
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
+def _reconcile_schema(conn: sqlite3.Connection) -> None:
+    """Idempotently bring any database, fresh or legacy, to the current shape. Only ever run
+    through init_schema(), which skips it once the file is already at SCHEMA_VERSION."""
     conn.executescript(_SCHEMA_PATH.read_text())
     for table, column, column_type in _COLUMNS_TO_ENSURE:
         _ensure_column(conn, table, column, column_type)
@@ -530,3 +553,44 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _migrate_research_completion_notification_baseline(conn)
     _migrate_stable_shopping_external_ids(conn)
     conn.commit()
+
+
+def schema_version(conn: sqlite3.Connection) -> int:
+    return int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+
+def _stored_compatible_version(conn: sqlite3.Connection) -> int:
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_state WHERE key = ?", (_COMPATIBLE_VERSION_KEY,)).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    return int(row[0]) if row is not None and row[0] is not None else 0
+
+
+def init_schema(conn: sqlite3.Connection) -> None:
+    """Bring the database to SCHEMA_VERSION. Safe to call on every process start: a file that is
+    already current costs one PRAGMA read. Raises SchemaTooNewError, without writing anything,
+    when a newer release has migrated the file past what this code can safely use."""
+    current = schema_version(conn)
+    if current == SCHEMA_VERSION:
+        return
+    if current > SCHEMA_VERSION:
+        required = _stored_compatible_version(conn)
+        if required > SCHEMA_VERSION:
+            raise SchemaTooNewError(
+                f"database schema version {current} requires code at schema version "
+                f"{required} or newer, but this build is at {SCHEMA_VERSION}. Deploy a newer "
+                "image, or restore a backup taken before the upgrade."
+            )
+        # A newer, backward-compatible file: use it as is and never lower its version.
+        return
+    _reconcile_schema(conn)
+    compatible = max(COMPATIBLE_SCHEMA_VERSION, _stored_compatible_version(conn))
+    with write_transaction(conn):
+        conn.execute(
+            "INSERT INTO app_state (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (_COMPATIBLE_VERSION_KEY, str(compatible)),
+        )
+        conn.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")

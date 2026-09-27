@@ -4,8 +4,10 @@
 Every mode shares one image and selects its role through ``--mode``. ``fetch`` runs the scheduled
 per-Channel fetch and AI-rank cycle; ``fetch-channel`` handles one admin-triggered Channel;
 ``digest`` sends any due periodic email groups; ``deep-read`` drains queued article briefs; the rewrite modes
-migrate or restore existing unread summaries. Connector imports register source adapters before any
-Channel is processed. Every mode initializes the idempotent SQLite schema on startup.
+migrate or restore existing unread summaries; ``migrate`` is the explicit release step that brings
+the SQLite schema to this build's version. Connector imports register source adapters before any
+Channel is processed. Every mode also calls the version-gated ``init_schema`` on startup, which is
+a single PRAGMA read once the database is current.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from beehive.connectors import (  # noqa: F401  (registers the connectors)
     shopify_collection,
 )
 from beehive.db.channels import get_channel, list_channels
-from beehive.db.connection import connect, init_schema
+from beehive.db.connection import SCHEMA_VERSION, connect, init_schema, schema_version
 from beehive.collector.manual_trigger import (
     complete_pending_manual_triggers,
     consume_pending_manual_triggers,
@@ -279,6 +281,20 @@ def run_unread_summary_rollback(
         conn.close()
 
 
+def run_migrate(db_path: str) -> None:
+    """The explicit release step: migrate once, before new code is rolled out to every unit."""
+    conn = connect(db_path)
+    try:
+        before = schema_version(conn)
+        init_schema(conn)
+        print(
+            f"[migrate] schema version {before} -> {schema_version(conn)} "
+            f"(this build: {SCHEMA_VERSION})"
+        )
+    finally:
+        conn.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -290,6 +306,7 @@ def main() -> None:
             "tracker-reminders",
             "auction-reminders",
             "deep-read",
+            "migrate",
             "rewrite-unread-summaries",
             "rollback-unread-summaries",
         ],
@@ -317,6 +334,8 @@ def main() -> None:
         run_tracker_reminders(args.db_path)
     elif args.mode == "auction-reminders":
         run_auction_reminders(args.db_path)
+    elif args.mode == "migrate":
+        run_migrate(args.db_path)
     elif args.mode == "rewrite-unread-summaries":
         if args.run_id is None or args.high_water_item_id is None:
             parser.error(
