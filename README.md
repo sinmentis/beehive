@@ -202,6 +202,7 @@ Open `http://127.0.0.1:8000/`.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `DB_PATH` | No | SQLite path. Defaults to `/data/beehive.db`. |
+| `DB_SYNCHRONOUS` | No | SQLite `synchronous` mode: `OFF`, `NORMAL`, `FULL`, or `EXTRA`. Defaults to `NORMAL`, SQLite's recommended setting for WAL mode (a process crash loses nothing; a power loss can roll back the last few commits). |
 | `SESSION_SECRET` | Yes for admin access | Signs the owner session cookie. |
 | `COPILOT_GITHUB_TOKEN` | Yes for AI processing | Authenticates ranking, summary migration, article-brief, and Research worker AI calls. It is not required by the web process. |
 | `ACS_CONNECTION_STRING` | Only for email | Connects to Azure Communication Services Email. |

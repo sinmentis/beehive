@@ -3,6 +3,7 @@ section 5). WAL mode lets the collector and web containers write the same file c
 without DuckDB-style single-writer contention (ADR-0004)."""
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 from collections.abc import Iterator
@@ -226,11 +227,29 @@ _CHANNELS_REBUILD_SELECT = (
 _STABLE_SHOPPING_ID_MIGRATION_KEY = "stable_shopping_external_id_migrated_v1"
 
 
+_SYNCHRONOUS_ENV = "DB_SYNCHRONOUS"
+_SYNCHRONOUS_MODES = frozenset({"OFF", "NORMAL", "FULL", "EXTRA"})
+# NORMAL is SQLite's recommended setting for WAL mode: the database cannot be corrupted and a
+# process crash loses nothing, only an OS crash or power loss may roll back the last few commits.
+# FULL (SQLite's default) instead flushes the WAL to disk on every commit, which made each small
+# write transaction wait on the filesystem journal.
+_DEFAULT_SYNCHRONOUS = "NORMAL"
+
+
+def _synchronous_mode() -> str:
+    mode = os.environ.get(_SYNCHRONOUS_ENV, _DEFAULT_SYNCHRONOUS).strip().upper()
+    if mode not in _SYNCHRONOUS_MODES:
+        raise ValueError(
+            f"{_SYNCHRONOUS_ENV} must be one of {sorted(_SYNCHRONOUS_MODES)}, got {mode!r}")
+    return mode
+
+
 def connect(db_path: str) -> sqlite3.Connection:
     # FastAPI may enter, use, and finalize one sync dependency on different worker threads.
     # Each request still owns its connection; this only disables sqlite3's thread-affinity guard.
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA synchronous={_synchronous_mode()}")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row

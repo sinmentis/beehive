@@ -22,6 +22,25 @@ def test_wal_mode_enabled(tmp_path):
     assert mode.lower() == "wal"
 
 
+def test_connect_defaults_to_normal_synchronous(tmp_path, monkeypatch):
+    monkeypatch.delenv("DB_SYNCHRONOUS", raising=False)
+    conn = connect(str(tmp_path / "test.db"))
+    # PRAGMA synchronous reports 0=OFF, 1=NORMAL, 2=FULL, 3=EXTRA.
+    assert conn.execute("PRAGMA synchronous").fetchone()[0] == 1
+
+
+def test_connect_honours_a_db_synchronous_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_SYNCHRONOUS", " full ")
+    conn = connect(str(tmp_path / "test.db"))
+    assert conn.execute("PRAGMA synchronous").fetchone()[0] == 2
+
+
+def test_connect_rejects_an_unknown_synchronous_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_SYNCHRONOUS", "sometimes")
+    with pytest.raises(ValueError, match="DB_SYNCHRONOUS"):
+        connect(str(tmp_path / "test.db"))
+
+
 def test_connection_can_cross_fastapi_worker_threads(tmp_path):
     conn = connect(str(tmp_path / "test.db"))
     with ThreadPoolExecutor(max_workers=1) as pool:

@@ -8,9 +8,16 @@ Tests that exercise the refusal set the variable themselves with `monkeypatch.se
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
 TEST_SESSION_SECRET = "test-secret-at-least-32-characters-long"
+
+# Every test opens its own throwaway SQLite file, and with durable commits each write waited on a
+# filesystem flush, which made the suite run about 25x slower on disk than on tmpfs. Durability of
+# a per-test database is worthless, so tests skip the flush. Set before any test module connects.
+os.environ.setdefault("DB_SYNCHRONOUS", "OFF")
 
 
 @pytest.fixture(autouse=True)
