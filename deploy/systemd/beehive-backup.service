@@ -1,0 +1,9 @@
+[Unit]
+Description=Beehive nightly SQLite backup with restore drill
+
+[Service]
+Type=oneshot
+# Installed copies of deploy/backup/*.sh and *.py (see deploy/README.md).
+ExecStart=%h/.local/bin/beehive-backup.sh
+Nice=10
+IOSchedulingClass=idle

@@ -35,6 +35,7 @@ the reverse proxy.
 | `quadlet/beehive-deep-read.container` + `.path` + `.timer` | Bounded article brief worker; the path provides low-latency wakeup and the timer reconciles missed wakeups |
 | `quadlet/beehive-research.container` | Always-on durable Research worker — bounded Research Run + Research Chat pools (ADR-0009), `Restart=always` |
 | `quadlet/beehive-research-reconcile.container` + `.timer` | Oneshot expired-lease recovery sweep, hourly — backstops the always-on worker (which reconciles every minute itself) after a crash/restart; claims/executes nothing |
+| `systemd/beehive-backup.service` + `.timer`, `backup/` | Nightly host-side SQLite backup with a restore drill on every run (see [Backups](#backups)) |
 
 The web container publishes to `127.0.0.1` only, so the app is reachable from the host's loopback
 and from whatever reverse proxy or tunnel you place in front of it, not from the public internet
@@ -50,6 +51,46 @@ journal. Those added about 7 lines per container start, roughly 9,000 lines a da
 user journal past its size cap until it only reached back about a day. The events stay available
 through `podman events`. Read a job's output with `journalctl --user -u beehive-fetch.service`;
 `podman logs` does not apply to passthrough containers.
+
+## Backups
+
+`deploy/backup/beehive-backup.sh` takes a nightly online backup of the SQLite database with the
+`sqlite3` CLI on the host. SQLite's backup API copies a consistent snapshot while every container
+keeps writing, so nothing is stopped. Archives go to `~/backups/beehive` (point it at a different
+disk from the Podman volume; `BEEHIVE_BACKUP_DIR` overrides it). Every run is also a restore drill:
+`verify-beehive-backup.py` decompresses the new archive into a scratch file and checks
+`integrity_check`, the core tables, and that the item count sits between the live counts taken just
+before and after the copy. Only then is the archive renamed into place, so a file matching
+`beehive-*.db.gz` is always complete. Retention is 14 days, and the newest 3 are always kept.
+
+Install or update it:
+
+```bash
+install -m 0755 deploy/backup/beehive-backup.sh deploy/backup/verify-beehive-backup.py ~/.local/bin/
+install -m 0644 deploy/systemd/beehive-backup.service deploy/systemd/beehive-backup.timer \
+  ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now beehive-backup.timer
+systemctl --user start beehive-backup.service   # take one now; see journalctl -u beehive-backup
+```
+
+Restore:
+
+1. Pause Beehive (the dashboard's pause, or stop the timers, path units, `beehive-web.service`
+   and `beehive-research.service`).
+2. Move the current database aside, keeping its WAL files with it:
+
+   ```bash
+   VOL=~/.local/share/containers/storage/volumes/beehive-data/_data
+   for f in beehive.db beehive.db-wal beehive.db-shm; do
+     [ -e "$VOL/$f" ] && mv "$VOL/$f" "$VOL/$f.before-restore"
+   done
+   gunzip -c ~/backups/beehive/beehive-YYYYMMDD-HHMMSS.db.gz > "$VOL/beehive.db"
+   ```
+
+3. Resume. The first process to start migrates an older archive to the current schema version.
+   A build older than the archive's compatible schema version refuses to start rather than write
+   to it (see [Releases](#releases)).
 
 ## Dashboard lifecycle contract
 

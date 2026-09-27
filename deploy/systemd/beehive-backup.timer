@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly Beehive SQLite backup
+
+[Timer]
+# After the other nightly backups on the host (03:00, 03:15). Persistent: a run missed while the
+# host was off happens at the next boot.
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=5min
+Unit=beehive-backup.service
+
+[Install]
+WantedBy=timers.target
