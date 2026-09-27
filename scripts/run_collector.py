@@ -41,7 +41,6 @@ from beehive.collector.summary_rewrite import (
     rollback_summary_rewrite,
     run_summary_rewrite,
 )
-from beehive.collector.deep_read_worker import process_deep_read_queue
 from beehive.collector.run_cycle import run_channel_cycle
 from beehive.ai.model_selection import load_model
 from beehive.digest.send import send_email_group_digests
@@ -232,6 +231,10 @@ run_auction_reminders = run_tracker_reminders
 
 
 async def run_deep_read(db_path: str) -> None:
+    # Imported here, not at module level: article extraction (trafilatura) took about 0.5s of
+    # every mode's startup, and deep-read is the only mode that uses it.
+    from beehive.collector.deep_read_worker import process_deep_read_queue
+
     conn = connect(db_path)
     init_schema(conn)
     try:

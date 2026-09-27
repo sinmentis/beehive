@@ -34,7 +34,7 @@ the reverse proxy.
 | `quadlet/beehive-auction-reminders.container` + `.timer` | Runs the generic Tracker reminder worker every 5 minutes; the current auction adapter claims watched lots inside the one-hour closing window |
 | `quadlet/beehive-deep-read.container` + `.path` + `.timer` | Bounded article brief worker; the path provides low-latency wakeup and the timer reconciles missed wakeups |
 | `quadlet/beehive-research.container` | Always-on durable Research worker — bounded Research Run + Research Chat pools (ADR-0009), `Restart=always` |
-| `quadlet/beehive-research-reconcile.container` + `.timer` | Oneshot expired-lease recovery sweep, every 5 minutes — backstops the always-on worker after a crash/restart; claims/executes nothing |
+| `quadlet/beehive-research-reconcile.container` + `.timer` | Oneshot expired-lease recovery sweep, hourly — backstops the always-on worker (which reconciles every minute itself) after a crash/restart; claims/executes nothing |
 
 The web container publishes to `127.0.0.1` only, so the app is reachable from the host's loopback
 and from whatever reverse proxy or tunnel you place in front of it, not from the public internet
@@ -174,7 +174,7 @@ systemctl --user enable --now beehive-research-reconcile.timer
 
 When the owner requests a brief, the web process commits a pending SQLite job before writing the
 wakeup marker. The marker is only a latency hint: `beehive-deep-read.timer` starts the same bounded
-worker every five minutes so queued work is not stranded if the path event is missed.
+worker every 30 minutes so queued work is not stranded if the path event is missed.
 
 ## Email schedule operations
 
@@ -203,7 +203,7 @@ needed, unlike the deep-read worker — and reconciles expired leases itself on 
 periodically while running. `beehive-research-reconcile.container` + `.timer` is a separate,
 lightweight, oneshot backstop: it only recovers already-expired leases (idempotent, claims/
 executes nothing) in case the always-on worker itself crashed or was mid-restart when a lease
-expired.
+expired. Because the worker already sweeps every minute, the backstop runs hourly.
 
 ### Environment overrides
 

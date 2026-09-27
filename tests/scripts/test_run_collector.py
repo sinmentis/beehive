@@ -286,7 +286,7 @@ async def test_run_deep_read_bootstraps_schema_and_passes_data_dir(tmp_path):
 
     db_path = str(tmp_path / "brand_new.db")
     with patch(
-        "scripts.run_collector.process_deep_read_queue",
+        "beehive.collector.deep_read_worker.process_deep_read_queue",
         new=AsyncMock(),
     ) as mock_process:
         await run_deep_read(db_path)
@@ -971,3 +971,18 @@ def test_international_clearance_connector_is_registered_for_the_collector():
     from beehive.connectors.registry import get
 
     assert get("international_clearance").type_key == "international_clearance"
+
+
+def test_non_deep_read_modes_do_not_load_article_extraction():
+    # Every timer tick imports this module; the article extractor is only for deep-read.
+    import subprocess
+    import sys
+
+    probe = (
+        "import sys, scripts.run_collector; "
+        "print('trafilatura' in sys.modules, 'beehive.collector.deep_read_worker' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+
+    assert result.stdout.split() == ["False", "False"]

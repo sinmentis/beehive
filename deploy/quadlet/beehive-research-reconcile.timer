@@ -1,8 +1,10 @@
 [Unit]
-Description=Reconcile expired Beehive Research run / chat request leases
+Description=Hourly backstop for expired Beehive Research run / chat request leases
 
 [Timer]
-OnCalendar=*:0/5
+# The always-on worker reconciles its own leases every minute and on startup, so this only
+# covers the worker being down; it no longer needs to start a container every five minutes.
+OnCalendar=*:07
 Persistent=true
 Unit=beehive-research-reconcile.service
 

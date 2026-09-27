@@ -1,8 +1,10 @@
 [Unit]
-Description=Reconcile queued Beehive deep-read jobs
+Description=Reconcile queued Beehive deep-read jobs every 30 minutes
 
 [Timer]
-OnCalendar=*:0/5
+# beehive-deep-read.path starts the worker as soon as a brief is queued; this timer only recovers
+# a missed wakeup, so a 30-minute backstop is enough.
+OnCalendar=*:0/30
 Persistent=true
 Unit=beehive-deep-read.service
 
