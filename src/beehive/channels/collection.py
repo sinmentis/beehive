@@ -38,6 +38,7 @@ from beehive.channels.events import (
     detect_snapshot_events,
 )
 from beehive.connectors.base import RawItem
+from beehive.db.connection import write_transaction
 from beehive.db.item_events import (
     mark_item_events_ready,
     record_or_coalesce_event,
@@ -96,10 +97,15 @@ class ChannelCollection:
         """Persist one complete, successful fetch for source_id and stage its actionable events.
         Returns the count of genuinely inserted rows (for last_fetch_new_count). MUST NOT be called
         for a failed or partial fetch: a MUTABLE_SNAPSHOT Channel reconciles absent listings to
-        inactive here, which would wrongly retire everything a failed fetch omitted."""
-        if self.is_mutable:
-            return self._ingest_snapshot(conn, source_id, raw_items, now_iso=now_iso)
-        return self._ingest_append(conn, source_id, raw_items, now_iso=now_iso)
+        inactive here, which would wrongly retire everything a failed fetch omitted.
+
+        The whole fetch is one transaction: readers never see a half-applied snapshot, a failure
+        part-way leaves the previous state untouched, and the database commits once rather than
+        once per listing."""
+        with write_transaction(conn):
+            if self.is_mutable:
+                return self._ingest_snapshot(conn, source_id, raw_items, now_iso=now_iso)
+            return self._ingest_append(conn, source_id, raw_items, now_iso=now_iso)
 
     def _ingest_append(
         self,

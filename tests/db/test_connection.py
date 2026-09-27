@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from beehive.db.connection import connect, init_schema
+from beehive.db.connection import commit_unless_nested, connect, init_schema, write_transaction
 from beehive.db.research_notifications import list_pending_completion_notifications
 
 
@@ -39,6 +39,58 @@ def test_connect_rejects_an_unknown_synchronous_mode(tmp_path, monkeypatch):
     monkeypatch.setenv("DB_SYNCHRONOUS", "sometimes")
     with pytest.raises(ValueError, match="DB_SYNCHRONOUS"):
         connect(str(tmp_path / "test.db"))
+
+
+def _test_keys(conn):
+    rows = conn.execute("SELECT key FROM app_state WHERE key LIKE 'test-%' ORDER BY key")
+    return [row["key"] for row in rows.fetchall()]
+
+
+def _insert_key(conn, key):
+    conn.execute("INSERT INTO app_state (key, value) VALUES (?, '1')", (key,))
+
+
+def test_nested_write_transaction_commits_once_with_the_outer_block(tmp_path):
+    conn = connect(str(tmp_path / "test.db"))
+    init_schema(conn)
+    reader = connect(str(tmp_path / "test.db"))
+
+    with write_transaction(conn):
+        with write_transaction(conn):
+            _insert_key(conn, "test-inner")
+        _insert_key(conn, "test-helper")
+        commit_unless_nested(conn)
+        # Neither the inner block nor the helper committed on the outer block's behalf.
+        assert _test_keys(reader) == []
+
+    assert _test_keys(reader) == ["test-helper", "test-inner"]
+
+
+def test_inner_write_transaction_failure_rolls_back_only_the_inner_step(tmp_path):
+    conn = connect(str(tmp_path / "test.db"))
+    init_schema(conn)
+
+    with write_transaction(conn):
+        _insert_key(conn, "test-kept")
+        with pytest.raises(RuntimeError):
+            with write_transaction(conn):
+                _insert_key(conn, "test-undone")
+                raise RuntimeError("inner step failed")
+
+    assert _test_keys(conn) == ["test-kept"]
+
+
+def test_outer_write_transaction_failure_rolls_back_nested_work(tmp_path):
+    conn = connect(str(tmp_path / "test.db"))
+    init_schema(conn)
+
+    with pytest.raises(RuntimeError):
+        with write_transaction(conn):
+            with write_transaction(conn):
+                _insert_key(conn, "test-nested")
+            raise RuntimeError("outer step failed")
+
+    assert _test_keys(conn) == []
 
 
 def test_connection_can_cross_fastapi_worker_threads(tmp_path):

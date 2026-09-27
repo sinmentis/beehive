@@ -265,10 +265,30 @@ def _synchronous_mode() -> str:
     return mode
 
 
+class BeehiveConnection(sqlite3.Connection):
+    """A sqlite3 connection that knows how deeply write_transaction() is nested on it. The depth
+    has to live on a subclass because the C connection object does not accept new attributes."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.write_depth = 0
+
+
+def _set_write_depth(conn: sqlite3.Connection, depth: int) -> None:
+    if isinstance(conn, BeehiveConnection):
+        conn.write_depth = depth
+
+
+def commit_unless_nested(conn: sqlite3.Connection) -> None:
+    """Commit now, unless an enclosing write_transaction() owns the commit."""
+    if not getattr(conn, "write_depth", 0):
+        conn.commit()
+
+
 def connect(db_path: str) -> sqlite3.Connection:
     # FastAPI may enter, use, and finalize one sync dependency on different worker threads.
     # Each request still owns its connection; this only disables sqlite3's thread-affinity guard.
-    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn = sqlite3.connect(db_path, check_same_thread=False, factory=BeehiveConnection)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(f"PRAGMA synchronous={_synchronous_mode()}")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -293,7 +313,29 @@ def write_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 
     Exiting normally commits; any exception rolls the whole step back, so a partially-applied
     multi-statement change is no longer possible either.
+
+    Nesting is supported on connections from connect(): an inner write_transaction() becomes a
+    SAVEPOINT, so the inner step stays atomic on its own while the outermost block commits (or
+    rolls back) everything exactly once. A whole snapshot ingest therefore commits once instead of
+    once per listing.
     """
+    depth = getattr(conn, "write_depth", 0)
+    if depth:
+        savepoint = f"beehive_write_{depth}"
+        conn.execute(f"SAVEPOINT {savepoint}")
+        _set_write_depth(conn, depth + 1)
+        try:
+            yield conn
+        except BaseException:
+            conn.execute(f"ROLLBACK TO {savepoint}")
+            conn.execute(f"RELEASE {savepoint}")
+            raise
+        else:
+            conn.execute(f"RELEASE {savepoint}")
+        finally:
+            _set_write_depth(conn, depth)
+        return
+
     if conn.in_transaction:
         # sqlite3's legacy isolation_level opens a deferred transaction on the caller's behalf at
         # their first write. Flushing it keeps that work durable (which is what the trailing
@@ -301,12 +343,16 @@ def write_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
         # SQLite has no nested transactions, so "BEGIN inside BEGIN" is an error.
         conn.commit()
     conn.execute("BEGIN IMMEDIATE")
+    _set_write_depth(conn, 1)
     try:
         yield conn
     except BaseException:
         conn.rollback()
         raise
-    conn.commit()
+    else:
+        conn.commit()
+    finally:
+        _set_write_depth(conn, 0)
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:

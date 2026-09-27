@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from beehive.db.connection import commit_unless_nested
 from beehive.domain.channels import EmailEventType
 
 # The canonical deliverable event types, taken from the domain enum so this module and the table
@@ -68,7 +69,7 @@ def record_or_coalesce_event(
             "UPDATE item_events SET payload = ?, observed_at = ?, ready_at = NULL WHERE id = ?",
             (payload_json, observed_at, existing["id"]),
         )
-        conn.commit()
+        commit_unless_nested(conn)
         return existing["id"]
 
     cur = conn.execute(
@@ -76,7 +77,7 @@ def record_or_coalesce_event(
         "VALUES (?, ?, ?, ?)",
         (item_id, event_type, payload_json, observed_at),
     )
-    conn.commit()
+    commit_unless_nested(conn)
     return cur.lastrowid
 
 
@@ -92,7 +93,7 @@ def mark_item_events_ready(
         "AND suppressed_at IS NULL AND delivered_at IS NULL",
         (ready_at, item_id),
     )
-    conn.commit()
+    commit_unless_nested(conn)
     return cur.rowcount
 
 
@@ -107,7 +108,7 @@ def suppress_item_events(
         "WHERE item_id = ? AND suppressed_at IS NULL AND delivered_at IS NULL",
         (suppressed_at, item_id),
     )
-    conn.commit()
+    commit_unless_nested(conn)
     return cur.rowcount
 
 
@@ -124,7 +125,7 @@ def suppress_events(
         "AND suppressed_at IS NULL AND delivered_at IS NULL",
         [suppressed_at, *event_ids],
     )
-    conn.commit()
+    commit_unless_nested(conn)
     return cur.rowcount
 
 
@@ -250,5 +251,5 @@ def mark_events_delivered(
         f"WHERE id IN ({placeholders}) AND delivered_at IS NULL",
         [delivered_at, *event_ids],
     )
-    conn.commit()
+    commit_unless_nested(conn)
     return cur.rowcount

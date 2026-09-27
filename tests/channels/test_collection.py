@@ -5,6 +5,7 @@ directly against a real SQLite connection; the end-to-end wiring through the col
 tests/collector/test_run_cycle.py."""
 import dataclasses
 import json
+import sqlite3
 
 import pytest
 
@@ -351,6 +352,37 @@ def test_snapshot_empty_fetch_retires_every_active_item(conn):
         "SELECT COUNT(*) FROM items WHERE inactive_at IS NULL"
     ).fetchone()[0]
     assert active == 0
+
+
+def test_a_failed_ingest_leaves_the_previous_snapshot_untouched(conn):
+    channel = _channel(conn, "monitor")
+    source_id = _source(conn, channel["id"])
+    collection = ChannelCollection.for_channel(channel)
+    collection.ingest_fetch(
+        conn, source_id, [_product("a", price=50.0), _product("b")],
+        now_iso="2026-07-01T00:00:00",
+    )
+    broken = RawItem(
+        external_id="c",
+        title=None,
+        url="https://store.example.com/products/c",
+        body="",
+        raw_metadata={"price": 1.0, "available": True},
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        collection.ingest_fetch(
+            conn, source_id, [_product("a", price=40.0), broken],
+            now_iso="2026-07-02T00:00:00",
+        )
+
+    item_a = _item_id(conn, source_id, "a")
+    metadata = conn.execute(
+        "SELECT raw_metadata FROM items WHERE id = ?", (item_a,)).fetchone()[0]
+    assert json.loads(metadata)["price"] == 50.0
+    assert [e["event_type"] for e in _events(conn, item_a)] == ["discovered"]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM items WHERE inactive_at IS NOT NULL").fetchone()[0] == 0
 
 
 # ---------------------------------------------------------------------------
