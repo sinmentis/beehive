@@ -24,6 +24,7 @@ from beehive.db.connection import (
 _FINGERPRINTS = {
     1: "a96625c34c919e76d390bc58d9b0023eff8ef6ce0cab3bc58a95823c07ee9380",
     2: "a575cdcd7a913bcbf512b2b01595fb096cc45c24a814dacaf5affb4645e310f6",
+    3: "29cf7c0842653dda73c9341eb37fc2e347f88702843645fc779debc5c9d2a750",
 }
 
 

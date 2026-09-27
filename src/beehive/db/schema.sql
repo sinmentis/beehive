@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS email_group_channels (
 -- consecutive_failures counts automatic failures since the last success (any success resets it);
 -- the retry backoff doubles with it (see source_health.py). last_fetch_error_kind is the stable
 -- classification of the latest failure (for example 'transient', 'access_denied', 'truncated').
+-- retire_hold_at / retire_hold_count record a held mass retirement: a monitor snapshot that would
+-- have retired most active listings at once, kept back until the next snapshot confirms it.
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -120,7 +122,9 @@ CREATE TABLE IF NOT EXISTS sources (
     last_scheduled_slot_at TEXT,
     last_scheduled_error_at TEXT,
     consecutive_failures INTEGER NOT NULL DEFAULT 0,
-    last_fetch_error_kind TEXT
+    last_fetch_error_kind TEXT,
+    retire_hold_at TEXT,
+    retire_hold_count INTEGER
 );
 
 -- external_id is the connector's stable identity for a listing. For an editorial (APPEND) feed

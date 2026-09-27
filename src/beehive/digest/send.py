@@ -208,11 +208,20 @@ def _build_group_content(
                 selected_fingerprints.add(fingerprint)
             if len(capped) >= channel["highlight_count"]:
                 break
-        warnings = [
-            _source_warning(source, localizer, group_timezone)
-            for source in list_sources(conn, channel["id"])
-            if source["last_fetch_error"] and not source["paused_at"]
-        ]
+        warnings = []
+        for source in list_sources(conn, channel["id"]):
+            if source["paused_at"]:
+                continue
+            if source["last_fetch_error"]:
+                warnings.append(_source_warning(source, localizer, group_timezone))
+            if source.get("retire_hold_at"):
+                warnings.append(
+                    localizer.text(
+                        "background.source_retire_hold",
+                        count=int(source.get("retire_hold_count") or 0),
+                        source=source_display_name(source, localizer),
+                    )
+                )
         if not capped and not warnings:
             continue
         channel_digests.append(

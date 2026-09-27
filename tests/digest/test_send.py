@@ -22,6 +22,7 @@ from beehive.db.sources import (
     create_source,
     record_fetch_error,
     record_fetch_success,
+    set_retire_hold,
     set_source_paused,
 )
 from beehive.digest.send import send_email_group_digests
@@ -755,3 +756,19 @@ def test_group_without_its_own_recipient_falls_back_to_default(conn):
     send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
 
     assert notifier.send.call_args.kwargs["to_addr"] == DEFAULT_RECIPIENT.address
+
+
+def test_a_held_mass_retirement_is_reported_as_a_warning(conn):
+    channel_id = create_channel(conn, "Outdoor", "profile", kind="monitor")
+    source_id = create_source(conn, channel_id, *_SHOPIFY)
+    set_retire_hold(conn, source_id, held_at="2026-07-09T00:00:00", count=25)
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    plain_text = notifier.send.call_args.args[1]
+    assert (
+        "s.example.com/collections/outlet: the latest fetch is missing 25 listings. "
+        "Keeping them until the next fetch confirms."
+    ) in plain_text

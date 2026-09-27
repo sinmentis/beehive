@@ -38,6 +38,10 @@ class ChannelDefinition:
     panel_template: str
     manual_watch: bool
     email_event_types: frozenset[EmailEventType]
+    # Whether a snapshot that would retire most active listings at once is held until a second
+    # snapshot confirms it. On for catalogues, where that pattern means a broken or partial
+    # upstream response; off for trackers, whose lots legitimately vanish when an auction ends.
+    guard_mass_retirement: bool
 
 
 _DEFINITIONS: tuple[ChannelDefinition, ...] = (
@@ -52,6 +56,7 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
         panel_template="channel_editorial.html",
         manual_watch=False,
         email_event_types=frozenset({EmailEventType.DISCOVERED}),
+        guard_mass_retirement=False,
     ),
     ChannelDefinition(
         kind=ChannelKind.MONITOR,
@@ -70,6 +75,7 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
                 EmailEventType.BACK_IN_STOCK,
             }
         ),
+        guard_mass_retirement=True,
     ),
     ChannelDefinition(
         kind=ChannelKind.TRACKER,
@@ -82,6 +88,7 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
         panel_template="channel_tracker.html",
         manual_watch=True,
         email_event_types=frozenset({EmailEventType.DISCOVERED}),
+        guard_mass_retirement=False,
     ),
 )
 

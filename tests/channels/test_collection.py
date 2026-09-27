@@ -458,3 +458,86 @@ def test_settle_is_a_noop_for_an_item_with_no_events(conn):
 
     collection.settle_item_events(conn, item_id, 10.0, now_iso="2026-07-01T01:00:00")  # no raise
     assert _events(conn, item_id) == []
+
+
+# ---------------------------------------------------------------------------
+# Mass-retirement guard (monitor only)
+# ---------------------------------------------------------------------------
+
+
+def _catalogue(count, *, start=0):
+    return [_product(str(n)) for n in range(start, start + count)]
+
+
+def _active_count(conn, source_id):
+    return conn.execute(
+        "SELECT COUNT(*) FROM items WHERE source_id = ? AND inactive_at IS NULL",
+        (source_id,),
+    ).fetchone()[0]
+
+
+def _hold(conn, source_id):
+    row = conn.execute(
+        "SELECT retire_hold_at, retire_hold_count FROM sources WHERE id = ?", (source_id,)
+    ).fetchone()
+    return row["retire_hold_at"], row["retire_hold_count"]
+
+
+def test_a_mass_retirement_is_held_until_a_second_snapshot_confirms_it(conn, capsys):
+    channel = _channel(conn, "monitor")
+    source_id = _source(conn, channel["id"])
+    collection = ChannelCollection.for_channel(channel)
+    collection.ingest_fetch(conn, source_id, _catalogue(30), now_iso="2026-07-01T00:00:00")
+
+    collection.ingest_fetch(conn, source_id, _catalogue(5), now_iso="2026-07-02T00:00:00")
+
+    assert _active_count(conn, source_id) == 30
+    assert _hold(conn, source_id) == ("2026-07-02T00:00:00", 25)
+    assert "would retire 25 of 30 active listings" in capsys.readouterr().out
+    # The listings that went missing keep their pending events while the snapshot is held.
+    missing = _item_id(conn, source_id, "29")
+    assert _events(conn, missing)[0]["suppressed_at"] is None
+
+    collection.ingest_fetch(conn, source_id, _catalogue(5), now_iso="2026-07-03T00:00:00")
+
+    assert _active_count(conn, source_id) == 5
+    assert _hold(conn, source_id) == (None, None)
+    assert _events(conn, missing)[0]["suppressed_at"] == "2026-07-03T00:00:00"
+
+
+def test_an_ordinary_snapshot_after_a_glitch_clears_the_hold_and_retires_nothing(conn):
+    channel = _channel(conn, "monitor")
+    source_id = _source(conn, channel["id"])
+    collection = ChannelCollection.for_channel(channel)
+    collection.ingest_fetch(conn, source_id, _catalogue(30), now_iso="2026-07-01T00:00:00")
+    collection.ingest_fetch(conn, source_id, [], now_iso="2026-07-02T00:00:00")
+
+    collection.ingest_fetch(conn, source_id, _catalogue(30), now_iso="2026-07-03T00:00:00")
+
+    assert _active_count(conn, source_id) == 30
+    assert _hold(conn, source_id) == (None, None)
+
+
+def test_a_small_catalogue_selling_out_is_never_held(conn):
+    channel = _channel(conn, "monitor")
+    source_id = _source(conn, channel["id"])
+    collection = ChannelCollection.for_channel(channel)
+    collection.ingest_fetch(conn, source_id, _catalogue(19), now_iso="2026-07-01T00:00:00")
+
+    collection.ingest_fetch(conn, source_id, [], now_iso="2026-07-02T00:00:00")
+
+    assert _active_count(conn, source_id) == 0
+    assert _hold(conn, source_id) == (None, None)
+
+
+def test_a_tracker_retires_ended_lots_immediately(conn):
+    channel = _channel(conn, "tracker")
+    source_id = _source(conn, channel["id"])
+    collection = ChannelCollection.for_channel(channel)
+    collection.ingest_fetch(conn, source_id, _catalogue(30), now_iso="2026-07-01T00:00:00")
+
+    # A whole auction closing removes most lots at once, which is normal for a tracker.
+    collection.ingest_fetch(conn, source_id, _catalogue(5), now_iso="2026-07-02T00:00:00")
+
+    assert _active_count(conn, source_id) == 5
+    assert _hold(conn, source_id) == (None, None)

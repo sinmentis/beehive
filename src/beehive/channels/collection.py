@@ -46,11 +46,27 @@ from beehive.db.item_events import (
 )
 from beehive.db.items import (
     MutableUpsertOutcome,
+    absent_active_item_ids,
+    count_active_items,
     insert_new_returning_id,
-    mark_absent_items_inactive,
+    mark_items_inactive,
     upsert_mutable_item,
 )
+from beehive.db.sources import clear_retire_hold, get_retire_hold, set_retire_hold
 from beehive.domain.channels import ChannelKind, PersistenceMode
+
+# A snapshot is a suspected mass retirement when it would retire at least this many listings and
+# at least this share of the Source's active catalogue. The absolute floor keeps small catalogues
+# (a 39-item outlet selling out) from ever being held.
+MASS_RETIREMENT_MIN_LISTINGS = 20
+MASS_RETIREMENT_MIN_SHARE = 0.5
+
+
+def is_mass_retirement(absent_count: int, active_count: int) -> bool:
+    return (
+        absent_count >= MASS_RETIREMENT_MIN_LISTINGS
+        and absent_count >= active_count * MASS_RETIREMENT_MIN_SHARE
+    )
 
 # The raw_metadata keys a listing ranker (ai.prompt_builder.ProductCandidate) actually consumes, so
 # a change to any of them re-enters the item into the ranking backlog while a change to any other
@@ -155,13 +171,50 @@ class ChannelCollection:
             self._stage_events(conn, result.item_id, events, now_iso)
         # Reconcile only after the full snapshot is ingested, so a listing present later in the same
         # fetch is never briefly retired. Safe with an empty snapshot: every active listing for the
-        # Source then goes inactive, which is the correct meaning of "the connector returned none".
-        inactive_item_ids = mark_absent_items_inactive(
-            conn, source_id, present_external_ids, now_iso=now_iso
-        )
-        for item_id in inactive_item_ids:
+        # Source then goes inactive, which is the correct meaning of "the connector returned none"
+        # -- unless the retirement guard below holds it for a second, confirming snapshot.
+        absent_item_ids = absent_active_item_ids(conn, source_id, present_external_ids)
+        if self._hold_mass_retirement(conn, source_id, absent_item_ids, now_iso):
+            return new_count
+        mark_items_inactive(conn, absent_item_ids, now_iso=now_iso)
+        for item_id in absent_item_ids:
             suppress_item_events(conn, item_id, now_iso)
         return new_count
+
+    def _hold_mass_retirement(
+        self,
+        conn: sqlite3.Connection,
+        source_id: int,
+        absent_item_ids: list[int],
+        now_iso: str,
+    ) -> bool:
+        """Debounce a snapshot that would retire most of a catalogue at once. A storefront that
+        briefly returns an empty or partial page looks exactly like a mass delisting, and acting on
+        it would retire every listing and permanently suppress their pending events. The first such
+        snapshot is held (listings stay active, the hold is recorded and logged); a second one in a
+        row confirms it and is applied. Any ordinary snapshot in between clears the hold."""
+        if not self.definition.guard_mass_retirement:
+            return False
+        active_count = count_active_items(conn, source_id)
+        suspicious = is_mass_retirement(len(absent_item_ids), active_count)
+        held_since = get_retire_hold(conn, source_id)
+        if suspicious and held_since is None:
+            set_retire_hold(conn, source_id, held_at=now_iso, count=len(absent_item_ids))
+            print(
+                f"[ingest] source {source_id}: snapshot would retire {len(absent_item_ids)} of "
+                f"{active_count} active listings; holding until the next fetch confirms",
+                flush=True,
+            )
+            return True
+        if held_since is not None:
+            clear_retire_hold(conn, source_id)
+            if suspicious:
+                print(
+                    f"[ingest] source {source_id}: second snapshot in a row confirms "
+                    f"{len(absent_item_ids)} retirements held since {held_since}",
+                    flush=True,
+                )
+        return False
 
     def _stage_events(
         self,

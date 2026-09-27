@@ -37,6 +37,7 @@ import sqlite3
 
 from beehive.channels import require_channel_kind
 from beehive.channels.source_policy import assert_source_allowed
+from beehive.db.connection import commit_unless_nested
 
 FETCH_STATUS_OK = "ok"
 FETCH_STATUS_ERROR = "error"
@@ -195,6 +196,29 @@ def record_fetch_error(conn: sqlite3.Connection, source_id: int, error: str,
     conn.commit()
 
 
+def get_retire_hold(conn: sqlite3.Connection, source_id: int) -> str | None:
+    """When a held mass retirement started for this Source, or None when nothing is held."""
+    row = conn.execute(
+        "SELECT retire_hold_at FROM sources WHERE id = ?", (source_id,)).fetchone()
+    return None if row is None else row["retire_hold_at"]
+
+
+def set_retire_hold(
+    conn: sqlite3.Connection, source_id: int, *, held_at: str, count: int
+) -> None:
+    conn.execute(
+        "UPDATE sources SET retire_hold_at = ?, retire_hold_count = ? WHERE id = ?",
+        (held_at, count, source_id))
+    commit_unless_nested(conn)
+
+
+def clear_retire_hold(conn: sqlite3.Connection, source_id: int) -> None:
+    conn.execute(
+        "UPDATE sources SET retire_hold_at = NULL, retire_hold_count = NULL WHERE id = ?",
+        (source_id,))
+    commit_unless_nested(conn)
+
+
 def delete_source(conn: sqlite3.Connection, source_id: int) -> None:
     conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
     conn.commit()
@@ -233,6 +257,7 @@ def reset_fetch_state_by_channel(conn: sqlite3.Connection, channel_id: int) -> N
         "last_fetch_raw_count = NULL, last_fetch_new_count = NULL, "
         "last_attempt_at = NULL, last_fetch_status = NULL, "
         "last_scheduled_slot_at = NULL, last_scheduled_error_at = NULL, "
-        "consecutive_failures = 0, last_fetch_error_kind = NULL WHERE channel_id = ?",
+        "consecutive_failures = 0, last_fetch_error_kind = NULL, "
+        "retire_hold_at = NULL, retire_hold_count = NULL WHERE channel_id = ?",
         (channel_id,))
     conn.commit()

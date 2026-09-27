@@ -25,7 +25,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # Raise COMPATIBLE_SCHEMA_VERSION to the new version only when older code cannot safely use the
 # new shape (a dropped or renamed column, a changed meaning). Additive changes leave it alone, so
 # rolling back to an older image keeps working.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 COMPATIBLE_SCHEMA_VERSION = 1
 _COMPATIBLE_VERSION_KEY = "schema_compatible_version"
 
@@ -73,6 +73,9 @@ _COLUMNS_TO_ENSURE = [
     # retry backoff, and the stable kind of the latest failure.
     ("sources", "consecutive_failures", "INTEGER NOT NULL DEFAULT 0"),
     ("sources", "last_fetch_error_kind", "TEXT"),
+    # Mass-retirement hold (schema version 3), see channels/collection.py.
+    ("sources", "retire_hold_at", "TEXT"),
+    ("sources", "retire_hold_count", "INTEGER"),
     ("items", "best_comment_summary", "TEXT"),
     ("channels", "digest_email", "TEXT"),
     ("channels", "last_digest_sent_at", "TEXT"),

@@ -285,6 +285,59 @@ def upsert_mutable_item(
         )
 
 
+def absent_active_item_ids(
+    conn: sqlite3.Connection,
+    source_id: int,
+    present_external_ids: list[str],
+) -> list[int]:
+    """Ids of the Source's current, active listings whose external_id is missing from one complete
+    snapshot. Changes nothing; mark_items_inactive applies the result."""
+    # A temp table (rather than a NOT IN (?, ?, ...) list) keeps a large snapshot well clear of
+    # SQLite's bound-parameter limit and lets the empty-snapshot case fall out naturally.
+    with write_transaction(conn):
+        conn.execute("DROP TABLE IF EXISTS _reconcile_present")
+        conn.execute("CREATE TEMP TABLE _reconcile_present (external_id TEXT PRIMARY KEY)")
+        conn.executemany(
+            "INSERT OR IGNORE INTO _reconcile_present (external_id) VALUES (?)",
+            [(external_id,) for external_id in present_external_ids],
+        )
+        absent = [
+            row["id"]
+            for row in conn.execute(
+                "SELECT id FROM items WHERE source_id = ? AND superseded_at IS NULL "
+                "AND inactive_at IS NULL "
+                "AND external_id NOT IN (SELECT external_id FROM _reconcile_present)",
+                (source_id,),
+            ).fetchall()
+        ]
+        conn.execute("DROP TABLE _reconcile_present")
+    return absent
+
+
+def mark_items_inactive(
+    conn: sqlite3.Connection, item_ids: list[int], *, now_iso: str | None = None
+) -> None:
+    """Retire the given listings (inactive_at = now), never deleting them. Already-inactive rows
+    keep their original inactive_at."""
+    if not item_ids:
+        return
+    if now_iso is None:
+        now_iso = _sql_now(conn)
+    with write_transaction(conn):
+        conn.executemany(
+            "UPDATE items SET inactive_at = ? WHERE id = ? AND inactive_at IS NULL",
+            [(now_iso, item_id) for item_id in item_ids],
+        )
+
+
+def count_active_items(conn: sqlite3.Connection, source_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM items WHERE source_id = ? "
+        "AND superseded_at IS NULL AND inactive_at IS NULL",
+        (source_id,),
+    ).fetchone()[0]
+
+
 def mark_absent_items_inactive(
     conn: sqlite3.Connection,
     source_id: int,
@@ -300,32 +353,9 @@ def mark_absent_items_inactive(
     nothing, so every currently-active listing for the Source goes inactive."""
     if now_iso is None:
         now_iso = _sql_now(conn)
-
-    # A temp table (rather than a NOT IN (?, ?, ...) list) keeps a large snapshot well clear of
-    # SQLite's bound-parameter limit and lets the empty-snapshot case fall out naturally.
-    absent_filter = (
-        "source_id = ? AND superseded_at IS NULL AND inactive_at IS NULL "
-        "AND external_id NOT IN (SELECT external_id FROM _reconcile_present)"
-    )
     with write_transaction(conn):
-        conn.execute("DROP TABLE IF EXISTS _reconcile_present")
-        conn.execute("CREATE TEMP TABLE _reconcile_present (external_id TEXT PRIMARY KEY)")
-        conn.executemany(
-            "INSERT OR IGNORE INTO _reconcile_present (external_id) VALUES (?)",
-            [(external_id,) for external_id in present_external_ids],
-        )
-        affected = [
-            row["id"]
-            for row in conn.execute(
-                f"SELECT id FROM items WHERE {absent_filter}", (source_id,)
-            ).fetchall()
-        ]
-        if affected:
-            conn.execute(
-                f"UPDATE items SET inactive_at = ? WHERE {absent_filter}",
-                (now_iso, source_id),
-            )
-        conn.execute("DROP TABLE _reconcile_present")
+        affected = absent_active_item_ids(conn, source_id, present_external_ids)
+        mark_items_inactive(conn, affected, now_iso=now_iso)
     return affected
 
 
