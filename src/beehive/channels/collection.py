@@ -22,9 +22,11 @@ pending events become ready for Email Group delivery, below it they are suppress
 staged nothing (an editorial backlog row, an unchanged listing) simply has nothing to settle."""
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from dataclasses import dataclass
 
+from beehive.ai.prompt_builder import ProductCandidate
 from beehive.channels.definitions import (
     ChannelDefinition,
     get_definition,
@@ -51,35 +53,13 @@ from beehive.domain.channels import ChannelKind, PersistenceMode
 
 # The raw_metadata keys a listing ranker (ai.prompt_builder.ProductCandidate) actually consumes, so
 # a change to any of them re-enters the item into the ranking backlog while a change to any other
-# key (an image URL, a house-keeping field) refreshes in place without a needless rerank. Kept as
-# an explicit set here -- a Channel-workflow concern -- rather than inside db/items.py, which stays
-# agnostic about which listing fields matter. tests/channels/test_collection.py guards it against
-# drifting away from ProductCandidate's fields.
+# key (an image URL, a house-keeping field) refreshes in place without a needless rerank. Derived
+# from the dataclass rather than listed by hand, so a field added to the ranker can never be
+# silently ignored by snapshot reranking (a hand-kept copy once missed `discount_percent`).
+# title/description are compared as item columns by db/items.py, and item_key is the identity.
 RANKING_METADATA_KEYS: frozenset[str] = frozenset(
-    {
-        "price",
-        "compare_at_price",
-        "on_sale",
-        "available",
-        "vendor",
-        "product_type",
-        "tags",
-        "listing_kind",
-        "auction_title",
-        "closing_at",
-        "currency_code",
-        "current_bid",
-        "buyer_premium_rate",
-        "estimated_cost",
-        "rrp",
-        "rrp_excludes_gst",
-        "starting_price",
-        "estimate_low",
-        "estimate_high",
-        "sold_price",
-        "status",
-    }
-)
+    field.name for field in dataclasses.fields(ProductCandidate)
+) - {"item_key", "title", "description"}
 
 
 @dataclass(frozen=True)
