@@ -3,6 +3,8 @@ Description=Beehive fetch/AI-rank cycle (timer-triggered)
 
 [Container]
 Image=localhost/beehive:latest
+LogDriver=passthrough
+GlobalArgs=--events-backend=file
 ContainerName=beehive-fetch
 Volume=beehive-data.volume:/data
 Environment=DB_PATH=/data/beehive.db

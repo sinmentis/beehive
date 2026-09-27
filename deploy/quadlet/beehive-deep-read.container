@@ -3,6 +3,8 @@ Description=Beehive queued article deep-read worker
 
 [Container]
 Image=localhost/beehive:latest
+LogDriver=passthrough
+GlobalArgs=--events-backend=file
 ContainerName=beehive-deep-read
 Volume=beehive-data.volume:/data
 Environment=DB_PATH=/data/beehive.db

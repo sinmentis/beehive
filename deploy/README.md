@@ -40,6 +40,17 @@ The web container publishes to `127.0.0.1` only, so the app is reachable from th
 and from whatever reverse proxy or tunnel you place in front of it, not from the public internet
 directly.
 
+## Logging
+
+Every container unit sets `LogDriver=passthrough`, so the process's output reaches the journal
+once, through the unit itself. With Podman's default `journald` log driver an attached
+`podman run` logged every line twice. The units also set `GlobalArgs=--events-backend=file`,
+which keeps Podman's own container lifecycle events (create, start, died, remove) out of the
+journal. Those added about 7 lines per container start, roughly 9,000 lines a day, and pushed the
+user journal past its size cap until it only reached back about a day. The events stay available
+through `podman events`. Read a job's output with `journalctl --user -u beehive-fetch.service`;
+`podman logs` does not apply to passthrough containers.
+
 ## Dashboard lifecycle contract
 
 The project-owned declaration is `../ops/dashboard/workload.declaration.json`. It names logical

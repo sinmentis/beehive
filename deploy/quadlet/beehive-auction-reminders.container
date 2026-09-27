@@ -3,6 +3,8 @@ Description=Beehive Tracker follow-up reminders (auction adapter)
 
 [Container]
 Image=localhost/beehive:latest
+LogDriver=passthrough
+GlobalArgs=--events-backend=file
 ContainerName=beehive-auction-reminders
 Volume=beehive-data.volume:/data
 Environment=DB_PATH=/data/beehive.db

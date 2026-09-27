@@ -3,6 +3,8 @@ Description=Beehive manual per-Channel fetch/AI-rank cycle, started only by beeh
 
 [Container]
 Image=localhost/beehive:latest
+LogDriver=passthrough
+GlobalArgs=--events-backend=file
 ContainerName=beehive-fetch-manual
 Volume=beehive-data.volume:/data
 Environment=DB_PATH=/data/beehive.db

@@ -3,6 +3,8 @@ Description=Beehive public web app (Dashboard + Channel drill-down)
 
 [Container]
 Image=localhost/beehive:latest
+LogDriver=passthrough
+GlobalArgs=--events-backend=file
 ContainerName=beehive-web
 Volume=beehive-data.volume:/data
 Environment=DB_PATH=/data/beehive.db

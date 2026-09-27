@@ -3,6 +3,8 @@ Description=Recover expired Beehive Research run / chat request leases (reconcil
 
 [Container]
 Image=localhost/beehive:latest
+LogDriver=passthrough
+GlobalArgs=--events-backend=file
 ContainerName=beehive-research-reconcile
 Volume=beehive-data.volume:/data
 Environment=DB_PATH=/data/beehive.db
