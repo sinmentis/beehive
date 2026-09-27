@@ -21,11 +21,15 @@ Run a focused subset while iterating on a change:
 .venv/bin/python -m pytest tests/path/to/test_module.py
 ```
 
-Run the full suite before opening a pull request:
+Run the full suite before opening a pull request. It runs in parallel across CPU cores
+(`pytest-xdist`), and CI runs the same command on every push:
 
 ```bash
-.venv/bin/python -m pytest
+.venv/bin/python -m pytest -n auto
 ```
+
+Tests set `DB_SYNCHRONOUS=OFF` in `tests/conftest.py`, so the per-test SQLite files skip
+filesystem flushes. Without that, commits waited on the disk and the suite ran many times slower.
 
 ## Linting
 
