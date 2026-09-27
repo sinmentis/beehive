@@ -92,6 +92,31 @@ Restore:
    A build older than the archive's compatible schema version refuses to start rather than write
    to it (see [Releases](#releases)).
 
+## Releases
+
+Release only committed code, identified by its git SHA. `latest` is just a pointer that the
+Quadlet units follow; the image a unit ran is always traceable through its
+`org.opencontainers.image.revision` label.
+
+```bash
+TAG=$(deploy/release.sh build)       # refuses a dirty working tree; tags localhost/beehive:<sha>
+deploy/release.sh migrate "$TAG"     # takes a backup, then migrates the schema exactly once
+deploy/release.sh promote "$TAG"     # old image becomes :rollback, :latest -> $TAG, waits for /readyz
+deploy/release.sh prune              # keep only :latest and :rollback among SHA-tagged images
+```
+
+The schema carries a version (`PRAGMA user_version`) and the oldest compatible code version, so
+the order matters: migrate first, then promote. Every process still runs the version-gated
+`init_schema` on start, which is a single PRAGMA read once the file is current. A build that is
+older than the database's compatible version refuses to start instead of writing to it
+(`SchemaTooNewError`). Additive migrations keep the compatible version where it was, so rolling
+back is just:
+
+```bash
+podman tag localhost/beehive:rollback localhost/beehive:latest
+systemctl --user restart beehive-research.service beehive-web.service
+```
+
 ## Dashboard lifecycle contract
 
 The project-owned declaration is `../ops/dashboard/workload.declaration.json`. It names logical
