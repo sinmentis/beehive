@@ -28,7 +28,7 @@ from datetime import datetime
 from typing import Any, Callable
 from urllib.parse import urlencode, urlparse
 
-from beehive.connectors.base import RawItem
+from beehive.connectors.base import RawItem, TruncatedSnapshotError
 from beehive.connectors.http import fetch_json
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
@@ -37,9 +37,10 @@ _USER_AGENT = "beehive/0.1 (personal information hub)"
 _REQUEST_TIMEOUT_SECONDS = 20
 _REQUEST_ATTEMPTS = 3
 _PAGE_SIZE = 250
-# A clearance/outlet collection is a small slice of a store's catalog in practice; this caps
-# worst case at 1,000 products/cycle rather than trusting an unbounded storefront to stay small.
-_MAX_PAGES = 4
+# Bounds one cycle at 5,000 products (about 50 MB parsed) rather than trusting an unbounded
+# storefront to stay small. A clearance collection can still outgrow a small cap: bivouac.co.nz
+# passed 1,000 products in September 2026.
+_MAX_PAGES = 20
 
 JsonFetcher = Callable[[str], Any]
 
@@ -189,7 +190,9 @@ class ShopifyCollectionConnector:
         store_origin = f"{parsed.scheme}://{parsed.netloc}"
 
         products: list[dict] = []
-        for page in range(1, _MAX_PAGES + 1):
+        # One probe page past the cap tells a collection that exactly fills the cap apart from a
+        # larger one, which must fail instead of returning a partial snapshot.
+        for page in range(1, _MAX_PAGES + 2):
             params = urlencode({"limit": _PAGE_SIZE, "page": page})
             payload = self._fetch_json(f"{store_origin}{parsed.path}/products.json?{params}")
             if not isinstance(payload, dict) or not isinstance(payload.get("products"), list):
@@ -197,6 +200,11 @@ class ShopifyCollectionConnector:
             page_products = payload["products"]
             if not page_products:
                 break
+            if page > _MAX_PAGES:
+                raise TruncatedSnapshotError(
+                    f"Shopify collection exceeded the {_MAX_PAGES}-page cap "
+                    f"({_MAX_PAGES * _PAGE_SIZE} products)"
+                )
             products.extend(page_products)
             if len(page_products) < _PAGE_SIZE:
                 break

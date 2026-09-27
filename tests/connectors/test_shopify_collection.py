@@ -7,9 +7,11 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from beehive.connectors.base import TruncatedSnapshotError
 from beehive.connectors.http import ConnectorHttpError, ConnectorHttpErrorKind
 from tests.connectors.http_stubs import urlopen_response as _urlopen_response
 from beehive.connectors.shopify_collection import (
+    _MAX_PAGES,
     ShopifyCollectionConnector,
     _default_fetch_json,
 )
@@ -478,7 +480,45 @@ def test_fetch_stops_at_an_empty_page_without_requesting_further_pages():
     assert len(items) == 250
 
 
-def test_fetch_caps_pagination_at_four_pages_even_if_more_data_is_available():
+def test_fetch_follows_a_collection_past_one_thousand_products():
+    # The live bivouac.co.nz clearance shape: four full pages plus a short fifth page. A four-page
+    # cap silently dropped the fifth page, and snapshot ingest then retired those listings.
+    pages = {
+        page: [_product(product_id=page * 1000 + i) for i in range(250)] for page in range(1, 5)
+    }
+    pages[5] = [_product(product_id=5000 + i) for i in range(5)]
+    calls = []
+
+    def fetch_json(url):
+        page = int(parse_qs(urlparse(url).query)["page"][0])
+        calls.append(page)
+        return _page(pages.get(page, []))
+
+    items = ShopifyCollectionConnector(fetch_json=fetch_json).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )
+    assert calls == [1, 2, 3, 4, 5]
+    assert len(items) == 1005
+
+
+def test_fetch_accepts_a_collection_that_exactly_fills_the_page_cap():
+    calls = []
+
+    def fetch_json(url):
+        page = int(parse_qs(urlparse(url).query)["page"][0])
+        calls.append(page)
+        if page > _MAX_PAGES:
+            return _page([])
+        return _page([_product(product_id=page * 1000 + i) for i in range(250)])
+
+    items = ShopifyCollectionConnector(fetch_json=fetch_json).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )
+    assert calls == list(range(1, _MAX_PAGES + 2))
+    assert len(items) == _MAX_PAGES * 250
+
+
+def test_fetch_raises_instead_of_returning_a_partial_snapshot_past_the_page_cap():
     calls = []
 
     def fetch_json(url):
@@ -488,11 +528,11 @@ def test_fetch_caps_pagination_at_four_pages_even_if_more_data_is_available():
         # make this paginate forever.
         return _page([_product(product_id=page * 1000 + i) for i in range(250)])
 
-    items = ShopifyCollectionConnector(fetch_json=fetch_json).fetch(
-        {"collection_url": _COLLECTION_URL}
-    )
-    assert len(calls) == 4
-    assert len(items) == 1000
+    with pytest.raises(TruncatedSnapshotError, match=f"exceeded the {_MAX_PAGES}-page cap"):
+        ShopifyCollectionConnector(fetch_json=fetch_json).fetch(
+            {"collection_url": _COLLECTION_URL}
+        )
+    assert len(calls) == _MAX_PAGES + 1
 
 
 def test_default_json_fetch_uses_user_agent_and_timeout():
