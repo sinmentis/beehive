@@ -101,6 +101,9 @@ CREATE TABLE IF NOT EXISTS email_group_channels (
 -- running a Channel by hand cannot move its future automatic schedule.
 -- last_scheduled_error_at records only failed automatic attempts. Retry backoff reads this field,
 -- so a failed manual fetch remains visible without postponing the next calendar slot.
+-- consecutive_failures counts automatic failures since the last success (any success resets it);
+-- the retry backoff doubles with it (see source_health.py). last_fetch_error_kind is the stable
+-- classification of the latest failure (for example 'transient', 'access_denied', 'truncated').
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
@@ -115,7 +118,9 @@ CREATE TABLE IF NOT EXISTS sources (
     last_attempt_at TEXT,
     last_fetch_status TEXT,
     last_scheduled_slot_at TEXT,
-    last_scheduled_error_at TEXT
+    last_scheduled_error_at TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    last_fetch_error_kind TEXT
 );
 
 -- external_id is the connector's stable identity for a listing. For an editorial (APPEND) feed

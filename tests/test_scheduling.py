@@ -335,6 +335,19 @@ def test_failed_interval_run_also_waits_for_its_backoff():
     assert source_is_due(failed, schedule, datetime(2026, 7, 13, 10, 5, tzinfo=timezone.utc))
 
 
+def test_retry_backoff_doubles_with_each_automatic_failure_in_a_row():
+    schedule = ChannelFetchSchedule.interval(3)
+    # Fourth automatic failure in a row: 1h, 2h, 4h, then 8h.
+    failed = _source(
+        "2026-07-13T06:00:00+00:00",
+        last_scheduled_error_at="2026-07-13T09:00:00+00:00",
+        consecutive_failures=4,
+    )
+
+    assert not source_is_due(failed, schedule, datetime(2026, 7, 13, 16, 55, tzinfo=timezone.utc))
+    assert source_is_due(failed, schedule, datetime(2026, 7, 13, 17, 5, tzinfo=timezone.utc))
+
+
 def test_source_without_a_scheduled_error_is_never_held_back_by_the_retry_backoff():
     schedule = ChannelFetchSchedule.interval(3)
     source = _source(

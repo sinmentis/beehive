@@ -18,7 +18,12 @@ from beehive.db.item_events import (
     suppress_item_events,
 )
 from beehive.db.items import insert_new, insert_new_returning_id, update_ai_ranking_by_id
-from beehive.db.sources import create_source, record_fetch_error, set_source_paused
+from beehive.db.sources import (
+    create_source,
+    record_fetch_error,
+    record_fetch_success,
+    set_source_paused,
+)
 from beehive.digest.send import send_email_group_digests
 from beehive.email_routing import ResolvedRecipient
 from beehive.localization import localizer_for
@@ -399,10 +404,27 @@ def test_warning_only_group_sends_and_advances_checkpoints(conn):
     notifier.send.assert_called_once()
     _, plain_text, html = notifier.send.call_args.args
     assert "timeout" in plain_text  # raw provider error survives untranslated
-    assert "reddit_subreddit" in plain_text
-    assert "source fetch failed" in plain_text
+    # Named the way the admin UI names it, not by connector type.
+    assert "r/x source fetch failed" in plain_text
+    assert "in a row" not in plain_text  # a single failure carries no streak sentence
     assert "timeout" in html
     assert _group_row(conn, group_id)["last_sent_at"] == _SENT_AT
+
+
+def test_warning_reports_a_failure_streak_and_the_last_success(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    record_fetch_success(conn, source_id, "2026-07-05T21:00:00+00:00")
+    for attempt in ("2026-07-07T00:00:00", "2026-07-08T00:00:00", "2026-07-09T00:00:00"):
+        record_fetch_error(conn, source_id, "HTTP 429", attempt)
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    plain_text = notifier.send.call_args.args[1]
+    # The group's schedule timezone (Pacific/Auckland) turns 21:00 UTC into the next local day.
+    assert "3 failed attempts in a row; last success: 2026-07-06." in plain_text
 
 
 def test_warning_is_rendered_in_the_selected_language(conn):

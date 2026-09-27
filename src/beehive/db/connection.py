@@ -25,7 +25,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # Raise COMPATIBLE_SCHEMA_VERSION to the new version only when older code cannot safely use the
 # new shape (a dropped or renamed column, a changed meaning). Additive changes leave it alone, so
 # rolling back to an older image keeps working.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 COMPATIBLE_SCHEMA_VERSION = 1
 _COMPATIBLE_VERSION_KEY = "schema_compatible_version"
 
@@ -69,6 +69,10 @@ _COLUMNS_TO_ENSURE = [
     # Retry backoff is based only on failures from automatic runs. Manual "fetch now" failures
     # still update the visible attempt/error fields, but never postpone an upcoming scheduled slot.
     ("sources", "last_scheduled_error_at", "TEXT"),
+    # Source health (schema version 2): the automatic-failure streak that drives exponential
+    # retry backoff, and the stable kind of the latest failure.
+    ("sources", "consecutive_failures", "INTEGER NOT NULL DEFAULT 0"),
+    ("sources", "last_fetch_error_kind", "TEXT"),
     ("items", "best_comment_summary", "TEXT"),
     ("channels", "digest_email", "TEXT"),
     ("channels", "last_digest_sent_at", "TEXT"),

@@ -48,6 +48,8 @@ from beehive.domain.channels import RankingMode
 from beehive.localization import Localizer
 from beehive.notify import Notifier, format_llm_failure
 from beehive.scheduling import ChannelFetchSchedule, source_is_due
+from beehive.source_health import classify_fetch_error, retry_backoff
+from beehive.web.source_labels import source_display_name
 
 _COMMENT_FETCH_COUNT = 3
 _COMMENT_FETCH_DELAY_SECONDS = 2
@@ -65,6 +67,29 @@ _RANKING_CHUNK_SIZE = 10
 # chunking means a retry (next cycle) would otherwise regroup the exact same items together
 # again -- without loosening the strict validation itself.
 _CHUNK_ATTEMPTS = 2
+
+
+def _record_source_failure(
+    conn: sqlite3.Connection,
+    source: dict,
+    exc: Exception,
+    now_iso: str,
+    *,
+    scheduled: bool,
+    localizer: Localizer,
+) -> None:
+    """Persist a failed attempt with its classified kind, and say so in the journal: a failing
+    Source used to leave no log line at all, only a database column."""
+    kind = classify_fetch_error(exc)
+    record_fetch_error(
+        conn, source["id"], str(exc), now_iso, scheduled=scheduled, error_kind=kind)
+    label = source_display_name(source, localizer)
+    if scheduled:
+        streak = int(source.get("consecutive_failures") or 0) + 1
+        detail = f"automatic failure {streak} in a row, next retry in {retry_backoff(streak)}"
+    else:
+        detail = "manual fetch"
+    print(f"[fetch] source {source['id']} ({label}) failed [{kind}], {detail}: {exc}", flush=True)
 
 
 async def run_channel_cycle(
@@ -115,13 +140,8 @@ async def run_channel_cycle(
             # `get_connector` (KeyError on a type dropped from the registry) and `json.loads`
             # (ValueError on a corrupt config blob) both sat outside this guard, so either one
             # aborted the whole Channel and starved every Source after it in the list.
-            record_fetch_error(
-                conn,
-                source["id"],
-                str(exc),
-                now_iso,
-                scheduled=not force_fetch,
-            )
+            _record_source_failure(
+                conn, source, exc, now_iso, scheduled=not force_fetch, localizer=localizer)
             continue
 
         try:
@@ -139,13 +159,8 @@ async def run_channel_cycle(
             # Persistence was previously outside the guard even though it is the more likely
             # failure of the two (a constraint violation on one malformed item), and ADR-0002's
             # per-Source isolation is the whole point of this loop.
-            record_fetch_error(
-                conn,
-                source["id"],
-                str(exc),
-                now_iso,
-                scheduled=not force_fetch,
-            )
+            _record_source_failure(
+                conn, source, exc, now_iso, scheduled=not force_fetch, localizer=localizer)
             continue
 
         record_fetch_success(
@@ -155,6 +170,13 @@ async def run_channel_cycle(
             raw_count=len(raw_items),
             new_count=new_count,
             scheduled_slot_at=scheduled_slot_iso,
+        )
+        recovered = int(source.get("consecutive_failures") or 0)
+        print(
+            f"[fetch] source {source['id']} ({source_display_name(source, localizer)}) ok: "
+            f"{len(raw_items)} fetched, {new_count} new"
+            + (f", recovered after {recovered} failed attempt(s)" if recovered else ""),
+            flush=True,
         )
 
     # An editorial Channel ranks community-signal ItemCandidates with past votes; a monitor/tracker

@@ -23,6 +23,7 @@ from beehive.db.connection import (
 # existing entry -- a released version's shape is fixed.
 _FINGERPRINTS = {
     1: "a96625c34c919e76d390bc58d9b0023eff8ef6ce0cab3bc58a95823c07ee9380",
+    2: "a575cdcd7a913bcbf512b2b01595fb096cc45c24a814dacaf5affb4645e310f6",
 }
 
 

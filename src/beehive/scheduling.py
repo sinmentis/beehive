@@ -26,6 +26,8 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from beehive.source_health import retry_backoff
+
 # The host's display timezone, used by every "when did/will this happen" label in the web UI and
 # email. Distinct from a schedule's own timezone, which each Channel and Email Group configures.
 HOST_TZ = ZoneInfo("Pacific/Auckland")
@@ -44,12 +46,12 @@ TIMER_INTERVAL = timedelta(minutes=15)
 # whole cycle. Confirmed in production on the old 3-hour timer: a 24h-interval source's due_at
 # trailed `now` by ~1.2s at one fetch cycle, so it was skipped for a full extra day.
 _DUE_GRACE = timedelta(minutes=5)
-# How long a Source that failed its last attempt waits before the scheduler offers it again.
-# The fetch timer used to run every 3 hours, so the timer itself bounded retries of a broken
-# Source; at a 15-minute cadence it no longer does, and a Source failing all day would be
-# re-attempted 96 times. Retry is deliberately independent of the schedule (it never moves the
-# calendar anchor) -- it only stops a failing Source from hammering an upstream site.
-FAILED_ATTEMPT_RETRY_BACKOFF = timedelta(hours=1)
+# How long a Source that failed its last automatic attempt waits before the scheduler offers it
+# again. The fetch timer used to run every 3 hours, so the timer itself bounded retries of a
+# broken Source; at a 15-minute cadence it no longer does. The wait starts at one hour and doubles
+# with each automatic failure in a row up to a day (source_health.retry_backoff), because a fixed
+# hourly retry kept hammering upstreams that block bots. Retry is deliberately independent of the
+# schedule (it never moves the calendar anchor).
 class ScheduleMode(StrEnum):
     INTERVAL = "interval"
     CALENDAR = "calendar"
@@ -208,7 +210,8 @@ def _retry_backoff_until(source: dict) -> datetime | None:
     last_scheduled_error_at = source.get("last_scheduled_error_at")
     if not last_scheduled_error_at:
         return None
-    return _as_aware_utc(last_scheduled_error_at) + FAILED_ATTEMPT_RETRY_BACKOFF
+    failures = int(source.get("consecutive_failures") or 1)
+    return _as_aware_utc(last_scheduled_error_at) + retry_backoff(failures)
 
 
 def _calendar_of(schedule: ChannelFetchSchedule) -> CalendarSchedule:

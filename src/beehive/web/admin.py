@@ -132,10 +132,10 @@ from beehive.web.formatting import (
     host_local_time_label,
     relative_time,
 )
-from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.client_ip import resolve_client_ip
 from beehive.web.link_safety import safe_external_href
-from beehive.web.official_feed_labels import official_feed_icon, official_feed_label
+from beehive.web.official_feed_labels import official_feed_icon
+from beehive.web.source_labels import derived_source_label
 
 router = APIRouter(prefix="/admin")
 
@@ -1453,31 +1453,7 @@ def _source_type_options(t: Localizer) -> tuple[dict, ...]:
 
 
 def _admin_source_label(source: dict, t: Localizer) -> str:
-    config = json.loads(source["config"])
-    if source["type"] == "reddit_subreddit":
-        return f"r/{config['subreddit']}"
-    if source["type"] == "google_news_query":
-        return f'"{config["query"]}"'
-    if source["type"] == "all_about_auctions":
-        return "All About Auctions"
-    if source["type"] in {"shopify_collection", "land_sea_collection"}:
-        # Both connectors store the same {"collection_url": ...} config shape.
-        url = config.get("collection_url", "")
-        parsed = urlparse(url)
-        return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
-    if source["type"] == "international_clearance":
-        retailer = config.get("retailer")
-        label = international_clearance.RETAILER_LABELS.get(
-            retailer,
-            str(retailer or source["type"]),
-        )
-        minimum = config.get("minimum_discount_percent", 70)
-        return f"{label} · {minimum}%+"
-    official_label = official_feed_label(source["type"])
-    if official_label is not None:
-        return official_label
-    hackernews_label = hackernews_source_label(source["type"], config, t)
-    return hackernews_label if hackernews_label is not None else source["type"]
+    return derived_source_label(source, t)
 
 
 def _admin_source_copy_value(source: dict, label: str) -> str:

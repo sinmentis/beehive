@@ -5,6 +5,11 @@ CATALOGS = {
         "background.digest_header": "{product} Daily Digest",
         "background.digest_empty_state": "No new items today \u2014 already checked.",
         "background.source_fetch_warning": "{source_type} source fetch failed: {error}",
+        "background.source_failure_streak": {
+            "one": "{count} failed attempt in a row; last success: {last_success}.",
+            "other": "{count} failed attempts in a row; last success: {last_success}.",
+        },
+        "background.source_never_succeeded": "never",
         "background.digest_event_new": "New",
         "background.digest_event_price_drop": "Price drop",
         "background.digest_event_price_detail": "{old} \u2192 {new}",
@@ -33,6 +38,11 @@ CATALOGS = {
         "background.digest_header": "{product}每日摘要",
         "background.digest_empty_state": "今天没有新内容，已确认检查过。",
         "background.source_fetch_warning": "{source_type} 信源抓取失败：{error}",
+        "background.source_failure_streak": {
+            "one": "已连续失败 {count} 次，上次成功：{last_success}。",
+            "other": "已连续失败 {count} 次，上次成功：{last_success}。",
+        },
+        "background.source_never_succeeded": "从未成功",
         "background.digest_event_new": "新增",
         "background.digest_event_price_drop": "降价",
         "background.digest_event_price_detail": "{old} \u2192 {new}",
@@ -61,6 +71,11 @@ CATALOGS = {
         "background.digest_header": "{product}デイリーダイジェスト",
         "background.digest_empty_state": "本日新着はありません。確認済みです。",
         "background.source_fetch_warning": "{source_type} ソースの取得に失敗しました：{error}",
+        "background.source_failure_streak": {
+            "one": "{count} 回連続で失敗しています。最後の成功：{last_success}。",
+            "other": "{count} 回連続で失敗しています。最後の成功：{last_success}。",
+        },
+        "background.source_never_succeeded": "なし",
         "background.digest_event_new": "新着",
         "background.digest_event_price_drop": "値下げ",
         "background.digest_event_price_detail": "{old} \u2192 {new}",
@@ -90,6 +105,11 @@ CATALOGS = {
         "background.digest_header": "{product} 일일 다이제스트",
         "background.digest_empty_state": "오늘은 새로운 항목이 없습니다. 이미 확인했습니다.",
         "background.source_fetch_warning": "{source_type} 소스 수집 실패: {error}",
+        "background.source_failure_streak": {
+            "one": "{count}회 연속 실패했습니다. 마지막 성공: {last_success}.",
+            "other": "{count}회 연속 실패했습니다. 마지막 성공: {last_success}.",
+        },
+        "background.source_never_succeeded": "없음",
         "background.digest_event_new": "신규",
         "background.digest_event_price_drop": "가격 인하",
         "background.digest_event_price_detail": "{old} \u2192 {new}",
@@ -118,6 +138,11 @@ CATALOGS = {
         "background.digest_header": "Resumen diario de {product}",
         "background.digest_empty_state": "Hoy no hay contenido nuevo, ya se ha comprobado.",
         "background.source_fetch_warning": "Error al obtener la fuente {source_type}: {error}",
+        "background.source_failure_streak": {
+            "one": "{count} intento fallido seguido; último éxito: {last_success}.",
+            "other": "{count} intentos fallidos seguidos; último éxito: {last_success}.",
+        },
+        "background.source_never_succeeded": "nunca",
         "background.digest_event_new": "Nuevo",
         "background.digest_event_price_drop": "Bajada de precio",
         "background.digest_event_price_detail": "{old} \u2192 {new}",
@@ -153,6 +178,11 @@ CATALOGS = {
         "background.source_fetch_warning": (
             "\u00c9chec de la r\u00e9cup\u00e9ration de la source {source_type} : {error}"
         ),
+        "background.source_failure_streak": {
+            "one": "{count} échec consécutif ; dernière réussite : {last_success}.",
+            "other": "{count} échecs consécutifs ; dernière réussite : {last_success}.",
+        },
+        "background.source_never_succeeded": "jamais",
         "background.digest_event_new": "Nouveau",
         "background.digest_event_price_drop": "Baisse de prix",
         "background.digest_event_price_detail": "{old} \u2192 {new}",
@@ -186,6 +216,11 @@ CATALOGS = {
         "background.source_fetch_warning": (
             "Abruf der Quelle {source_type} fehlgeschlagen: {error}"
         ),
+        "background.source_failure_streak": {
+            "one": "{count} Fehlversuch in Folge; letzter Erfolg: {last_success}.",
+            "other": "{count} Fehlversuche in Folge; letzter Erfolg: {last_success}.",
+        },
+        "background.source_never_succeeded": "nie",
         "background.digest_event_new": "Neu",
         "background.digest_event_price_drop": "Preissenkung",
         "background.digest_event_price_detail": "{old} \u2192 {new}",

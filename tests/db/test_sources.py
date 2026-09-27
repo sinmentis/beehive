@@ -283,6 +283,25 @@ def test_manual_fetch_error_does_not_advance_the_scheduled_retry_checkpoint(
     assert row["last_attempt_at"] == "2026-07-09T03:00:00"
     assert row["last_fetch_status"] == "error"
     assert row["last_scheduled_error_at"] is None
+    # A manual failure is shown but never lengthens the automatic retry backoff.
+    assert row["consecutive_failures"] == 0
+    assert row["last_fetch_error_kind"] == "error"
+
+
+def test_automatic_failures_build_a_streak_that_any_success_resets(conn, channel_id):
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    record_fetch_error(conn, source_id, "HTTP 429", "2026-07-09T01:00:00", error_kind="transient")
+    record_fetch_error(conn, source_id, "HTTP 403", "2026-07-09T02:00:00",
+                       error_kind="access_denied")
+
+    row = get_source(conn, source_id)
+    assert row["consecutive_failures"] == 2
+    assert row["last_fetch_error_kind"] == "access_denied"
+
+    record_fetch_success(conn, source_id, "2026-07-09T05:00:00")
+    row = get_source(conn, source_id)
+    assert row["consecutive_failures"] == 0
+    assert row["last_fetch_error_kind"] is None
 
 
 def test_reset_fetch_state_clears_attempt_and_status_but_not_pause_or_name(conn, channel_id):

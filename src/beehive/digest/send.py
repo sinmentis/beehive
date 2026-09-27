@@ -52,6 +52,7 @@ from beehive.email_routing import (
 from beehive.localization import Localizer
 from beehive.notify import Notifier
 from beehive.scheduling import DEFAULT_SCHEDULE_TIMEZONE, email_group_is_due
+from beehive.web.source_labels import source_display_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -137,11 +138,41 @@ def _editorial_news_fingerprint(event: dict) -> tuple[str, str] | None:
     )
 
 
+def _local_date(timestamp: str, timezone_name: str) -> str:
+    moment = datetime.fromisoformat(timestamp)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(ZoneInfo(timezone_name)).date().isoformat()
+
+
+def _source_warning(source: dict, localizer: Localizer, timezone_name: str) -> str:
+    """The warning line for a failing Source, named the way the Owner sees it in the admin UI.
+    From the second automatic failure in a row it also says how long the Source has been down."""
+    warning = localizer.text(
+        "background.source_fetch_warning",
+        source_type=source_display_name(source, localizer),
+        error=source["last_fetch_error"],
+    )
+    failures = int(source.get("consecutive_failures") or 0)
+    if failures < 2:
+        return warning
+    last_success = source.get("last_fetch_at")
+    since = (
+        _local_date(last_success, timezone_name)
+        if last_success
+        else localizer.text("background.source_never_succeeded")
+    )
+    streak = localizer.text(
+        "background.source_failure_streak", count=failures, last_success=since)
+    return f"{warning} {streak}"
+
+
 def _build_group_content(
     conn: sqlite3.Connection,
     group: dict,
     localizer: Localizer,
 ) -> _GroupDigestContent:
+    group_timezone = group.get("schedule_timezone") or DEFAULT_SCHEDULE_TIMEZONE
     member_channels = list_member_channels(conn, group["id"])
     channel_ids = [channel["id"] for channel in member_channels]
     grouped_events = _events_by_channel(list_ready_events_for_channels(conn, channel_ids))
@@ -178,11 +209,7 @@ def _build_group_content(
             if len(capped) >= channel["highlight_count"]:
                 break
         warnings = [
-            localizer.text(
-                "background.source_fetch_warning",
-                source_type=source["type"],
-                error=source["last_fetch_error"],
-            )
+            _source_warning(source, localizer, group_timezone)
             for source in list_sources(conn, channel["id"])
             if source["last_fetch_error"] and not source["paused_at"]
         ]

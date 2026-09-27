@@ -7,7 +7,7 @@ import pytest
 
 from beehive.ai.response_parser import RankedItem
 from beehive.collector.run_cycle import run_channel_cycle
-from beehive.connectors.base import RawItem
+from beehive.connectors.base import RawItem, TruncatedSnapshotError
 from beehive.connectors.registry import register
 from beehive.db.channels import create_channel, get_channel
 from beehive.db.connection import connect, init_schema
@@ -699,6 +699,37 @@ async def test_source_failure_is_recorded_and_does_not_raise(conn, channel):
 
     sources = list_sources(conn, channel["id"])
     assert sources[0]["last_fetch_error"] == "reddit is down"
+
+
+@pytest.mark.asyncio
+async def test_source_failure_is_classified_counted_and_logged(conn, channel, capsys):
+    register(_StubConnector(error=TruncatedSnapshotError("store exceeded the 20-page cap")))
+    source_id = create_source(conn, channel["id"], "stub_test_source", {}, name="Big store")
+
+    await run_channel_cycle(conn, channel, LogNotifier(), localizer=_EN_LOCALIZER)
+
+    source = list_sources(conn, channel["id"])[0]
+    assert source["last_fetch_error_kind"] == "truncated"
+    assert source["consecutive_failures"] == 1
+    assert (
+        f"[fetch] source {source_id} (Big store) failed [truncated], automatic failure 1 in a "
+        "row, next retry in 1:00:00: store exceeded the 20-page cap"
+    ) in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_successful_fetch_is_logged_with_its_counts(conn, channel, capsys):
+    items = [
+        RawItem(external_id=key, title=f"Story {key}", url=f"https://example.com/{key}")
+        for key in ("a", "b")
+    ]
+    register(_StubConnector(items=items))
+    source_id = create_source(conn, channel["id"], "stub_test_source", {}, name="Feed")
+
+    with patch("beehive.collector.run_cycle.rank_channel", new=AsyncMock(return_value=[])):
+        await run_channel_cycle(conn, channel, LogNotifier(), localizer=_EN_LOCALIZER)
+
+    assert f"[fetch] source {source_id} (Feed) ok: 2 fetched, 2 new" in capsys.readouterr().out
 
 
 @pytest.mark.asyncio

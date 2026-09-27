@@ -21,7 +21,9 @@ beehive/scheduling.py and collector/run_cycle.py).
 
 last_scheduled_error_at is the retry-backoff checkpoint for automatic failures only. A manual
 failure still updates the visible error, attempt time, and status, but leaves this field untouched
-so it cannot delay the next automatic slot; any successful fetch clears it.
+so it cannot delay the next automatic slot; any successful fetch clears it. consecutive_failures
+follows the same rule: automatic failures increment it, manual ones do not, and any success resets
+it. last_fetch_error_kind classifies the latest failure (see source_health.py).
 
 paused_at and name are lifecycle/display state that outlive a fetch: paused_at, when set, takes a
 Source out of every collector cycle (see collector/run_cycle.py) and every warning summary without
@@ -151,14 +153,16 @@ def record_fetch_success(conn: sqlite3.Connection, source_id: int, fetched_at: s
             "UPDATE sources SET last_fetch_at = ?, last_fetch_error = NULL, "
             "last_fetch_raw_count = ?, last_fetch_new_count = ?, "
             "last_attempt_at = ?, last_fetch_status = ?, "
-            "last_scheduled_error_at = NULL WHERE id = ?",
+            "last_scheduled_error_at = NULL, consecutive_failures = 0, "
+            "last_fetch_error_kind = NULL WHERE id = ?",
             (fetched_at, raw_count, new_count, fetched_at, FETCH_STATUS_OK, source_id))
     else:
         conn.execute(
             "UPDATE sources SET last_fetch_at = ?, last_fetch_error = NULL, "
             "last_fetch_raw_count = ?, last_fetch_new_count = ?, "
             "last_attempt_at = ?, last_fetch_status = ?, last_scheduled_slot_at = ?, "
-            "last_scheduled_error_at = NULL WHERE id = ?",
+            "last_scheduled_error_at = NULL, consecutive_failures = 0, "
+            "last_fetch_error_kind = NULL WHERE id = ?",
             (
                 fetched_at,
                 raw_count,
@@ -172,19 +176,22 @@ def record_fetch_success(conn: sqlite3.Connection, source_id: int, fetched_at: s
 
 
 def record_fetch_error(conn: sqlite3.Connection, source_id: int, error: str,
-                        attempted_at: str, *, scheduled: bool = True) -> None:
-    """Record a visible failed attempt. Only an automatic failure advances the retry checkpoint;
-    a manual failure must not postpone the Channel's next scheduled slot."""
+                        attempted_at: str, *, scheduled: bool = True,
+                        error_kind: str = "error") -> None:
+    """Record a visible failed attempt. Only an automatic failure advances the retry checkpoint
+    and the failure streak; a manual failure must not postpone the Channel's next scheduled slot."""
     if scheduled:
         conn.execute(
             "UPDATE sources SET last_fetch_error = ?, last_attempt_at = ?, "
-            "last_fetch_status = ?, last_scheduled_error_at = ? WHERE id = ?",
-            (error, attempted_at, FETCH_STATUS_ERROR, attempted_at, source_id))
+            "last_fetch_status = ?, last_scheduled_error_at = ?, "
+            "consecutive_failures = consecutive_failures + 1, "
+            "last_fetch_error_kind = ? WHERE id = ?",
+            (error, attempted_at, FETCH_STATUS_ERROR, attempted_at, error_kind, source_id))
     else:
         conn.execute(
             "UPDATE sources SET last_fetch_error = ?, last_attempt_at = ?, "
-            "last_fetch_status = ? WHERE id = ?",
-            (error, attempted_at, FETCH_STATUS_ERROR, source_id))
+            "last_fetch_status = ?, last_fetch_error_kind = ? WHERE id = ?",
+            (error, attempted_at, FETCH_STATUS_ERROR, error_kind, source_id))
     conn.commit()
 
 
@@ -225,6 +232,7 @@ def reset_fetch_state_by_channel(conn: sqlite3.Connection, channel_id: int) -> N
         "UPDATE sources SET last_fetch_at = NULL, last_fetch_error = NULL, "
         "last_fetch_raw_count = NULL, last_fetch_new_count = NULL, "
         "last_attempt_at = NULL, last_fetch_status = NULL, "
-        "last_scheduled_slot_at = NULL, last_scheduled_error_at = NULL WHERE channel_id = ?",
+        "last_scheduled_slot_at = NULL, last_scheduled_error_at = NULL, "
+        "consecutive_failures = 0, last_fetch_error_kind = NULL WHERE channel_id = ?",
         (channel_id,))
     conn.commit()
