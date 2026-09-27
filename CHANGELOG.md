@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   synthesis-only retries, unread completion state, and localized completion emails.
 - International designer-clearance monitoring for THE OUTNET, Mytheresa, END., and YOOX, with
   verified markdown thresholds and listing-currency preservation.
+- Every Channel in a digest email carries a status line (sources OK, listings tracked, or no
+  changes), and a capped Channel says how many more events are waiting.
+- A nightly host-side SQLite backup that restores each archive into a scratch file to verify it
+  before keeping it, and `deploy/release.sh` for SHA-tagged releases from clean commits.
+- CI that runs Ruff and the test suite on every push.
 
 ### Changed
 
@@ -60,8 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The digest timer now evaluates Email Group schedules and Research completion notifications every
   15 minutes. Individual groups remain governed by their own interval or calendar schedule.
 - The fetch timer now runs every 15 minutes as well. Individual Channels remain governed by their
-  own interval or daily calendar schedule, and a Source whose last attempt failed waits an hour
-  before being retried.
+  own interval or daily calendar schedule. A Source whose last automatic attempt failed waits an
+  hour before its first retry, and the wait doubles with each further failure up to 24 hours.
 - New ranking summaries state the strongest evidence-supported conclusion in one sentence instead
   of only describing the article topic.
 - Failed article briefs now identify the failing stage, explain whether the LLM ran, and provide a
@@ -71,6 +76,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Featured now ranks only content published during a configurable Auckland calendar-day window,
   defaulting to three days and falling back to fetch time when publication time is unavailable.
 - Featured table columns can be resized with pointer dragging or the keyboard.
+- The SQLite schema is versioned with `PRAGMA user_version`. `init_schema` only migrates a database
+  that is behind and refuses one that a newer, incompatible release migrated; `--mode migrate` is
+  the explicit release step.
+- Digest events expire: Editorial news after 3 days, Monitor discoveries after 7 days, and price
+  drops and restocks after 3 days. Listings from a Source whose data is stale are held back from
+  email until it recovers. A new catalogue Source's first snapshot is a baseline and sends no
+  discovery emails.
+- Every fetch outcome is logged to the journal, and digest warnings name the Source the way the
+  admin UI does and say how long it has been failing.
+- SQLite runs with `synchronous=NORMAL`, and each fetch is ingested in a single transaction.
+- Container units log each line once and keep Podman lifecycle events out of the journal. The
+  research-reconcile and deep-read backstop timers run hourly and every 30 minutes.
 
 ### Fixed
 
@@ -80,6 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of the UTC date.
 - Failed manual fetches no longer delay the next automatic Channel slot, and paused Sources no
   longer distort the next-fetch preview.
+- Shopify collections with more than 1,000 products are fetched completely instead of retiring
+  every listing past the fourth page, and Land & Sea no longer truncates listings past 100 pages.
+- A Monitor snapshot that would retire most listings at once is held until a second snapshot in a
+  row confirms it, so a briefly empty storefront response no longer retires the catalogue.
+- A discount change on a clearance listing reranks it again.
 
 ## [0.1.0] - 2026-07-14
 
