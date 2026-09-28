@@ -1,0 +1,578 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-28T19:37:13+13:00",
+  "title": "Design System: Beehive Admin",
+  "extensions": {
+    "colorMeta": {
+      "desk": {
+        "role": "neutral",
+        "displayName": "Desk Black",
+        "canonical": "#0A0C0E",
+        "cssVar": "--desk",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "Graphite Sheet",
+        "canonical": "#111417",
+        "cssVar": "--sheet",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "band": {
+        "role": "neutral",
+        "displayName": "Header Band",
+        "canonical": "#191D21",
+        "cssVar": "--band",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "Hover Wash",
+        "canonical": "#161A1E",
+        "cssVar": "--hover",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Recessed Field",
+        "canonical": "#0C0E10",
+        "cssVar": "--field",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#262B30",
+        "cssVar": "--rule",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "rule-2": {
+        "role": "neutral",
+        "displayName": "Rule Stroke",
+        "canonical": "#3A4046",
+        "cssVar": "--rule-2",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "rule-ink": {
+        "role": "neutral",
+        "displayName": "Ink Rule",
+        "canonical": "#C9CFD6",
+        "cssVar": "--rule-ink",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "ctl": {
+        "role": "neutral",
+        "displayName": "Control Stroke",
+        "canonical": "#666E76",
+        "cssVar": "--ctl",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "ctl-danger": {
+        "role": "tertiary",
+        "displayName": "Danger Stroke",
+        "canonical": "#B04A42",
+        "cssVar": "--ctl-danger",
+        "tonalRamp": [
+          "#1F0001",
+          "#4D0003",
+          "#7A1615",
+          "#A03B35",
+          "#C65E55",
+          "#EE8176",
+          "#FFB3A9",
+          "#FFE9E6"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Sheet Ink",
+        "canonical": "#E7EAED",
+        "cssVar": "--ink",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "#A7AFB7",
+        "cssVar": "--ink-2",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "canonical": "#808891",
+        "cssVar": "--ink-3",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "on-fill": {
+        "role": "neutral",
+        "displayName": "Fill Ink",
+        "canonical": "#0A0C0E",
+        "cssVar": "--on-fill",
+        "tonalRamp": [
+          "#0A0C0E",
+          "#262B30",
+          "#3A4046",
+          "#666E76",
+          "#808891",
+          "#A7AFB7",
+          "#C9CFD6",
+          "#E7EAED"
+        ]
+      },
+      "link": {
+        "role": "primary",
+        "displayName": "Datasheet Blue",
+        "canonical": "#7DB6FF",
+        "cssVar": "--link",
+        "tonalRamp": [
+          "#000B1F",
+          "#00244E",
+          "#044180",
+          "#2B62A4",
+          "#4D84C9",
+          "#6FA8F0",
+          "#A5CCFF",
+          "#E4F0FF"
+        ]
+      },
+      "link-2": {
+        "role": "primary",
+        "displayName": "Pale Datasheet Blue",
+        "canonical": "#A9CEFF",
+        "cssVar": "--link-2",
+        "tonalRamp": [
+          "#000A20",
+          "#05244A",
+          "#23436B",
+          "#42638E",
+          "#6284B2",
+          "#84A8D7",
+          "#A7CCFD",
+          "#E4F0FF"
+        ]
+      },
+      "caution": {
+        "role": "secondary",
+        "displayName": "Attention Amber",
+        "canonical": "#F0B44C",
+        "cssVar": "--caution",
+        "tonalRamp": [
+          "#120900",
+          "#332100",
+          "#593C00",
+          "#815900",
+          "#AB7700",
+          "#D4992A",
+          "#FABD56",
+          "#FFECCE"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Fault Red",
+        "canonical": "#FF6E61",
+        "cssVar": "--danger",
+        "tonalRamp": [
+          "#1F0000",
+          "#4D0002",
+          "#810006",
+          "#B1211E",
+          "#D94B41",
+          "#FF7366",
+          "#FFB3A9",
+          "#FFE9E5"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page h1 only, with the meta line of counts under it."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Numbered section heads (N.M). The number sits in faint ink at 600."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base text. Field values use the same size at line-height 1.4. Ledes stop at 72ch."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "Table cells, note bodies and meta lines. Parameter labels use it at 600."
+      },
+      "note": {
+        "displayName": "Note",
+        "purpose": "Parameter-row notes, secondary lines in forms and popovers, confirmation labels."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Button labels. Small buttons drop to 0.78rem."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Column heads, the parameter head row and fact labels. The build sets the width with font-stretch: 85%."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Secondary lines under table values, the running head, footnote strips and stacked-row labels. Line height inherits (1.45 in tables, 1.55 elsewhere)."
+      },
+      "numeric": {
+        "displayName": "Numeric",
+        "purpose": "Numeric table columns, right-aligned, with font-variant-numeric: tabular-nums and font-stretch: 88%."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "The plain-text email preview. Raw error text uses 0.75rem at 1.55."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover-lift",
+        "value": "0 18px 40px -8px rgba(0,0,0,.65)",
+        "purpose": "The source-removal popover only, over a rgba(5,6,7,.6) backdrop. The one drop shadow in admin."
+      },
+      {
+        "name": "field-focus-ring",
+        "value": "0 0 0 1px #7DB6FF",
+        "purpose": "Doubles the blue border of a focused field. A focus ring, not elevation."
+      },
+      {
+        "name": "hollow-mark",
+        "value": "inset 0 0 0 1.5px <tone>",
+        "purpose": "Draws hollow state squares (paused and warning amber, never fetched faint ink, in progress blue)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fade",
+        "value": "150ms ease-out",
+        "purpose": "Background, border, text colour and ring changes on hover and focus. Nothing moves or scales."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition: none",
+        "purpose": "Under prefers-reduced-motion: reduce every admin transition is removed."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mid",
+        "value": "1180px",
+        "purpose": "@container adm (max-width:1180px). Tighter desk and sheet, table cells wrap, operation columns wrap, narrower parameter columns."
+      },
+      {
+        "name": "narrow",
+        "value": "880px",
+        "purpose": "@container adm (max-width:880px). Rail becomes a top bar, parameter rows stack, tables become labelled stacked rows."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "A solid block of ink for the page's main commitment (create, save, sign in, send a test).",
+      "html": "<div class=\"ds-adm\"><button class=\"ds-btn-primary\" type=\"button\">保存修改</button></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #E7EAED;border-radius:2px;background:#E7EAED;color:#0A0C0E;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn-primary:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn-primary:hover{border-color:#FFFFFF;background:#FFFFFF}.ds-btn-primary:active{border-color:#C9CFD6;background:#C9CFD6}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The default button: transparent with a control-stroke boundary. Shown at default, small and disabled.",
+      "html": "<div class=\"ds-adm ds-row\"><button class=\"ds-btn\" type=\"button\">立即抓取</button><button class=\"ds-btn ds-btn-sm\" type=\"button\">恢复抓取</button><button class=\"ds-btn\" type=\"button\" disabled>立即抓取</button></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #666E76;border-radius:2px;background:transparent;color:#E7EAED;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn:hover{border-color:#A7AFB7;background:#161A1E}.ds-btn:active{background:#191D21}.ds-btn:disabled{border-color:#262B30;background:transparent;color:#808891;cursor:not-allowed}.ds-btn-sm{min-height:26px;padding:0 9px;font-size:12.5px}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Red text on the danger stroke that fills red on hover. Only in danger rows and the removal popover.",
+      "html": "<div class=\"ds-adm ds-row\"><button class=\"ds-btn-danger\" type=\"button\">确认删除</button><button class=\"ds-btn-danger ds-btn-sm\" type=\"button\">删除该频道</button></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #B04A42;border-radius:2px;background:transparent;color:#FF6E61;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn-danger:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn-danger:hover{border-color:#FF6E61;background:#FF6E61;color:#0A0C0E}.ds-btn-sm{min-height:26px;padding:0 9px;font-size:12.5px}"
+    },
+    {
+      "name": "Fields",
+      "kind": "input",
+      "refersTo": "input-line",
+      "description": "Every control boundary in the control stroke: a bounded input that ellipsizes, the one-line field that wraps and grows, a number with its unit, an invalid field, a prefix cell and weekday chips.",
+      "html": "<div class=\"ds-adm ds-fields\"><label class=\"ds-field-label\" for=\"ds-f-name\">名称</label><input class=\"ds-inp\" id=\"ds-f-name\" type=\"text\" value=\"新西兰户外装备清仓监控\"><label class=\"ds-field-label\" for=\"ds-f-url\">合集链接</label><textarea class=\"ds-inp ds-inp-line\" id=\"ds-f-url\" rows=\"1\" spellcheck=\"false\">https://www.bivouac.co.nz/collections/clearance?sort=price&amp;page=1</textarea><label class=\"ds-field-label\" for=\"ds-f-count\">精选数量</label><div class=\"ds-row\"><input class=\"ds-inp ds-inp-num\" id=\"ds-f-count\" type=\"number\" value=\"15\"><span class=\"ds-unit\">条</span></div><label class=\"ds-field-label\" for=\"ds-f-mail\">故障提醒邮箱（可选）</label><input class=\"ds-inp\" id=\"ds-f-mail\" type=\"email\" value=\"owner@\" aria-invalid=\"true\"><label class=\"ds-field-label\" for=\"ds-f-sub\">Subreddit 名称</label><div class=\"ds-prefixed\"><span>r/</span><input class=\"ds-inp\" id=\"ds-f-sub\" type=\"text\" placeholder=\"PersonalFinanceNZ\"></div><span class=\"ds-field-label\">发送日</span><div class=\"ds-days\" role=\"group\" aria-label=\"发送日\"><label title=\"星期一\"><input type=\"checkbox\" aria-label=\"星期一\" checked>一</label><label title=\"星期二\"><input type=\"checkbox\" aria-label=\"星期二\">二</label><label title=\"星期三\"><input type=\"checkbox\" aria-label=\"星期三\">三</label><label title=\"星期四\"><input type=\"checkbox\" aria-label=\"星期四\" checked>四</label><label title=\"星期五\"><input type=\"checkbox\" aria-label=\"星期五\">五</label><label title=\"星期六\"><input type=\"checkbox\" aria-label=\"星期六\">六</label><label title=\"星期日\"><input type=\"checkbox\" aria-label=\"星期日\">日</label></div></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.ds-inp{box-sizing:border-box;width:100%;min-height:34px;padding:6px 10px;border:1px solid #666E76;border-radius:2px;background:#0C0E10;color:#E7EAED;font-family:inherit;font-size:15px;font-weight:400;line-height:1.4;transition:border-color .15s ease-out,box-shadow .15s ease-out}.ds-inp::placeholder{color:#808891;opacity:1}.ds-inp:hover{border-color:#808891}.ds-inp:focus{outline:none;border-color:#7DB6FF;box-shadow:0 0 0 1px #7DB6FF}.ds-inp[aria-invalid=true]{border-color:#FF6E61}input.ds-inp{text-overflow:ellipsis}textarea.ds-inp-line{display:block;resize:none;overflow:hidden;field-sizing:content}.ds-inp-num{width:96px}.ds-unit{color:#A7AFB7;font-size:14px}.ds-fields{display:grid;gap:6px;max-width:460px}.ds-field-label{margin-top:8px;font-size:14px;font-weight:600}.ds-field-label:first-child{margin-top:0}.ds-prefixed{display:flex;align-items:stretch;min-width:0}.ds-prefixed>span{display:grid;place-items:center;padding:0 10px;border:1px solid #666E76;border-right:0;border-radius:2px 0 0 2px;background:#191D21;color:#A7AFB7;font-size:14px}.ds-prefixed>.ds-inp{border-radius:0 2px 2px 0}.ds-days{display:flex;flex-wrap:wrap;gap:6px}.ds-days label{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:1px solid #666E76;border-radius:2px;cursor:pointer;transition:border-color .15s ease-out,background-color .15s ease-out}.ds-days label:has(input:checked){border-color:#A7AFB7;background:#191D21}.ds-days input{flex:none;width:16px;height:16px;margin:0;accent-color:#E7EAED}"
+    },
+    {
+      "name": "Contents Rail",
+      "kind": "nav",
+      "refersTo": "rail-link",
+      "description": "Numbered chapters with amber attention counts; the current chapter lists its N.M sections.",
+      "html": "<nav class=\"ds-rail\" aria-label=\"目录\"><a class=\"ds-brand\" href=\"#\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z\"/></svg>蜂巢<span>管理</span></a><ol class=\"ds-toc\"><li><a href=\"#\" aria-current=\"page\"><span class=\"ds-no\">1</span><span>频道</span><span class=\"ds-count\">1</span></a></li><li class=\"ds-sub\"><ol><li><a href=\"#\"><span class=\"ds-no\">1.1</span><span>需要注意</span></a></li><li><a href=\"#\"><span class=\"ds-no\">1.2</span><span>频道一览</span></a></li></ol></li><li><a href=\"#\"><span class=\"ds-no\">2</span><span>邮件组</span></a></li><li><a href=\"#\"><span class=\"ds-no\">3</span><span>全局设置</span></a></li><li><a href=\"#\"><span class=\"ds-no\">4</span><span>系统</span><span class=\"ds-count\">1</span></a></li></ol></nav>",
+      "css": ".ds-rail{display:flex;flex-direction:column;gap:18px;width:216px;padding:18px 12px 16px;background:#111417;border-right:1px solid #262B30;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none}.ds-brand{display:flex;align-items:center;gap:8px;padding:0 8px;color:#E7EAED;font-size:16px;font-weight:700;text-decoration:none}.ds-brand svg{flex:none;width:18px;height:18px;fill:none;stroke:#E7EAED;stroke-width:2.6;stroke-linejoin:round}.ds-brand span{font-weight:500;color:#A7AFB7}.ds-toc,.ds-toc ol{margin:0;padding:0;list-style:none}.ds-toc{display:grid;gap:1px}.ds-toc a{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:4px;min-height:32px;padding:4px 8px;border-radius:2px;color:#A7AFB7;text-decoration:none;transition:background-color .15s ease-out,color .15s ease-out}.ds-toc a:hover{background:#161A1E;color:#E7EAED}.ds-toc a[aria-current]{background:#191D21;color:#E7EAED;font-weight:600}.ds-toc a:focus-visible,.ds-brand:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-no{color:#808891;font-size:13px;font-variant-numeric:tabular-nums}.ds-sub a{min-height:28px;padding-left:30px;grid-template-columns:30px minmax(0,1fr);font-size:13px;font-weight:400}.ds-count{min-width:18px;height:18px;padding:0 4px;border:1px solid #F0B44C;border-radius:2px;color:#F0B44C;font-size:11.5px;font-weight:700;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "State Marks",
+      "kind": "chip",
+      "description": "A 9px square plus a word: filled for settled states, hollow for waiting ones, colour only where the Owner is needed.",
+      "html": "<div class=\"ds-adm\"><div class=\"ds-legend\"><span class=\"ds-st\">正常</span><span class=\"ds-st ds-st-paused\">已暂停</span><span class=\"ds-st ds-st-error\">失败</span><span class=\"ds-st ds-st-never\">还没抓取过</span><span class=\"ds-st ds-st-busy\">抓取请求已提交，稍后刷新查看结果</span></div></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px}.ds-st{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}.ds-st::before{content:\"\";flex:none;width:9px;height:9px;background:#C9CFD6}.ds-st-paused{color:#F0B44C;font-weight:600}.ds-st-paused::before{background:none;box-shadow:inset 0 0 0 1.5px #F0B44C}.ds-st-error{color:#FF6E61;font-weight:600}.ds-st-error::before{background:#FF6E61}.ds-st-never{color:#808891}.ds-st-never::before{background:none;box-shadow:inset 0 0 0 1.5px #808891}.ds-st-busy{color:#7DB6FF}.ds-st-busy::before{background:none;box-shadow:inset 0 0 0 1.5px #7DB6FF}"
+    },
+    {
+      "name": "Parameter Table",
+      "kind": "custom",
+      "refersTo": "param-row",
+      "description": "Every form: 参数 | 设置 | 说明 under a heavy ink rule, a changed row tagged 已修改, and the save bar counting unsaved rows (sticky to the viewport bottom in the build; static in this preview).",
+      "html": "<div class=\"ds-adm\"><div class=\"ds-params\"><div class=\"ds-params-head\" aria-hidden=\"true\"><span>参数</span><span>设置</span><span>说明</span></div><div class=\"ds-param\"><label class=\"ds-param-label\" for=\"ds-p-name\">名称</label><div class=\"ds-param-ctl\"><input class=\"ds-inp\" id=\"ds-p-name\" type=\"text\" value=\"新西兰户外装备清仓监控\"></div><div class=\"ds-param-note\">显示在目录、频道页和邮件里。</div></div><div class=\"ds-param\"><span class=\"ds-param-label\">频道类型</span><div class=\"ds-param-ctl ds-param-static\">监控</div><div class=\"ds-param-note\">类型创建后不能更改。</div></div><div class=\"ds-param ds-param-dirty\"><label class=\"ds-param-label\" for=\"ds-p-count\">精选数量<span class=\"ds-tag-mod\">已修改</span></label><div class=\"ds-param-ctl\"><div class=\"ds-row\"><input class=\"ds-inp ds-inp-num\" id=\"ds-p-count\" type=\"number\" value=\"15\"><span class=\"ds-unit\">条</span></div></div><div class=\"ds-param-note\">排名最高的内容会在该频道自己的页面中显示为精选。默认：8。</div></div></div><div class=\"ds-savebar\"><button class=\"ds-btn-primary\" type=\"button\">保存修改</button><button class=\"ds-btn\" type=\"button\">放弃修改</button><span class=\"ds-dirty\">1 项修改还没保存</span></div></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.ds-inp{box-sizing:border-box;width:100%;min-height:34px;padding:6px 10px;border:1px solid #666E76;border-radius:2px;background:#0C0E10;color:#E7EAED;font-family:inherit;font-size:15px;font-weight:400;line-height:1.4;transition:border-color .15s ease-out,box-shadow .15s ease-out}.ds-inp::placeholder{color:#808891;opacity:1}.ds-inp:hover{border-color:#808891}.ds-inp:focus{outline:none;border-color:#7DB6FF;box-shadow:0 0 0 1px #7DB6FF}.ds-inp[aria-invalid=true]{border-color:#FF6E61}input.ds-inp{text-overflow:ellipsis}textarea.ds-inp-line{display:block;resize:none;overflow:hidden;field-sizing:content}.ds-inp-num{width:96px}.ds-unit{color:#A7AFB7;font-size:14px}.ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #E7EAED;border-radius:2px;background:#E7EAED;color:#0A0C0E;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn-primary:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn-primary:hover{border-color:#FFFFFF;background:#FFFFFF}.ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #666E76;border-radius:2px;background:transparent;color:#E7EAED;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn:hover{border-color:#A7AFB7;background:#161A1E}.ds-btn:active{background:#191D21}.ds-btn:disabled{border-color:#262B30;background:transparent;color:#808891;cursor:not-allowed}.ds-params{border-top:1.5px solid #C9CFD6}.ds-params-head,.ds-param{display:grid;grid-template-columns:minmax(140px,190px) minmax(0,1fr) minmax(200px,290px);gap:0 24px;padding:0 10px}.ds-params-head{padding-top:6px;padding-bottom:6px;border-bottom:1px solid #3A4046;background:#191D21;color:#A7AFB7;font-size:12.5px;font-weight:600;line-height:1.3;font-stretch:85%}.ds-param{align-items:start;padding-top:14px;padding-bottom:14px;border-bottom:1px solid #262B30}.ds-param-label{padding-top:7px;font-size:14px;font-weight:600;overflow-wrap:anywhere}.ds-param-ctl{display:grid;gap:10px;min-width:0}.ds-param-static{padding-top:7px}.ds-param-note{padding-top:7px;color:#A7AFB7;font-size:13px;line-height:1.6;overflow-wrap:anywhere}.ds-tag-mod{display:none;margin-left:6px;padding:0 5px;border:1px solid #7DB6FF;border-radius:2px;color:#7DB6FF;font-size:11.2px;font-weight:700;line-height:15px;vertical-align:1px}.ds-param-dirty .ds-tag-mod{display:inline-block}.ds-savebar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 10px;border-top:1px solid #3A4046;background:#111417}.ds-dirty{color:#7DB6FF;font-size:13px;font-weight:600}.ds-btn-primary:active{border-color:#C9CFD6;background:#C9CFD6}"
+    },
+    {
+      "name": "Banded Table",
+      "kind": "custom",
+      "refersTo": "table-head",
+      "description": "Every list: a heavy ink rule over a condensed band head, hairlines between rows, whole units, state marks and a legend strip.",
+      "html": "<div class=\"ds-adm\"><table class=\"ds-tbl\"><thead><tr><th>频道</th><th>类型</th><th>信源</th><th>抓取计划</th><th>上次抓取</th><th>邮件组</th><th><span class=\"ds-sr\">操作</span></th></tr></thead><tbody><tr><td class=\"ds-c-name\"><a href=\"#\">Personal Finance NZ</a></td><td class=\"ds-c-keep\">资讯</td><td><span class=\"ds-st\">1 个信源 · 全部正常</span></td><td><span class=\"ds-nw\">每天 05:00</span><small>下次 <span class=\"ds-nw\">明天 05:00</span></small></td><td><span class=\"ds-nw\">13 小时前</span><small><span class=\"ds-nw\">50 条</span> · <span class=\"ds-nw\">新增 7</span></small></td><td><a class=\"ds-lnk\" href=\"#\">每日更新</a></td><td class=\"ds-c-ops\"><a class=\"ds-lnk\" href=\"#\">编辑</a></td></tr><tr><td class=\"ds-c-name\"><a href=\"#\">International Designer Clearance</a></td><td class=\"ds-c-keep\">监控</td><td><span class=\"ds-st ds-st-paused\">4 个信源 · 1 个已暂停</span></td><td><span class=\"ds-nw\">每天 23:00</span><small>下次 <span class=\"ds-nw\">今天 23:00</span></small></td><td><span class=\"ds-nw\">19 小时前</span><small><span class=\"ds-nw\">2,727 条</span> · <span class=\"ds-nw\">新增 0</span></small></td><td><a class=\"ds-lnk\" href=\"#\">衣服捡漏</a></td><td class=\"ds-c-ops\"><a class=\"ds-lnk\" href=\"#\">编辑</a></td></tr></tbody></table><div class=\"ds-fn\"><span class=\"ds-st\">正常</span><span class=\"ds-st ds-st-paused\">已暂停</span><span class=\"ds-st ds-st-error\">失败</span><span class=\"ds-st ds-st-never\">还没抓取过</span></div></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-lnk{color:#7DB6FF;text-decoration:underline;text-decoration-color:rgba(125,182,255,.4);text-underline-offset:3px}.ds-lnk:hover{color:#A9CEFF;text-decoration-color:currentColor}.ds-lnk:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-st{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}.ds-st::before{content:\"\";flex:none;width:9px;height:9px;background:#C9CFD6}.ds-st-paused{color:#F0B44C;font-weight:600}.ds-st-paused::before{background:none;box-shadow:inset 0 0 0 1.5px #F0B44C}.ds-st-error{color:#FF6E61;font-weight:600}.ds-st-error::before{background:#FF6E61}.ds-st-never{color:#808891}.ds-st-never::before{background:none;box-shadow:inset 0 0 0 1.5px #808891}.ds-st-busy{color:#7DB6FF}.ds-st-busy::before{background:none;box-shadow:inset 0 0 0 1.5px #7DB6FF}.ds-tbl{width:100%;border-collapse:collapse;font-size:14px;line-height:1.45}.ds-tbl th{padding:7px 10px;border-top:1.5px solid #C9CFD6;border-bottom:1px solid #3A4046;background:#191D21;color:#A7AFB7;font-size:12.5px;font-weight:600;line-height:1.3;font-stretch:85%;text-align:left;white-space:nowrap}.ds-tbl td{padding:10px;border-bottom:1px solid #262B30;vertical-align:top;text-wrap:pretty}.ds-tbl tbody tr{transition:background-color .15s ease-out}.ds-tbl tbody tr:hover{background:#161A1E}.ds-tbl small{display:block;margin-top:2px;color:#A7AFB7;font-size:12.5px}.ds-tbl .ds-c-name{min-width:12em;font-weight:600;overflow-wrap:anywhere;text-wrap:balance}.ds-c-name a{color:inherit;text-decoration:none}.ds-c-name a:hover{color:#A9CEFF;text-decoration:underline;text-underline-offset:3px}.ds-c-name a:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-tbl .ds-c-ops{width:1%;text-align:right;white-space:nowrap}.ds-tbl .ds-c-keep{white-space:nowrap}.ds-nw{white-space:nowrap}.ds-fn{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;color:#A7AFB7;font-size:12.5px}.ds-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}"
+    },
+    {
+      "name": "Boxed Notes",
+      "kind": "custom",
+      "refersTo": "note-tag-caution",
+      "description": "Square callouts with a solid tag cell naming the tone: 注意 caution, 警告 warning, 完成 done, 说明 note.",
+      "html": "<div class=\"ds-adm\"><div class=\"ds-note ds-note-caution\" role=\"status\"><div class=\"ds-note-row\"><span class=\"ds-note-tag\">注意</span><div class=\"ds-note-body\"><b>Mytheresa（International Designer Clearance）已暂停。</b><small>暂停前最后一次抓取失败：网站限制了请求频率。</small></div><div class=\"ds-note-act\"><button class=\"ds-btn ds-btn-sm\" type=\"button\">恢复抓取</button><a class=\"ds-lnk\" href=\"#\">查看信源</a></div></div></div><div class=\"ds-note ds-note-danger\" role=\"alert\"><div class=\"ds-note-row\"><span class=\"ds-note-tag\">警告</span><div class=\"ds-note-body\"><b>Mytheresa（International Designer Clearance）抓取失败。</b><small>网站限制了请求频率</small></div></div></div><div class=\"ds-note ds-note-done\" role=\"status\"><div class=\"ds-note-row\"><span class=\"ds-note-tag\">完成</span><div class=\"ds-note-body\">现在没有需要处理的问题。</div></div></div><div class=\"ds-note\" role=\"status\"><div class=\"ds-note-row\"><span class=\"ds-note-tag\">说明</span><div class=\"ds-note-body\">这些频道没有加入邮件组，不会出现在周期邮件里：拍卖。</div></div></div></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-note{border:1.5px solid #A7AFB7}.ds-note+.ds-note{margin-top:8px}.ds-note-row{display:grid;grid-template-columns:minmax(64px,max-content) minmax(0,1fr) auto;align-items:stretch;list-style:none}.ds-note-row::-webkit-details-marker{display:none}summary.ds-note-row{cursor:pointer}.ds-note-tag{display:grid;place-items:center;padding:6px 10px;background:#A7AFB7;color:#0A0C0E;font-size:13px;font-weight:700;letter-spacing:.12em;text-align:center;white-space:nowrap}.ds-note-body{min-width:0;padding:10px 14px;font-size:14px;overflow-wrap:anywhere}.ds-note-body small{display:block;margin-top:2px;color:#A7AFB7;font-size:13px}.ds-note-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;padding:8px 12px}.ds-note-caution{border-color:#F0B44C}.ds-note-caution .ds-note-tag{background:#F0B44C}.ds-note-danger{border-color:#FF6E61}.ds-note-danger .ds-note-tag{background:#FF6E61}.ds-note-done{border-color:#C9CFD6}.ds-note-done .ds-note-tag{background:#C9CFD6}.ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #666E76;border-radius:2px;background:transparent;color:#E7EAED;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn:hover{border-color:#A7AFB7;background:#161A1E}.ds-btn:active{background:#191D21}.ds-btn:disabled{border-color:#262B30;background:transparent;color:#808891;cursor:not-allowed}.ds-btn-sm{min-height:26px;padding:0 9px;font-size:12.5px}.ds-lnk{color:#7DB6FF;text-decoration:underline;text-decoration-color:rgba(125,182,255,.4);text-underline-offset:3px}.ds-lnk:hover{color:#A9CEFF;text-decoration-color:currentColor}.ds-lnk:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}"
+    },
+    {
+      "name": "Danger Row",
+      "kind": "custom",
+      "refersTo": "note-tag-danger",
+      "description": "A Warning note that opens in place into a typed confirmation naming what goes and the 7-day undo. Shown open.",
+      "html": "<div class=\"ds-adm\"><details class=\"ds-note ds-note-danger\" open><summary class=\"ds-note-row\"><span class=\"ds-note-tag\">警告</span><span class=\"ds-note-body\"><b>删除频道</b> 删除「新西兰户外装备清仓监控」及其 8 个信源、4,286 项、0 条评分、0 篇深度阅读、0 个关注和 1,142 个事件。<small>7 天内可以在「系统 › 操作记录」撤销。</small></span><span class=\"ds-note-act\"><span class=\"ds-btn ds-btn-sm\">取消</span></span></summary><div class=\"ds-confirm\"><label class=\"ds-confirm-label\" for=\"ds-d-confirm\">输入“新西兰户外装备清仓监控”以确认。</label><div class=\"ds-row\"><input class=\"ds-inp ds-inp-grow\" id=\"ds-d-confirm\" type=\"text\" autocomplete=\"off\" spellcheck=\"false\"><button class=\"ds-btn-danger\" type=\"button\">确认删除</button></div></div></details></div>",
+      "css": ".ds-adm{background:#111417;color:#E7EAED;font-family:\"Archivo\",\"PingFang SC\",\"Hiragino Sans GB\",\"Noto Sans CJK SC\",\"Microsoft YaHei\",system-ui,sans-serif;font-size:15px;line-height:1.55;font-synthesis:none;color-scheme:dark;padding:16px}.ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.ds-note{border:1.5px solid #A7AFB7}.ds-note+.ds-note{margin-top:8px}.ds-note-row{display:grid;grid-template-columns:minmax(64px,max-content) minmax(0,1fr) auto;align-items:stretch;list-style:none}.ds-note-row::-webkit-details-marker{display:none}summary.ds-note-row{cursor:pointer}.ds-note-tag{display:grid;place-items:center;padding:6px 10px;background:#A7AFB7;color:#0A0C0E;font-size:13px;font-weight:700;letter-spacing:.12em;text-align:center;white-space:nowrap}.ds-note-body{min-width:0;padding:10px 14px;font-size:14px;overflow-wrap:anywhere}.ds-note-body small{display:block;margin-top:2px;color:#A7AFB7;font-size:13px}.ds-note-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;padding:8px 12px}.ds-note-caution{border-color:#F0B44C}.ds-note-caution .ds-note-tag{background:#F0B44C}.ds-note-danger{border-color:#FF6E61}.ds-note-danger .ds-note-tag{background:#FF6E61}.ds-note-done{border-color:#C9CFD6}.ds-note-done .ds-note-tag{background:#C9CFD6}.ds-inp{box-sizing:border-box;width:100%;min-height:34px;padding:6px 10px;border:1px solid #666E76;border-radius:2px;background:#0C0E10;color:#E7EAED;font-family:inherit;font-size:15px;font-weight:400;line-height:1.4;transition:border-color .15s ease-out,box-shadow .15s ease-out}.ds-inp::placeholder{color:#808891;opacity:1}.ds-inp:hover{border-color:#808891}.ds-inp:focus{outline:none;border-color:#7DB6FF;box-shadow:0 0 0 1px #7DB6FF}.ds-inp[aria-invalid=true]{border-color:#FF6E61}input.ds-inp{text-overflow:ellipsis}textarea.ds-inp-line{display:block;resize:none;overflow:hidden;field-sizing:content}.ds-inp-num{width:96px}.ds-unit{color:#A7AFB7;font-size:14px}.ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #666E76;border-radius:2px;background:transparent;color:#E7EAED;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn:hover{border-color:#A7AFB7;background:#161A1E}.ds-btn:active{background:#191D21}.ds-btn:disabled{border-color:#262B30;background:transparent;color:#808891;cursor:not-allowed}.ds-btn-sm{min-height:26px;padding:0 9px;font-size:12.5px}.ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;border:1px solid #B04A42;border-radius:2px;background:transparent;color:#FF6E61;font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}.ds-btn-danger:focus-visible{outline:2px solid #7DB6FF;outline-offset:2px}.ds-btn-danger:hover{border-color:#FF6E61;background:#FF6E61;color:#0A0C0E}.ds-confirm{display:grid;gap:10px;padding:12px 14px;border-top:1px solid #3A4046;background:#0C0E10}.ds-confirm-label{display:block;color:#A7AFB7;font-size:13px}.ds-inp-grow{flex:1 1 220px;width:auto;min-width:0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Owner's Datasheet",
+    "overview": "Admin reads like a technical datasheet for one person's pipeline, set dark. A graphite sheet lies on a darker desk. A contents rail on the left numbers the chapters. A running head gives the location and the Auckland clock that every schedule is read against, and each section carries a number that matches the rail. Every setting is a parameter row with its value and a note. Every list is a banded table under a heavy ink rule. The density is working density, with 15px body text, 32px controls and hairlines between rows. Nothing is padded out for show.\n\nColour is a signal. Ink on graphite carries everything that is fine. Amber appears only where something waits on the Owner, red only for failure or a destructive action, and blue for links, focus and unsaved edits. State is always a shape plus a word. Controls have 2px corners and everything else is square. Depth comes from tone, and the one drop shadow belongs to the removal popover.\n\nThe system refuses the card-grid SaaS console, so there are no tiles, no dashboards of boxes and no decorative colour. The Owner visits rarely, so every page says what it controls and what state it is in. Unsaved rows are marked and counted, and destructive rows open in place into a typed confirmation.",
+    "keyCharacteristics": [
+      "Graphite sheet on a darker desk, flat and tonal.",
+      "Every form is a parameter table (参数 | 设置 | 说明) and every list is a banded table under a heavy ink rule.",
+      "Boxed notes tagged 说明 / 注意 / 警告 / 完成.",
+      "Colour only where the Owner is needed. Amber for attention, red for failure, blue for links and focus.",
+      "State is a square mark plus a word.",
+      "Archivo throughout, condensed only in column heads and numbers, with tabular figures wherever numbers change.",
+      "2px corners on controls, square containers.",
+      "Nothing overflows at 1440, 1024 or 390px, and units never split."
+    ],
+    "rules": [
+      {
+        "name": "The Owner-Needed Rule",
+        "body": "Colour appears only where something needs the Owner. Amber means attention, red means failure or a destructive action, and blue means a link, focus or an unsaved edit. Everything else is ink on graphite, so a healthy page shows no amber and no red outside its danger rows.",
+        "section": "colors"
+      },
+      {
+        "name": "The Solid Ink Rule",
+        "body": "The primary action is a solid block of ink with dark text. Blue never fills a control, and amber never fills a button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Shape-Plus-Word Rule",
+        "body": "Every state is a 9px square plus its word. Settled states are filled (ok in ink rule, error in red). Waiting states are hollow (paused and warning in amber, never fetched in faint ink, in progress in blue). Colour never carries a state alone.",
+        "section": "colors"
+      },
+      {
+        "name": "The Visible Control Rule",
+        "body": "Every outlined control the stylesheet draws (buttons, fields, prefix cells, weekday chips) rests on the control stroke, or the danger stroke on danger buttons, and both hold at least 3:1 on every admin surface. The rule stroke draws structure only and never outlines a control. States only strengthen the boundary (secondary ink on a hovered button or a checked chip, faint ink on a hovered field, blue on focus, red when invalid). Only disabled buttons fade to the hairline.",
+        "section": "colors"
+      },
+      {
+        "name": "The Condensed Head Rule",
+        "body": "Width marks data. Column heads and fact labels set at 85% width and numeric columns at 88%. Headings and body text stay at full width.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Every number that changes (counts, the clock, chapter and section numbers, numeric columns, facts) uses tabular figures, so columns and counters never jitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-Overflow Rule",
+        "body": "No text leaves its box at 1440, 1024 or 390px. Free-length values wrap (one-line fields, break-anywhere cells), and bounded values ellipsize. No layout depends on sideways scrolling. The table wrapper's scroll is a guard, not a layout.",
+        "section": "layout"
+      },
+      {
+        "name": "The Whole Unit Rule",
+        "body": "In a table a unit never splits, whether it is a count with its word, a day with its time or an email address. Lines break between units, and URLs break only before a slash. At the narrow rule these holds relax so stacked rows can wrap.",
+        "section": "layout"
+      },
+      {
+        "name": "The Stacked Row Rule",
+        "body": "At 880px and below, every multi-column list becomes labelled rows. Each value is led by its column name in a 76px faint-ink label column, the row checkbox moves to the top right, and operations drop to the bottom.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Sheet Rule",
+        "body": "Depth is tone. The desk sits below the sheet, bands sit above it and fields sink into it. Nothing floats except the removal popover.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Two Corner Rule",
+        "body": "Controls and counters get 2px, and containers get none.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Heavy Ink Rule",
+        "body": "A 1.5px ink rule opens every table and parameter table. Hairlines do everything else.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Parameter Row Rule",
+        "body": "Every form is a parameter table. The label names the parameter, the control holds the value, and the note says what it does, what is in effect now and what went wrong.",
+        "section": "components"
+      },
+      {
+        "name": "The Counted Save Rule",
+        "body": "A changed row is tagged 已修改 in blue and counted in the sticky save bar. After a rejected save the bar stays unsaved and says so.",
+        "section": "components"
+      },
+      {
+        "name": "The Typed Confirmation Rule",
+        "body": "A destructive action opens in place (or, for a source, in a popover) into a confirmation that names what goes, gives the counts, says it can be undone for 7 days, and asks the Owner to type the name.",
+        "section": "components"
+      },
+      {
+        "name": "The Boxed Note Rule",
+        "body": "Callouts are square boxes in their tone, with a solid tag cell that says the tone in words (说明, 注意, 警告, 完成).",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do build every form as a parameter table (参数 | 设置 | 说明) with `ui.param`, and put hints, the value in effect and errors in the note column.",
+      "Do use the one-line field (`ui.line_field`) for any value without a length limit, such as URLs, queries, email addresses, subject templates and source names. Keep bounded values as inputs.",
+      "Do keep units whole in table cells with `ui.units`, `ui.keep` and `.nw`, and break URL paths with `ui.url_path`. Mark multi-column list tables to stack at the narrow rule (`.tbl-stack`, with `data-label` on each cell).",
+      "Do pair every state with a square mark and a word, and add amber or red only when the Owner has to act.",
+      "Do give each destructive action its own Warning row (`ui.danger`) that opens in place into a typed confirmation naming what goes and the 7-day undo.",
+      "Do use tabular figures for every changing number, and condense only column heads, fact labels and numeric columns.",
+      "Do keep all admin styling in `admin.css`. Templates carry no inline `style=` (a test enforces this), scripts load only from the site (`script-src 'self'`), and fonts are self-hosted.",
+      "Do write 频道 and 信源 in Chinese copy. English capitalises Channel and Source as product terms."
+    ],
+    "donts": [
+      "Don't build card grids, tiles or dashboards of boxes. Lists are banded tables and settings are parameter rows, and a row of figures is a ruled facts strip.",
+      "Don't fill a control, tag or mark with blue. Blue is for links, focus, unsaved edits and work in progress, and the primary action is solid ink.",
+      "Don't use amber or red for emphasis or decoration.",
+      "Don't round containers, or give any control more than 2px.",
+      "Don't lift things off the sheet with drop shadows. Change the tone instead. The removal popover is the only shadow.",
+      "Don't set free-length text on one unbreakable line, or let a layout depend on sideways scrolling at 1440, 1024 or 390px.",
+      "Don't write \"Channel\" in Chinese copy.",
+      "Don't outline a control with the rule stroke. Outlined controls take the control stroke (`--ctl`), or the danger stroke (`--ctl-danger`) on danger buttons, and both hold at least 3:1 on every admin surface.",
+      "Don't borrow from `beehive.css`. The public site's gold accent and serif heads belong to the public world."
+    ]
+  }
+}
