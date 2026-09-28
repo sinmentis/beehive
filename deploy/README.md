@@ -110,12 +110,15 @@ the order matters: migrate first, then promote. Every process still runs the ver
 `init_schema` on start, which is a single PRAGMA read once the file is current. A build that is
 older than the database's compatible version refuses to start instead of writing to it
 (`SchemaTooNewError`). Additive migrations keep the compatible version where it was, so rolling
-back is just:
+back is just a swap of `:latest` and `:rollback` (it restarts the always-on units and waits for
+`/readyz` the same way):
 
 ```bash
-podman tag localhost/beehive:rollback localhost/beehive:latest
-systemctl --user restart beehive-research.service beehive-web.service
+deploy/release.sh promote rollback
 ```
+
+`prune` only untags and removes Beehive's own SHA-tagged images; it never runs a host-wide
+`podman image prune`, because other projects share the image store.
 
 ## Dashboard lifecycle contract
 

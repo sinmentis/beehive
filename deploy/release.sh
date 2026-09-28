@@ -8,17 +8,21 @@
 #   deploy/release.sh prune            drop SHA-tagged images other than :latest and :rollback
 #
 # Every other unit is a oneshot started from :latest, so it picks the new image up on its next
-# run. Rollback: `podman tag localhost/beehive:rollback localhost/beehive:latest`, then restart
-# beehive-web.service and beehive-research.service. That works across additive migrations
-# because older code accepts a newer, compatible schema (see src/beehive/db/connection.py).
+# run. Roll back with `deploy/release.sh promote rollback`, which swaps :latest and :rollback.
+# That works across additive migrations because older code accepts a newer, compatible schema
+# (see src/beehive/db/connection.py).
 #
 # Override via env: BEEHIVE_IMAGE, BEEHIVE_VOLUME, BEEHIVE_READYZ_URL, BEEHIVE_SKIP_BACKUP=1.
+# BEEHIVE_PODMAN, BEEHIVE_SYSTEMCTL and BEEHIVE_CURL exist for the test harness only.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="${BEEHIVE_IMAGE:-localhost/beehive}"
 VOLUME="${BEEHIVE_VOLUME:-beehive-data}"
 READYZ_URL="${BEEHIVE_READYZ_URL:-http://127.0.0.1:8095/readyz}"
+PODMAN="${BEEHIVE_PODMAN:-podman}"
+SYSTEMCTL="${BEEHIVE_SYSTEMCTL:-systemctl}"
+CURL="${BEEHIVE_CURL:-curl}"
 ALWAYS_ON_UNITS=(beehive-research.service beehive-web.service)
 
 die() {
@@ -26,9 +30,13 @@ die() {
   exit 1
 }
 
+image_id() {
+  "$PODMAN" image inspect "$1" --format '{{.Id}}'
+}
+
 require_tag() {
   [[ -n "${1:-}" ]] || die "missing image tag"
-  podman image exists "$IMAGE:$1" || die "no image $IMAGE:$1"
+  "$PODMAN" image exists "$IMAGE:$1" || die "no image $IMAGE:$1"
 }
 
 cmd_build() {
@@ -37,7 +45,7 @@ cmd_build() {
   local sha short
   sha="$(git rev-parse HEAD)"
   short="$(git rev-parse --short=7 HEAD)"
-  podman build --label "org.opencontainers.image.revision=$sha" -t "$IMAGE:$short" \
+  "$PODMAN" build --label "org.opencontainers.image.revision=$sha" -t "$IMAGE:$short" \
     -f Containerfile . >&2
   echo "$short"
 }
@@ -45,48 +53,54 @@ cmd_build() {
 cmd_migrate() {
   require_tag "${1:-}"
   if [[ "${BEEHIVE_SKIP_BACKUP:-0}" != "1" ]]; then
-    systemctl --user start beehive-backup.service
+    "$SYSTEMCTL" --user start beehive-backup.service
   fi
-  podman run --rm --log-driver passthrough -v "$VOLUME:/data" --env DB_PATH=/data/beehive.db \
+  # No --log-driver passthrough here: Podman refuses it on a terminal, and this runs from one.
+  "$PODMAN" run --rm -v "$VOLUME:/data" --env DB_PATH=/data/beehive.db \
     "$IMAGE:$1" -m scripts.run_collector --mode migrate
 }
 
 cmd_promote() {
   require_tag "${1:-}"
   local current target
-  current="$(podman image inspect "$IMAGE:latest" --format '{{.Id}}' 2>/dev/null || true)"
-  target="$(podman image inspect "$IMAGE:$1" --format '{{.Id}}')"
+  # Resolve the target before moving any tag, so `promote rollback` really swaps the two images
+  # instead of re-promoting :latest after :rollback has been pointed at it.
+  target="$(image_id "$IMAGE:$1")"
+  current="$(image_id "$IMAGE:latest" 2>/dev/null || true)"
   if [[ -n "$current" && "$current" != "$target" ]]; then
-    podman tag "$current" "$IMAGE:rollback"
+    "$PODMAN" tag "$current" "$IMAGE:rollback"
   fi
-  podman tag "$IMAGE:$1" "$IMAGE:latest"
-  systemctl --user restart "${ALWAYS_ON_UNITS[@]}"
+  "$PODMAN" tag "$target" "$IMAGE:latest"
+  "$SYSTEMCTL" --user restart "${ALWAYS_ON_UNITS[@]}"
   for _ in $(seq 1 60); do
-    if curl -fsS "$READYZ_URL" >/dev/null 2>&1; then
+    if "$CURL" -fsS "$READYZ_URL" >/dev/null 2>&1; then
       echo "release: $IMAGE:$1 is live and ready"
       return 0
     fi
     sleep 1
   done
-  die "$READYZ_URL did not become ready; roll back with: podman tag $IMAGE:rollback $IMAGE:latest"
+  die "$READYZ_URL did not become ready; roll back with: $0 promote rollback"
 }
 
 cmd_prune() {
-  local keep=()
+  local keep=() removed=() ref id tag
   for tag in latest rollback; do
-    if podman image exists "$IMAGE:$tag"; then
-      keep+=("$(podman image inspect "$IMAGE:$tag" --format '{{.Id}}')")
+    if "$PODMAN" image exists "$IMAGE:$tag"; then
+      keep+=("$(image_id "$IMAGE:$tag")")
     fi
   done
-  local ref id
   while read -r ref id; do
     [[ "${ref##*:}" =~ ^[0-9a-f]{7}$ ]] || continue
-    if [[ ! " ${keep[*]} " =~ \ ${id}\  ]]; then
-      podman untag "$ref"
-    fi
-  done < <(podman images "$IMAGE" --format '{{.Repository}}:{{.Tag}} {{.ID}}' --no-trunc \
+    [[ " ${keep[*]} " == *" $id "* ]] && continue
+    "$PODMAN" untag "$ref"
+    removed+=("$id")
+  done < <("$PODMAN" images "$IMAGE" --format '{{.Repository}}:{{.Tag}} {{.ID}}' --no-trunc \
     | sed 's/ sha256:/ /')
-  podman image prune -f >/dev/null
+  # Delete only the Beehive images just untagged, and only once no other tag or container still
+  # uses them. A host-wide `podman image prune` would also reach other projects' images.
+  for id in "${removed[@]}"; do
+    "$PODMAN" image rm "$id" >/dev/null 2>&1 || true
+  done
 }
 
 case "${1:-}" in
