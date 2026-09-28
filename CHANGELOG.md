@@ -80,11 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that is behind and refuses one that a newer, incompatible release migrated; `--mode migrate` is
   the explicit release step.
 - Digest events expire: Editorial news after 3 days, Monitor discoveries after 7 days, and price
-  drops and restocks after 3 days. Listings from a Source whose data is stale are held back from
+  drops and restocks after 3 days, but never before the group's next scheduled email, so a weekly
+  group still gets the whole week. Listings from a Source whose data is stale are held back from
   email until it recovers. A new catalogue Source's first snapshot is a baseline and sends no
   discovery emails.
 - Every fetch outcome is logged to the journal, and digest warnings name the Source the way the
-  admin UI does and say how long it has been failing.
+  admin UI does, say how long it has been failing, and flag a Source that silently stopped
+  fetching.
 - SQLite runs with `synchronous=NORMAL`, and each fetch is ingested in a single transaction.
 - Container units log each line once and keep Podman lifecycle events out of the journal. The
   research-reconcile and deep-read backstop timers run hourly and every 30 minutes.

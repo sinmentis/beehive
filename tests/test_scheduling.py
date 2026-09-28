@@ -5,6 +5,7 @@ import pytest
 from beehive.scheduling import (
     ChannelFetchSchedule,
     email_group_is_due,
+    email_group_send_period,
     next_channel_fetch_at,
     next_email_group_due_at,
     source_is_due,
@@ -444,3 +445,17 @@ def test_channel_fetch_schedule_rejects_an_unknown_timezone():
 def test_channel_fetch_schedule_rejects_an_invalid_time():
     with pytest.raises(ValueError, match="valid HH:MM"):
         ChannelFetchSchedule.daily(timezone_name="Pacific/Auckland", time_text="25:00")
+
+
+@pytest.mark.parametrize(
+    ("group", "days"),
+    [
+        ({"schedule_mode": "calendar", "schedule_weekdays": "0,1,2,3,4,5,6"}, 1),
+        ({"schedule_mode": "calendar", "schedule_weekdays": "0"}, 7),
+        ({"schedule_mode": "calendar", "schedule_weekdays": "0,3"}, 4),
+        ({"schedule_mode": "interval", "send_interval_hours": 48}, 2),
+        ({"send_interval_hours": 168}, 7),
+    ],
+)
+def test_email_group_send_period_is_the_longest_wait_between_emails(group, days):
+    assert email_group_send_period(group) == timedelta(days=days)

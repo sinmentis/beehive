@@ -268,6 +268,18 @@ def _email_group_calendar(group: dict) -> CalendarSchedule:
     )
 
 
+def email_group_send_period(group: dict) -> timedelta:
+    """The longest wait between two of the group's scheduled emails: its interval, or in calendar
+    mode the widest gap between consecutive scheduled weekdays (a once-a-week group waits 7 days).
+    Delivery uses it so an event always survives until the next email that could carry it."""
+    mode = require_schedule_mode(group.get("schedule_mode") or ScheduleMode.INTERVAL.value)
+    if mode is ScheduleMode.CALENDAR:
+        weekdays = sorted(_email_group_calendar(group).weekdays)
+        following = weekdays[1:] + [weekdays[0] + 7]
+        return timedelta(days=max(later - earlier for earlier, later in zip(weekdays, following)))
+    return timedelta(hours=int(group["send_interval_hours"]))
+
+
 def email_group_is_due(group: dict, now: datetime) -> bool:
     """Return whether a group has crossed its interval or latest local calendar slot."""
     _require_aware(now)

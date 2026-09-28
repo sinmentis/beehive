@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
+from types import MappingProxyType
 
 from beehive.domain.channels import (
     ChannelKind,
@@ -63,7 +64,7 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
         manual_watch=False,
         email_event_types=frozenset({EmailEventType.DISCOVERED}),
         guard_mass_retirement=False,
-        event_max_age={EmailEventType.DISCOVERED: timedelta(days=3)},
+        event_max_age=MappingProxyType({EmailEventType.DISCOVERED: timedelta(days=3)}),
     ),
     ChannelDefinition(
         kind=ChannelKind.MONITOR,
@@ -83,11 +84,11 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
             }
         ),
         guard_mass_retirement=True,
-        event_max_age={
+        event_max_age=MappingProxyType({
             EmailEventType.DISCOVERED: timedelta(days=7),
             EmailEventType.PRICE_DROP: timedelta(days=3),
             EmailEventType.BACK_IN_STOCK: timedelta(days=3),
-        },
+        }),
     ),
     ChannelDefinition(
         kind=ChannelKind.TRACKER,
@@ -101,7 +102,7 @@ _DEFINITIONS: tuple[ChannelDefinition, ...] = (
         manual_watch=True,
         email_event_types=frozenset({EmailEventType.DISCOVERED}),
         guard_mass_retirement=False,
-        event_max_age={},
+        event_max_age=MappingProxyType({}),
     ),
 )
 

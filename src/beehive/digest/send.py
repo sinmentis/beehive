@@ -56,7 +56,11 @@ from beehive.email_routing import (
 )
 from beehive.localization import Localizer
 from beehive.notify import Notifier
-from beehive.scheduling import DEFAULT_SCHEDULE_TIMEZONE, email_group_is_due
+from beehive.scheduling import (
+    DEFAULT_SCHEDULE_TIMEZONE,
+    email_group_is_due,
+    email_group_send_period,
+)
 from beehive.source_health import is_stale
 from beehive.web.source_labels import source_display_name
 
@@ -149,15 +153,14 @@ def _channel_warnings(
     timezone_name: str,
     now: datetime,
 ) -> list[str]:
-    snapshot = (
-        get_definition(require_channel_kind(channel["kind"])).persistence_mode
-        is PersistenceMode.MUTABLE_SNAPSHOT
-    )
+    snapshot = _is_snapshot(channel)
     warnings = []
     for source in sources:
         if source["paused_at"]:
             continue
-        stale = snapshot and is_stale(source, channel, now)
+        # A Source that silently stopped fetching (a dead timer, a stuck job) is worth a line in
+        # every kind of Channel; only snapshot Channels also hold its updates back.
+        stale = is_stale(source, channel, now)
         if source["last_fetch_error"]:
             warning = _source_warning(source, localizer, timezone_name)
         elif stale:
@@ -169,7 +172,7 @@ def _channel_warnings(
         else:
             warning = None
         if warning is not None:
-            if stale:
+            if stale and snapshot:
                 warning = f"{warning} {localizer.text('background.source_stale_hold')}"
             warnings.append(warning)
         if source.get("retire_hold_at"):
@@ -183,6 +186,13 @@ def _channel_warnings(
     return warnings
 
 
+def _is_snapshot(channel: dict) -> bool:
+    return (
+        get_definition(require_channel_kind(channel["kind"])).persistence_mode
+        is PersistenceMode.MUTABLE_SNAPSHOT
+    )
+
+
 def _channel_status(
     conn: sqlite3.Connection,
     channel: dict,
@@ -190,16 +200,20 @@ def _channel_status(
     localizer: Localizer,
     *,
     quiet: bool,
+    now: datetime,
 ) -> str:
     """One line saying the Channel was checked: sources OK, listings tracked, and whether
     anything changed. It is what makes "no news" distinguishable from "broken"."""
     active = [source for source in sources if not source["paused_at"]]
-    healthy = sum(1 for source in active if not source["last_fetch_error"])
+    healthy = sum(
+        1
+        for source in active
+        if not source["last_fetch_error"] and not is_stale(source, channel, now)
+    )
     parts = [
         localizer.text("background.digest_status_sources", ok=healthy, total=len(active))
     ]
-    definition = get_definition(require_channel_kind(channel["kind"]))
-    if definition.persistence_mode is PersistenceMode.MUTABLE_SNAPSHOT:
+    if _is_snapshot(channel):
         parts.append(
             localizer.text(
                 "background.digest_status_listings",
@@ -222,6 +236,7 @@ def _build_group_content(
     listed with their status line when the email goes out for another Channel, but they never make
     an email go out on their own."""
     group_timezone = group.get("schedule_timezone") or DEFAULT_SCHEDULE_TIMEZONE
+    delivery_period = email_group_send_period(group)
     member_channels = list_member_channels(conn, group["id"])
     channel_ids = [channel["id"] for channel in member_channels]
     grouped_events = _events_by_channel(list_ready_events_for_channels(conn, channel_ids))
@@ -250,6 +265,7 @@ def _build_group_content(
             {source["id"]: source for source in sources},
             now=now,
             seen_fingerprints=seen_fingerprints,
+            delivery_period=delivery_period,
         )
         seen_fingerprints |= selection.fingerprints
         duplicate_event_ids.extend(selection.duplicate_ids)
@@ -265,7 +281,14 @@ def _build_group_content(
                     warnings,
                     localizer,
                     status=_channel_status(
-                        conn, channel, sources, localizer, quiet=not selection.delivered),
+                        conn,
+                        channel,
+                        sources,
+                        localizer,
+                        # Held updates are changes too, just not sendable yet; the warning says so.
+                        quiet=not selection.delivered and not selection.held_count,
+                        now=now,
+                    ),
                     remaining_count=selection.remaining_count,
                 ),
                 has_content,

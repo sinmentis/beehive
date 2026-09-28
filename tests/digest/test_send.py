@@ -845,3 +845,38 @@ def test_a_monitor_status_line_counts_the_listings_it_tracks(conn):
 
     assert "== Outlet ==\n1/1 sources OK \u00b7 2 listings tracked\n" in (
         notifier.send.call_args.args[1])
+
+
+def test_a_weekly_group_delivers_events_from_earlier_in_the_week(conn):
+    channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    source_id = create_source(conn, channel_id, *_SHOPIFY)
+    record_fetch_success(conn, source_id, "2026-07-13T19:00:00+00:00")
+    _, event_id = _stage_event(
+        conn, source_id, "1001", summary="Jacket", event_type="price_drop",
+        payload={"old_price": 100.0, "new_price": 60.0}, observed_at="2026-07-08T20:00:00")
+    _make_group(conn, channel_id, send_interval_hours=168)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    # Five days old: past the 3-day price-drop max age, but a weekly email must still carry it.
+    assert "Jacket" in notifier.send.call_args.args[1]
+    assert _event_state(conn, event_id)["delivered_at"] == _SENT_AT
+
+
+def test_an_editorial_source_that_stopped_fetching_is_reported(conn):
+    channel_id = create_channel(conn, "News", "profile")
+    quiet_source = create_source(conn, channel_id, *_REDDIT)
+    record_fetch_success(conn, quiet_source, "2026-07-10T00:00:00+00:00")
+    _stage_event(conn, quiet_source, "t1", summary="still news")
+    _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    plain_text = notifier.send.call_args.args[1]
+    assert "0/1 sources OK" in plain_text
+    assert "r/x has not fetched successfully since 2026-07-10." in plain_text
+    # Editorial news already fetched is still delivered; only snapshot Channels hold updates.
+    assert "still news" in plain_text
+    assert "left out of emails" not in plain_text

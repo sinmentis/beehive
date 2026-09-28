@@ -38,9 +38,10 @@ def _event(event_id, *, age_hours=1, event_type="discovered", kind="editorial", 
     }
 
 
-def _select(events, channel, sources=None, seen=frozenset()):
+def _select(events, channel, sources=None, seen=frozenset(), period=timedelta(days=1)):
     return select_channel_events(
-        events, channel, sources or _sources(), now=NOW, seen_fingerprints=seen)
+        events, channel, sources or _sources(), now=NOW, seen_fingerprints=seen,
+        delivery_period=period)
 
 
 def test_news_older_than_three_days_expires_instead_of_lingering():
@@ -127,3 +128,20 @@ def test_an_already_delivered_headline_is_closed_as_a_duplicate():
     assert [event["id"] for event in selection.delivered] == [2]
     assert selection.duplicate_ids == [1]
     assert selection.fingerprints == frozenset({("rnz", "rates cut")})
+
+
+def test_a_weekly_group_keeps_events_from_the_whole_week():
+    week_old_news = _event(1, age_hours=5 * 24)
+    week_old_drop = _event(2, event_type="price_drop", kind="monitor", age_hours=6 * 24)
+
+    news = _select([week_old_news], _channel(), period=timedelta(days=7))
+    drop = _select([week_old_drop], _channel("monitor"), period=timedelta(days=7))
+
+    assert [event["id"] for event in news.delivered] == [1]
+    assert [event["id"] for event in drop.delivered] == [2]
+
+
+def test_a_weekly_group_still_expires_what_is_older_than_a_week_and_a_day():
+    selection = _select([_event(1, age_hours=9 * 24)], _channel(), period=timedelta(days=7))
+
+    assert selection.expired_ids == [1]

@@ -5,7 +5,9 @@ database.
 1. Expired: an event older than its kind's max age (ChannelDefinition.event_max_age) is closed
    unsent. Editorial news ages from its publication time when the feed gives one, because an old
    article seen for the first time today is still old news. Listing changes age from when they
-   were observed, because a product's listing date says nothing about a new price.
+   were observed, because a product's listing date says nothing about a new price. The max age is
+   never shorter than the group's own send period plus a day, so a weekly group still receives
+   the whole week.
 2. Held: in a snapshot Channel, events from a Source whose data is stale
    (source_health.is_stale) stay open but are left out, because the prices and stock behind them
    are out of date. They go out once the Source recovers, or expire.
@@ -17,13 +19,17 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from beehive.channels.definitions import get_definition, require_channel_kind
 from beehive.domain.channels import EmailEventType, PersistenceMode
 from beehive.source_health import is_stale
 
 Fingerprint = tuple[str, str]
+
+# Slack on top of the group's send period: a send that runs a little late, or fails once and is
+# retried the next day, must not lose events that were waiting for it.
+DELIVERY_SLACK = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -86,10 +92,12 @@ def select_channel_events(
     *,
     now: datetime,
     seen_fingerprints: frozenset[Fingerprint],
+    delivery_period: timedelta,
 ) -> ChannelSelection:
     """Apply the policy above to one Channel's ready events. seen_fingerprints holds editorial
     headlines already delivered or already picked earlier in this email; the headlines picked here
-    are returned in `fingerprints` for the caller to carry into the next Channel."""
+    are returned in `fingerprints` for the caller to carry into the next Channel. delivery_period
+    is the Email Group's longest wait between two emails (scheduling.email_group_send_period)."""
     definition = get_definition(require_channel_kind(channel["kind"]))
     snapshot = definition.persistence_mode is PersistenceMode.MUTABLE_SNAPSHOT
     stale_source_ids = {
@@ -101,8 +109,11 @@ def select_channel_events(
     expired_ids: list[int] = []
     eligible: list[dict] = []
     held_count = 0
+    minimum_max_age = delivery_period + DELIVERY_SLACK
     for event in events:
         max_age = definition.event_max_age.get(EmailEventType(event["event_type"]))
+        if max_age is not None:
+            max_age = max(max_age, minimum_max_age)
         if max_age is not None and now - event_age_anchor(
             event, definition.persistence_mode
         ) > max_age:
