@@ -6,6 +6,8 @@ import zlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from beehive.db.sources import reset_fetch_state_by_channel
+
 _UNDO_WINDOW = timedelta(days=7)
 _ITEM_TABLES = (
     "votes",
@@ -254,22 +256,10 @@ def clear_channel_with_undo(
             f"DELETE FROM items WHERE source_id IN ({placeholders})",
             source_ids,
         )
-    conn.execute(
-        """
-        UPDATE sources
-        SET last_fetch_at = NULL,
-            last_fetch_error = NULL,
-            last_fetch_raw_count = NULL,
-            last_fetch_new_count = NULL,
-            last_attempt_at = NULL,
-            last_fetch_status = NULL,
-            last_scheduled_slot_at = NULL,
-            last_scheduled_error_at = NULL
-        WHERE channel_id = ?
-        """,
-        (channel_id,),
-    )
-    conn.commit()
+    # The same reset as the non-undo path, so a column added to the fetch state (the failure
+    # streak, a held retirement) can never survive a clear here. Undo restores every column from
+    # the snapshot above.
+    reset_fetch_state_by_channel(conn, channel_id)
     return action_id, item_count
 
 

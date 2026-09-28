@@ -16,7 +16,13 @@ from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.email_groups import assign_channel, create_email_group
 from beehive.db.items import insert_new
-from beehive.db.sources import create_source, record_fetch_success
+from beehive.db.sources import (
+    create_source,
+    get_source,
+    record_fetch_error,
+    record_fetch_success,
+    set_retire_hold,
+)
 
 
 @pytest.fixture
@@ -134,6 +140,29 @@ def test_clear_channel_restores_items_and_source_fetch_state(conn):
     ).fetchone()
     assert source["last_fetch_at"] == "2026-07-02T00:00:00+00:00"
     assert source["last_fetch_status"] == "ok"
+
+
+def test_clear_channel_resets_source_health_and_undo_restores_it(conn):
+    channel_id, source_id, _ = _channel_content(conn)
+    for attempt in ("2026-07-02T00:00:00+00:00", "2026-07-03T00:00:00+00:00"):
+        record_fetch_error(conn, source_id, "HTTP 429", attempt, error_kind="transient")
+    set_retire_hold(conn, source_id, held_at="2026-07-03T00:00:00+00:00", count=40)
+
+    action_id, _ = clear_channel_with_undo(conn, channel_id, target_label="News")
+
+    source = get_source(conn, source_id)
+    # A cleared Channel starts fresh: no long backoff, no hold pointing at deleted listings.
+    assert source["consecutive_failures"] == 0
+    assert source["last_fetch_error_kind"] is None
+    assert source["retire_hold_at"] is None
+    assert source["retire_hold_count"] is None
+
+    undo_admin_action(conn, action_id)
+
+    source = get_source(conn, source_id)
+    assert source["consecutive_failures"] == 2
+    assert source["last_fetch_error_kind"] == "transient"
+    assert source["retire_hold_count"] == 40
 
 
 def test_source_delete_can_restore_source_and_items(conn):

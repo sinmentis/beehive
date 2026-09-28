@@ -260,4 +260,4 @@ def reset_fetch_state_by_channel(conn: sqlite3.Connection, channel_id: int) -> N
         "consecutive_failures = 0, last_fetch_error_kind = NULL, "
         "retire_hold_at = NULL, retire_hold_count = NULL WHERE channel_id = ?",
         (channel_id,))
-    conn.commit()
+    commit_unless_nested(conn)
