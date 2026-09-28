@@ -197,7 +197,7 @@ class ShopifyCollectionConnector:
                 raise ValueError("Shopify collection response needs a 'products' list")
             page_products = payload["products"]
             # products.json has no total or next link: only a short page marks the last one.
-            return Page(items=page_products, has_more=len(page_products) == _PAGE_SIZE)
+            return Page(items=page_products, has_more=len(page_products) >= _PAGE_SIZE)
 
         products = collect_pages(
             fetch_page, max_pages=_MAX_PAGES, label="Shopify collection"

@@ -156,15 +156,31 @@ class LandSeaCollectionConnector:
         parsed = urlparse(config["collection_url"].rstrip("/"))
         store_origin = f"{parsed.scheme}://{parsed.netloc}"
         base_params = dict(parse_qsl(parsed.query))
+        reported_total: int | None = None
 
         def fetch_page(number: int) -> Page[dict]:
+            nonlocal reported_total
             params = {**base_params, "pgNmbr": str(number)}
             page_url = f"{store_origin}{parsed.path}?{urlencode(params)}"
             page_tiles, total_pages = _parse_page(self._fetch_html(page_url))
-            has_more = len(page_tiles) == _PAGE_SIZE and (
-                total_pages is None or number < total_pages
+            if number == 1:
+                reported_total = total_pages
+            if reported_total is None:
+                # No authoritative count: only a short page marks the end.
+                has_more = len(page_tiles) >= _PAGE_SIZE
+            else:
+                # Follow the site's own page count, not the page size, which the site can change.
+                # An empty page before the reported last one means the response is incomplete.
+                if 1 < number <= reported_total and not page_tiles:
+                    raise ValueError(
+                        f"land_sea_collection page {number} of {reported_total} came back empty"
+                    )
+                has_more = number < reported_total
+            return Page(
+                items=page_tiles,
+                has_more=has_more,
+                total_pages=total_pages if number == 1 else None,
             )
-            return Page(items=page_tiles, has_more=has_more, total_pages=total_pages)
 
         tiles = collect_pages(fetch_page, max_pages=_MAX_PAGES, label="Land & Sea collection")
 

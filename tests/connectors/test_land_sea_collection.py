@@ -312,6 +312,36 @@ def test_fetch_falls_back_to_a_short_page_when_total_pages_is_missing():
     assert len(items) == 27
 
 
+def test_fetch_follows_the_reported_total_when_the_site_serves_bigger_pages():
+    # If the site raises its page size, pages stop matching _PAGE_SIZE; the authoritative total
+    # must still drive pagination, or the snapshot silently shrinks to the first page.
+    calls = []
+
+    def fetch_html(url):
+        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
+        calls.append(page)
+        return _page_html([_tile(tile_id=page * 1000 + i) for i in range(30)], total_pages=3)
+
+    items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )
+
+    assert calls == [1, 2, 3]
+    assert len(items) == 90
+
+
+def test_fetch_raises_when_a_page_before_the_reported_last_one_is_empty():
+    def fetch_html(url):
+        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
+        tiles = [] if page == 2 else [_tile(tile_id=page * 1000 + i) for i in range(26)]
+        return _page_html(tiles, total_pages=3)
+
+    with pytest.raises(ValueError, match="page 2 of 3 came back empty"):
+        LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
+            {"collection_url": _COLLECTION_URL}
+        )
+
+
 def test_fetch_raises_when_the_reported_total_exceeds_the_page_cap():
     calls = []
 
