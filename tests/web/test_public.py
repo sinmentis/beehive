@@ -1,5 +1,6 @@
 import html
 import json
+import mimetypes
 import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -1341,6 +1342,17 @@ def test_static_htmx_file_is_served(client):
     resp = client.get("/static/htmx.min.js")
     assert resp.status_code == 200
     assert "htmx" in resp.text.lower()
+
+
+def test_self_hosted_font_is_served_as_woff2_without_system_mime_types(tmp_path, monkeypatch):
+    # Python's own table, without the /etc/mime.types the slim container image lacks.
+    monkeypatch.setattr(mimetypes, "_db", mimetypes.MimeTypes())
+    app = create_app(str(tmp_path / "fonts.db"), session_secret="s" * 32)
+
+    resp = TestClient(app).get("/static/fonts/archivo-latin.woff2")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "font/woff2"
 
 
 def test_csp_allows_self_hosted_scripts(client):

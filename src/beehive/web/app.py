@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import mimetypes
 import os
 import sqlite3
 from collections.abc import Iterator
@@ -154,6 +155,9 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     )
     app.state.templates.env.globals["asset_version"] = _static_asset_version()
     app.state.templates.env.filters["count"] = format_count
+    # The slim container image has no /etc/mime.types, and Python alone does not know .woff2, so
+    # the admin's self-hosted font would go out as application/octet-stream.
+    mimetypes.add_type("font/woff2", ".woff2")
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     @app.get("/readyz", include_in_schema=False)
