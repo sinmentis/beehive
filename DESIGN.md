@@ -390,6 +390,7 @@ Quiet rectangles, labelled in words.
 
 ### State Marks
 - **Style:** a 9px square and a word, 7px apart, never wrapping.
+- **In a sentence:** `.st-line` puts the same square before a whole sentence in a note column, for example a refresh in progress or a failure reason. The square stays on the first line and the words wrap, so a long status never overflows.
 - **States:** ok is a filled ink-rule square with normal text. Paused and warning are a hollow amber square with amber semibold text. Error is a filled red square with red semibold text. Never fetched is a hollow faint square with faint text. In progress is a hollow blue square with blue text.
 - The channel and source lists carry a legend of the marks in the footnote strip below them.
 

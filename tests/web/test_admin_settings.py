@@ -393,7 +393,7 @@ def test_fresh_database_defaults_to_current_llm_model(authed_client):
 
 def test_model_selector_lists_current_copilot_models(authed_client):
     response = authed_client.get("/admin/?tab=ai")
-    for model_name in ("Auto", "Claude Sonnet 5", "GPT-5.6 Sol", "Gemini 3.5 Flash"):
+    for model_name in ("Auto", "Claude Sonnet 5", "GPT-5.6 Sol", "GPT-6 Sol"):
         assert model_name in response.text
 
 

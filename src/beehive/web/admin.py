@@ -14,12 +14,19 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from beehive.ai.model_catalog import (
+    BUILTIN_MODELS,
+    RefreshState,
+    RefreshStatus,
+    load_catalog,
+    load_refresh_state,
+    request_refresh,
+)
 from beehive.ai.model_selection import (
-    SUPPORTED_MODELS,
     UnsupportedModelError,
-    load_model,
+    choose_model,
     save_model,
 )
 from beehive.auth.passwords import verify_password
@@ -747,7 +754,7 @@ def _admin_nav(request: Request, t: Localizer) -> dict:
             _email_group_needs_attention(group, default_recipient)
             for group in list_email_groups(conn)
         ),
-        "settings": 0,
+        "settings": int(choose_model(conn).unavailable is not None),
         "system": sum(
             row["status"] != "ok" for row in health if row["key"] in {"reminders", "research"}
         ),
@@ -1159,6 +1166,65 @@ def _build_system_health_rows(
     ]
 
 
+def _model_refresh_phase(state: RefreshState | None, now: datetime) -> str:
+    """Where the latest model-list refresh stands: idle, pending, waiting (queued, but the Research
+    worker has not picked it up), done or failed. The settings page polls it and reloads when it
+    changes."""
+    if state is None:
+        return "idle"
+    if state.status is RefreshStatus.QUEUED:
+        return "waiting" if state.is_waiting(now) else "pending"
+    if state.status is RefreshStatus.RUNNING:
+        return "failed" if state.is_stale(now) else "pending"
+    return "done" if state.status is RefreshStatus.DONE else "failed"
+
+
+def _model_list_view(conn: sqlite3.Connection, t: Localizer, now: datetime) -> dict:
+    catalog = load_catalog(conn)
+    models = catalog.models if catalog is not None else BUILTIN_MODELS
+    choice = choose_model(conn, models)
+    state = load_refresh_state(conn)
+    phase = _model_refresh_phase(state, now)
+    view = {
+        "models": models,
+        "current_model": choice.model_id,
+        "from_copilot": catalog is not None,
+        "count": len(models),
+        "refreshed": _short_time_label(catalog.refreshed_at, now, t) if catalog else None,
+        "refreshed_exact": (
+            host_local_time_label(catalog.refreshed_at.isoformat()) if catalog else None
+        ),
+        "phase": phase,
+        "busy": phase in {"pending", "waiting"},
+        "unavailable": choice.unavailable,
+        "default_name": choice.display_name,
+        "requested": None,
+        "failed_at": None,
+        "error": None,
+        "error_detail": None,
+        "added": 0,
+        "removed": 0,
+    }
+    if state is None:
+        return view
+    if phase == "waiting":
+        view["requested"] = _short_time_label(state.requested_at, now, t)
+    elif phase == "failed":
+        kind = (
+            state.error.value
+            if state.error is not None
+            else "interrupted" if state.status is RefreshStatus.RUNNING else "failed"
+        )
+        view["failed_at"] = _short_time_label(
+            state.finished_at or state.started_at or now, now, t)
+        view["error"] = t.text(f"web.admin.model.refresh_error.{kind}")
+        view["error_detail"] = state.error_detail
+    elif phase == "done":
+        view["added"] = len(state.added)
+        view["removed"] = len(state.removed)
+    return view
+
+
 def _render_admin_home_page(
     request: Request,
     conn: sqlite3.Connection,
@@ -1173,6 +1239,7 @@ def _render_admin_home_page(
     language_error: str | None = None,
     model_saved: bool = False,
     model_error: str | None = None,
+    model_refreshed: bool = False,
     featured_saved: bool = False,
     featured_error: str | None = None,
     submitted_featured_window_days: int | None = None,
@@ -1220,10 +1287,14 @@ def _render_admin_home_page(
             "current_language": t.code,
             "language_saved": language_saved,
             "language_error": language_error,
-            "models": SUPPORTED_MODELS,
-            "current_model": load_model(conn),
+            "model_list": (
+                _model_list_view(conn, t, datetime.now(timezone.utc))
+                if chapter == "settings"
+                else None
+            ),
             "model_saved": model_saved,
             "model_error": model_error,
+            "model_refreshed": model_refreshed,
             "featured_window_days": (
                 load_featured_window_days(conn)
                 if submitted_featured_window_days is None
@@ -1254,6 +1325,7 @@ def admin_settings(
     triggered_count: int | None = None,
     language_saved: int | None = None,
     model_saved: int | None = None,
+    model_refreshed: int | None = None,
     featured_saved: int | None = None,
     action: int | None = None,
     undone: int | None = None,
@@ -1271,6 +1343,7 @@ def admin_settings(
         triggered_count=triggered_count,
         language_saved=language_saved == 1,
         model_saved=model_saved == 1,
+        model_refreshed=model_refreshed == 1,
         featured_saved=featured_saved == 1,
         action_id=action,
         undone=undone == 1,
@@ -1409,6 +1482,29 @@ def save_model_submit(
         target_label=model,
     )
     return RedirectResponse("/admin/?tab=settings&model_saved=1", status_code=303)
+
+
+@router.post("/model/refresh")
+def refresh_model_list_submit(
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    """Queue a model-list refresh. The web container has no Copilot token, so the Research
+    worker runs it within a few seconds (ai/model_catalog.py); the settings page polls
+    /admin/model/refresh-status and reloads when it is done."""
+    verify_csrf(session, csrf_token)
+    request_refresh(conn, datetime.now(timezone.utc))
+    return RedirectResponse("/admin/?tab=settings#interface-ai", status_code=303)
+
+
+@router.get("/model/refresh-status")
+def model_refresh_status(
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> JSONResponse:
+    phase = _model_refresh_phase(load_refresh_state(conn), datetime.now(timezone.utc))
+    return JSONResponse({"phase": phase})
 
 
 @router.post("/featured-window", response_class=HTMLResponse)

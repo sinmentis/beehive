@@ -1,13 +1,21 @@
-"""Validated global model selection for every LLM-backed workflow."""
+"""Validated global model selection for every LLM-backed workflow.
+
+Which models exist comes from ai/model_catalog.py: the list last fetched from the Copilot
+account, or the built-in list before the first refresh."""
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 
+from beehive.ai.model_catalog import ModelOption, available_models
 from beehive.db import app_state
+from beehive.db.connection import write_transaction
 
 DEFAULT_MODEL = "claude-haiku-4.5"
 LLM_MODEL_KEY = "llm_model"
+# Copilot picks the model itself. The stand-in when the account stops offering DEFAULT_MODEL.
+AUTO_MODEL = "auto"
 
 
 class UnsupportedModelError(ValueError):
@@ -15,58 +23,69 @@ class UnsupportedModelError(ValueError):
 
 
 @dataclass(frozen=True)
-class ModelOption:
+class ModelChoice:
+    """The model AI work uses now, and the one the Owner saved. They differ when the saved
+    model has left the list."""
     model_id: str
-    display_name: str
+    saved: str | None
+    models: tuple[ModelOption, ...]
+
+    @property
+    def unavailable(self) -> str | None:
+        """The saved model when it is no longer offered, so AI work uses model_id instead."""
+        return self.saved if self.saved is not None and self.saved != self.model_id else None
+
+    @property
+    def display_name(self) -> str:
+        return next(
+            (model.display_name for model in self.models if model.model_id == self.model_id),
+            self.model_id,
+        )
 
 
-# The web container intentionally has no Copilot token, so it cannot query models dynamically.
-# Keep this allowlist aligned with CopilotClient.list_models() from the deployed SDK account.
-SUPPORTED_MODELS = (
-    ModelOption("auto", "Auto"),
-    ModelOption("claude-sonnet-5", "Claude Sonnet 5"),
-    ModelOption("claude-sonnet-4.6", "Claude Sonnet 4.6"),
-    ModelOption("claude-sonnet-4.5", "Claude Sonnet 4.5"),
-    ModelOption("claude-haiku-4.5", "Claude Haiku 4.5"),
-    ModelOption("claude-opus-4.8", "Claude Opus 4.8"),
-    ModelOption("claude-opus-4.7", "Claude Opus 4.7"),
-    ModelOption("claude-opus-4.6", "Claude Opus 4.6"),
-    ModelOption("claude-opus-4.5", "Claude Opus 4.5"),
-    ModelOption("gpt-5.6-sol", "GPT-5.6 Sol"),
-    ModelOption("gpt-5.6-terra", "GPT-5.6 Terra"),
-    ModelOption("gpt-5.6-luna", "GPT-5.6 Luna"),
-    ModelOption("gpt-5.5", "GPT-5.5"),
-    ModelOption("gpt-5.4", "GPT-5.4"),
-    ModelOption("gpt-5.3-codex", "GPT-5.3-Codex"),
-    ModelOption("gpt-5.4-mini", "GPT-5.4 mini"),
-    ModelOption("gpt-5-mini", "GPT-5 mini"),
-    ModelOption("gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
-    ModelOption("gemini-3.5-flash", "Gemini 3.5 Flash"),
-    ModelOption("mai-code-1-flash-picker", "MAI-Code-1-Flash"),
-)
-_MODELS_BY_ID = {model.model_id: model for model in SUPPORTED_MODELS}
+def fallback_model(models: Sequence[ModelOption]) -> str:
+    """What AI work uses when no model is saved, or the saved one left the list: the usual
+    default while the account offers it, then Copilot's "auto", then the first listed model."""
+    offered = [model.model_id for model in models]
+    for candidate in (DEFAULT_MODEL, AUTO_MODEL):
+        if candidate in offered:
+            return candidate
+    return offered[0] if offered else DEFAULT_MODEL
 
 
-def model_for(model_id: str) -> ModelOption:
-    try:
-        return _MODELS_BY_ID[model_id]
-    except KeyError as exc:
-        raise UnsupportedModelError(f"Unsupported LLM model: {model_id!r}") from exc
+def choose_model(
+    conn: sqlite3.Connection, models: Sequence[ModelOption] | None = None,
+) -> ModelChoice:
+    offered = tuple(available_models(conn) if models is None else models)
+    saved = app_state.get(conn, LLM_MODEL_KEY)
+    in_list = any(model.model_id == saved for model in offered)
+    return ModelChoice(saved if in_list else fallback_model(offered), saved, offered)
+
+
+def model_for(conn: sqlite3.Connection, model_id: str) -> ModelOption:
+    for model in available_models(conn):
+        if model.model_id == model_id:
+            return model
+    raise UnsupportedModelError(f"Unsupported LLM model: {model_id!r}")
 
 
 def load_model(conn: sqlite3.Connection) -> str:
-    model_id = app_state.get(conn, LLM_MODEL_KEY, default=DEFAULT_MODEL)
-    try:
-        model_for(model_id)
-    except UnsupportedModelError:
+    choice = choose_model(conn)
+    if choice.unavailable is not None:
         print(
-            f"[model-selection] stored model {model_id!r} is no longer supported; "
-            f"using default {DEFAULT_MODEL!r}"
+            f"[model-selection] stored model {choice.unavailable!r} is no longer available; "
+            f"using {choice.model_id!r}"
         )
-        return DEFAULT_MODEL
-    return model_id
+    return choice.model_id
 
 
 def save_model(conn: sqlite3.Connection, model_id: str) -> None:
-    model_for(model_id)
-    app_state.set(conn, LLM_MODEL_KEY, model_id)
+    # One transaction, so a model-list refresh cannot replace the list between the check and
+    # the write.
+    with write_transaction(conn):
+        model_for(conn, model_id)
+        conn.execute(
+            "INSERT INTO app_state (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (LLM_MODEL_KEY, model_id),
+        )

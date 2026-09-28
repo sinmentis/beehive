@@ -176,6 +176,7 @@
 <div class="adm-head"><div><h1>{{ t('web.admin.chapter.settings') }}</h1><p class="adm-meta">{{ t('web.admin.global.meta') }}</p></div></div>
 {% if language_saved %}{{ ui.flash(t('web.admin.language.saved')) }}{% endif %}
 {% if model_saved %}{{ ui.flash(t('web.admin.model.saved')) }}{% endif %}
+{% if model_refreshed and model_list.phase == "done" %}{{ ui.flash(t('web.admin.model.refreshed', count=model_list.count, added=model_list.added, removed=model_list.removed) if model_list.added or model_list.removed else t('web.admin.model.refreshed_unchanged', count=model_list.count)) }}{% endif %}
 {% if featured_saved %}{{ ui.flash(t('web.admin.featured.saved')) }}{% endif %}
 
 <h2 id="interface-ai"><span class="no">3.1</span><span>{{ t('web.admin.global.interface_heading') }}</span></h2>
@@ -190,13 +191,23 @@
     </select><button class="btn" type="submit">{{ t('web.admin.language.save') }}</button></div>
     {% endcall %}
   </form>
+  {% set ml = model_list %}
   <form method="post" action="/admin/model">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% set model_note %}<p>{{ t('web.admin.model.hint') }}</p>{% if model_error %}<p class="field-error" role="alert">{{ model_error }}</p>{% endif %}{% endset %}
+    {% set refresh_poll %} data-refresh-status-url="/admin/model/refresh-status" data-refresh-phase="{{ ml.phase }}" data-refresh-done-url="/admin/?tab=settings&amp;model_refreshed=1"{% endset %}
+    {% set model_note %}<p>{{ t('web.admin.model.hint') }}</p>
+      {% if ml.from_copilot %}<p title="{{ ml.refreshed_exact }}">{{ ui.keep(t('web.admin.model.source_copilot', count=ml.count, time=ml.refreshed), ml.refreshed) }}</p>
+      {% else %}<p>{{ t('web.admin.model.source_builtin') }}</p>{% endif %}
+      {% if ml.phase == "pending" %}<p class="st-line st-busy" role="status"{{ refresh_poll }}>{{ t('web.admin.model.refresh_pending') }}</p>
+      {% elif ml.phase == "waiting" %}<p class="st-line st-warn" role="status"{{ refresh_poll }}>{{ ui.keep(t('web.admin.model.refresh_waiting', time=ml.requested), ml.requested) }}</p>
+      {% elif ml.phase == "failed" %}<p class="st-line st-error">{{ ui.keep(t('web.admin.model.refresh_failed', time=ml.failed_at, reason=ml.error), ml.failed_at) }}</p>{% if ml.error_detail %}{{ ui.raw_error(ml.error_detail) }}{% endif %}{% endif %}
+      {% if ml.unavailable %}<p class="st-line st-warn">{{ t('web.admin.model.unavailable', model=ml.unavailable, default=ml.default_name) }}</p>{% endif %}
+      {% if model_error %}<p class="field-error" role="alert">{{ model_error }}</p>{% endif %}{% endset %}
     {% call ui.param(t('web.admin.model.heading'), for_id="llm-model", note=model_note, track=False) %}
     <div class="row"><select class="inp inp-mid" id="llm-model" name="model">
-      {% for model in models %}<option value="{{ model.model_id }}"{{ " selected" if current_model == model.model_id }}>{{ model.display_name }}</option>{% endfor %}
-    </select><button class="btn" type="submit">{{ t('web.admin.model.apply') }}</button></div>
+      {% for model in ml.models %}<option value="{{ model.model_id }}"{{ " selected" if ml.current_model == model.model_id }}>{{ model.display_name }}</option>{% endfor %}
+    </select><button class="btn" type="submit">{{ t('web.admin.model.apply') }}</button>
+      <button class="btn" type="submit" formaction="/admin/model/refresh"{% if ml.busy %} disabled{% endif %}>{{ t('web.admin.model.refreshing') if ml.busy else t('web.admin.model.refresh') }}</button></div>
     {% endcall %}
   </form>
 </div>

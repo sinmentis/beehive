@@ -4,13 +4,16 @@ Research Runs (research.orchestrator) and Research Chat replies (research.conver
 two independent, bounded pools -- research runs default max 3, chat replies default max 3 -- so
 a handful of long research runs can never starve a chat reply, and vice versa.
 
+It is also the only always-on process holding the Copilot token, so it refreshes the LLM model
+list the admin settings offer (see "The model-list refresh" below).
+
 === Connection ownership (never shared across tasks or threads) ===
-Exactly three kinds of sqlite3.Connection exist here, and each is used by exactly one thing:
+Exactly four kinds of sqlite3.Connection exist here, and each is used by exactly one thing:
   * the coordinator connection -- one per ResearchWorker, opened lazily and closed by close()/
     run()'s own finally -- used ONLY for claim/list/reconcile bookkeeping (list_pending_*,
-    claim_*, recover_expired_*, and the global/language reads load_localizer/load_model, which
-    are the same kind of quick, synchronous, non-task-owned read). It is never handed to a task
-    or a heartbeat.
+    claim_*, recover_expired_*, claim_refresh, and the global/language reads load_localizer/
+    load_model, which are the same kind of quick, synchronous, non-task-owned read). It is never
+    handed to a task or a heartbeat.
   * one heartbeat connection per live task, opened right before that task's supervisor spawns
     and closed right after its heartbeat loop stops -- used only by that task's own independent
     heartbeat coroutine, on the main event loop, never touched by the task's own work.
@@ -18,6 +21,8 @@ Exactly three kinds of sqlite3.Connection exist here, and each is used by exactl
     research.conversation.process_claimed_chat_request; for a research run, opened and closed
     entirely INSIDE the dedicated background thread that runs it (see _default_research_task_
     runner) so the connection object is only ever touched on the one thread that created it.
+  * one refresh connection while a model-list refresh runs, opened and closed by that refresh's
+    own coroutine on the main loop and used only to record its outcome.
 
 === Moving research's still-synchronous connector/fetch work off the event loop ===
 research.orchestrator.run_research_orchestration is `async def`, but still calls
@@ -80,11 +85,23 @@ stranded staged evidence is ever caused solely by a SIGTERM. The requeued run's 
 resumption path in orchestrator.py -- the stale detached task can persist nothing to race it,
 exactly like any other lost claim above.
 
+=== The model-list refresh ===
+The web container has no Copilot token, so the admin "Refresh list" button only queues a request
+in app_state (ai/model_catalog.py). Every poll_once() asks model_catalog.claim_refresh whether a
+refresh is due: one the Owner queued, one a dead worker left running, or the daily one. That
+check is a plain read unless something is due. A claimed refresh runs as one background task,
+never more than one at a time, bounded by LIST_TIMEOUT_SECONDS, and records its result or
+failure for the settings page. On shutdown it is cancelled and handed back
+(model_catalog.requeue_refresh), so the next poll of this or a restarted worker runs it again.
+It only runs when a `model_lister` is injected; scripts/run_research_worker.py passes
+llm_client.list_models, and tests that do not care leave it out.
+
 === Testability ===
 Every external effect is an injectable parameter of ResearchWorker: `connection_factory` (DB
 connections), `clock`/`sleep` (time), `research_task_runner`/`chat_processor` (the actual claimed-
-task execution), and request_stop()'s internal asyncio.Event (the "stop event"). The public
-surface stays small and deep: ResearchWorkerConfig/load_worker_config, ResearchWorker itself
+task execution), `model_lister` (the model-list refresh), and request_stop()'s internal
+asyncio.Event (the "stop event"). The public surface stays small and deep:
+ResearchWorkerConfig/load_worker_config, ResearchWorker itself
 (poll_once/run/wait_idle/close plus request_stop and two read-only pool-size properties), and the
 separate reconcile_once/ReconcileResult pair for the --reconcile-once timer entrypoint."""
 from __future__ import annotations
@@ -94,11 +111,14 @@ import contextlib
 import functools
 import sqlite3
 import threading
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from beehive.ai.llm_client import tool_free_client
+from beehive.ai.model_catalog import (LIST_TIMEOUT_SECONDS, ListedModel, RefreshClaim,
+                                      RefreshError, RefreshStatus, claim_refresh,
+                                      complete_refresh, fail_refresh, requeue_refresh)
 from beehive.ai.model_selection import DEFAULT_MODEL, load_model
 from beehive.db.connection import connect
 from beehive.db.research_chat_requests import (ChatRequest, claim_chat_request,
@@ -138,6 +158,7 @@ NowFactory = Callable[[], datetime]
 Sleep = Callable[[float], Awaitable[None]]
 ResearchTaskRunner = Callable[..., SealedEvidenceOutcome]
 ChatProcessor = Callable[..., Awaitable[object]]
+ModelLister = Callable[[], Awaitable[Sequence[ListedModel]]]
 Logger = Callable[[str], None]
 
 
@@ -405,6 +426,7 @@ class ResearchWorker:
         sleep: Sleep = asyncio.sleep,
         research_task_runner: ResearchTaskRunner = _default_research_task_runner,
         chat_processor: ChatProcessor = _default_chat_processor,
+        model_lister: ModelLister | None = None,
         log: Logger = print,
     ) -> None:
         self._config = config
@@ -413,12 +435,15 @@ class ResearchWorker:
         self._sleep = sleep
         self._research_task_runner = research_task_runner
         self._chat_processor = chat_processor
+        self._model_lister = model_lister
         self._log = log
         self._research_tasks: dict[int, _LiveResearchTask] = {}
         self._chat_tasks: dict[int, _LiveChatTask] = {}
         self._stopping = asyncio.Event()
         self._coordinator_conn: sqlite3.Connection | None = None
         self._last_reconcile: datetime | None = None
+        self._model_refresh_task: asyncio.Task | None = None
+        self._model_refresh_claim: RefreshClaim | None = None
 
     # -- observability / control -----------------------------------------------------------
 
@@ -449,6 +474,8 @@ class ResearchWorker:
         tasks = [item.task for item in
                  (*self._research_tasks.values(), *self._chat_tasks.values())
                  if item.task is not None]
+        if self._model_refresh_task is not None:
+            tasks.append(self._model_refresh_task)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -473,6 +500,7 @@ class ResearchWorker:
             self._last_reconcile = now
         self._fill_research_pool(now)
         self._fill_chat_pool(now)
+        self._maybe_refresh_model_list(now)
 
     async def run(self) -> None:
         """Runs until request_stop() is called (or a fatal error propagates), then performs a
@@ -541,6 +569,68 @@ class ResearchWorker:
             localizer = load_localizer(conn)
             model = load_model(conn)
             self._spawn_chat_task(claimed, localizer.code, model)
+
+    # -- model-list refresh ------------------------------------------------------------------
+
+    def _maybe_refresh_model_list(self, now: datetime) -> None:
+        if self._model_lister is None:
+            return
+        if self._model_refresh_task is not None and not self._model_refresh_task.done():
+            return
+        try:
+            claim = claim_refresh(self._ensure_coordinator_conn(), now)
+        except sqlite3.Error as exc:
+            # A side job: a busy database skips it for this poll instead of stopping the worker.
+            self._log(
+                "[research-worker] could not check for an LLM model list refresh: "
+                f"{type(exc).__name__}: {exc}")
+            return
+        if claim is None:
+            return
+        reason = "requested by the Owner" if claim.requested else "daily"
+        self._log(f"[research-worker] refreshing the LLM model list ({reason})")
+        self._model_refresh_claim = claim
+        self._model_refresh_task = asyncio.create_task(self._refresh_model_list(claim))
+
+    async def _refresh_model_list(self, claim: RefreshClaim) -> None:
+        # Cancellation (shutdown) is not caught here: _shutdown() hands the claim back itself,
+        # because a task cancelled before its first step never runs any of this.
+        try:
+            conn = self._connection_factory()
+        except Exception as exc:  # noqa: BLE001 -- the claim goes stale and a later poll retries it
+            self._log(
+                "[research-worker] could not open a connection for the LLM model list refresh: "
+                f"{type(exc).__name__}: {exc}")
+            return
+        try:
+            try:
+                listed = await asyncio.wait_for(self._model_lister(), LIST_TIMEOUT_SECONDS)
+            except TimeoutError:
+                fail_refresh(
+                    conn, claim, self._clock(), RefreshError.TIMEOUT,
+                    f"no answer within {LIST_TIMEOUT_SECONDS:.0f}s")
+                self._log("[research-worker] LLM model list refresh timed out")
+                return
+            except Exception as exc:  # noqa: BLE001 -- shown to the Owner; never a secret value
+                fail_refresh(
+                    conn, claim, self._clock(), RefreshError.FAILED,
+                    f"{type(exc).__name__}: {exc}")
+                self._log(
+                    f"[research-worker] LLM model list refresh failed: {type(exc).__name__}")
+                return
+            state = complete_refresh(conn, claim, self._clock(), listed)
+            if state is not None and state.status is RefreshStatus.DONE:
+                self._log(
+                    f"[research-worker] LLM model list refreshed: {state.model_count} models, "
+                    f"{len(state.added)} new, {len(state.removed)} removed")
+            elif state is not None:
+                self._log("[research-worker] LLM model list refresh failed: no usable models")
+        except Exception as exc:  # noqa: BLE001 -- never let a bookkeeping error kill the loop
+            self._log(
+                "[research-worker] could not record the LLM model list refresh: "
+                f"{type(exc).__name__}: {exc}")
+        finally:
+            conn.close()
 
     def _spawn_research_task(
         self, lease: ResearchRunLease, question: str, language_code: str, model: str,
@@ -733,6 +823,20 @@ class ResearchWorker:
         no staged evidence is stranded, and no product-visible CANCELLED status is ever caused
         solely by a SIGTERM."""
         self._log("[research-worker] shutdown requested; no longer claiming new work")
+        refresh = self._model_refresh_task
+        if refresh is not None and not refresh.done():
+            # Cheap to redo, so it gets no grace period: it is handed back for the next poll of
+            # this or a restarted worker. requeue_refresh only acts while this claim still holds
+            # the refresh, so a refresh that finished just in time is left alone.
+            refresh.cancel()
+            await asyncio.gather(refresh, return_exceptions=True)
+            try:
+                requeue_refresh(
+                    self._ensure_coordinator_conn(), self._model_refresh_claim, self._clock())
+            except sqlite3.Error as exc:
+                self._log(
+                    "[research-worker] could not hand back the LLM model list refresh; it is "
+                    f"retried once its claim goes stale: {type(exc).__name__}: {exc}")
         live = (*self._research_tasks.values(), *self._chat_tasks.values())
         tasks = [item.task for item in live if item.task is not None]
         pending: set[asyncio.Task] = set()

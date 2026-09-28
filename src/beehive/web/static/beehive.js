@@ -511,6 +511,60 @@
     }
   }
 
+  // A model-list refresh runs in the Research worker, not in this web process. While one is
+  // queued or running, ask for its phase and reload once it changes, so the new list, or the
+  // reason it failed, shows without a manual reload.
+  const refreshStatus = document.querySelector("[data-refresh-status-url]");
+  if (refreshStatus instanceof HTMLElement) {
+    const statusUrl = refreshStatus.dataset.refreshStatusUrl || "";
+    const shownPhase = refreshStatus.dataset.refreshPhase || "";
+    const doneUrl = new URL(
+      refreshStatus.dataset.refreshDoneUrl || window.location.href,
+      window.location.href,
+    );
+    const startedAt = Date.now();
+    const showResult = () => {
+      const here = new URL(window.location.href);
+      const target = new URL(doneUrl.href);
+      here.hash = "";
+      target.hash = "";
+      // Navigating to the page already shown, give or take a #fragment, may only scroll.
+      if (here.href === target.href) {
+        window.location.reload();
+      } else {
+        window.location.replace(doneUrl.href);
+      }
+    };
+    const checkRefresh = async () => {
+      try {
+        const response = await fetch(statusUrl, {
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        });
+        if (response.redirected) {
+          return; // Signed out. The next reload goes to the login page.
+        }
+        if (response.ok) {
+          const { phase } = await response.json();
+          if (phase && phase !== shownPhase) {
+            showResult();
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn("Could not check the model list refresh", error);
+      }
+      // A stuck refresh turns into "failed" within about four minutes (one queued, three
+      // running), so keep asking well past that: every 2 seconds at first, then every 10.
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < 15 * 60 * 1000) {
+        window.setTimeout(checkRefresh, elapsed < 2 * 60 * 1000 ? 2000 : 10000);
+      }
+    };
+    window.setTimeout(checkRefresh, 2000);
+  }
+
   const search = document.querySelector(".dashboard-search input[type='search']");
   const rows = [...document.querySelectorAll(".signal-row")];
   const selectionStatus = document.getElementById("dashboard-selection-status");

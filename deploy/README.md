@@ -186,9 +186,9 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
   admin cookie.
 - `beehive-copilot-github-token` → `COPILOT_GITHUB_TOKEN` (the fetch container's AI ranking call,
   the deep-read container's article brief generation, and the always-on Research worker's plan/
-  sufficiency/synthesis/chat AI calls, all via `ai/llm_client.py`). The web container and the
-  Research reconcile-sweep container do not receive this secret — reconciliation only recovers
-  expired leases, it never calls the AI.
+  sufficiency/synthesis/chat AI calls and LLM model-list refresh, all via `ai/llm_client.py`).
+  The web container and the Research reconcile-sweep container do not receive this secret —
+  reconciliation only recovers expired leases, it never calls the AI.
 - `beehive-acs-connection` → `ACS_CONNECTION_STRING` (Email Group, Research-completion, and
   Tracker-reminder delivery, paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM`
   `Environment=` values on those containers). Omit this secret to log delivery instead. The **web**
@@ -284,6 +284,12 @@ periodically while running. `beehive-research-reconcile.container` + `.timer` is
 lightweight, oneshot backstop: it only recovers already-expired leases (idempotent, claims/
 executes nothing) in case the always-on worker itself crashed or was mid-restart when a lease
 expired. Because the worker already sweeps every minute, the backstop runs hourly.
+
+The worker also keeps the admin's LLM model list current, because it is the only always-on
+process with the Copilot token. The "Refresh list" button in Global settings stores a request in
+`app_state`; the worker picks it up on its next poll, asks the SDK which models the account
+offers, and stores the list for the settings page (`ai/model_catalog.py`). It also refreshes on
+its own once a day. If a request shows as not started, check that this unit is running.
 
 ### Environment overrides
 

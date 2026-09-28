@@ -4,8 +4,9 @@ around the SDK: the import is lazy (inside each entry point) and CopilotClient()
 via COPILOT_GITHUB_TOKEN. The 120s default timeout suits a tool-free, single-shot call, not a
 multi-round web-search research prompt.
 
-There is exactly ONE entry point, and it is tool-free. Every prompt this app sends embeds text it
-does not control -- a connector-fetched article title or body, a third-party comment, a fetched
+There is exactly ONE prompt entry point, and it is tool-free. (`list_models` only reads which models
+the account offers; it never opens a session, so it sends no prompt.) Every prompt this app sends
+embeds text it does not control -- a connector-fetched article title or body, a third-party comment, a fetched
 article's extracted text, an Owner's own free-text question -- so there is no "trusted prompt"
 tier to justify a second, tool-permissive one. A tool-permissive `run_prompt` used to exist for
 ranking on the theory that a ranking prompt was "Beehive's own trusted text"; it was not (see
@@ -40,6 +41,7 @@ import inspect
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from beehive.ai.model_catalog import ListedModel
 from beehive.ai.model_selection import DEFAULT_MODEL
 
 
@@ -141,3 +143,23 @@ async def run_data_only_prompt(
         return await _send_and_extract(session, prompt, timeout)
     finally:
         await owned_client.stop()
+
+
+async def list_models() -> list[ListedModel]:
+    """The models this Copilot account offers, as `CopilotClient.list_models()` reports them.
+
+    It never creates a session, so no prompt is sent and no tool is reachable. It starts and
+    stops its own client, because the model list refreshes only about once a day
+    (ai/model_catalog.py)."""
+    from copilot import CopilotClient
+
+    client = CopilotClient()
+    try:
+        await client.start()
+        models = await client.list_models()
+    finally:
+        await client.stop()
+    return [
+        ListedModel(model.id, model.name, model.policy.state if model.policy else None)
+        for model in models
+    ]

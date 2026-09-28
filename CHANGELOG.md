@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A nightly host-side SQLite backup that restores each archive into a scratch file to verify it
   before keeping it, and `deploy/release.sh` for SHA-tagged releases from clean commits.
 - CI that runs Ruff and the test suite on every push.
+- A "Refresh list" button next to the LLM model picker in Global settings. The picker now lists
+  the models your Copilot account offers instead of a built-in list that went stale. The web
+  container still has no Copilot token, so the Research worker fetches the list within a few
+  seconds and again every day. The row says when the list was fetched, and flags a refresh that
+  failed or never started, or a saved model that is no longer offered.
 
 ### Changed
 

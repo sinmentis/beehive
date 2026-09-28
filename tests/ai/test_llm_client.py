@@ -10,8 +10,10 @@ from beehive.ai.llm_client import (
     _deny_all_permissions,
     _reject_user_input,
     _require_tool_free_capability,
+    list_models,
     run_data_only_prompt,
 )
+from beehive.ai.model_catalog import ListedModel
 
 
 def test_module_exposes_no_tool_permissive_entry_point():
@@ -157,3 +159,55 @@ async def test_run_data_only_prompt_never_falls_back_to_approve_all_when_sdk_is_
     with patch("copilot.CopilotClient", _SDKWithoutToolFilter):
         with pytest.raises(RuntimeError, match="available_tools"):
             await run_data_only_prompt("x", model="claude-haiku-4.5")
+
+
+# ============================================================================
+# list_models: reads the account's model list, never opens a session
+# ============================================================================
+
+class _ListingClient:
+    listed: list = []
+    error: BaseException | None = None
+    last_instance: "_ListingClient | None" = None
+
+    def __init__(self):
+        self.start = AsyncMock()
+        self.stop = AsyncMock()
+        self.create_session = AsyncMock()
+        if _ListingClient.error is not None:
+            self.list_models = AsyncMock(side_effect=_ListingClient.error)
+        else:
+            self.list_models = AsyncMock(return_value=_ListingClient.listed)
+        _ListingClient.last_instance = self
+
+
+@pytest.mark.asyncio
+async def test_list_models_returns_plain_models_and_never_opens_a_session():
+    from types import SimpleNamespace
+
+    _ListingClient.error = None
+    _ListingClient.listed = [
+        SimpleNamespace(id="auto", name="Auto", policy=None),
+        SimpleNamespace(id="gpt-6-sol", name="GPT-6 Sol", policy=SimpleNamespace(state="enabled")),
+    ]
+    with patch("copilot.CopilotClient", _ListingClient):
+        models = await list_models()
+
+    assert models == [
+        ListedModel("auto", "Auto", None), ListedModel("gpt-6-sol", "GPT-6 Sol", "enabled")]
+    client = _ListingClient.last_instance
+    client.start.assert_awaited_once()
+    client.stop.assert_awaited_once()
+    client.create_session.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_list_models_stops_its_client_when_listing_fails():
+    _ListingClient.error = RuntimeError("not authenticated")
+    try:
+        with patch("copilot.CopilotClient", _ListingClient), pytest.raises(RuntimeError):
+            await list_models()
+    finally:
+        _ListingClient.error = None
+
+    _ListingClient.last_instance.stop.assert_awaited_once()

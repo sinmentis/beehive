@@ -446,7 +446,7 @@ async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
     conn = connect(db_path)
     init_schema(conn)
     save_language(conn, "de")
-    save_model(conn, "gemini-3.5-flash")
+    save_model(conn, "grok-4.7")
     channel_id = create_channel(conn, "Manual Channel", "profile")
     conn.close()
 
@@ -464,7 +464,7 @@ async def test_run_fetch_channel_loads_and_passes_the_stored_platform_language(
 
     localizer = mock_cycle.await_args.kwargs["localizer"]
     assert localizer.code == "de"
-    assert mock_cycle.await_args.kwargs["model"] == "gemini-3.5-flash"
+    assert mock_cycle.await_args.kwargs["model"] == "grok-4.7"
     assert mock_cycle.await_args.kwargs["force_fetch"] is True
 
 

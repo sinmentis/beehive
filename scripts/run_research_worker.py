@@ -15,6 +15,7 @@ import os
 import signal
 import sys
 
+from beehive.ai.llm_client import list_models
 from beehive.collector.research_worker import ResearchWorker, load_worker_config, reconcile_once
 from beehive.db.connection import connect, init_schema
 
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{result.recovered_chat_requests} chat request(s)")
         return 0
 
-    worker = ResearchWorker(config)
+    worker = ResearchWorker(config, model_lister=list_models)
     try:
         asyncio.run(_run_worker(worker))
     except Exception as exc:  # noqa: BLE001 -- fatal; never a secret value

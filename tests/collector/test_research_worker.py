@@ -1,15 +1,18 @@
 import asyncio
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import pytest
 
+from beehive.ai import model_catalog as mc
 from beehive.collector import research_worker as rw
 from beehive.db.connection import connect, init_schema
 from beehive.db.evidence_items import upsert_evidence_item
 from beehive.db.evidence_state import create_evidence_state_revision
-from beehive.db.research_chat_requests import (count_active_processing_chat_requests,
+from beehive.db.research_chat_requests import (ChatRequestStatus,
+                                                count_active_processing_chat_requests,
                                                 get_chat_request, submit_chat_request)
 from beehive.db.research_runs import (claim_research_run, count_active_processing_runs,
                                        enqueue_research_run, get_research_run,
@@ -845,3 +848,225 @@ def test_reconcile_once_matches_worker_startup_recovery(db_path, conn):
         _config(db_path), connection_factory=lambda: connect(db_path), clock=lambda: later)
     assert result.recovered_research_runs == 1
     assert get_research_run(conn, run_id).status == ResearchRunStatus.PENDING
+
+
+# ============================================================================
+# The model-list refresh: Owner requests, the daily refresh, failures and shutdown
+# ============================================================================
+
+def _lister(models=None, *, calls=None, gate=None, error=None):
+    async def lister():
+        if calls is not None:
+            calls.append(1)
+        if gate is not None:
+            await gate.wait()
+        if error is not None:
+            raise error
+        return list(models or [
+            mc.ListedModel("auto", "Auto"), mc.ListedModel("gpt-6-sol", "GPT-6 Sol", "enabled")])
+    return lister
+
+
+def _refresh_worker(db_path, lister, clock=lambda: T0):
+    return rw.ResearchWorker(
+        _config(db_path), connection_factory=lambda: connect(db_path), clock=clock,
+        model_lister=lister, log=lambda _msg: None)
+
+
+@pytest.mark.asyncio
+async def test_worker_runs_the_model_list_refresh_the_owner_asked_for(db_path, conn):
+    mc.request_refresh(conn, T0)
+    worker = _refresh_worker(db_path, _lister())
+    try:
+        await worker.poll_once()
+        await worker.wait_idle()
+    finally:
+        worker.close()
+
+    assert [model.model_id for model in mc.load_catalog(conn).models] == ["auto", "gpt-6-sol"]
+    state = mc.load_refresh_state(conn)
+    assert state.status is mc.RefreshStatus.DONE
+    assert state.requested_at == T0
+
+
+@pytest.mark.asyncio
+async def test_worker_refreshes_the_model_list_on_its_own_once_a_day(db_path, conn):
+    calls = []
+    now = [T0]
+    worker = _refresh_worker(db_path, _lister(calls=calls), clock=lambda: now[0])
+    try:
+        for _ in range(2):
+            await worker.poll_once()
+            await worker.wait_idle()
+        assert len(calls) == 1
+
+        now[0] = T0 + mc.AUTO_REFRESH_INTERVAL
+        await worker.poll_once()
+        await worker.wait_idle()
+        assert len(calls) == 2
+    finally:
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_worker_without_a_model_lister_leaves_the_request_queued(db_path, conn):
+    mc.request_refresh(conn, T0)
+    worker = rw.ResearchWorker(
+        _config(db_path), connection_factory=lambda: connect(db_path), clock=lambda: T0,
+        log=lambda _msg: None)
+    try:
+        await worker.poll_once()
+    finally:
+        worker.close()
+
+    assert mc.load_refresh_state(conn).status is mc.RefreshStatus.QUEUED
+
+
+@pytest.mark.asyncio
+async def test_only_one_model_list_refresh_runs_at_a_time(db_path, conn):
+    calls = []
+    gate = asyncio.Event()
+    now = [T0]
+    worker = _refresh_worker(db_path, _lister(calls=calls, gate=gate), clock=lambda: now[0])
+    try:
+        await worker.poll_once()
+        await asyncio.sleep(0)
+        # Even once its claim looks stale in the database, this worker's own refresh is live.
+        now[0] = T0 + mc.RUNNING_STALE_AFTER + timedelta(seconds=1)
+        await worker.poll_once()
+        await asyncio.sleep(0)
+        assert len(calls) == 1
+    finally:
+        gate.set()
+        await worker.wait_idle()
+        worker.close()
+    assert mc.load_refresh_state(conn).status is mc.RefreshStatus.DONE
+
+
+@pytest.mark.asyncio
+async def test_a_failing_model_list_refresh_is_recorded_and_the_list_kept(db_path, conn):
+    mc.request_refresh(conn, T0)
+    worker = _refresh_worker(db_path, _lister(error=RuntimeError("copilot is down")))
+    try:
+        await worker.poll_once()
+        await worker.wait_idle()
+    finally:
+        worker.close()
+
+    state = mc.load_refresh_state(conn)
+    assert state.status is mc.RefreshStatus.FAILED
+    assert state.error is mc.RefreshError.FAILED
+    assert state.error_detail == "RuntimeError: copilot is down"
+    assert mc.load_catalog(conn) is None
+
+
+@pytest.mark.asyncio
+async def test_a_model_list_refresh_that_never_answers_times_out(db_path, conn, monkeypatch):
+    monkeypatch.setattr(rw, "LIST_TIMEOUT_SECONDS", 0.05)
+    worker = _refresh_worker(db_path, _lister(gate=asyncio.Event()))
+    try:
+        await worker.poll_once()
+        await worker.wait_idle()
+    finally:
+        worker.close()
+
+    state = mc.load_refresh_state(conn)
+    assert state.status is mc.RefreshStatus.FAILED
+    assert state.error is mc.RefreshError.TIMEOUT
+
+
+@pytest.mark.asyncio
+async def test_shutdown_hands_a_running_model_list_refresh_back(db_path, conn):
+    mc.request_refresh(conn, T0)
+    calls = []
+    worker = _refresh_worker(db_path, _lister(calls=calls, gate=asyncio.Event()))
+    run = asyncio.create_task(worker.run())
+    for _ in range(200):
+        if calls:
+            break
+        await asyncio.sleep(0.01)
+    assert mc.load_refresh_state(conn).status is mc.RefreshStatus.RUNNING
+
+    worker.request_stop()
+    await asyncio.wait_for(run, timeout=5)
+
+    state = mc.load_refresh_state(conn)
+    assert state.status is mc.RefreshStatus.QUEUED
+    assert state.requested_at == T0
+    assert mc.load_catalog(conn) is None
+
+
+
+@pytest.mark.asyncio
+async def test_shutdown_during_the_claiming_poll_still_hands_the_refresh_back(db_path, conn):
+    """Stopping in the same poll that claimed the refresh cancels its task before its first
+    step, so none of the task's own code runs. _shutdown() must hand the claim back itself."""
+    mc.request_refresh(conn, T0)
+    calls = []
+    worker = None
+
+    def clock():
+        worker.request_stop()
+        return T0
+
+    worker = _refresh_worker(db_path, _lister(calls=calls), clock=clock)
+    await asyncio.wait_for(worker.run(), timeout=5)
+
+    assert calls == []
+    state = mc.load_refresh_state(conn)
+    assert state.status is mc.RefreshStatus.QUEUED
+    assert state.requested_at == T0
+
+
+@pytest.mark.asyncio
+async def test_a_refresh_whose_connection_fails_is_logged_and_retried_later(db_path, conn):
+    mc.request_refresh(conn, T0)
+    opened = []
+    logs = []
+    now = [T0]
+
+    def factory():
+        opened.append(1)
+        if len(opened) == 2:  # the first is the coordinator, the second the refresh's own
+            raise sqlite3.OperationalError("unable to open database file")
+        return connect(db_path)
+
+    worker = rw.ResearchWorker(
+        _config(db_path), connection_factory=factory, clock=lambda: now[0],
+        model_lister=_lister(), log=logs.append)
+    try:
+        await worker.poll_once()
+        await worker.wait_idle()
+        assert any("could not open a connection" in line for line in logs)
+        assert mc.load_refresh_state(conn).status is mc.RefreshStatus.RUNNING
+
+        now[0] = T0 + mc.RUNNING_STALE_AFTER + timedelta(seconds=1)
+        await worker.poll_once()
+        await worker.wait_idle()
+    finally:
+        worker.close()
+
+    assert mc.load_refresh_state(conn).status is mc.RefreshStatus.DONE
+
+
+@pytest.mark.asyncio
+async def test_a_busy_database_skips_the_refresh_check_without_stopping_the_worker(
+        db_path, conn, monkeypatch):
+    def locked(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(rw, "claim_refresh", locked)
+    _, request_id = _chat_scenario(conn)
+    logs = []
+    worker = rw.ResearchWorker(
+        _config(db_path), connection_factory=lambda: connect(db_path), clock=lambda: T0,
+        chat_processor=_async_chat_ok, model_lister=_lister(), log=logs.append)
+    try:
+        await worker.poll_once()
+        await worker.wait_idle()
+    finally:
+        worker.close()
+
+    assert any("could not check for an LLM model list refresh" in line for line in logs)
+    # The chat request was still claimed in the same poll.
+    assert get_chat_request(conn, request_id).status is ChatRequestStatus.PROCESSING
