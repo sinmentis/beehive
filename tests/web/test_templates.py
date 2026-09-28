@@ -124,19 +124,26 @@ def test_secondary_navigation_is_scoped_to_each_product_area():
     assert '{% include "_channel_shelf.html" %}' not in archive
     assert 'class="brand-context"' in archive
 
-    assert "{% block secondary_navigation %}" in admin
-    assert admin.count('class="admin-tabs"') == 1
+    # Admin has its own shell: a contents rail instead of the reading site's header and tabs.
+    assert '{% extends "admin_base.html" %}' in admin
+    assert "{% block secondary_navigation %}" not in admin
     assert '{% include "_channel_shelf.html" %}' not in admin
-    assert 'class="brand-context"' in admin
+    admin_base = (_TEMPLATES_DIR / "admin_base.html").read_text()
+    assert 'class="toc"' in admin_base
+    assert "{% block shell %}" in admin_base
 
     for template_name in (
         "admin_login.html",
         "admin_new_channel.html",
         "admin_edit_channel.html",
         "admin_add_source.html",
+        "admin_source_test.html",
+        "admin_new_email_group.html",
+        "admin_edit_email_group.html",
+        "admin_email_group_preview.html",
     ):
         admin_flow = (_TEMPLATES_DIR / template_name).read_text()
-        assert 'class="brand-context"' in admin_flow
+        assert '{% extends "admin_base.html" %}' in admin_flow
 
 
 def test_dashboard_typography_is_readable_at_default_zoom():

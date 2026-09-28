@@ -1,130 +1,27 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
+{% import "_admin_macros.html" as ui with context %}
 {% block title %}{{ t('web.title.email_group_edit', product=t('common.product_name'), group=group.name) }}{% endblock %}
-{% block body_class %}page-admin page-editor{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% set current_chapter = "groups" %}
+{% set crumbs = [(group.name, None)] %}
+{% set toc_sections = [("2.1", t('web.admin.channel_edit.settings_heading'), "#settings"), ("2.2", t('web.admin.email_group.channels_heading'), "#members"), ("2.3", t('web.admin.danger.heading'), "#danger")] %}
 {% block content %}
-<main id="main-content" class="page-shell editor-shell">
-  <p class="crumb"><a href="/admin/?tab=groups">{{ t('web.admin.channel_list_crumb') }}</a></p>
-  <header class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow" lang="en">Periodic email</p>
-      <h1>{{ t('web.admin.email_group.edit_heading', group=group.name) }}</h1>
-      <p class="page-lede">{{ t('web.admin.email_group.edit_lede') }}</p>
-    </div>
-  </header>
-  {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
-  {% if created %}<p class="flash admin-feedback" role="status">{{ t('web.admin.email_group.created') }}</p>{% endif %}
-  {% if saved %}<p class="flash admin-feedback" role="status">{{ t('web.admin.email_group.saved') }}</p>{% endif %}
-  {% if test_sent %}<p class="flash admin-feedback" role="status">{{ t('web.admin.email_group.test_sent') }}</p>{% endif %}
+<div class="adm-head">
+  <div><h1>{{ group.name }}</h1>
+    <p class="adm-meta">{{ t('web.admin.email_group.meta', channels=member_count, schedule=schedule_short) }} · {{ t('web.admin.email_group.last_sent') }} {{ last_sent_short or t('web.admin.email_group.not_yet') }} · {{ t('web.admin.email_group.next_due') }} {{ next_due_short }}</p></div>
+  <div class="adm-actions"><a class="btn" href="/admin/email-groups/{{ group.id }}/preview">{{ t('web.admin.email_group.preview_action') }}</a></div>
+</div>
+{% if default_error %}{{ ui.flash(t('web.admin.settings.default_recipient_error', error=default_error), 'danger') }}{% endif %}
+{% if created %}{{ ui.flash(t('web.admin.email_group.created')) }}{% endif %}
+{% if saved %}{{ ui.flash(t('web.admin.email_group.saved')) }}{% endif %}
+{% if test_sent %}{{ ui.flash(t('web.admin.email_group.test_sent')) }}{% endif %}
+<form method="post" action="/admin/email-groups/{{ group.id }}/edit" data-preserve-draft data-dirty-track{% if unsaved_submission %} data-dirty-force{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% include "_admin_group_fields.html" %}
+  {{ ui.savebar(t('web.admin.channel_edit.save'), cancel_url="/admin/?tab=groups") }}
+</form>
 
-  <section class="admin-panel">
-    <form method="post" action="/admin/email-groups/{{ group.id }}/edit" data-preserve-draft>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="field">
-        <label for="group-name">{{ t('web.admin.email_group.name_label') }}</label>
-        <input id="group-name" type="text" name="name" value="{{ name }}" required autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="group-subject">{{ t('web.admin.email_group.subject_label') }}</label>
-        <input id="group-subject" type="text" name="subject_template" value="{{ subject_template }}" required autocomplete="off">
-        <p class="hint">{{ t('web.admin.email_group.subject_hint') }}</p>
-      </div>
-      <fieldset class="field schedule-builder" data-schedule-builder="schedule_mode">
-        <legend>{{ t('web.admin.email_group.schedule_heading') }}</legend>
-        <div class="choice-row">
-          <label><input type="radio" name="schedule_mode" value="interval" {{ "checked" if schedule_mode == "interval" else "" }}> {{ t('web.admin.email_group.schedule_interval') }}</label>
-          <label><input type="radio" name="schedule_mode" value="calendar" {{ "checked" if schedule_mode == "calendar" else "" }}> {{ t('web.admin.email_group.schedule_calendar') }}</label>
-        </div>
-        <div class="schedule-fields schedule-fields--interval" data-schedule-panel="interval">
-          <label for="group-interval">{{ t('web.admin.email_group.interval_label') }}
-            <input id="group-interval" type="number" name="send_interval_hours" value="{{ send_interval_hours }}" min="1" required>
-          </label>
-        </div>
-        <div class="schedule-fields schedule-fields--calendar" data-schedule-panel="calendar">
-          <label for="group-time">{{ t('web.admin.email_group.time_label') }}
-            <input id="group-time" type="time" name="schedule_time" value="{{ schedule_time }}">
-          </label>
-          <label for="group-timezone">{{ t('web.admin.email_group.timezone_label') }}
-            <select id="group-timezone" name="schedule_timezone">
-              {% for timezone in schedule_timezones %}<option value="{{ timezone }}" {{ "selected" if timezone == schedule_timezone else "" }}>{{ timezone }}</option>{% endfor %}
-            </select>
-          </label>
-        </div>
-        <div class="weekday-picker" data-schedule-panel="calendar" aria-label="{{ t('web.admin.email_group.days_label') }}">
-          {% for day in schedule_weekdays %}
-          <label><input type="checkbox" name="schedule_weekdays" value="{{ day.value }}" {{ "checked" if day.selected else "" }}> {{ day.label }}</label>
-          {% endfor %}
-        </div>
-        <p class="hint">{{ t('web.admin.email_group.schedule_hint') }}</p>
-        {% if schedule_error %}<p class="error" role="alert">{{ schedule_error }}</p>{% endif %}
-      </fieldset>
-      <div class="field">
-        <label for="group-email">{{ t('web.admin.email_group.recipient_label') }}</label>
-        <input id="group-email" type="text" inputmode="email" name="recipient_email"
-               value="{{ recipient_email }}"
-               placeholder="{{ effective_email or 'owner@example.com' }}"
-               autocomplete="email">
-        <p class="hint">{{ t('web.admin.email_group.recipient_hint', email=(effective_email or t('web.admin.settings.not_configured'))) }}</p>
-        {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-      </div>
-      <fieldset class="field channel-kind-field">
-        <legend>{{ t('web.admin.email_group.channels_heading') }}</legend>
-        <p class="hint">{{ t('web.admin.email_group.channels_hint') }}</p>
-        {% if channel_rows %}
-        <div class="channel-admin-list">
-          {% for row in channel_rows %}
-          <label class="group-channel-row">
-            <input class="channel-checkbox" type="checkbox" name="channel_ids" value="{{ row.id }}" {{ "checked" if row.is_member else "" }}>
-            <span class="group-channel-name">
-              <span>{{ row.name }}</span>
-              {% set channel_kind = row.kind %}
-              {% set channel_kind_label = row.kind_label %}
-              {% include "_channel_kind_label.html" %}
-            </span>
-            {% if row.other_group_name %}<span class="hint">{{ t('web.admin.email_group.channel_other_group_note', group=row.other_group_name) }}</span>{% endif %}
-          </label>
-          {% endfor %}
-        </div>
-        {% else %}
-        <p class="hint">{{ t('web.admin.email_group.no_channels_yet') }}</p>
-        {% endif %}
-      </fieldset>
-      <div class="actions">
-        <button class="btn primary" type="submit">{{ t('web.admin.channel_edit.save') }}</button>
-        <a class="btn ghost" href="/admin/email-groups/{{ group.id }}/preview">{{ t('web.admin.email_group.preview_action') }}</a>
-        <a class="btn ghost" href="/admin/?tab=groups">{{ t('web.admin.channel_new.cancel') }}</a>
-      </div>
-    </form>
-  </section>
-
-  <section class="danger-zone" aria-labelledby="danger-title">
-    <div>
-      <p class="section-kicker" lang="en">Danger zone</p>
-      <h2 id="danger-title">{{ t('web.admin.email_group.delete_heading') }}</h2>
-      <p>{{ t('web.admin.email_group.delete_warning_full', group=group.name, channels=member_count) }}</p>
-    </div>
-    <details class="delete-confirm">
-      <summary class="btn danger">
-        <span class="closed-label">{{ t('web.admin.email_group.delete_action') }}</span>
-        <span class="open-label">{{ t('web.admin.channel_edit.delete_cancel') }}</span>
-      </summary>
-      <div class="confirm">
-        <p>{{ t('web.admin.email_group.delete_confirm', group=group.name) }}</p>
-        <div class="confirm-actions">
-          <form method="post" action="/admin/email-groups/{{ group.id }}/delete">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>
-              {{ t('web.admin.channel_edit.type_to_confirm', value=group.name) }}
-              <input type="text" name="confirmation" required autocomplete="off">
-            </label>
-            <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.delete_confirm_action') }}</button>
-          </form>
-        </div>
-      </div>
-    </details>
-  </section>
-</main>
-{% endblock %}
-{% block scripts %}
-<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
+<h2 id="danger"><span class="no">2.3</span><span>{{ t('web.admin.danger.heading') }}</span></h2>
+{{ ui.danger("delete-group", t('web.admin.email_group.delete_heading'),
+   t('web.admin.email_group.delete_warning_full', group=group.name, channels=member_count),
+   t('web.admin.email_group.delete_action'), "/admin/email-groups/" ~ group.id ~ "/delete", group.name, t('web.admin.channel_edit.delete_confirm_action')) }}
 {% endblock %}

@@ -1,0 +1,75 @@
+{#- Shared admin parts. Import with context: {% import "_admin_macros.html" as ui with context %} -#}
+
+{% macro note(tone, role='status') -%}
+<div class="note note-{{ tone }}" role="{{ role }}"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.' ~ tone) }}</span>{{ caller() }}</div></div>
+{%- endmacro %}
+
+{% macro flash(text, tone='done') -%}
+<div class="note note-{{ tone }} adm-flash" role="{{ 'alert' if tone == 'danger' else 'status' }}"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.' ~ tone) }}</span><div class="note-body">{{ text }}</div></div></div>
+{%- endmacro %}
+
+{% macro param(label, for_id=None, note=None, optional=False, static=False, track=True) -%}
+<div class="param">
+  {% if for_id %}<label class="param-label" for="{{ for_id }}">{% else %}<span class="param-label">{% endif %}{{ label }}{% if track %}<span class="tag-mod">{{ t('web.admin.form.modified') }}</span>{% endif %}{% if optional %}<small>{{ t('web.admin.form.optional') }}</small>{% endif %}{% if for_id %}</label>{% else %}</span>{% endif %}
+  <div class="param-ctl{{ ' param-static' if static }}">{{ caller() }}</div>
+  <div class="param-note">{{ note if note }}</div>
+</div>
+{%- endmacro %}
+
+{#- A one-line value that wraps instead of hiding its end: URLs, queries, address lists.
+    beehive.js keeps it one line (Enter submits, pasted line breaks are dropped). -#}
+{% macro line_field(id, name, value, placeholder='', inputmode='', autocomplete='off', literal=False, required=False, invalid=False, extra_class='') -%}
+<textarea class="inp inp-line{{ ' ' ~ extra_class if extra_class }}" id="{{ id }}" name="{{ name }}" rows="1" data-single-line
+  {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+  {%- if inputmode %} inputmode="{{ inputmode }}"{% endif %} autocomplete="{{ autocomplete }}"
+  {%- if literal %} spellcheck="false" autocapitalize="off" autocorrect="off"{% endif %}
+  {%- if required %} required{% endif %}{% if invalid %} aria-invalid="true"{% endif %}>{{ '' if value is none else value }}</textarea>
+{%- endmacro %}
+
+{#- Line breaks for table cells: a unit (a count with its word, a day with its time)
+    stays whole, so a narrow column breaks between units, never inside one. -#}
+{% macro units(text, sep=' · ') -%}
+{%- for part in text.split(sep) %}{% if not loop.first %}{{ sep }}{% endif %}<span class="nw">{{ part }}</span>{% endfor -%}
+{%- endmacro %}
+
+{% macro keep(text, value) -%}
+{%- set pieces = text.split(value, 1) if value else [] -%}
+{%- if pieces|length == 2 %}{{ pieces[0] }}<span class="nw">{{ value }}</span>{{ pieces[1] }}{% else %}{{ text }}{% endif -%}
+{%- endmacro %}
+
+{#- A URL path that may break before each slash rather than mid-word. -#}
+{% macro url_path(path) -%}
+{%- for segment in path.split('/') %}{% if not loop.first %}<wbr>/{% endif %}{{ segment }}{% endfor -%}
+{%- endmacro %}
+
+{% macro raw_error(text) -%}
+<details class="raw-error"><summary>{{ t('web.admin.attention.raw_error') }}</summary><code>{{ text }}</code></details>
+{%- endmacro %}
+
+{% macro params_head() -%}
+<div class="params-head" aria-hidden="true"><span>{{ t('web.admin.form.parameter') }}</span><span>{{ t('web.admin.form.setting') }}</span><span>{{ t('web.admin.form.note') }}</span></div>
+{%- endmacro %}
+
+{% macro savebar(submit_label, cancel_url=None) -%}
+<div class="savebar">
+  <button class="btn btn-primary" type="submit">{{ submit_label }}</button>
+  {% if caller is defined %}{{ caller() }}{% endif %}
+  <button class="btn" type="reset" data-dirty-reset hidden>{{ t('web.admin.form.discard') }}</button>
+  {% if cancel_url %}<a class="btn" href="{{ cancel_url }}">{{ t('web.admin.channel_new.cancel') }}</a>{% endif %}
+  <span class="dirty" data-dirty-status data-template="{{ t('web.admin.form.unsaved', count='__COUNT__') }}"
+        data-force-message="{{ t('web.admin.form.unsaved_submission') }}" aria-live="polite" hidden></span>
+</div>
+{%- endmacro %}
+
+{% macro danger(id, title, body, button_label, action, confirmation_value, submit_label) -%}
+<details class="note note-danger" id="{{ id }}">
+  <summary class="note-row"><span class="note-tag">{{ t('web.admin.note.danger') }}</span><span class="note-body"><b>{{ title }}</b> {{ body }}<small>{{ t('web.admin.danger.undo_hint') }}</small></span><span class="note-act"><span class="btn btn-danger btn-sm when-closed">{{ button_label }}</span><span class="btn btn-sm when-open">{{ t('web.admin.danger.cancel') }}</span></span></summary>
+  <div class="confirm">
+    <form method="post" action="{{ action }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="confirm-label" for="{{ id }}-confirm">{{ t('web.admin.channel_edit.type_to_confirm', value=confirmation_value) }}</label>
+      <div class="row"><input class="inp inp-grow" id="{{ id }}-confirm" type="text" name="confirmation" required autocomplete="off" spellcheck="false"><button class="btn btn-danger" type="submit">{{ submit_label }}</button></div>
+    </form>
+  </div>
+</details>
+{%- endmacro %}

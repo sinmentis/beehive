@@ -60,6 +60,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The admin area is redesigned as a dark "datasheet" with its own shell and stylesheet
+  (`admin.css`, self-hosted Archivo). The five tabs became four numbered chapters (Channels, Email
+  groups, Global settings, System) in a contents rail that counts what needs attention. Forms are
+  parameter tables with the setting and its note side by side, lists are banded tables whose long
+  names, URLs and errors wrap instead of overflowing, and failing or paused Sources are listed
+  first on the Channels chapter. Fields for URLs, queries, addresses and subjects wrap and grow, so
+  the whole value stays visible, and table cells never split a count, time or address. Unsaved
+  changes are marked and counted in a sticky save bar, including after a rejected save.
+  Removing a Source now asks for its name or shop domain instead of its connector type, and the
+  activity log names Sources by their current label. The Chinese UI says 频道 instead of Channel.
+  Old `?tab=ai` and `?tab=delivery` links still work.
 - Email Groups now consume actionable Channel events and may render mixed Editorial, Monitor, and
   Tracker sections without sending empty scheduled messages.
 - The digest timer now evaluates Email Group schedules and Research completion notifications every

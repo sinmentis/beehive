@@ -61,7 +61,7 @@ def test_settings_page_shows_database_override(
     app_state.set(conn, "default_digest_email", "database@example.com")
     conn.close()
     response = authed_client.get("/admin/?tab=delivery")
-    assert 'value="database@example.com"' in response.text
+    assert '>database@example.com</textarea>' in response.text
     assert "From the database" in response.text
 
 
@@ -78,14 +78,12 @@ def test_admin_home_separates_settings_and_channel_management_into_tabs(
     assert response.status_code == 200
     assert "NZ Finance" in response.text
     assert "Every 3 hours" in response.text
-    assert "+ New channel" in response.text
-    assert "AI &amp; language" in response.text
-    assert "Delivery" in response.text
-    assert "System" in response.text
+    assert ">New channel</a>" in response.text
+    for chapter in ("Channels", "Email groups", "Global settings", "System"):
+        assert f"<span>{chapter}</span>" in response.text
     assert "Default email address" not in response.text
-    assert '<span class="brand-context">Admin</span>' in response.text
     assert 'class="channel-shelf"' not in response.text
-    assert response.text.index('class="admin-tabs"') < response.text.index(
+    assert response.text.index('class="toc"') < response.text.index(
         '<main id="main-content"'
     )
 
@@ -101,7 +99,7 @@ def test_channel_management_is_the_default_admin_tab():
 
 
 def test_system_tab_shows_default_featured_window(authed_client):
-    response = authed_client.get("/admin/?tab=system")
+    response = authed_client.get("/admin/?tab=settings")
 
     assert response.status_code == 200
     assert "Featured window" in response.text
@@ -115,7 +113,7 @@ def test_save_featured_window_persists_and_redirects(authed_client, db_path):
     })
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/?tab=system&featured_saved=1"
+    assert response.headers["location"] == "/admin/?tab=settings&featured_saved=1"
     conn = connect(db_path)
     assert app_state.get(conn, "featured_window_days") == "7"
 
@@ -137,13 +135,14 @@ def test_language_and_model_share_the_ai_settings_tab():
         Path(__file__).parent.parent.parent
         / "src" / "beehive" / "web" / "templates" / "admin_settings.html"
     ).read_text()
-    ai_start = template.index('{% elif active_tab == "ai" %}')
-    delivery_start = template.index('{% elif active_tab == "delivery" %}', ai_start)
-    ai_panel = template[ai_start:delivery_start]
+    settings_start = template.index('{% elif active_tab == "settings" %}')
+    system_start = template.index("web.admin.chapter.system", settings_start)
+    settings_panel = template[settings_start:system_start]
 
-    assert 'aria-labelledby="language-title"' in ai_panel
-    assert 'aria-labelledby="model-title"' in ai_panel
-    assert ai_panel.count('class="setting-row"') == 2
+    # Language, model and the featured window are each their own form in one chapter.
+    assert 'action="/admin/language"' in settings_panel
+    assert 'action="/admin/model"' in settings_panel
+    assert 'action="/admin/featured-window"' in settings_panel
 
 
 def test_settings_validation_error_preserves_tab_navigation(
@@ -161,7 +160,7 @@ def test_settings_validation_error_preserves_tab_navigation(
     assert response.status_code == 400
     assert "Only one email address is supported" in response.text
     assert 'href="/admin/?tab=channels"' in response.text
-    assert 'href="/admin/?tab=delivery" aria-current="page"' in response.text
+    assert 'href="/admin/?tab=groups" aria-current="page"' in response.text
 
 
 def test_save_valid_default_email(authed_client, db_path):
@@ -170,7 +169,7 @@ def test_save_valid_default_email(authed_client, db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/?tab=delivery&saved=1"
+    assert response.headers["location"] == "/admin/?tab=groups&saved=1"
     conn = connect(db_path)
     assert app_state.get(conn, "default_digest_email") == "owner@example.com"
 
@@ -242,13 +241,12 @@ def test_channel_empty_state_uses_explicit_styled_class(authed_client):
     styled class, not the form-only .field .hint style."""
     response = authed_client.get("/admin/")
     assert response.status_code == 200
-    assert 'class="empty-state"' in response.text
-    assert "No channels yet." in response.text
+    assert '<div class="empty"><b>No channels yet.</b>' in response.text
     stylesheet = (
         Path(__file__).parent.parent.parent
-        / "src" / "beehive" / "web" / "static" / "beehive.css"
+        / "src" / "beehive" / "web" / "static" / "admin.css"
     ).read_text()
-    assert ".empty-state" in stylesheet
+    assert ".empty{" in stylesheet
 
 
 def test_channel_rows_wrap_on_narrow_screens(authed_client, db_path):
@@ -312,7 +310,7 @@ def test_save_language_persists_and_redirects(authed_client, db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/?tab=ai&language_saved=1"
+    assert response.headers["location"] == "/admin/?tab=settings&language_saved=1"
 
     conn = connect(db_path)
     localizer = load_localizer(conn)
@@ -407,7 +405,7 @@ def test_save_model_persists_and_redirects(authed_client, db_path):
         "csrf_token": "csrf1",
     })
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin/?tab=ai&model_saved=1"
+    assert response.headers["location"] == "/admin/?tab=settings&model_saved=1"
 
     conn = connect(db_path)
     assert load_model(conn) == "gpt-5.6-sol"

@@ -1,41 +1,43 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
+{% import "_admin_macros.html" as ui with context %}
 {% block title %}{{ t('web.title.source_test', product=t('common.product_name')) }}{% endblock %}
-{% block body_class %}page-admin page-editor{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% set current_chapter = "channels" %}
+{% set crumbs = [(channel.name, "/admin/channels/" ~ channel.id ~ "/edit"), (t('web.admin.source_test.crumb'), None)] %}
+{% set toc_sections = [("1.1", t('web.admin.source_test.result_heading'), "#result")] if error else [("1.1", t('web.admin.source_test.result_heading'), "#result"), ("1.2", t('web.admin.source_test.preview_heading'), "#preview")] %}
 {% block content %}
-<main id="main-content" class="page-shell editor-shell">
-  <p class="crumb"><a href="/admin/channels/{{ channel.id }}/edit">{{ t('web.admin.source_test.back', channel=channel.name) }}</a></p>
-  <header class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow">{{ t('web.admin.source_test.eyebrow') }}</p>
-      <h1>{{ t('web.admin.source_test.heading', source=source_label) }}</h1>
-      <p class="page-lede">{{ t('web.admin.source_test.lede') }}</p>
-    </div>
-  </header>
-  {% if error %}
-  <section class="page-banner" role="alert">
-    <h2>{{ t('web.admin.source_test.failed') }}</h2>
-    <p>{{ error }}</p>
-  </section>
-  {% else %}
-  <p class="flash admin-feedback" role="status">{{ t('web.admin.source_test.success', count=total_count, duration=duration_ms) }}</p>
-  {% if items %}
-  <section class="admin-panel">
-    <h2>{{ t('web.admin.source_test.preview_heading') }}</h2>
-    <ol class="source-test-results">
-      {% for item in items %}
-      <li>
-        {% if item.url != '#' %}<a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
-      </li>
-      {% endfor %}
-    </ol>
-  </section>
-  {% else %}
-  <section class="empty-state">
-    <h2>{{ t('web.admin.source_test.empty_heading') }}</h2>
-    <p>{{ t('web.admin.source_test.empty_body') }}</p>
-  </section>
-  {% endif %}
-  {% endif %}
-</main>
+<div class="adm-head">
+  <div><h1>{{ t('web.admin.source_test.heading', source=source_label) }}</h1><p class="adm-meta">{{ t('web.admin.source_test.lede') }}</p></div>
+  <div class="adm-actions">
+    <form method="post" action="/admin/sources/{{ source.id }}/test" data-source-test-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn" type="submit">{{ t('web.admin.source_test.again') }}</button>
+    </form>
+    <a class="btn" href="/admin/channels/{{ channel.id }}/edit#sources">{{ t('web.admin.source_test.back', channel=channel.name) }}</a>
+  </div>
+</div>
+
+<h2 id="result"><span class="no">1.1</span><span>{{ t('web.admin.source_test.result_heading') }}</span></h2>
+{% if error %}
+{% call ui.note('danger', 'alert') %}<div class="note-body"><b>{{ t('web.admin.source_test.failed') }}</b><small>{{ error }}</small></div>{% endcall %}
+{% else %}
+{% call ui.note('done') %}<div class="note-body">{{ t('web.admin.source_test.success', count=total_count, duration=duration_ms) }}</div>{% endcall %}
+{% endif %}
+
+{% if not error %}
+<h2 id="preview"><span class="no">1.2</span><span>{{ t('web.admin.source_test.preview_heading') }}</span></h2>
+{% if items %}
+<div class="tbl-wrap"><table class="tbl">
+  <thead><tr><th class="c-num">#</th><th>{{ t('web.admin.source_test.col_title') }}</th></tr></thead>
+  <tbody>
+  {% for item in items %}
+  <tr><td class="c-num muted">{{ loop.index }}</td>
+    <td class="c-wide">{% if item.url != '#' %}<a class="lnk" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<div class="fn"><p>{{ t('web.admin.source_test.preview_note', count=items|length) }}</p></div>
+{% else %}
+<div class="empty"><b>{{ t('web.admin.source_test.empty_heading') }}</b>{{ t('web.admin.source_test.empty_body') }}</div>
+{% endif %}
+{% endif %}
 {% endblock %}

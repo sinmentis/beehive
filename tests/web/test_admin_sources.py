@@ -159,7 +159,7 @@ def test_delete_source_removes_it_and_redirects_to_parent_channel(
 
     resp = authed_client.post(
         f"/admin/sources/{source_id}/delete",
-        data={"csrf_token": "csrf1", "confirmation": "reddit_subreddit"},
+        data={"csrf_token": "csrf1", "confirmation": "r/xx"},
     )
     assert resp.status_code == 303
     assert resp.headers["location"].startswith(
@@ -308,7 +308,7 @@ def test_new_source_form_shows_both_hackernews_types_with_consistent_icon(
     assert 'value="hackernews_query"' in resp.text
     assert "Hacker News — Feed" in resp.text
     assert "Hacker News — Keyword search" in resp.text
-    assert resp.text.count("🟧") >= 2
+    assert "🟧" not in resp.text
 
 
 @pytest.mark.parametrize(
@@ -448,7 +448,7 @@ def test_invalid_hackernews_query_preserves_selected_type_and_entered_query(
     )
 
     assert 'value="hackernews_query"' in resp.text
-    assert 'value="python"' in resp.text
+    assert '>python</textarea>' in resp.text
     assert re.search(r'id="type-hn-query"\s+checked', resp.text)
 
 
@@ -464,7 +464,8 @@ def test_add_source_page_lists_three_official_options(authed_client, db_path):
     assert "RBNZ — News releases" in html
     assert "NZ Government — Announcements" in html
     assert "Federal Reserve — News releases" in html
-    assert "🏦" in html and "🇳🇿" in html and "🏛️" in html
+    assert "🏦" not in html and "🇳🇿" not in html and "🏛️" not in html
+    assert "Official news from the Reserve Bank of New Zealand." in html
 
 
 def test_official_source_persists_with_empty_config(authed_client, db_path):
@@ -495,7 +496,7 @@ def test_edit_channel_shows_official_label_and_icon(authed_client, db_path):
 
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert "Federal Reserve" in html
-    assert "🏛️" in html
+    assert "🏛️" not in html
 
 
 def test_new_source_form_lists_shopify_collection_option(authed_client, db_path):
@@ -506,7 +507,7 @@ def test_new_source_form_lists_shopify_collection_option(authed_client, db_path)
     html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
     assert 'value="shopify_collection"' in html
     assert "Shopify — Collection watch" in html
-    assert "🛍️" in html
+    assert "🛍️" not in html
     assert 'id="shopify-collection-url"' in html
     assert 'id="shopify-collection-vendors"' in html
 
@@ -630,7 +631,7 @@ def test_edit_channel_shows_shopify_collection_label_and_icon(authed_client, db_
 
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert "arcteryx.co.nz/collections/outlet" in html
-    assert "🛍️" in html
+    assert "🛍️" not in html
 
 
 def test_new_source_form_lists_land_sea_collection_option(authed_client, db_path):
@@ -641,7 +642,7 @@ def test_new_source_form_lists_land_sea_collection_option(authed_client, db_path
     html = authed_client.get(f"/admin/channels/{channel_id}/sources/new").text
     assert 'value="land_sea_collection"' in html
     assert "Land &amp; Sea — Listing watch" in html
-    assert "🌊" in html
+    assert "🌊" not in html
     assert 'id="land-sea-collection-url"' in html
 
 
@@ -738,7 +739,7 @@ def test_edit_channel_shows_land_sea_collection_label_and_icon(authed_client, db
 
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert "land-sea.co.nz/sale" in html
-    assert "🌊" in html
+    assert "🌊" not in html
 
 
 def test_new_source_form_lists_international_clearance_option(
@@ -753,10 +754,10 @@ def test_new_source_form_lists_international_clearance_option(
 
     assert 'value="international_clearance"' in html
     assert "International clearance — Designer retailers" in html
-    assert '<span class="source-icon">IC</span>' in html
+    assert "The official clearance catalogue of THE OUTNET" in html
     assert 'id="international-clearance-retailer"' in html
     assert 'id="international-clearance-minimum-discount"' in html
-    assert '<option value="the_outnet" >THE OUTNET</option>' in html
+    assert '<option value="the_outnet">THE OUTNET</option>' in html
     assert '<option value="mytheresa" selected>Mytheresa</option>' in html
     assert 'min="50" max="90" step="1"' in html
 
@@ -855,7 +856,7 @@ def test_edit_international_clearance_source_prefills_and_labels_config(
     )
     assert 'value="60"' in edit_html
     assert "END. · 60%+" in channel_html
-    assert '<span class="source-name">IC END. · 60%+</span>' in channel_html
+    assert '<span class="source-name url"><b>END. · 60%+</b></span>' in channel_html
 
 
 def test_edit_channel_copy_button_exposes_full_land_sea_filter_url(
@@ -917,7 +918,7 @@ def test_new_source_form_lists_all_about_auctions_option(authed_client, db_path)
     assert 'value="all_about_auctions"' in html
     assert "All About Auctions" in html
     assert 'id="type-all-about-auctions"' in html
-    assert '<span class="source-icon">AA</span>' in html
+    assert "Auction listings from All About Auctions." in html
 
 
 def test_create_all_about_auctions_source_persists_empty_config(authed_client, db_path):
@@ -950,7 +951,7 @@ def test_edit_channel_shows_all_about_auctions_label_and_icon(authed_client, db_
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
 
     assert "All About Auctions" in html
-    assert '<span class="source-name">AA All About Auctions</span>' in html
+    assert '<span class="source-name url"><b>All About Auctions</b></span>' in html
 
 
 def test_add_source_page_for_monitor_channel_lists_only_monitor_types(
@@ -968,7 +969,7 @@ def test_add_source_page_for_monitor_channel_lists_only_monitor_types(
     assert 'value="reddit_subreddit"' not in html
     assert 'value="all_about_auctions"' not in html
     # The Phase 3 (twitter) editorial placeholder is hidden for a monitor Channel too.
-    assert "Phase 3" not in html
+    assert 'class="pick-row is-disabled"' not in html
     # The first compatible type is pre-selected by default.
     assert re.search(
         r'value="shopify_collection"\s+id="type-shopify"\s+checked', html
@@ -987,7 +988,7 @@ def test_add_source_page_for_tracker_channel_lists_only_all_about_auctions(
     assert 'value="all_about_auctions"' in html
     assert 'value="reddit_subreddit"' not in html
     assert 'value="shopify_collection"' not in html
-    assert "Phase 3" not in html
+    assert 'class="pick-row is-disabled"' not in html
 
 
 def test_add_source_page_for_editorial_channel_still_lists_editorial_types(
@@ -1004,7 +1005,7 @@ def test_add_source_page_for_editorial_channel_still_lists_editorial_types(
     assert 'value="shopify_collection"' not in html
     assert 'value="all_about_auctions"' not in html
     # The editorial Phase 3 (twitter) placeholder is still shown on an editorial Channel.
-    assert "Phase 3" in html
+    assert 'class="pick-row is-disabled"' in html
 
 
 def test_create_source_rejects_incompatible_type_with_localized_400(
@@ -1059,7 +1060,7 @@ def test_edit_source_form_prefills_existing_config_and_name(authed_client, db_pa
     html = authed_client.get(f"/admin/sources/{source_id}/edit").text
 
     assert 'value="PersonalFinanceNZ"' in html
-    assert 'value="Kiwi money"' in html
+    assert '>Kiwi money</textarea>' in html
     assert re.search(r'value="reddit_subreddit"\s+id="type-reddit"\s+checked', html)
 
 
@@ -1306,7 +1307,8 @@ def test_edit_channel_shows_source_fetch_observability(authed_client, db_path):
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
 
     assert f"/admin/sources/{source_id}/edit" in html  # edit link per row
-    assert "4 new of 30" in html  # raw/new counts
+    assert 'data-label="Items">30</td>' in html  # raw/new counts
+    assert 'data-label="New">4</td>' in html
 
 
 def test_edit_channel_shows_current_source_error(authed_client, db_path):

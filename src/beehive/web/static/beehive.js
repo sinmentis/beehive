@@ -357,6 +357,160 @@
     form.addEventListener("change", saveDraft);
   });
 
+  // Admin forms mark each parameter row the Owner has changed but not saved, and count them in
+  // the sticky save bar, so leaving a long settings page never silently drops an edit.
+  document.querySelectorAll("form[data-dirty-track]").forEach((form) => {
+    if (!(form instanceof HTMLFormElement)) {
+      return;
+    }
+    const status = form.querySelector("[data-dirty-status]");
+    const reset = form.querySelector("[data-dirty-reset]");
+    const template = status instanceof HTMLElement ? status.dataset.template || "__COUNT__" : "__COUNT__";
+    // After a rejected save the page shows the submitted values as its defaults, so nothing
+    // looks changed. The form is still unsaved: say so, and let "discard" reload the saved page.
+    const forced = form.hasAttribute("data-dirty-force");
+    const draftKey = `beehive:draft:${window.location.pathname}:${form.action}`;
+    const controls = [...form.elements].filter((control) => (
+      (control instanceof HTMLInputElement
+        || control instanceof HTMLTextAreaElement
+        || control instanceof HTMLSelectElement)
+      && control.name
+      && control.type !== "hidden"
+    ));
+    const isChanged = (control) => {
+      if (control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type)) {
+        return control.checked !== control.defaultChecked;
+      }
+      if (control instanceof HTMLSelectElement) {
+        return [...control.options].some((option) => option.selected !== option.defaultSelected);
+      }
+      return control.value !== control.defaultValue;
+    };
+    // A change inside a hidden block (another source type, the other schedule mode) does not
+    // apply to the option the Owner has chosen, so it is not counted.
+    const isShown = (control) => typeof control.checkVisibility !== "function" || control.checkVisibility();
+    const syncDirtyState = () => {
+      const dirtyRows = new Set();
+      controls.forEach((control) => {
+        const row = control.closest(".param") || control.closest("[data-param-group]");
+        if (row && isChanged(control) && isShown(control)) {
+          dirtyRows.add(row);
+        }
+      });
+      form.querySelectorAll("[data-dirty]").forEach((row) => {
+        if (!dirtyRows.has(row)) {
+          delete row.dataset.dirty;
+        }
+      });
+      dirtyRows.forEach((row) => {
+        row.dataset.dirty = "";
+      });
+      const count = dirtyRows.size;
+      if (status instanceof HTMLElement) {
+        status.hidden = count === 0 && !forced;
+        status.textContent = count === 0 && forced
+          ? status.dataset.forceMessage || ""
+          : template.replace("__COUNT__", String(count));
+      }
+      if (reset instanceof HTMLElement) {
+        reset.hidden = count === 0 && !forced;
+      }
+    };
+    if (forced && reset instanceof HTMLButtonElement) {
+      reset.addEventListener("click", (event) => {
+        event.preventDefault();
+        try {
+          window.sessionStorage.removeItem(draftKey);
+        } catch (error) {
+          console.warn("Could not clear the form draft", error);
+        }
+        window.location.assign(form.getAttribute("action") || window.location.pathname);
+      });
+    }
+    form.addEventListener("input", syncDirtyState);
+    form.addEventListener("change", syncDirtyState);
+    // "reset" fires before the browser restores the defaults, so read the state a tick later, and
+    // let the schedule builders re-show the panel for the restored mode.
+    form.addEventListener("reset", () => window.setTimeout(() => {
+      form.querySelectorAll("[data-schedule-builder] input[type='radio']:checked").forEach((radio) => {
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      // Also refreshes a preserved draft, so a re-login cannot bring discarded edits back.
+      form.dispatchEvent(new Event("change", { bubbles: true }));
+      syncDirtyState();
+    }, 0));
+    syncDirtyState();
+  });
+
+  // Long one-line values (URLs, queries, address lists) are wrapping textareas, so the whole
+  // value stays visible. They still behave like a text input: Enter submits the form and pasted
+  // line breaks are dropped. Browsers without CSS field-sizing get their height from here.
+  const singleLineFields = [...document.querySelectorAll("textarea[data-single-line]")];
+  if (singleLineFields.length > 0) {
+    const growsNatively = Boolean(window.CSS && window.CSS.supports("field-sizing", "content"));
+    const isSingleLine = (target) => (
+      target instanceof HTMLTextAreaElement && target.hasAttribute("data-single-line")
+    );
+    const fitHeight = (field) => {
+      if (growsNatively || field.getClientRects().length === 0) {
+        return;
+      }
+      const style = window.getComputedStyle(field);
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight
+        + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)}px`;
+    };
+    document.addEventListener("keydown", (event) => {
+      if (!isSingleLine(event.target) || event.key !== "Enter" || event.isComposing || event.keyCode === 229) {
+        return;
+      }
+      event.preventDefault();
+      const form = event.target.form;
+      const submitter = form && [...form.elements].find((control) => (
+        (control instanceof HTMLButtonElement || control instanceof HTMLInputElement)
+        && control.type === "submit"
+      ));
+      if (form && !(submitter && submitter.disabled)) {
+        form.requestSubmit(submitter || undefined);
+      }
+    });
+    document.addEventListener("input", (event) => {
+      const field = event.target;
+      if (!isSingleLine(field)) {
+        return;
+      }
+      if (/[\r\n]/.test(field.value)) {
+        const caret = field.value.slice(0, field.selectionStart ?? field.value.length).replace(/[\r\n]/g, "").length;
+        field.value = field.value.replace(/[\r\n]/g, "");
+        field.setSelectionRange(caret, caret);
+      }
+      fitHeight(field);
+    });
+    if (!growsNatively) {
+      document.addEventListener("reset", (event) => window.setTimeout(() => {
+        if (event.target instanceof HTMLFormElement) {
+          event.target.querySelectorAll("textarea[data-single-line]").forEach(fitHeight);
+        }
+      }, 0));
+      // Refit when a field's width changes, including when a hidden source type is shown.
+      const widths = new WeakMap();
+      const observer = "ResizeObserver" in window ? new ResizeObserver((entries) => {
+        entries.forEach(({ target }) => {
+          if (widths.get(target) !== target.clientWidth) {
+            widths.set(target, target.clientWidth);
+            fitHeight(target);
+          }
+        });
+      }) : null;
+      singleLineFields.forEach((field) => {
+        fitHeight(field);
+        if (observer) {
+          observer.observe(field);
+        }
+      });
+    }
+  }
+
   const search = document.querySelector(".dashboard-search input[type='search']");
   const rows = [...document.querySelectorAll(".signal-row")];
   const selectionStatus = document.getElementById("dashboard-selection-status");

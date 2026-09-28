@@ -1,301 +1,201 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
+{% import "_admin_macros.html" as ui with context %}
 {% block title %}{{ t('web.title.channel_edit', product=t('common.product_name'), channel=channel.name) }}{% endblock %}
-{% block body_class %}page-admin page-editor{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% set current_chapter = "channels" %}
+{% set crumbs = [(channel.name, None)] %}
+{% set toc_sections = [("1.1", t('web.admin.channel_edit.settings_heading'), "#settings"), ("1.2", t('web.admin.channel_edit.sources_heading'), "#sources"), ("1.3", t('web.admin.danger.heading'), "#danger")] %}
 {% block content %}
-<main id="main-content" class="page-shell editor-shell">
-  <p class="crumb"><a href="/admin/">{{ t('web.admin.channel_list_crumb') }}</a></p>
-  <header class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow" lang="en">Channel configuration</p>
-      <h1>{{ t('web.admin.channel_edit.heading', channel=channel.name) }}</h1>
-      <p class="page-lede">{{ t('web.admin.channel_edit.lede') }}</p>
-    </div>
+<div class="adm-head">
+  <div><h1>{{ channel.name }}</h1>
+    <p class="adm-meta">{{ kind_display.label }} · {{ source_summary }} · {{ schedule_short }}{% if next_fetch_short %} · {{ t('web.admin.channels.next_short', time=next_fetch_short) }}{% endif %}{% if current_group %} · {{ t('web.admin.channel_edit.meta_group', group=current_group.name) }}{% endif %}</p></div>
+  <div class="adm-actions">
+    <a class="btn" href="/channels/{{ channel.id }}">{{ t('web.admin.channel_edit.open_channel') }}</a>
+    <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit">
+      <button class="btn" type="submit">{{ t('web.admin.channel_edit.fetch_now') }}</button>
+    </form>
     <form method="post" action="/admin/channels/{{ channel.id }}/duplicate">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn ghost" type="submit">{{ t('web.admin.channel_edit.duplicate') }}</button>
+      <button class="btn" type="submit">{{ t('web.admin.channel_edit.duplicate') }}</button>
     </form>
-  </header>
-  {% if default_error %}<div class="page-banner" role="alert">{{ t('web.admin.settings.default_recipient_error', error=default_error) }}</div>{% endif %}
-  {% if created %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.created') }}</p>{% endif %}
-  {% if saved %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.saved') }}</p>{% endif %}
-  {% if source_saved %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.source_saved') }}</p>{% endif %}
-  {% if source_removed %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.source_removed') }}</p>{% endif %}
-  {% if undone %}<p class="flash admin-feedback" role="status">{{ t('web.admin.activity.undo_success') }}</p>{% endif %}
-  {% if fetch_requested %}<p class="flash admin-feedback" role="status">{{ t('web.admin.onboarding.fetch_requested') }}</p>{% endif %}
-  {% if cleared_count is not none %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.clear_data_success', count=cleared_count) }}</p>{% endif %}
-  {% if undo_action_id %}
-  <form class="admin-undo-banner" method="post" action="/admin/actions/{{ undo_action_id }}/undo">
+  </div>
+</div>
+{% if default_error %}{{ ui.flash(t('web.admin.settings.default_recipient_error', error=default_error), 'danger') }}{% endif %}
+{% if created %}{{ ui.flash(t('web.admin.channel_edit.created')) }}{% endif %}
+{% if saved %}{{ ui.flash(t('web.admin.channel_edit.saved')) }}{% endif %}
+{% if source_saved %}{{ ui.flash(t('web.admin.channel_edit.source_saved')) }}{% endif %}
+{% if source_removed %}{{ ui.flash(t('web.admin.channel_edit.source_removed')) }}{% endif %}
+{% if undone %}{{ ui.flash(t('web.admin.activity.undo_success')) }}{% endif %}
+{% if fetch_requested %}{{ ui.flash(t('web.admin.onboarding.fetch_requested')) }}{% endif %}
+{% if cleared_count is not none %}{{ ui.flash(t('web.admin.channel_edit.clear_data_success', count=cleared_count)) }}{% endif %}
+{% if recovered %}{{ ui.flash(t('web.admin.channel_edit.recover_stale_success')) }}{% endif %}
+{% if undo_action_id %}
+<div class="note note-done adm-flash" role="status"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.done') }}</span>
+  <div class="note-body">{{ t('web.admin.activity.undo_available') }}</div>
+  <div class="note-act"><form method="post" action="/admin/actions/{{ undo_action_id }}/undo">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit">
-    <span>{{ t('web.admin.activity.undo_available') }}</span>
-    <button class="btn ghost small" type="submit">{{ t('web.admin.activity.undo') }}</button>
-  </form>
-  {% endif %}
-  {% if recovered %}<p class="flash admin-feedback" role="status">{{ t('web.admin.channel_edit.recover_stale_success') }}</p>{% endif %}
-  {% if stale_recovery %}
-  <div class="page-banner" role="alert">
-    <p>{{ t('web.admin.channel_edit.recover_stale_body') }}</p>
-    <form method="post" action="/admin/channels/{{ channel.id }}/recover-stale-fetch">
+    <button class="btn btn-sm" type="submit">{{ t('web.admin.activity.undo') }}</button>
+  </form></div></div></div>
+{% endif %}
+{% if stale_recovery %}
+<div class="adm-flash">{% call ui.note('danger', 'alert') %}
+<div class="note-body">{{ t('web.admin.channel_edit.recover_stale_body') }}</div>
+<div class="note-act"><form method="post" action="/admin/channels/{{ channel.id }}/recover-stale-fetch">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="btn btn-sm" type="submit">{{ t('web.admin.channel_edit.recover_stale_action') }}</button>
+</form></div>
+{% endcall %}</div>
+{% endif %}
+{% if not setup.complete %}
+<div class="adm-flash">{% call ui.note('info') %}
+<div class="note-body"><b>{{ t('web.admin.onboarding.heading') }}</b><small>{{ t('web.admin.onboarding.lede') }}</small>
+  <ol class="setup-steps">
+    <li><span class="st st-ok">{{ t('web.admin.onboarding.channel_step') }}</span><small>{{ t('web.admin.onboarding.channel_done') }}</small></li>
+    <li><span class="st st-{{ 'ok' if setup.source_count else 'busy' }}">{{ t('web.admin.onboarding.source_step') }}</span>
+      <small>{{ t('web.admin.onboarding.source_done', count=setup.source_count) if setup.source_count else t('web.admin.onboarding.source_todo') }}</small>
+      {% if not setup.source_count %}<a class="lnk" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>{% endif %}</li>
+    <li><span class="st st-{{ 'ok' if setup.attempted_source_count else ('busy' if setup.source_count else 'never') }}">{{ t('web.admin.onboarding.fetch_step') }}</span>
+      <small>{{ t('web.admin.onboarding.fetch_done') if setup.attempted_source_count else t('web.admin.onboarding.fetch_todo') }}</small>
+      {% if setup.source_count and not setup.attempted_source_count %}
+      <form class="inline-form" method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit">
+        <button class="lnk" type="submit">{{ t('web.admin.onboarding.fetch_action') }}</button>
+      </form>{% endif %}</li>
+    <li><span class="st st-{{ 'ok' if setup.ranked_item_count else ('busy' if setup.attempted_source_count else 'never') }}">{{ t('web.admin.onboarding.results_step') }}</span>
+      <small>{{ t('web.admin.onboarding.results_done', count=setup.ranked_item_count) if setup.ranked_item_count else t('web.admin.onboarding.results_todo', count=setup.item_count) }}</small>
+      {% if setup.ranked_item_count %}<a class="lnk" href="/channels/{{ channel.id }}">{{ t('web.admin.onboarding.open_channel') }}</a>{% endif %}</li>
+  </ol></div>
+{% endcall %}</div>
+{% endif %}
+
+<h2 id="settings"><span class="no">1.1</span><span>{{ t('web.admin.channel_edit.settings_heading') }}</span></h2>
+<form method="post" action="/admin/channels/{{ channel.id }}/edit" data-preserve-draft data-dirty-track{% if unsaved_submission %} data-dirty-force{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="params">
+    {{ ui.params_head() }}
+    {% call ui.param(t('web.admin.channel_new.name_label'), for_id="channel-name", note=t('web.admin.channel_edit.name_note')) %}
+    <input class="inp" id="channel-name" type="text" name="name" value="{{ channel.name }}" required autocomplete="off">
+    {% endcall %}
+    {% set kind_note %}<p>{{ t('web.admin.channel_edit.kind_note') }}</p><p>{{ kind_display.hint }}</p>{% endset %}
+    {% call ui.param(t('web.admin.channel_new.kind_label'), note=kind_note, static=True, track=False) %}{{ kind_display.label }}{% endcall %}
+    {% call ui.param(t('web.admin.channel_new.profile_label'), for_id="channel-profile", note=kind_display.profile_hint) %}
+    <textarea class="inp" id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
+    {% endcall %}
+    {% set schedule_note %}<p>{{ t('web.admin.channel_schedule.current_summary', schedule=schedule_label) }}{% if next_fetch_label %} · <b>{{ t('web.admin.channel_schedule.next_fetch', time=next_fetch_label) }}</b>{% endif %}</p>
+      <p>{{ t('web.admin.channel_schedule.hint') }}</p>{% if schedule_error %}<p class="field-error" role="alert">{{ schedule_error }}</p>{% endif %}{% endset %}
+    {% call ui.param(t('web.admin.channel_schedule.heading'), note=schedule_note) %}
+    <fieldset class="param-ctl" data-schedule-builder="fetch_schedule_mode">
+      <legend class="sr-only">{{ t('web.admin.channel_schedule.heading') }}</legend>
+      <div class="row">
+        <label class="opt"><input type="radio" name="fetch_schedule_mode" value="calendar" {{ "checked" if channel.fetch_schedule_mode == "calendar" }}>{{ t('web.admin.channel_schedule.calendar') }}</label>
+        <label class="opt"><input type="radio" name="fetch_schedule_mode" value="interval" {{ "checked" if channel.fetch_schedule_mode == "interval" }}>{{ t('web.admin.channel_schedule.interval') }}</label>
+      </div>
+      <div class="row" data-schedule-panel="interval">
+        <label class="field-inline" for="fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
+        <select class="inp inp-mid" id="fetch-interval" name="fetch_interval_hours">
+          {% for option in fetch_interval_options %}<option value="{{ option.value }}"{{ " selected" if option.selected }}>{{ option.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="row" data-schedule-panel="calendar">
+        <label class="field-inline" for="fetch-time">{{ t('web.admin.channel_schedule.time_label') }}</label>
+        <input class="inp inp-time" id="fetch-time" type="time" name="fetch_schedule_time" value="{{ channel.fetch_schedule_time }}">
+        <label class="field-inline" for="fetch-timezone">{{ t('web.admin.channel_schedule.timezone_label') }}</label>
+        <select class="inp inp-mid" id="fetch-timezone" name="fetch_schedule_timezone">
+          {% for timezone in schedule_timezones %}<option value="{{ timezone }}"{{ " selected" if timezone == channel.fetch_schedule_timezone }}>{{ timezone }}</option>{% endfor %}
+        </select>
+      </div>
+    </fieldset>
+    {% endcall %}
+    {% call ui.param(t('web.admin.channel_new.highlight_count_label'), for_id="highlight-count", note=kind_display.highlight_count_hint) %}
+    <div class="row"><input class="inp inp-num" id="highlight-count" type="number" name="highlight_count" value="{{ channel.highlight_count }}" min="1" max="50" required><span class="unit">{{ t('web.admin.form.items_unit') }}</span></div>
+    {% endcall %}
+    {% call ui.param(t('web.admin.channel_new.minimum_score_label'), for_id="minimum-score", note=kind_display.minimum_score_hint) %}
+    <div class="row"><input class="inp inp-num" id="minimum-score" type="number" name="minimum_score" value="{{ channel.minimum_score }}" min="0" max="100" required><span class="unit">{{ t('web.admin.form.score_unit') }}</span></div>
+    {% endcall %}
+    {% call ui.param(t('web.admin.channel_edit.group_label'), note=t('web.admin.channel_edit.group_hint'), static=True, track=False) %}
+    {% if current_group %}<a class="lnk" href="/admin/email-groups/{{ current_group.id }}/edit">{{ current_group.name }}</a>
+    {% else %}<span class="muted">{{ t('web.admin.channel_edit.group_none') }}</span> <a class="lnk" href="/admin/?tab=groups">{{ t('web.admin.channel_edit.manage_groups_link') }}</a>{% endif %}
+    {% endcall %}
+    {% set email_note %}<p>{{ t('web.admin.channel_edit.email_hint', email=(effective_email or t('web.admin.settings.not_configured'))) }}</p>{% if error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}{% endset %}
+    {% call ui.param(t('web.admin.channel_edit.email_label'), for_id="digest-email", note=email_note) %}
+    {{ ui.line_field("digest-email", "digest_email", channel.digest_email or '', placeholder=(effective_email or 'owner@example.com'), inputmode="email", autocomplete="email", literal=True, invalid=error) }}
+    {% endcall %}
+  </div>
+  {{ ui.savebar(t('web.admin.channel_edit.save')) }}
+</form>
+
+<h2 id="sources"><span class="no">1.2</span><span>{{ t('web.admin.channel_edit.sources_count_heading', count=sources|length) }}</span>
+  <span class="tools"><a class="btn btn-sm" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a></span></h2>
+{% if sources %}
+<div class="tbl-wrap"><table class="tbl tbl-stack">
+  <thead><tr><th>{{ t('web.admin.sources.col_state') }}</th><th>{{ t('web.admin.sources.col_source') }}</th>
+    <th>{{ t('web.admin.channels.col_last_fetch') }}</th><th class="c-num">{{ t('web.admin.sources.col_items') }}</th>
+    <th class="c-num">{{ t('web.admin.sources.col_new') }}</th><th><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th></tr></thead>
+  <tbody>
+  {% for source in sources %}
+  <tr id="source-{{ source.id }}">
+    <td class="c-nw" data-label="{{ t('web.admin.sources.col_state') }}"><span class="st st-{{ source.state }}">{{ source.state_label }}</span></td>
+    <td class="c-name c-wide">
+      {% if source.name %}<span class="source-name">{{ source.name }}</span><small>{{ source.type_label }} · {{ source.label }}</small>
+      {% else %}<span class="source-name url"><b>{{ source.host }}</b>{{ ui.url_path(source.path) }}</span><small>{{ source.type_label }}</small>{% endif %}
+      {% if source.error and not source.paused %}<span class="err-line" role="alert">{{ source.error_kind_label }}{% if source.consecutive_failures > 1 %} · {{ t('web.admin.attention.streak', count=source.consecutive_failures) }}{% endif %}</span>{{ ui.raw_error(source.error) }}
+      {% elif source.error %}<span class="note-line">{{ t('web.admin.attention.paused_error', reason=source.error_kind_label) }}</span>{{ ui.raw_error(source.error) }}{% endif %}</td>
+    <td class="c-nw" data-label="{{ t('web.admin.channels.col_last_fetch') }}">
+      {% if source.last_fetch_relative %}<span class="nw" title="{{ source.last_fetch_exact }}">{{ source.last_fetch_relative }}</span>{% else %}<span class="muted">{{ t('web.admin.source_state.never') }}</span>{% endif %}
+      {% if source.last_attempt_relative and source.last_attempt_exact != source.last_fetch_exact %}<small title="{{ source.last_attempt_exact }}">{{ ui.keep(t('web.admin.channel_edit.source_last_attempt', time=source.last_attempt_relative), source.last_attempt_relative) }}</small>{% endif %}</td>
+    <td class="c-num" data-label="{{ t('web.admin.sources.col_items') }}">{{ source.raw_count|count(locale) if source.raw_count is not none else "—" }}</td>
+    <td class="c-num" data-label="{{ t('web.admin.sources.col_new') }}">{{ (source.new_count or 0)|count(locale) if source.raw_count is not none else "—" }}{% if source.baseline %}<span class="fn-ref">(1)</span>{% endif %}</td>
+    <td class="c-ops c-ops-wrap">
+      <form class="inline-form" method="post" action="/admin/sources/{{ source.id }}/test" data-source-test-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="lnk" type="submit">{{ t('web.admin.channel_edit.test_source') }}</button>
+      </form>
+      <a class="lnk" href="/admin/sources/{{ source.id }}/edit">{{ t('web.admin.channel_edit.edit_source') }}</a>
+      <form class="inline-form" method="post" action="/admin/sources/{{ source.id }}/{{ 'resume' if source.paused else 'pause' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="lnk" type="submit">{{ t('web.admin.channel_edit.resume_source') if source.paused else t('web.admin.channel_edit.pause_source') }}</button>
+      </form>
+      <button type="button" class="lnk copy-source-btn" data-copy-value="{{ source.copy_value }}"
+              data-copy-label="{{ t('web.admin.channel_edit.copy_source') }}"
+              data-copied-label="{{ t('web.admin.channel_edit.copy_source_done') }}">{{ t('web.admin.channel_edit.copy_source') }}</button>
+      <button type="button" class="lnk lnk-danger" popovertarget="remove-source-{{ source.id }}">{{ t('web.admin.channel_edit.remove_source') }}</button>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<div class="fn"><div class="legend">{% for state in ("ok", "paused", "error", "never") %}<span class="st st-{{ state }}">{{ t('web.admin.source_state.' ~ state) }}</span>{% endfor %}</div>
+  {% if sources|selectattr('baseline')|list %}<p>{{ t('web.admin.sources.baseline_note') }}</p>{% endif %}</div>
+{% for source in sources %}
+<div class="pop" id="remove-source-{{ source.id }}" popover>
+  <div class="pop-head">{{ t('web.admin.channel_edit.remove_source_heading') }}</div>
+  <div class="pop-body">
+    <p><b>{{ source.name or source.label }}</b></p>
+    <p>{{ t('web.admin.channel_edit.remove_source_impact', items=source.impact['items']|count(locale), votes=source.impact.votes|count(locale), deep_reads=source.impact.deep_reads|count(locale), watches=source.impact.watches|count(locale), events=source.impact.events|count(locale)) }}</p>
+    <small>{{ t('web.admin.danger.undo_hint') }}</small>
+    <form method="post" action="/admin/sources/{{ source.id }}/delete">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn ghost small" type="submit">{{ t('web.admin.channel_edit.recover_stale_action') }}</button>
+      <label class="confirm-label" for="remove-source-{{ source.id }}-confirm">{{ t('web.admin.channel_edit.type_to_confirm', value=source.confirmation_value) }}</label>
+      <div class="row"><input class="inp inp-grow" id="remove-source-{{ source.id }}-confirm" type="text" name="confirmation" required autocomplete="off" spellcheck="false">
+        <button class="btn btn-danger" type="submit">{{ t('web.admin.channel_edit.confirm_remove_source') }}</button>
+        <button class="btn" type="button" popovertarget="remove-source-{{ source.id }}" popovertargetaction="hide">{{ t('web.admin.danger.cancel') }}</button></div>
     </form>
   </div>
-  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="empty"><b>{{ t('web.admin.channel_edit.empty_sources_heading') }}</b>{{ t('web.admin.channel_edit.empty_sources_body') }}
+  <div><a class="btn btn-primary" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a></div></div>
+{% endif %}
 
-  {% if not setup.complete %}
-  <section class="setup-checklist" aria-labelledby="setup-title">
-    <header>
-      <p class="section-kicker">{{ t('web.admin.onboarding.eyebrow') }}</p>
-      <h2 id="setup-title">{{ t('web.admin.onboarding.heading') }}</h2>
-      <p>{{ t('web.admin.onboarding.lede') }}</p>
-    </header>
-    <ol>
-      <li class="complete">
-        <span aria-hidden="true">1</span>
-        <div><strong>{{ t('web.admin.onboarding.channel_step') }}</strong><small>{{ t('web.admin.onboarding.channel_done') }}</small></div>
-      </li>
-      <li class="{{ 'complete' if setup.source_count else 'current' }}">
-        <span aria-hidden="true">2</span>
-        <div>
-          <strong>{{ t('web.admin.onboarding.source_step') }}</strong>
-          <small>{{ t('web.admin.onboarding.source_done', count=setup.source_count) if setup.source_count else t('web.admin.onboarding.source_todo') }}</small>
-        </div>
-        {% if not setup.source_count %}<a class="btn ghost small" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>{% endif %}
-      </li>
-      <li class="{{ 'complete' if setup.attempted_source_count else ('current' if setup.source_count else '') }}">
-        <span aria-hidden="true">3</span>
-        <div>
-          <strong>{{ t('web.admin.onboarding.fetch_step') }}</strong>
-          <small>{{ t('web.admin.onboarding.fetch_done') if setup.attempted_source_count else t('web.admin.onboarding.fetch_todo') }}</small>
-        </div>
-        {% if setup.source_count and not setup.attempted_source_count %}
-        <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit">
-          <button class="btn ghost small" type="submit">{{ t('web.admin.onboarding.fetch_action') }}</button>
-        </form>
-        {% endif %}
-      </li>
-      <li class="{{ 'complete' if setup.ranked_item_count else ('current' if setup.attempted_source_count else '') }}">
-        <span aria-hidden="true">4</span>
-        <div>
-          <strong>{{ t('web.admin.onboarding.results_step') }}</strong>
-          <small>{{ t('web.admin.onboarding.results_done', count=setup.ranked_item_count) if setup.ranked_item_count else t('web.admin.onboarding.results_todo', count=setup.item_count) }}</small>
-        </div>
-        {% if setup.ranked_item_count %}<a class="btn ghost small" href="/channels/{{ channel.id }}">{{ t('web.admin.onboarding.open_channel') }}</a>{% endif %}
-      </li>
-    </ol>
-  </section>
-  {% endif %}
-
-  <div class="editor-grid">
-    <section class="admin-panel">
-      <form method="post" action="/admin/channels/{{ channel.id }}/edit" data-preserve-draft>
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="field">
-          <label for="channel-name">{{ t('web.admin.channel_new.name_label') }}</label>
-          <input id="channel-name" type="text" name="name" value="{{ channel.name }}" required autocomplete="off">
-        </div>
-        <div class="field">
-          <span class="field-label-static">{{ t('web.admin.channel_new.kind_label') }}</span>
-          <p class="kind-static">
-            {% set channel_kind = channel.kind %}
-            {% set channel_kind_label = kind_display.label %}
-            {% include "_channel_kind_label.html" %}
-          </p>
-        </div>
-        <div class="field">
-          <label for="channel-profile">{{ t('web.admin.channel_new.profile_label') }}</label>
-          <textarea id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
-          <p class="hint">{{ kind_display.profile_hint }}</p>
-        </div>
-        <fieldset class="field schedule-builder" data-schedule-builder="fetch_schedule_mode">
-          <legend>{{ t('web.admin.channel_schedule.heading') }}</legend>
-          <div class="choice-row">
-            <label><input type="radio" name="fetch_schedule_mode" value="interval" {{ "checked" if channel.fetch_schedule_mode == "interval" else "" }}> {{ t('web.admin.channel_schedule.interval') }}</label>
-            <label><input type="radio" name="fetch_schedule_mode" value="calendar" {{ "checked" if channel.fetch_schedule_mode == "calendar" else "" }}> {{ t('web.admin.channel_schedule.calendar') }}</label>
-          </div>
-          <div class="schedule-fields schedule-fields--interval" data-schedule-panel="interval">
-            <label for="fetch-interval">{{ t('web.admin.channel_new.interval_label') }}
-              <select id="fetch-interval" name="fetch_interval_hours">
-                {% for option in fetch_interval_options %}<option value="{{ option.value }}" {{ "selected" if option.selected else "" }}>{{ option.label }}</option>{% endfor %}
-              </select>
-            </label>
-          </div>
-          <div class="schedule-fields schedule-fields--calendar" data-schedule-panel="calendar">
-            <label for="fetch-time">{{ t('web.admin.channel_schedule.time_label') }}
-              <input id="fetch-time" type="time" name="fetch_schedule_time" value="{{ channel.fetch_schedule_time }}">
-            </label>
-            <label for="fetch-timezone">{{ t('web.admin.channel_schedule.timezone_label') }}
-              <select id="fetch-timezone" name="fetch_schedule_timezone">
-                {% for timezone in schedule_timezones %}<option value="{{ timezone }}" {{ "selected" if timezone == channel.fetch_schedule_timezone else "" }}>{{ timezone }}</option>{% endfor %}
-              </select>
-            </label>
-          </div>
-          <p class="hint">{{ t('web.admin.channel_schedule.hint') }}</p>
-          <p class="hint">{{ t('web.admin.channel_schedule.current_summary', schedule=schedule_label) }}{% if next_fetch_label %} · {{ t('web.admin.channel_schedule.next_fetch', time=next_fetch_label) }}{% endif %}</p>
-          {% if schedule_error %}<p class="error" role="alert">{{ schedule_error }}</p>{% endif %}
-        </fieldset>
-        <div class="field-pair">
-          <div class="field">
-            <label for="highlight-count">{{ t('web.admin.channel_new.highlight_count_label') }}</label>
-            <input id="highlight-count" type="number" name="highlight_count"
-                   value="{{ channel.highlight_count }}" min="1" max="50" required>
-            <p class="hint">{{ kind_display.highlight_count_hint }}</p>
-          </div>
-          <div class="field">
-            <label for="minimum-score">{{ t('web.admin.channel_new.minimum_score_label') }}</label>
-            <input id="minimum-score" type="number" name="minimum_score"
-                   value="{{ channel.minimum_score }}" min="0" max="100" required>
-            <p class="hint">{{ kind_display.minimum_score_hint }}</p>
-          </div>
-        </div>
-        <div class="field">
-          <span class="field-label-static">{{ t('web.admin.channel_edit.group_label') }}</span>
-          {% if current_group %}
-          <p class="kind-static"><a class="channel-edit-link" href="/admin/email-groups/{{ current_group.id }}/edit">📨 {{ current_group.name }}</a></p>
-          {% else %}
-          <p class="hint">{{ t('web.admin.channel_edit.group_none') }} <a class="channel-edit-link" href="/admin/?tab=groups">{{ t('web.admin.channel_edit.manage_groups_link') }}</a></p>
-          {% endif %}
-          <p class="hint">{{ t('web.admin.channel_edit.group_hint') }}</p>
-        </div>
-        <div class="field">
-          <label for="digest-email">{{ t('web.admin.channel_edit.email_label') }}</label>
-          <input id="digest-email" type="text" inputmode="email" name="digest_email"
-                 value="{{ channel.digest_email or '' }}"
-                 placeholder="{{ effective_email or 'owner@example.com' }}"
-                 autocomplete="email">
-          <p class="hint">{{ t('web.admin.channel_edit.email_hint', email=(effective_email or t('web.admin.settings.not_configured'))) }}</p>
-          {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-        </div>
-        <div class="actions">
-          <button class="btn primary" type="submit">{{ t('web.admin.channel_edit.save') }}</button>
-        </div>
-      </form>
-    </section>
-
-    <aside class="admin-panel source-panel" aria-labelledby="sources-title">
-      <header class="panel-heading split-heading">
-        <div>
-          <p class="section-kicker" lang="en">Inputs</p>
-          <h2 id="sources-title">{{ t('web.admin.channel_edit.sources_heading') }}</h2>
-        </div>
-        <a class="btn ghost small" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>
-      </header>
-      <div class="source-list">
-        {% for source in sources %}
-        <article class="source-row">
-          <div>
-            <span class="source-name">{{ source.icon }} {{ source.label }}</span>
-            <p class="hint">
-              {% if source.paused %}{{ t('web.admin.channel_edit.source_paused') }} · {% endif %}
-              {% if source.last_attempt_relative %}<span title="{{ source.last_attempt_exact }}">{{ t('web.admin.channel_edit.source_last_attempt', time=source.last_attempt_relative) }}</span>{% else %}{{ t('web.admin.channel_edit.source_never_fetched') }}{% endif %}
-              {% if source.last_fetch_relative %} · <span title="{{ source.last_fetch_exact }}">{{ t('web.admin.channel_edit.source_last_success', time=source.last_fetch_relative) }}</span>{% endif %}
-              {% if source.raw_count is not none %} · {{ t('web.admin.channel_edit.source_counts', new=source.new_count or 0, raw=source.raw_count) }}{% endif %}
-            </p>
-            {% if source.error and not source.paused %}<p class="error" role="alert">{{ source.error }}</p>{% endif %}
-          </div>
-          <div class="row-actions">
-            <form method="post" action="/admin/sources/{{ source.id }}/test" data-source-test-form>
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="text-action" type="submit">{{ t('web.admin.channel_edit.test_source') }}</button>
-            </form>
-            <a class="text-action" href="/admin/sources/{{ source.id }}/edit">{{ t('web.admin.channel_edit.edit_source') }}</a>
-            <button type="button" class="text-action copy-source-btn" data-copy-value="{{ source.copy_value }}"
-                    data-copy-label="{{ t('web.admin.channel_edit.copy_source') }}"
-                    data-copied-label="{{ t('web.admin.channel_edit.copy_source_done') }}">{{ t('web.admin.channel_edit.copy_source') }}</button>
-            {% if source.paused %}
-            <form method="post" action="/admin/sources/{{ source.id }}/resume">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="text-action" type="submit">{{ t('web.admin.channel_edit.resume_source') }}</button>
-            </form>
-            {% else %}
-            <form method="post" action="/admin/sources/{{ source.id }}/pause">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="text-action" type="submit">{{ t('web.admin.channel_edit.pause_source') }}</button>
-            </form>
-            {% endif %}
-            <details class="source-remove-confirm">
-              <summary class="text-action danger-text">{{ t('web.admin.channel_edit.remove_source') }}</summary>
-              <p>{{ t('web.admin.channel_edit.remove_source_impact', items=source.impact['items'], votes=source.impact.votes, deep_reads=source.impact.deep_reads, watches=source.impact.watches, events=source.impact.events) }}</p>
-              <form method="post" action="/admin/sources/{{ source.id }}/delete">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <label>
-                  {{ t('web.admin.channel_edit.type_to_confirm', value=source.confirmation_value) }}
-                  <input type="text" name="confirmation" required autocomplete="off">
-                </label>
-                <button class="btn danger small" type="submit">{{ t('web.admin.channel_edit.confirm_remove_source') }}</button>
-              </form>
-            </details>
-          </div>
-        </article>
-        {% else %}
-        <div class="empty-state compact-empty">
-          <h3>{{ t('web.admin.channel_edit.empty_sources_heading') }}</h3>
-          <p>{{ t('web.admin.channel_edit.empty_sources_body') }}</p>
-          <a class="btn primary small" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>
-        </div>
-        {% endfor %}
-      </div>
-    </aside>
-  </div>
-
-  <section class="danger-zone" aria-labelledby="clear-data-title">
-    <div>
-      <p class="section-kicker" lang="en">Danger zone</p>
-      <h2 id="clear-data-title">{{ t('web.admin.channel_edit.clear_data_heading') }}</h2>
-      <p>{{ t('web.admin.channel_edit.clear_data_warning_full', channel=channel.name, items=impact['items'], votes=impact.votes, deep_reads=impact.deep_reads, watches=impact.watches, events=impact.events) }}</p>
-    </div>
-    <details class="delete-confirm">
-      <summary class="btn danger">
-        <span class="closed-label">{{ t('web.admin.channel_edit.clear_data_action') }}</span>
-        <span class="open-label">{{ t('web.admin.channel_edit.clear_data_cancel') }}</span>
-      </summary>
-      <div class="confirm">
-        <p>{{ t('web.admin.channel_edit.clear_data_confirm', channel=channel.name) }}</p>
-        <div class="confirm-actions">
-          <form method="post" action="/admin/channels/{{ channel.id }}/clear-data">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>
-              {{ t('web.admin.channel_edit.type_to_confirm', value=channel.name) }}
-              <input type="text" name="confirmation" required autocomplete="off">
-            </label>
-            <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.clear_data_confirm_action') }}</button>
-          </form>
-        </div>
-      </div>
-    </details>
-  </section>
-
-  <section class="danger-zone" aria-labelledby="danger-title">
-    <div>
-      <p class="section-kicker" lang="en">Danger zone</p>
-      <h2 id="danger-title">{{ t('web.admin.channel_edit.delete_heading') }}</h2>
-      <p>{{ t('web.admin.channel_edit.delete_warning_full', channel=channel.name, sources=impact.sources, items=impact['items'], votes=impact.votes, deep_reads=impact.deep_reads, watches=impact.watches, events=impact.events) }}</p>
-    </div>
-    <details class="delete-confirm">
-      <summary class="btn danger">
-        <span class="closed-label">{{ t('web.admin.channel_edit.delete_action') }}</span>
-        <span class="open-label">{{ t('web.admin.channel_edit.delete_cancel') }}</span>
-      </summary>
-      <div class="confirm">
-        <p>{{ t('web.admin.channel_edit.delete_confirm', channel=channel.name) }}</p>
-        <div class="confirm-actions">
-          <form method="post" action="/admin/channels/{{ channel.id }}/delete">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label>
-              {{ t('web.admin.channel_edit.type_to_confirm', value=channel.name) }}
-              <input type="text" name="confirmation" required autocomplete="off">
-            </label>
-            <button class="btn danger" type="submit">{{ t('web.admin.channel_edit.delete_confirm_action') }}</button>
-          </form>
-        </div>
-      </div>
-    </details>
-  </section>
-</main>
-{% endblock %}
-{% block scripts %}
-<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
+<h2 id="danger"><span class="no">1.3</span><span>{{ t('web.admin.danger.heading') }}</span></h2>
+{{ ui.danger("clear-data", t('web.admin.channel_edit.clear_data_heading'),
+   t('web.admin.channel_edit.clear_data_warning_full', channel=channel.name, items=impact['items']|count(locale), votes=impact.votes|count(locale), deep_reads=impact.deep_reads|count(locale), watches=impact.watches|count(locale), events=impact.events|count(locale)),
+   t('web.admin.channel_edit.clear_data_action'), "/admin/channels/" ~ channel.id ~ "/clear-data", channel.name, t('web.admin.channel_edit.clear_data_confirm_action')) }}
+{{ ui.danger("delete-channel", t('web.admin.channel_edit.delete_heading'),
+   t('web.admin.channel_edit.delete_warning_full', channel=channel.name, sources=impact.sources, items=impact['items']|count(locale), votes=impact.votes|count(locale), deep_reads=impact.deep_reads|count(locale), watches=impact.watches|count(locale), events=impact.events|count(locale)),
+   t('web.admin.channel_edit.delete_action'), "/admin/channels/" ~ channel.id ~ "/delete", channel.name, t('web.admin.channel_edit.delete_confirm_action')) }}
 {% endblock %}

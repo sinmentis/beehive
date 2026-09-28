@@ -34,6 +34,17 @@ def relative_time(iso_str: str, t: Localizer) -> str:
     return t.text("web.time.days_ago", count=hours // 24)
 
 
+# Locales whose thousands separator is not a comma; the rest (en, zh-CN, ja, ko) use a comma.
+_THOUSANDS_SEPARATORS = {"de": ".", "es": ".", "fr": "\u202f"}
+
+
+def format_count(value: int | float | None, locale: str) -> str:
+    """A whole number with the locale's thousands separator, such as 4,286 or 4.286."""
+    if value is None:
+        return ""
+    return f"{int(value):,}".replace(",", _THOUSANDS_SEPARATORS.get(locale, ","))
+
+
 def host_local_time_label(iso_str: str) -> str:
     return _as_aware_utc(iso_str).astimezone(HOST_TZ).strftime("%Y-%m-%d %H:%M %Z")
 

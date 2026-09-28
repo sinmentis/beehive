@@ -21,6 +21,7 @@ from beehive.db.research_sessions import count_unread_completed_research_session
 from beehive.localization import load_localizer
 from beehive.web import admin, public, research
 from beehive.web.client_ip import parse_trusted_proxies
+from beehive.web.formatting import format_count
 from beehive.web.readiness import check_readiness
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -152,6 +153,7 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
         context_processors=[_localization_context],
     )
     app.state.templates.env.globals["asset_version"] = _static_asset_version()
+    app.state.templates.env.filters["count"] = format_count
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     @app.get("/readyz", include_in_schema=False)

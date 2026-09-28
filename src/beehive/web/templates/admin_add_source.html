@@ -1,127 +1,94 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
+{% import "_admin_macros.html" as ui with context %}
 {% block title %}{{ t('web.title.source_edit' if is_edit else 'web.title.source_new', product=t('common.product_name')) }}{% endblock %}
-{% block body_class %}page-admin page-editor{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
+{% set current_chapter = "channels" %}
+{% set crumbs = [(channel.name, "/admin/channels/" ~ channel.id ~ "/edit"), (page_heading, None)] %}
+{% set toc_sections = [("1.1", t('web.admin.source_new.type_legend'), "#source-type"), ("1.2", t('web.admin.source_form.params_heading'), "#source-params")] %}
 {% block content %}
-<main id="main-content" class="page-shell source-form-shell">
-  <p class="crumb"><a href="/admin/channels/{{ channel.id }}/edit">← {{ channel.name }}</a></p>
-  <header class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow" lang="en">{{ page_eyebrow }}</p>
-      <h1>{{ page_heading }}</h1>
-      <p class="page-lede">{{ page_lede }}</p>
+<div class="adm-head"><div><h1>{{ page_heading }}</h1><p class="adm-meta">{{ page_lede }}</p></div></div>
+{% if error %}{{ ui.flash(error, 'danger') }}{% endif %}
+<form method="post" action="{{ form_action }}" class="source-form" data-preserve-draft{% if is_edit %} data-dirty-track{% endif %}{% if unsaved_submission %} data-dirty-force{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div data-param-group>
+  <h2 id="source-type"><span class="no">1.1</span><span>{{ t('web.admin.source_new.type_legend') }}</span><span class="tag-mod">{{ t('web.admin.form.modified') }}</span></h2>
+  <fieldset>
+    <legend class="sr-only">{{ t('web.admin.source_new.type_legend') }}</legend>
+    <div class="pick">
+      {% for option in source_type_options %}
+      <label class="pick-row" for="{{ option.input_id }}"><input type="radio" name="type" value="{{ option.type_key }}" id="{{ option.input_id }}"{{ " checked" if selected_type == option.type_key }}>
+        <span class="pick-name">{{ option.label }}</span><span class="pick-desc">{{ option.hint }}</span><span class="pick-side"></span></label>
+      {% endfor %}
+      {% if show_twitter_soon %}
+      <div class="pick-row is-disabled" aria-disabled="true"><input type="radio" disabled aria-label="{{ t('web.source_type.twitter_x') }}">
+        <span class="pick-name">{{ t('web.source_type.twitter_x') }}</span><span class="pick-desc">{{ t('web.admin.source_form.coming_soon') }}</span><span class="pick-side"></span></div>
+      {% endif %}
     </div>
-  </header>
-  {% if error %}<p class="page-banner" role="alert">{{ error }}</p>{% endif %}
+  </fieldset>
+  <div class="fn"><p>{{ t('web.admin.source_form.types_note', kind=channel_kind_label) }}</p></div>
+  </div>
 
-  <section class="admin-panel">
-    <form method="post" action="{{ form_action }}" class="source-form" data-preserve-draft>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <fieldset class="field source-types">
-        <legend>{{ t('web.admin.source_new.type_legend') }}</legend>
-        <div class="type-options">
-          {% for option in source_type_options %}
-          <label class="type-option">
-            <input type="radio" name="type" value="{{ option.type_key }}"
-                   id="{{ option.input_id }}"
-                   {{ "checked" if selected_type == option.type_key else "" }}>
-            <span class="source-icon">{{ option.icon }}</span>
-            <span class="name">{{ option.label }}</span>
-            <span class="option-check" aria-hidden="true"></span>
-          </label>
-          {% endfor %}
-          {% if show_twitter_soon %}
-          <div class="type-option disabled">
-            <span class="source-icon">X</span>
-            <span class="name">{{ t('web.source_type.twitter_x') }}</span>
-            <span class="soon">Phase 3</span>
-          </div>
-          {% endif %}
-        </div>
-      </fieldset>
-      <div class="field">
-        <label for="source-name">{{ t('web.admin.source_new.name_label') }}</label>
-        <input id="source-name" type="text" name="source_name" value="{{ source_name }}"
-               autocomplete="off" placeholder="{{ t('web.admin.source_new.name_placeholder') }}">
-        <p class="hint">{{ t('web.admin.source_new.name_hint') }}</p>
-      </div>
-      <div class="field config-reddit_subreddit">
-        <label for="subreddit">{{ t('web.admin.source_new.subreddit_label') }}</label>
-        <div class="input-with-prefix">
-          <span class="prefix">r/</span>
-          <input id="subreddit" type="text" name="subreddit" value="{{ subreddit }}" placeholder="PersonalFinanceNZ">
-        </div>
-        <p class="hint">{{ t('web.admin.source_new.subreddit_hint') }}</p>
-      </div>
-      <div class="field config-google_news_query">
-        <label for="google-query">{{ t('web.admin.source_new.query_label') }}</label>
-        <input id="google-query" type="text" name="query" value="{{ query }}" placeholder="New Zealand economy">
-        <p class="hint">{{ t('web.admin.source_new.google_query_hint') }}</p>
-      </div>
-      <div class="field config-hackernews_stories">
-        <label for="hn-feed">{{ t('web.admin.source_new.feed_label') }}</label>
-        <div class="input-with-prefix">
-          <span class="prefix">HN</span>
-          <select id="hn-feed" name="hn_feed">
-            <option value="top" {{ "selected" if hn_feed == "top" else "" }}>{{ t('web.hn.feed.top') }}</option>
-            <option value="best" {{ "selected" if hn_feed == "best" else "" }}>{{ t('web.hn.feed.best') }}</option>
-            <option value="new" {{ "selected" if hn_feed == "new" else "" }}>{{ t('web.hn.feed.new') }}</option>
-            <option value="ask" {{ "selected" if hn_feed == "ask" else "" }}>{{ t('web.hn.feed.ask') }}</option>
-            <option value="show" {{ "selected" if hn_feed == "show" else "" }}>{{ t('web.hn.feed.show') }}</option>
-            <option value="job" {{ "selected" if hn_feed == "job" else "" }}>{{ t('web.hn.feed.job') }}</option>
-          </select>
-        </div>
-        <p class="hint">{{ t('web.admin.source_new.feed_hint') }}</p>
-      </div>
-      <div class="field config-hackernews_query">
-        <label for="hn-query">{{ t('web.admin.source_new.query_label') }}</label>
-        <div class="input-with-prefix">
-          <span class="prefix">HN</span>
-          <input id="hn-query" type="text" name="hn_query" value="{{ hn_query }}" placeholder="local-first">
-        </div>
-        <label for="hn-sort">{{ t('web.admin.source_new.sort_label') }}</label>
-        <select id="hn-sort" name="hn_sort">
-          <option value="relevance" {{ "selected" if hn_sort == "relevance" else "" }}>{{ t('web.admin.source_new.sort_relevance') }}</option>
-          <option value="recent" {{ "selected" if hn_sort == "recent" else "" }}>{{ t('web.admin.source_new.sort_recent') }}</option>
-        </select>
-      </div>
-      <div class="field config-shopify_collection">
-        <label for="shopify-collection-url">{{ t('web.admin.source_new.shopify_collection_url_label') }}</label>
-        <input id="shopify-collection-url" type="url" name="shopify_collection_url"
-               value="{{ shopify_collection_url }}" placeholder="https://arcteryx.co.nz/collections/outlet">
-        <p class="hint">{{ t('web.admin.source_new.shopify_collection_url_hint') }}</p>
-        <label for="shopify-collection-vendors">{{ t('web.admin.source_new.shopify_collection_vendors_label') }}</label>
-        <input id="shopify-collection-vendors" type="text" name="shopify_collection_vendors"
-               value="{{ shopify_collection_vendors }}" placeholder="Arc'teryx, Patagonia, Salomon">
-        <p class="hint">{{ t('web.admin.source_new.shopify_collection_vendors_hint') }}</p>
-      </div>
-      <div class="field config-land_sea_collection">
-        <label for="land-sea-collection-url">{{ t('web.admin.source_new.land_sea_collection_url_label') }}</label>
-        <input id="land-sea-collection-url" type="url" name="land_sea_collection_url"
-               value="{{ land_sea_collection_url }}" placeholder="https://www.land-sea.co.nz/sale">
-        <p class="hint">{{ t('web.admin.source_new.land_sea_collection_url_hint') }}</p>
-      </div>
-      <div class="field config-international_clearance">
-        <label for="international-clearance-retailer">{{ t('web.admin.source_new.international_clearance_retailer_label') }}</label>
-        <select id="international-clearance-retailer" name="international_clearance_retailer">
-          <option value="the_outnet" {{ "selected" if international_clearance_retailer == "the_outnet" else "" }}>THE OUTNET</option>
-          <option value="mytheresa" {{ "selected" if international_clearance_retailer == "mytheresa" else "" }}>Mytheresa</option>
-          <option value="end" {{ "selected" if international_clearance_retailer == "end" else "" }}>END.</option>
-          <option value="yoox" {{ "selected" if international_clearance_retailer == "yoox" else "" }}>YOOX</option>
-        </select>
-        <p class="hint">{{ t('web.admin.source_new.international_clearance_retailer_hint') }}</p>
-        <label for="international-clearance-minimum-discount">{{ t('web.admin.source_new.international_clearance_discount_label') }}</label>
-        <input id="international-clearance-minimum-discount" type="number"
-               name="international_clearance_minimum_discount_percent"
-               value="{{ international_clearance_minimum_discount_percent }}"
-               min="50" max="90" step="1" inputmode="numeric">
-        <p class="hint">{{ t('web.admin.source_new.international_clearance_discount_hint') }}</p>
-      </div>
-      <div class="actions">
-        <button class="btn primary" type="submit">{{ submit_label }}</button>
-        <a class="btn ghost" href="{{ cancel_url }}">{{ t('web.admin.channel_new.cancel') }}</a>
-      </div>
-    </form>
-  </section>
-</main>
+  <h2 id="source-params"><span class="no">1.2</span><span>{{ t('web.admin.source_form.params_heading') }}</span></h2>
+  <div class="params">
+    {{ ui.params_head() }}
+    <div class="src-config config-reddit_subreddit">
+      {% call ui.param(t('web.admin.source_new.subreddit_label'), for_id="subreddit", note=t('web.admin.source_new.subreddit_hint')) %}
+      <div class="prefixed"><span>r/</span><input class="inp" id="subreddit" type="text" name="subreddit" value="{{ subreddit }}" placeholder="PersonalFinanceNZ"></div>
+      {% endcall %}
+    </div>
+    <div class="src-config config-google_news_query">
+      {% call ui.param(t('web.admin.source_new.query_label'), for_id="google-query", note=t('web.admin.source_new.google_query_hint')) %}
+      {{ ui.line_field("google-query", "query", query, placeholder="New Zealand economy") }}
+      {% endcall %}
+    </div>
+    <div class="src-config config-hackernews_stories">
+      {% call ui.param(t('web.admin.source_new.feed_label'), for_id="hn-feed", note=t('web.admin.source_new.feed_hint')) %}
+      <select class="inp inp-mid" id="hn-feed" name="hn_feed">
+        {% for feed in ("top", "best", "new", "ask", "show", "job") %}<option value="{{ feed }}"{{ " selected" if hn_feed == feed }}>{{ t('web.hn.feed.' ~ feed) }}</option>{% endfor %}
+      </select>
+      {% endcall %}
+    </div>
+    <div class="src-config config-hackernews_query">
+      {% call ui.param(t('web.admin.source_new.query_label'), for_id="hn-query", note=t('web.admin.source_form.hn_query_hint')) %}
+      {{ ui.line_field("hn-query", "hn_query", hn_query, placeholder="local-first") }}
+      {% endcall %}
+      {% call ui.param(t('web.admin.source_new.sort_label'), for_id="hn-sort") %}
+      <select class="inp inp-mid" id="hn-sort" name="hn_sort">
+        <option value="relevance"{{ " selected" if hn_sort == "relevance" }}>{{ t('web.admin.source_new.sort_relevance') }}</option>
+        <option value="recent"{{ " selected" if hn_sort == "recent" }}>{{ t('web.admin.source_new.sort_recent') }}</option>
+      </select>
+      {% endcall %}
+    </div>
+    <div class="src-config config-shopify_collection">
+      {% call ui.param(t('web.admin.source_new.shopify_collection_url_label'), for_id="shopify-collection-url", note=t('web.admin.source_new.shopify_collection_url_hint')) %}
+      {{ ui.line_field("shopify-collection-url", "shopify_collection_url", shopify_collection_url, placeholder="https://arcteryx.co.nz/collections/outlet", inputmode="url", literal=True) }}
+      {% endcall %}
+      {% call ui.param(t('web.admin.source_new.shopify_collection_vendors_label'), for_id="shopify-collection-vendors", note=t('web.admin.source_new.shopify_collection_vendors_hint')) %}
+      {{ ui.line_field("shopify-collection-vendors", "shopify_collection_vendors", shopify_collection_vendors, placeholder="Arc'teryx, Patagonia, Salomon", literal=True) }}
+      {% endcall %}
+    </div>
+    <div class="src-config config-land_sea_collection">
+      {% call ui.param(t('web.admin.source_new.land_sea_collection_url_label'), for_id="land-sea-collection-url", note=t('web.admin.source_new.land_sea_collection_url_hint')) %}
+      {{ ui.line_field("land-sea-collection-url", "land_sea_collection_url", land_sea_collection_url, placeholder="https://www.land-sea.co.nz/sale", inputmode="url", literal=True) }}
+      {% endcall %}
+    </div>
+    <div class="src-config config-international_clearance">
+      {% call ui.param(t('web.admin.source_new.international_clearance_retailer_label'), for_id="international-clearance-retailer", note=t('web.admin.source_new.international_clearance_retailer_hint')) %}
+      <select class="inp inp-mid" id="international-clearance-retailer" name="international_clearance_retailer">
+        {% for value, label in (("the_outnet", "THE OUTNET"), ("mytheresa", "Mytheresa"), ("end", "END."), ("yoox", "YOOX")) %}<option value="{{ value }}"{{ " selected" if international_clearance_retailer == value }}>{{ label }}</option>{% endfor %}
+      </select>
+      {% endcall %}
+      {% call ui.param(t('web.admin.source_new.international_clearance_discount_label'), for_id="international-clearance-minimum-discount", note=t('web.admin.source_new.international_clearance_discount_hint')) %}
+      <div class="row"><input class="inp inp-num" id="international-clearance-minimum-discount" type="number" name="international_clearance_minimum_discount_percent"
+        value="{{ international_clearance_minimum_discount_percent }}" min="50" max="90" step="1" inputmode="numeric"><span class="unit">%</span></div>
+      {% endcall %}
+    </div>
+    <div class="src-config config-none">
+      {% call ui.param(t('web.admin.source_form.no_params_label'), static=True, track=False) %}<span class="muted">{{ t('web.admin.source_form.no_params') }}</span>{% endcall %}
+    </div>
+    {% call ui.param(t('web.admin.source_new.name_label'), for_id="source-name", note=t('web.admin.source_new.name_hint')) %}
+    {{ ui.line_field("source-name", "source_name", source_name, placeholder=name_placeholder) }}
+    {% endcall %}
+  </div>
+  {{ ui.savebar(submit_label, cancel_url=cancel_url) }}
+</form>
 {% endblock %}

@@ -58,7 +58,7 @@ def test_channels_list_shows_name_source_count_and_interval(authed_client, db_pa
     resp = authed_client.get("/admin/")
     assert resp.status_code == 200
     assert "NZ Finance" in resp.text
-    assert "1 source" in resp.text
+    assert "1 source · 1 not fetched yet" in resp.text
     assert "Every 3 hours" in resp.text
     assert "Admin" in resp.text
 
@@ -81,10 +81,8 @@ def test_channels_list_shows_a_kind_label_for_every_channel(authed_client, db_pa
 
     resp = authed_client.get("/admin/")
     assert resp.status_code == 200
-    assert resp.text.count('class="channel-kind-label ') == 3
-    assert "channel-kind-label--editorial" in resp.text
-    assert "channel-kind-label--monitor" in resp.text
-    assert "channel-kind-label--tracker" in resp.text
+    for kind_label in ("Editorial", "Monitor", "Tracker"):
+        assert f'data-label="Type">{kind_label}</td>' in resp.text
     assert "🔔" not in resp.text
 
 
@@ -114,8 +112,8 @@ def test_new_channel_form_shows_kind_options(authed_client):
 def test_new_channel_form_links_back_to_admin_home(authed_client):
     response = authed_client.get("/admin/channels/new")
 
-    assert '<p class="crumb"><a href="/admin/">← Channel list</a></p>' in response.text
-    assert '<a class="btn ghost" href="/admin/">Cancel</a>' in response.text
+    assert '<a href="/admin/?tab=channels">1 Channels</a>' in response.text
+    assert '<a class="btn" href="/admin/">Cancel</a>' in response.text
 
 
 def test_edit_channel_form_links_back_to_admin_home(
@@ -128,7 +126,7 @@ def test_edit_channel_form_links_back_to_admin_home(
 
     response = authed_client.get(f"/admin/channels/{channel_id}/edit")
 
-    assert '<p class="crumb"><a href="/admin/">← Channel list</a></p>' in response.text
+    assert '<a href="/admin/?tab=channels">1 Channels</a>' in response.text
 
 
 def test_delete_channel_confirmation_uses_keyboard_accessible_details(
@@ -141,8 +139,8 @@ def test_delete_channel_confirmation_uses_keyboard_accessible_details(
 
     response = authed_client.get(f"/admin/channels/{channel_id}/edit")
 
-    assert '<details class="delete-confirm">' in response.text
-    assert '<summary class="btn danger">' in response.text
+    assert '<details class="note note-danger" id="delete-channel">' in response.text
+    assert '<summary class="note-row">' in response.text
     assert 'class="confirm-toggle"' not in response.text
 
 
@@ -374,7 +372,7 @@ def test_legacy_success_counts_as_a_fetch_attempt_for_onboarding(
 
     assert resp.status_code == 200
     assert "not fetched yet" not in resp.text
-    assert "attempted" in resp.text
+    assert '<span class="st st-ok">OK</span>' in resp.text
     assert "Finish setting up this Channel" not in resp.text
 
 
@@ -537,8 +535,10 @@ def test_edit_channel_form_shows_distinct_icons_per_source_type(authed_client, d
 
     resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
     assert resp.status_code == 200
-    assert "📍 r/PersonalFinanceNZ" in resp.text
-    assert '📰 "OpenAI"' in html.unescape(resp.text)
+    # Sources are told apart by their label and type, not by emoji icons.
+    assert "r/PersonalFinanceNZ" in resp.text
+    assert '"OpenAI"' in html.unescape(resp.text)
+    assert "📍" not in resp.text and "📰" not in resp.text
 
 
 def test_edit_channel_404_for_missing_channel(authed_client):
@@ -1078,7 +1078,8 @@ def test_channels_list_shows_the_latest_source_fetch_error(authed_client, db_pat
 
     response = authed_client.get("/admin/")
 
-    assert "Last fetch failed: HTTP Error 404: Not Found" in response.text
+    assert "r/PersonalFinanceNZ (NZ Finance) failed to fetch." in response.text
+    assert "HTTP Error 404: Not Found" in response.text
 
 
 def test_channels_list_keeps_the_last_error_visible_while_a_retry_runs(
@@ -1104,7 +1105,7 @@ def test_channels_list_keeps_the_last_error_visible_while_a_retry_runs(
     response = authed_client.get("/admin/")
 
     assert "Fetch in progress" in response.text
-    assert "Last fetch failed: HTTP Error 404: Not Found" in response.text
+    assert "HTTP Error 404: Not Found" in response.text
 
 
 def test_channels_list_no_flash_message_without_triggered_param(authed_client, db_path):
@@ -1118,9 +1119,8 @@ def test_channels_list_no_flash_message_without_triggered_param(authed_client, d
 
 def test_admin_channels_logo_links_to_dashboard(authed_client, db_path):
     resp = authed_client.get("/admin/")
-    assert 'class="brand"' in resp.text
-    assert 'href="/"' in resp.text
-    assert 'class="brand-mark"' in resp.text
+    assert 'class="adm-brand" href="/admin/"' in resp.text
+    assert '<a href="/">Back to reading</a>' in resp.text
 
 
 def test_channels_list_freshness_has_exact_time_tooltip(authed_client, db_path):
@@ -1148,7 +1148,7 @@ def test_admin_channels_list_shows_fetch_stats(authed_client, db_path):
     conn.close()
 
     resp = authed_client.get("/admin/")
-    assert "50" in resp.text and "20" in resp.text and "40%" in resp.text
+    assert '<small><span class="nw">50 items</span> · <span class="nw">20 new</span></small>' in resp.text
 
 
 def test_channels_list_does_not_show_effective_recipient(
@@ -1190,7 +1190,7 @@ def test_edit_channel_form_shows_override_and_effective_recipient(
 
     response = authed_client.get(f"/admin/channels/{channel_id}/edit")
     assert 'name="digest_email"' in response.text
-    assert 'value="channel@example.com"' in response.text
+    assert '>channel@example.com</textarea>' in response.text
     assert "Currently in effect: channel@example.com" in response.text
 
 
@@ -1301,7 +1301,7 @@ def test_invalid_channel_override_rerender_shows_inherited_effective_default(
         },
     )
     assert response.status_code == 400
-    assert 'value="one@example.com,two@example.com"' in response.text
+    assert '>one@example.com,two@example.com</textarea>' in response.text
     assert "Currently in effect: fallback@example.com" in response.text
     assert "Currently in effect: Not configured" not in response.text
 
@@ -1320,7 +1320,7 @@ def test_edit_channel_shows_page_banner_for_invalid_global_default(
 
     response = authed_client.get(f"/admin/channels/{channel_id}/edit")
     assert response.status_code == 200
-    assert 'class="page-banner"' in response.text
+    assert 'class="note note-danger adm-flash" role="alert"' in response.text
     assert "Only one email address is supported" in response.text
 
 
@@ -1337,7 +1337,7 @@ def test_channels_list_shows_page_banner_for_invalid_global_default(
 
     response = authed_client.get("/admin/")
     assert response.status_code == 200
-    assert 'class="page-banner"' in response.text
+    assert 'class="note note-danger adm-flash" role="alert"' in response.text
     assert "Only one email address is supported" in response.text
 
 
@@ -1358,7 +1358,7 @@ def test_edit_channel_shows_hackernews_icons_and_prefixed_labels(
     resp = authed_client.get(f"/admin/channels/{channel_id}/edit")
 
     assert resp.status_code == 200
-    assert resp.text.count("🟧") == 2
+    assert "🟧" not in resp.text
     assert "HN · Top" in resp.text
     assert "HN search · local-first" in resp.text
 
@@ -1510,7 +1510,8 @@ def test_channels_list_shows_a_calendar_schedule_label(authed_client, db_path):
     resp = authed_client.get("/admin/")
 
     assert "Daily at 05:00 (Pacific/Auckland)" in resp.text
-    assert "Next fetch" in resp.text
+    assert "Next: " in resp.text
+    assert 'title="Next fetch ' in resp.text
 
 
 def test_update_channel_round_trips_its_fetch_schedule(authed_client, db_path):

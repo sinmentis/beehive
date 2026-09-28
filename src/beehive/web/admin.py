@@ -44,6 +44,7 @@ from beehive.connectors import (  # noqa: F401 (registers the connectors)
     shopify_collection,
 )
 from beehive.connectors.base import PreviewSourceConnector
+from beehive.connectors.international_clearance import RETAILER_LABELS
 from beehive.connectors.registry import get as get_connector
 from beehive.db import app_state
 from beehive.db.admin_actions import (
@@ -111,6 +112,7 @@ from beehive.notify import build_notifier
 from beehive.scheduling import (
     DEFAULT_CHANNEL_FETCH_TIME,
     DEFAULT_SCHEDULE_TIMEZONE,
+    HOST_TZ,
     ChannelFetchSchedule,
     ScheduleMode,
     next_channel_fetch_at,
@@ -127,6 +129,7 @@ from beehive.web.deps import (
 )
 from beehive.web.formatting import (
     fetch_stats_label,
+    format_count,
     freshness_exact_time,
     freshness_label,
     host_local_time_label,
@@ -134,14 +137,16 @@ from beehive.web.formatting import (
 )
 from beehive.web.client_ip import resolve_client_ip
 from beehive.web.link_safety import safe_external_href
-from beehive.web.official_feed_labels import official_feed_icon
-from beehive.web.source_labels import derived_source_label
+from beehive.web.source_labels import derived_source_label, source_display_name
 
 router = APIRouter(prefix="/admin")
 
 _PASSWORD_HASH_KEY = "admin_password_hash"
 _SESSION_LIFETIME_DAYS = 30
-_ADMIN_TABS = frozenset({"channels", "ai", "delivery", "system", "groups"})
+# The admin home is four numbered chapters. The old tab names still resolve, so bookmarks and
+# redirects written before the chapters were merged keep landing on the right one.
+_ADMIN_CHAPTERS = ("channels", "groups", "settings", "system")
+_ADMIN_TAB_ALIASES = {"ai": "settings", "delivery": "groups"}
 # Interval mode is for frequent polling only; a once-a-day Channel belongs in calendar mode, where
 # it gets a real wall-clock time instead of "24 hours after the last success".
 _FETCH_INTERVAL_CHOICES = (3, 6)
@@ -416,6 +421,41 @@ def _channel_fetch_schedule_label(channel: dict, t: Localizer) -> str:
     )
 
 
+def _short_time_label(value: str | datetime, now: datetime, t: Localizer) -> str:
+    """"Today 05:00", "Tomorrow 23:00" or "2026-10-02 09:00" in the host's time zone."""
+    moment = datetime.fromisoformat(value) if isinstance(value, str) else value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    local = moment.astimezone(HOST_TZ)
+    clock = local.strftime("%H:%M")
+    days_away = (local.date() - now.astimezone(HOST_TZ).date()).days
+    if days_away == 0:
+        return t.text("web.admin.time.today", time=clock)
+    if days_away == 1:
+        return t.text("web.admin.time.tomorrow", time=clock)
+    if days_away == -1:
+        return t.text("web.admin.time.yesterday", time=clock)
+    return f"{local.date().isoformat()} {clock}"
+
+
+def _channel_schedule_short(channel: dict, t: Localizer) -> str:
+    if (
+        require_schedule_mode(channel["fetch_schedule_mode"]) is ScheduleMode.CALENDAR
+        and channel["fetch_schedule_timezone"] == HOST_TZ.key
+    ):
+        return t.text("web.admin.channel_schedule.daily_short", time=channel["fetch_schedule_time"])
+    return _channel_fetch_schedule_label(channel, t)
+
+
+def _channel_next_fetch_short(
+    channel: dict, sources: list[dict], now: datetime, t: Localizer
+) -> str | None:
+    next_fetch_at = next_channel_fetch_at(
+        sources, ChannelFetchSchedule.from_channel(channel), now
+    )
+    return _short_time_label(next_fetch_at, now, t) if next_fetch_at else None
+
+
 def _channel_next_fetch_label(
     channel: dict,
     sources: list[dict],
@@ -448,6 +488,7 @@ def _email_weekday_rows(t: Localizer, selected: set[int]) -> list[dict]:
         {
             "value": value,
             "label": t.text(label_key),
+            "short_label": t.text(f"web.admin.weekday_short.{label_key.rsplit('.', 1)[1]}"),
             "selected": value in selected,
         }
         for value, label_key in _EMAIL_WEEKDAYS
@@ -488,7 +529,7 @@ def _normalize_email_schedule(
     )
 
 
-def _email_group_schedule_label(group: dict, t: Localizer) -> str:
+def _email_group_schedule_label(group: dict, t: Localizer, *, short: bool = False) -> str:
     if group.get("schedule_mode") != "calendar":
         return _email_group_frequency_label(group["send_interval_hours"], t)
     selected = {
@@ -503,6 +544,18 @@ def _email_group_schedule_label(group: dict, t: Localizer) -> str:
     else:
         label_keys = dict(_EMAIL_WEEKDAYS)
         day_label = ", ".join(t.text(label_keys[day]) for day in sorted(selected))
+    timezone_name = group.get("schedule_timezone") or "Pacific/Auckland"
+    if short and timezone_name == HOST_TZ.key:
+        time = group.get("schedule_time") or "09:00"
+        if selected == set(range(7)):
+            return t.text("web.admin.channel_schedule.daily_short", time=time)
+        if selected != set(range(5)):
+            label_keys = dict(_EMAIL_WEEKDAYS)
+            day_label = t.text("web.admin.list_separator").join(
+                t.text(f"web.admin.weekday_short.{label_keys[day].rsplit('.', 1)[1]}")
+                for day in sorted(selected)
+            )
+        return t.text("web.admin.email_group.calendar_short", days=day_label, time=time)
     return t.text(
         "web.admin.email_group.calendar_summary",
         days=day_label,
@@ -524,6 +577,216 @@ def _resolve_default_for_admin(
         return ResolvedRecipient(None, "missing"), _email_error_message(exc, t)
 
 
+# Stable kinds stored in sources.last_fetch_error_kind (see beehive.source_health). Anything else,
+# including rows written before kinds were recorded, reads as the generic "error".
+_FETCH_ERROR_KINDS = frozenset(
+    {"transient", "unsafe_url", "not_found", "access_denied", "too_large", "protocol", "truncated", "error"}
+)
+_URL_SOURCE_TYPES = frozenset({"shopify_collection", "land_sea_collection"})
+_ATTENTION_ORDER = {"failed": 0, "stale": 1, "paused": 2}
+
+
+def _admin_chapter(tab: str | None) -> str:
+    chapter = _ADMIN_TAB_ALIASES.get(tab or "", tab or "")
+    return chapter if chapter in _ADMIN_CHAPTERS else "channels"
+
+
+def _source_state(source: dict) -> str:
+    """One word for a Source's current condition, shared by every admin table and note."""
+    if source["paused_at"]:
+        return "paused"
+    if source["last_fetch_error"]:
+        return "error"
+    if source["last_fetch_at"]:
+        return "ok"
+    return "never"
+
+
+_RATE_LIMIT_MARKERS = ("too many requests", "too_many_requests", "rate limit", "rate-limit", "http 429", "error 429")
+
+
+def _fetch_error_kind(source: dict) -> str:
+    kind = source.get("last_fetch_error_kind") or "error"
+    if kind not in _FETCH_ERROR_KINDS:
+        kind = "error"
+    message = (source.get("last_fetch_error") or "").lower()
+    if kind in {"error", "transient", "protocol"} and any(m in message for m in _RATE_LIMIT_MARKERS):
+        return "rate_limited"
+    return kind
+
+
+def _fetch_error_kind_label(source: dict, t: Localizer) -> str:
+    return t.text(f"web.admin.error_kind.{_fetch_error_kind(source)}")
+
+
+def _source_summary(sources: list[dict], t: Localizer) -> tuple[str, str]:
+    """(state, label) for a Channel's Sources as a whole: the worst condition wins, so a single
+    failing or paused Source is never hidden behind a healthy count."""
+    states = [_source_state(source) for source in sources]
+    total = len(states)
+    if not total:
+        return "never", t.text("web.admin.sources_summary.none")
+    if "error" in states:
+        return "error", t.text(
+            "web.admin.sources_summary.failed", count=total, failed=states.count("error")
+        )
+    if "paused" in states:
+        return "paused", t.text(
+            "web.admin.sources_summary.paused", count=total, paused=states.count("paused")
+        )
+    if "never" in states:
+        return "never", t.text(
+            "web.admin.sources_summary.never", count=total, pending=states.count("never")
+        )
+    return "ok", t.text("web.admin.sources_summary.ok", count=total)
+
+
+def _source_confirmation_value(source: dict, t: Localizer) -> str:
+    """What the Owner types to confirm removing a Source: its own name when it has one, otherwise
+    the shortest thing that still identifies it (a shop's domain, a subreddit, a query). Typing a
+    connector type such as "shopify_collection" identified nothing and read as jargon."""
+    name = (source.get("name") or "").strip()
+    if name:
+        return name
+    try:
+        config = json.loads(source["config"])
+    except (TypeError, ValueError):
+        config = {}
+    source_type = source["type"]
+    if source_type in _URL_SOURCE_TYPES:
+        host = urlparse(config.get("collection_url") or "").netloc
+        if host:
+            return host.removeprefix("www.")
+    elif source_type == "reddit_subreddit" and config.get("subreddit"):
+        return f"r/{config['subreddit']}"
+    elif source_type in {"google_news_query", "hackernews_query"} and config.get("query"):
+        return str(config["query"])
+    elif source_type == "international_clearance" and config.get("retailer"):
+        return RETAILER_LABELS.get(config["retailer"], str(config["retailer"]))
+    elif source_type == "hackernews_stories":
+        # The feed's display name is translated; the confirmation must not change with language.
+        return f"hn/{config.get('feed') or 'top'}"
+    return source_display_name(source, t)
+
+
+def _confirmation_matches(submitted: str, expected: str) -> bool:
+    return submitted.strip().casefold() == expected.strip().casefold()
+
+
+def _split_source_label(source: dict, label: str) -> tuple[str, str]:
+    """A collection URL label split into its bold host and quieter path; other labels stay whole."""
+    if source["type"] in _URL_SOURCE_TYPES and "/" in label:
+        host, _, path = label.partition("/")
+        return host, f"/{path}"
+    return label, ""
+
+
+def _channel_attention_items(conn: sqlite3.Connection, t: Localizer, data_dir: str) -> list[dict]:
+    """Everything about collection that needs the Owner, worst first: failing Sources, stuck manual
+    fetches, then paused Sources. The admin contents rail counts this same list."""
+    channels = {channel["id"]: channel for channel in list_channels(conn)}
+    items = []
+    for channel_id, state in list_manual_trigger_states(data_dir).items():
+        if state == "stale" and channel_id in channels:
+            items.append(
+                {
+                    "kind": "stale",
+                    "channel_id": channel_id,
+                    "channel_name": channels[channel_id]["name"],
+                }
+            )
+    rows = conn.execute(
+        """
+        SELECT * FROM sources
+        WHERE paused_at IS NOT NULL OR last_fetch_error IS NOT NULL
+        ORDER BY channel_id, id
+        """
+    ).fetchall()
+    for row in rows:
+        source = dict(row)
+        channel = channels.get(source["channel_id"])
+        if channel is None:
+            continue
+        items.append(
+            {
+                "kind": "paused" if source["paused_at"] else "failed",
+                "source_id": source["id"],
+                "source_label": source_display_name(source, t),
+                "channel_id": channel["id"],
+                "channel_name": channel["name"],
+                "error": source["last_fetch_error"],
+                "error_kind_label": (
+                    _fetch_error_kind_label(source, t) if source["last_fetch_error"] else None
+                ),
+                "failures": int(source["consecutive_failures"] or 0),
+            }
+        )
+    items.sort(key=lambda item: _ATTENTION_ORDER[item["kind"]])
+    return items
+
+
+def _email_group_needs_attention(group: dict, default_recipient: ResolvedRecipient) -> bool:
+    if group["last_error"]:
+        return True
+    try:
+        return resolve_group_email(group, default_recipient).address is None
+    except EmailConfigurationError:
+        return True
+
+
+def _admin_nav(request: Request, t: Localizer) -> dict:
+    """The contents rail and running-head clock shared by every signed-in admin page. Each
+    problem is counted once, in the chapter where the Owner fixes it."""
+    conn = request.state.db
+    data_dir = os.path.dirname(request.app.state.db_path)
+    default_recipient, _ = _resolve_default_for_admin(conn, t)
+    health = _build_system_health_rows(conn, t, data_dir, default_recipient)
+    attention = {
+        "channels": len(_channel_attention_items(conn, t, data_dir)),
+        "groups": sum(
+            _email_group_needs_attention(group, default_recipient)
+            for group in list_email_groups(conn)
+        ),
+        "settings": 0,
+        "system": sum(
+            row["status"] != "ok" for row in health if row["key"] in {"reminders", "research"}
+        ),
+    }
+    return {
+        "chapters": [
+            {
+                "key": key,
+                "number": number,
+                "label": t.text(f"web.admin.chapter.{key}"),
+                "href": f"/admin/?tab={key}",
+                "attention": attention[key],
+            }
+            for number, key in enumerate(_ADMIN_CHAPTERS, start=1)
+        ],
+        "clock": t.text(
+            "web.admin.shell.clock",
+            time=host_local_time_label(datetime.now(timezone.utc).isoformat()),
+        ),
+    }
+
+
+def _render_admin(
+    request: Request,
+    t: Localizer,
+    template: str,
+    context: dict,
+    *,
+    status_code: int = 200,
+) -> HTMLResponse:
+    """Render a signed-in admin page inside the shared admin shell."""
+    return request.app.state.templates.TemplateResponse(
+        request,
+        template,
+        {**context, "admin_nav": _admin_nav(request, t)},
+        status_code=status_code,
+    )
+
+
 def _channel_kind_label(kind: ChannelKind, t: Localizer) -> str:
     return t.text(f"web.channel.{kind.value}_label")
 
@@ -540,11 +803,6 @@ def _build_admin_channel_rows(
         kind = require_channel_kind(channel["kind"])
         sources = list_sources(conn, channel["id"])
         manual_state = manual_states.get(channel["id"])
-        fetch_errors = [
-            source["last_fetch_error"]
-            for source in sources
-            if source["last_fetch_error"] and not source["paused_at"]
-        ]
         if manual_state == "running":
             fetch_status_kind = "running"
             fetch_status_label = t.text("web.admin.settings.fetch_running")
@@ -557,11 +815,14 @@ def _build_admin_channel_rows(
         else:
             fetch_status_kind = None
             fetch_status_label = None
-        fetch_error_label = (
-            t.text("web.admin.settings.fetch_failed", error=fetch_errors[0])
-            if fetch_errors
-            else None
-        )
+        source_state, source_summary = _source_summary(sources, t)
+        fetch_times = [source["last_fetch_at"] for source in sources if source["last_fetch_at"]]
+        raw_counts = [
+            source["last_fetch_raw_count"]
+            for source in sources
+            if source["last_fetch_raw_count"] is not None
+        ]
+        group = get_channel_group(conn, channel["id"])
         channels.append(
             {
                 "id": channel["id"],
@@ -569,14 +830,36 @@ def _build_admin_channel_rows(
                 "kind": kind.value,
                 "kind_label": _channel_kind_label(kind, t),
                 "source_count": len(sources),
+                "source_state": source_state,
+                "source_summary": source_summary,
                 "fetch_interval_label": _channel_fetch_schedule_label(channel, t),
+                "schedule_short": _channel_schedule_short(channel, t),
                 "next_fetch_label": _channel_next_fetch_label(channel, sources, now),
+                "next_fetch_short": _channel_next_fetch_short(channel, sources, now, t),
                 "freshness_label": freshness_label(sources, t),
                 "freshness_exact_label": freshness_exact_time(sources),
+                "last_fetch_relative": relative_time(max(fetch_times), t) if fetch_times else None,
+                "fetch_counts_label": (
+                    t.text(
+                        "web.admin.channels.fetch_counts",
+                        raw=format_count(sum(raw_counts), t.code),
+                        new=format_count(
+                            sum(
+                                source["last_fetch_new_count"] or 0
+                                for source in sources
+                                if source["last_fetch_raw_count"] is not None
+                            ),
+                            t.code,
+                        ),
+                    )
+                    if raw_counts
+                    else None
+                ),
                 "fetch_stats_label": fetch_stats_label(sources, t),
                 "fetch_status_kind": fetch_status_kind,
                 "fetch_status_label": fetch_status_label,
-                "fetch_error_label": fetch_error_label,
+                "group_id": group["id"] if group else None,
+                "group_name": group["name"] if group else None,
             }
         )
     return channels
@@ -600,8 +883,11 @@ def _build_admin_email_group_rows(
                 "name": group["name"],
                 "subject_template": group["subject_template"],
                 "frequency_label": _email_group_schedule_label(group, t),
+                "schedule_short": _email_group_schedule_label(group, t, short=True),
                 "member_count": len(list_member_channels(conn, group["id"])),
                 "effective_email": recipient,
+                "uses_default": not group["recipient_email"],
+                "needs_recipient": recipient is None,
                 "last_checked_label": (
                     host_local_time_label(group["last_checked_at"])
                     if group["last_checked_at"]
@@ -612,6 +898,9 @@ def _build_admin_email_group_rows(
                     if group["last_sent_at"]
                     else None
                 ),
+                "last_sent_short": (
+                    _short_time_label(group["last_sent_at"], now, t) if group["last_sent_at"] else None
+                ),
                 "last_error": group["last_error"],
                 "last_error_label": (
                     host_local_time_label(group["last_error_at"])
@@ -621,6 +910,7 @@ def _build_admin_email_group_rows(
                 "next_due_label": host_local_time_label(
                     next_email_group_due_at(group, now).isoformat()
                 ),
+                "next_due_short": _short_time_label(next_email_group_due_at(group, now), now, t),
             }
         )
     return groups
@@ -664,6 +954,20 @@ def _build_group_channel_rows(
     return rows
 
 
+def _action_target(conn: sqlite3.Connection, action: dict, t: Localizer) -> tuple[str, str | None]:
+    """(label, context) for an audit row's target. A Source that still exists is shown by its
+    current name, with its Channel as context: older rows stored the connector type (for example
+    "shopify_collection") as the label, which identified nothing."""
+    label = action["target_label"]
+    if action["target_type"] != "source" or action["target_id"] is None:
+        return label, None
+    source = get_source(conn, action["target_id"])
+    if source is None:
+        return label, None
+    channel = get_channel(conn, source["channel_id"])
+    return source_display_name(source, t), channel["name"] if channel else None
+
+
 def _build_admin_action_rows(
     conn: sqlite3.Connection,
     t: Localizer,
@@ -679,7 +983,7 @@ def _build_admin_action_rows(
                 duration=detail.get("duration_ms", 0),
             )
         elif not detail or not (content_keys & detail.keys() or "channels" in detail):
-            impact = t.text("web.admin.activity.no_impact")
+            impact = None
         elif action["target_type"] == "email_group" or (
             "channels" in detail and not content_keys & detail.keys()
         ):
@@ -697,13 +1001,15 @@ def _build_admin_action_rows(
                 watches=detail.get("watches", 0),
                 events=detail.get("events", 0),
             )
+        target_label, target_context = _action_target(conn, action, t)
         rows.append(
             {
                 **action,
                 "action_label": t.text(
                     f"web.admin.activity.{action['action_type']}",
-                    target=action["target_label"],
+                    target=target_label,
                 ),
+                "target_context": target_context,
                 "impact_label": impact,
                 "created_label": host_local_time_label(action["created_at"]),
             }
@@ -783,6 +1089,7 @@ def _build_system_health_rows(
         href: str,
     ) -> dict:
         return {
+            "key": key,
             "heading": t.text(f"web.admin.health.{key}_heading"),
             "summary": t.text(f"web.admin.health.{key}_summary"),
             "status": status,
@@ -879,9 +1186,17 @@ def _render_admin_home_page(
     effective, default_error = _resolve_default_for_admin(conn, t)
     stored = get_stored_default_email(conn)
     data_dir = os.path.dirname(request.app.state.db_path)
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    chapter = _admin_chapter(active_tab)
+    channels = _build_admin_channel_rows(conn, t, data_dir) if chapter == "channels" else []
+    group_rows = _build_admin_email_group_rows(conn, effective, t) if chapter == "groups" else []
+    ungrouped = (
+        [channel for channel in list_channels(conn) if get_channel_group(conn, channel["id"]) is None]
+        if chapter == "groups"
+        else []
+    )
+    return _render_admin(
         request,
+        t,
         "admin_settings.html",
         {
             "csrf_token": session["csrf_token"],
@@ -895,12 +1210,12 @@ def _render_admin_home_page(
             "default_error": default_error,
             "saved": saved,
             "triggered": triggered,
-            "channels": _build_admin_channel_rows(
-                conn,
-                t,
-                data_dir,
+            "channels": channels,
+            "attention_items": (
+                _channel_attention_items(conn, t, data_dir) if chapter == "channels" else []
             ),
-            "email_groups": _build_admin_email_group_rows(conn, effective, t),
+            "ungrouped_channels": ungrouped,
+            "email_groups": group_rows,
             "languages": SUPPORTED_LANGUAGES,
             "current_language": t.code,
             "language_saved": language_saved,
@@ -916,15 +1231,12 @@ def _render_admin_home_page(
             ),
             "featured_saved": featured_saved,
             "featured_error": featured_error,
-            "active_tab": active_tab if active_tab in _ADMIN_TABS else "channels",
+            "active_tab": chapter,
             "triggered_count": triggered_count,
             "bulk_error": bulk_error,
-            "recent_actions": _build_admin_action_rows(conn, t),
-            "system_health": _build_system_health_rows(
-                conn,
-                t,
-                data_dir,
-                effective,
+            "recent_actions": _build_admin_action_rows(conn, t) if chapter == "system" else [],
+            "system_health": (
+                _build_system_health_rows(conn, t, data_dir, effective) if chapter == "system" else []
             ),
             "action_id": action_id,
             "undone": undone,
@@ -994,7 +1306,7 @@ def admin_settings_submit(
             t,
             submitted_email=default_digest_email,
             error=_email_error_message(exc, t),
-            active_tab="delivery",
+            active_tab="groups",
             status_code=400,
         )
     record_admin_action(
@@ -1004,7 +1316,7 @@ def admin_settings_submit(
         target_id=None,
         target_label=t.text("web.admin.tabs.delivery"),
     )
-    return RedirectResponse("/admin/?tab=delivery&saved=1", status_code=303)
+    return RedirectResponse("/admin/?tab=groups&saved=1", status_code=303)
 
 
 @router.post("/actions/{action_id}/undo")
@@ -1049,7 +1361,7 @@ def save_language_submit(
             session,
             t,
             language_error=t.text("web.admin.language.invalid"),
-            active_tab="ai",
+            active_tab="settings",
             status_code=400,
         )
     record_admin_action(
@@ -1059,7 +1371,7 @@ def save_language_submit(
         target_id=None,
         target_label=language,
     )
-    return RedirectResponse("/admin/?tab=ai&language_saved=1", status_code=303)
+    return RedirectResponse("/admin/?tab=settings&language_saved=1", status_code=303)
 
 
 @router.post("/model", response_class=HTMLResponse)
@@ -1086,7 +1398,7 @@ def save_model_submit(
             session,
             t,
             model_error=t.text("web.admin.model.invalid"),
-            active_tab="ai",
+            active_tab="settings",
             status_code=400,
         )
     record_admin_action(
@@ -1096,7 +1408,7 @@ def save_model_submit(
         target_id=None,
         target_label=model,
     )
-    return RedirectResponse("/admin/?tab=ai&model_saved=1", status_code=303)
+    return RedirectResponse("/admin/?tab=settings&model_saved=1", status_code=303)
 
 
 @router.post("/featured-window", response_class=HTMLResponse)
@@ -1119,7 +1431,7 @@ def save_featured_window_submit(
             t,
             featured_error=t.text("web.admin.featured.invalid"),
             submitted_featured_window_days=featured_window_days,
-            active_tab="system",
+            active_tab="settings",
             status_code=400,
         )
     record_admin_action(
@@ -1130,7 +1442,7 @@ def save_featured_window_submit(
         target_label=str(featured_window_days),
     )
     return RedirectResponse(
-        "/admin/?tab=system&featured_saved=1",
+        "/admin/?tab=settings&featured_saved=1",
         status_code=303,
     )
 
@@ -1218,7 +1530,6 @@ def _channel_kind_options(t: Localizer) -> tuple[dict, ...]:
         {
             "value": definition.kind.value,
             "input_id": f"kind-{definition.kind.value}",
-            "icon": definition.kind.value[0].upper(),
             "label": t.text(f"web.admin.channel_new.kind_{definition.kind.value}_label"),
             "hint": t.text(f"web.admin.channel_new.kind_{definition.kind.value}_hint"),
         }
@@ -1241,6 +1552,7 @@ def _channel_kind_display(kind: ChannelKind, t: Localizer) -> dict:
         minimum_hint = t.text(f"web.admin.channel_new.minimum_score_hint_{kind.value}")
     return {
         "label": _channel_kind_label(kind, t),
+        "hint": t.text(f"web.admin.channel_new.kind_{kind.value}_hint"),
         "profile_hint": profile_hint,
         "highlight_count_hint": highlight_hint,
         "minimum_score_hint": minimum_hint,
@@ -1264,9 +1576,9 @@ def _render_new_channel_page(
     schedule_error: str | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    return _render_admin(
         request,
+        t,
         "admin_new_channel.html",
         {
             "csrf_token": session["csrf_token"],
@@ -1362,91 +1674,77 @@ def new_channel_submit(
     )
 
 
-_SOURCE_TYPE_ICONS = {
-    "reddit_subreddit": "📍",
-    "google_news_query": "📰",
-    "hackernews_stories": "🟧",
-    "hackernews_query": "🟧",
-    "rbnz_news": official_feed_icon("rbnz_news"),
-    "nz_government_news": official_feed_icon("nz_government_news"),
-    "federal_reserve_news": official_feed_icon("federal_reserve_news"),
-    "shopify_collection": "🛍️",
-    "land_sea_collection": "🌊",
-    "international_clearance": "IC",
-    "all_about_auctions": "AA",
-}
-
-
 def _source_type_options(t: Localizer) -> tuple[dict, ...]:
     """Built per-request (not module-level) since every label is a translated string --
     Reddit/Google News/Hacker News/RBNZ/Federal Reserve stay in their own proper names in every
     language; only the descriptor after the em dash (e.g. "Subreddit", "Keyword query") changes
-    per locale. Mirrors the input_id/icon convention _admin_source_icon relies on below."""
+    per locale. Each input_id is the id admin.css keys the matching config fields to, and each
+    hint is the one-line description shown beside the radio."""
     return (
         {
             "type_key": "reddit_subreddit",
             "input_id": "type-reddit",
-            "icon": _SOURCE_TYPE_ICONS["reddit_subreddit"],
+            "hint": t.text("web.admin.source_type_hint.reddit_subreddit"),
             "label": t.text("web.source_type.reddit_subreddit"),
         },
         {
             "type_key": "google_news_query",
             "input_id": "type-google",
-            "icon": _SOURCE_TYPE_ICONS["google_news_query"],
+            "hint": t.text("web.admin.source_type_hint.google_news_query"),
             "label": t.text("web.source_type.google_news_query"),
         },
         {
             "type_key": "hackernews_stories",
             "input_id": "type-hn-stories",
-            "icon": _SOURCE_TYPE_ICONS["hackernews_stories"],
+            "hint": t.text("web.admin.source_type_hint.hackernews_stories"),
             "label": t.text("web.source_type.hackernews_stories"),
         },
         {
             "type_key": "hackernews_query",
             "input_id": "type-hn-query",
-            "icon": _SOURCE_TYPE_ICONS["hackernews_query"],
+            "hint": t.text("web.admin.source_type_hint.hackernews_query"),
             "label": t.text("web.source_type.hackernews_query"),
         },
         {
             "type_key": "rbnz_news",
             "input_id": "type-rbnz",
-            "icon": _SOURCE_TYPE_ICONS["rbnz_news"],
+            "hint": t.text("web.admin.source_type_hint.rbnz_news"),
             "label": t.text("web.source_type.rbnz_news"),
         },
         {
             "type_key": "nz_government_news",
             "input_id": "type-nz-gov",
-            "icon": _SOURCE_TYPE_ICONS["nz_government_news"],
+            "hint": t.text("web.admin.source_type_hint.nz_government_news"),
             "label": t.text("web.source_type.nz_government_news"),
         },
         {
             "type_key": "federal_reserve_news",
             "input_id": "type-fed",
-            "icon": _SOURCE_TYPE_ICONS["federal_reserve_news"],
+            "hint": t.text("web.admin.source_type_hint.federal_reserve_news"),
             "label": t.text("web.source_type.federal_reserve_news"),
         },
         {
             "type_key": "shopify_collection",
             "input_id": "type-shopify",
-            "icon": _SOURCE_TYPE_ICONS["shopify_collection"],
+            "hint": t.text("web.admin.source_type_hint.shopify_collection"),
             "label": t.text("web.source_type.shopify_collection"),
         },
         {
             "type_key": "land_sea_collection",
             "input_id": "type-land-sea",
-            "icon": _SOURCE_TYPE_ICONS["land_sea_collection"],
+            "hint": t.text("web.admin.source_type_hint.land_sea_collection"),
             "label": t.text("web.source_type.land_sea_collection"),
         },
         {
             "type_key": "international_clearance",
             "input_id": "type-international-clearance",
-            "icon": _SOURCE_TYPE_ICONS["international_clearance"],
+            "hint": t.text("web.admin.source_type_hint.international_clearance"),
             "label": t.text("web.source_type.international_clearance"),
         },
         {
             "type_key": "all_about_auctions",
             "input_id": "type-all-about-auctions",
-            "icon": _SOURCE_TYPE_ICONS["all_about_auctions"],
+            "hint": t.text("web.admin.source_type_hint.all_about_auctions"),
             "label": t.text("web.source_type.all_about_auctions"),
         },
     )
@@ -1465,12 +1763,6 @@ def _admin_source_copy_value(source: dict, label: str) -> str:
         config = json.loads(source["config"])
         return config.get("collection_url") or label
     return label
-
-
-def _admin_source_icon(source: dict) -> str:
-    """Mirrors the icons admin_add_source.html uses for each type, so a source's icon in the
-    Channel edit page's source list always matches the icon the admin picked it by."""
-    return _SOURCE_TYPE_ICONS.get(source["type"], "🔗")
 
 
 def _source_observability(source: dict, t: Localizer) -> dict:
@@ -1560,19 +1852,40 @@ def _render_edit_channel_page(
 ) -> HTMLResponse:
     sources = []
     source_rows = list_sources(conn, channel["id"])
+    # Mutable-snapshot Channels treat a Source's first successful fetch as a baseline that sends
+    # no alerts (collector.run_cycle). A fetch where every listing was new is that baseline.
+    mutable = require_channel_kind(channel["kind"]) is not ChannelKind.EDITORIAL
     for source in source_rows:
         label = _admin_source_label(source, t)
+        name = (source["name"] or "").strip()
+        host, path = _split_source_label(source, label)
+        state = _source_state(source)
         sources.append(
             {
                 "id": source["id"],
                 "label": label,
-                "confirmation_value": source["name"] or source["type"],
-                "icon": _admin_source_icon(source),
+                "name": name,
+                "host": host,
+                "path": path,
+                "type_label": t.text(f"web.source_type.{source['type']}"),
+                "state": state,
+                "state_label": t.text(f"web.admin.source_state.{state}"),
+                "error_kind_label": (
+                    _fetch_error_kind_label(source, t) if source["last_fetch_error"] else None
+                ),
+                "consecutive_failures": int(source["consecutive_failures"] or 0),
+                "baseline": bool(
+                    mutable
+                    and source["last_fetch_raw_count"]
+                    and source["last_fetch_new_count"] == source["last_fetch_raw_count"]
+                ),
+                "confirmation_value": _source_confirmation_value(source, t),
                 "copy_value": _admin_source_copy_value(source, label),
                 "impact": source_impact_counts(conn, source["id"]),
                 **_source_observability(source, t),
             }
         )
+    source_state, source_summary = _source_summary(source_rows, t)
     default_recipient, default_error = _resolve_default_for_admin(conn, t)
     # The effective hint reflects what a *saved* value would resolve to, so a rejected
     # override (kept only in the display `channel` for the field) must not poison it --
@@ -1588,14 +1901,16 @@ def _render_edit_channel_page(
     next_fetch_label = _channel_next_fetch_label(
         source_channel, source_rows, datetime.now(timezone.utc)
     )
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    return _render_admin(
         request,
+        t,
         "admin_edit_channel.html",
         {
             "channel": channel,
             "kind_display": _channel_kind_display(require_channel_kind(channel["kind"]), t),
             "sources": sources,
+            "source_state": source_state,
+            "source_summary": source_summary,
             "csrf_token": session["csrf_token"],
             "effective_email": effective,
             "error": error,
@@ -1617,7 +1932,12 @@ def _render_edit_channel_page(
                 channel["fetch_schedule_timezone"]
             ),
             "schedule_label": _channel_fetch_schedule_label(source_channel, t),
+            "schedule_short": _channel_schedule_short(source_channel, t),
             "next_fetch_label": next_fetch_label,
+            "next_fetch_short": _channel_next_fetch_short(
+                source_channel, source_rows, datetime.now(timezone.utc), t
+            ),
+            "unsaved_submission": status_code >= 400,
             "stale_recovery": _channel_has_stale_fetch(request, channel["id"]),
             "current_group": get_channel_group(conn, channel["id"]),
             "impact": channel_impact_counts(conn, channel["id"]),
@@ -1890,9 +2210,9 @@ def _render_new_email_group_page(
     status_code: int = 200,
 ) -> HTMLResponse:
     default_recipient, default_error = _resolve_default_for_admin(conn, t)
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    return _render_admin(
         request,
+        t,
         "admin_new_email_group.html",
         {
             "csrf_token": session["csrf_token"],
@@ -2048,9 +2368,9 @@ def _render_edit_email_group_page(
     channel_rows = _build_group_channel_rows(
         conn, t, group_id=group["id"], selected_ids=selected_channel_ids
     )
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    return _render_admin(
         request,
+        t,
         "admin_edit_email_group.html",
         {
             "group": group,
@@ -2104,6 +2424,19 @@ def _render_edit_email_group_page(
             "test_sent": test_sent,
             "channel_rows": channel_rows,
             "member_count": sum(row["is_member"] for row in channel_rows),
+            "schedule_label": _email_group_schedule_label(group, t),
+            "schedule_short": _email_group_schedule_label(group, t, short=True),
+            "last_sent_short": (
+                _short_time_label(group["last_sent_at"], datetime.now(timezone.utc), t)
+                if group["last_sent_at"]
+                else None
+            ),
+            "next_due_short": _short_time_label(
+                next_email_group_due_at(group, datetime.now(timezone.utc)),
+                datetime.now(timezone.utc),
+                t,
+            ),
+            "unsaved_submission": status_code >= 400,
         },
         status_code=status_code,
     )
@@ -2255,8 +2588,9 @@ def preview_email_group(
     except EmailConfigurationError as exc:
         recipient = None
         default_error = _email_error_message(exc, t)
-    return request.app.state.templates.TemplateResponse(
+    return _render_admin(
         request,
+        t,
         "admin_email_group_preview.html",
         {
             "group": group,
@@ -2528,6 +2862,7 @@ def _render_source_form_page(
     form_values: dict | None = None,
     status_code: int = 200,
     source_name: str = "",
+    source: dict | None = None,
 ) -> HTMLResponse:
     """Renders admin_add_source.html for either a brand-new Source (mode="new") or an edit of an
     existing one (mode="edit"). Both modes share the same compatible-type radios, per-type config
@@ -2542,18 +2877,24 @@ def _render_source_form_page(
     default_type = options[0]["type_key"] if options else ""
     effective_selected = selected_type if selected_type in option_keys else default_type
     if mode == "edit":
-        page_eyebrow = "Edit input"
         page_heading = t.text("web.admin.source_edit.heading")
-        page_lede = t.text("web.admin.source_edit.lede", channel=channel["name"])
+        page_lede = (
+            t.text(
+                "web.admin.source_edit.meta",
+                source=source_display_name(source, t),
+                channel=channel["name"],
+            )
+            if source is not None
+            else t.text("web.admin.source_edit.lede", channel=channel["name"])
+        )
         submit_label = t.text("web.admin.source_edit.submit")
     else:
-        page_eyebrow = "New input"
         page_heading = t.text("web.admin.source_new.heading")
         page_lede = t.text("web.admin.source_new.lede", channel=channel["name"])
         submit_label = t.text("web.admin.source_new.submit")
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    return _render_admin(
         request,
+        t,
         "admin_add_source.html",
         {
             "channel": channel,
@@ -2567,7 +2908,14 @@ def _render_source_form_page(
             "form_action": form_action,
             "cancel_url": cancel_url,
             "is_edit": mode == "edit",
-            "page_eyebrow": page_eyebrow,
+            "unsaved_submission": mode == "edit" and status_code >= 400,
+            # Editing shows the label an empty name falls back to; a new Source has none yet.
+            "name_placeholder": (
+                _admin_source_label(source, t)
+                if source is not None
+                else t.text("web.admin.source_new.name_placeholder")
+            ),
+            "channel_kind_label": _channel_kind_label(channel_kind, t),
             "page_heading": page_heading,
             "page_lede": page_lede,
             "submit_label": submit_label,
@@ -2626,6 +2974,7 @@ def _render_edit_source_page(
         t,
         mode="edit",
         form_action=f"/admin/sources/{source['id']}/edit",
+        source=source,
         cancel_url=f"/admin/channels/{channel['id']}/edit",
         error=error,
         selected_type=selected_type,
@@ -2707,7 +3056,7 @@ def new_source_submit(
         action_type="source_created",
         target_type="source",
         target_id=source_id,
-        target_label=source_name.strip() or type,
+        target_label=source_display_name(get_source(conn, source_id), t),
         detail={"channel_id": channel_id},
     )
     return RedirectResponse(
@@ -2805,7 +3154,7 @@ def edit_source_submit(
         action_type="source_updated",
         target_type="source",
         target_id=source_id,
-        target_label=source_name.strip() or type,
+        target_label=source_display_name(get_source(conn, source_id), t),
         detail={"channel_id": channel["id"]},
     )
     return RedirectResponse(
@@ -2821,19 +3170,19 @@ def delete_source_submit(
     confirmation: str = Form(...),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
 ):
     verify_csrf(session, csrf_token)
     source = get_source(conn, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
     channel_id = source["channel_id"]
-    label = source["name"] or source["type"]
-    if confirmation.strip() != label:
+    if not _confirmation_matches(confirmation, _source_confirmation_value(source, t)):
         raise HTTPException(status_code=409, detail="Source confirmation did not match")
     action_id = delete_source_with_undo(
         conn,
         source_id,
-        target_label=label,
+        target_label=source_display_name(source, t),
     )
     return RedirectResponse(
         f"/admin/channels/{channel_id}/edit?source_removed=1"
@@ -2878,11 +3227,12 @@ def test_source_submit(
         action_type="source_tested",
         target_type="source",
         target_id=source_id,
-        target_label=source["name"] or source["type"],
+        target_label=source_display_name(source, t),
         detail={"items": len(raw_items), "duration_ms": duration_ms, "success": error is None},
     )
-    return request.app.state.templates.TemplateResponse(
+    return _render_admin(
         request,
+        t,
         "admin_source_test.html",
         {
             "channel": channel,
@@ -2907,8 +3257,10 @@ def test_source_submit(
 def pause_source_submit(
     source_id: int,
     csrf_token: str = Form(...),
+    return_url: str | None = Form(None),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
 ):
     verify_csrf(session, csrf_token)
     source = get_source(conn, source_id)
@@ -2922,11 +3274,13 @@ def pause_source_submit(
         action_type="source_paused",
         target_type="source",
         target_id=source_id,
-        target_label=source["name"] or source["type"],
+        target_label=source_display_name(source, t),
         detail={"channel_id": source["channel_id"]},
     )
+    fallback = f"/admin/channels/{source['channel_id']}/edit"
     return RedirectResponse(
-        f"/admin/channels/{source['channel_id']}/edit", status_code=303
+        _safe_return_path(return_url, fallback) if return_url else fallback,
+        status_code=303,
     )
 
 
@@ -2934,8 +3288,10 @@ def pause_source_submit(
 def resume_source_submit(
     source_id: int,
     csrf_token: str = Form(...),
+    return_url: str | None = Form(None),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
 ):
     verify_csrf(session, csrf_token)
     source = get_source(conn, source_id)
@@ -2947,9 +3303,11 @@ def resume_source_submit(
         action_type="source_resumed",
         target_type="source",
         target_id=source_id,
-        target_label=source["name"] or source["type"],
+        target_label=source_display_name(source, t),
         detail={"channel_id": source["channel_id"]},
     )
+    fallback = f"/admin/channels/{source['channel_id']}/edit"
     return RedirectResponse(
-        f"/admin/channels/{source['channel_id']}/edit", status_code=303
+        _safe_return_path(return_url, fallback) if return_url else fallback,
+        status_code=303,
     )

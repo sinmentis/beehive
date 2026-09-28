@@ -147,9 +147,8 @@ def test_logout_deletes_session_and_redirects(client):
 
 def test_login_form_logo_links_to_dashboard(client):
     resp = client.get("/admin/login")
-    assert 'class="brand"' in resp.text
+    assert 'class="adm-brand"' in resp.text
     assert 'href="/"' in resp.text
-    assert 'class="brand-mark"' in resp.text
 
 
 def test_last_login_time_uses_shared_host_local_formatting(client, db_path):

@@ -1,0 +1,61 @@
+{#- Email group fields shared by the new and edit pages. -#}
+{% import "_admin_macros.html" as ui with context %}
+<h2 id="settings"><span class="no">2.1</span><span>{{ t('web.admin.channel_edit.settings_heading') }}</span></h2>
+<div class="params">
+  {{ ui.params_head() }}
+  {% call ui.param(t('web.admin.email_group.name_label'), for_id="group-name", note=t('web.admin.email_group.name_note')) %}
+  <input class="inp" id="group-name" type="text" name="name" value="{{ name }}" required autocomplete="off">
+  {% endcall %}
+  {% call ui.param(t('web.admin.email_group.subject_label'), for_id="group-subject", note=t('web.admin.email_group.subject_hint')) %}
+  {{ ui.line_field("group-subject", "subject_template", subject_template, required=True) }}
+  {% endcall %}
+  {% set schedule_note %}<p>{{ t('web.admin.email_group.schedule_hint') }}</p>{% if schedule_error %}<p class="field-error" role="alert">{{ schedule_error }}</p>{% endif %}{% endset %}
+  {% call ui.param(t('web.admin.email_group.schedule_heading'), note=schedule_note) %}
+  <fieldset class="param-ctl" data-schedule-builder="schedule_mode">
+    <legend class="sr-only">{{ t('web.admin.email_group.schedule_heading') }}</legend>
+    <div class="row">
+      <label class="opt"><input type="radio" name="schedule_mode" value="calendar" {{ "checked" if schedule_mode == "calendar" }}>{{ t('web.admin.email_group.schedule_calendar') }}</label>
+      <label class="opt"><input type="radio" name="schedule_mode" value="interval" {{ "checked" if schedule_mode == "interval" }}>{{ t('web.admin.email_group.schedule_interval') }}</label>
+    </div>
+    <div class="row" data-schedule-panel="interval">
+      <label class="field-inline" for="group-interval">{{ t('web.admin.email_group.interval_label') }}</label>
+      <input class="inp inp-num" id="group-interval" type="number" name="send_interval_hours" value="{{ send_interval_hours }}" min="1" required>
+    </div>
+    <div class="row" data-schedule-panel="calendar">
+      <label class="field-inline" for="group-time">{{ t('web.admin.email_group.time_label') }}</label>
+      <input class="inp inp-time" id="group-time" type="time" name="schedule_time" value="{{ schedule_time }}">
+      <label class="field-inline" for="group-timezone">{{ t('web.admin.email_group.timezone_label') }}</label>
+      <select class="inp inp-mid" id="group-timezone" name="schedule_timezone">
+        {% for timezone in schedule_timezones %}<option value="{{ timezone }}"{{ " selected" if timezone == schedule_timezone }}>{{ timezone }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="days" data-schedule-panel="calendar" role="group" aria-label="{{ t('web.admin.email_group.days_label') }}">
+      {% for day in schedule_weekdays %}<label title="{{ day.label }}"><input type="checkbox" name="schedule_weekdays" value="{{ day.value }}" aria-label="{{ day.label }}"{{ " checked" if day.selected }}>{{ day.short_label }}</label>{% endfor %}
+    </div>
+  </fieldset>
+  {% endcall %}
+  {% set recipient_note %}<p>{{ t('web.admin.email_group.recipient_hint', email=(effective_email or t('web.admin.settings.not_configured'))) }}</p>{% if error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}{% endset %}
+  {% call ui.param(t('web.admin.email_group.recipient_label'), for_id="group-email", note=recipient_note) %}
+  {{ ui.line_field("group-email", "recipient_email", recipient_email, placeholder=(effective_email or 'owner@example.com'), inputmode="email", autocomplete="email", literal=True, invalid=error) }}
+  {% endcall %}
+</div>
+
+<div data-param-group>
+<h2 id="members"><span class="no">2.2</span><span>{{ t('web.admin.email_group.channels_heading') }}</span><span class="tag-mod">{{ t('web.admin.form.modified') }}</span></h2>
+<p class="adm-lede">{{ t('web.admin.email_group.channels_hint') }}</p>
+{% if channel_rows %}
+<fieldset>
+  <legend class="sr-only">{{ t('web.admin.email_group.channels_heading') }}</legend>
+  <div class="pick">
+    {% for row in channel_rows %}
+    <label class="pick-row"><input type="checkbox" name="channel_ids" value="{{ row.id }}"{{ " checked" if row.is_member }}>
+      <span class="pick-name">{{ row.name }}</span>
+      <span class="pick-desc">{% if row.other_group_name %}{{ t('web.admin.email_group.other_group_move', group=row.other_group_name) }}{% elif row.is_member %}{{ t('web.admin.email_group.in_this_group') }}{% else %}{{ t('web.admin.email_group.in_no_group') }}{% endif %}</span>
+      <span class="pick-side">{{ row.kind_label }}</span></label>
+    {% endfor %}
+  </div>
+</fieldset>
+{% else %}
+<div class="empty">{{ t('web.admin.email_group.no_channels_yet') }}</div>
+{% endif %}
+</div>

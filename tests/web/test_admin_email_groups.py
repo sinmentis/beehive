@@ -97,10 +97,8 @@ def test_new_email_group_form_lists_existing_channels(authed_client, db_path):
     assert "NZ Finance" in resp.text
     assert "Arcteryx Outlet" in resp.text
     assert "Auctions" in resp.text
-    assert resp.text.count('class="channel-kind-label ') == 3
-    assert "channel-kind-label--editorial" in resp.text
-    assert "channel-kind-label--monitor" in resp.text
-    assert "channel-kind-label--tracker" in resp.text
+    for kind_label in ("Editorial", "Monitor", "Tracker"):
+        assert f'<span class="pick-side">{kind_label}</span>' in resp.text
 
 
 def test_new_email_group_form_notes_channel_already_in_another_group(authed_client, db_path):
@@ -111,7 +109,7 @@ def test_new_email_group_form_notes_channel_already_in_another_group(authed_clie
     conn.close()
 
     resp = authed_client.get("/admin/email-groups/new")
-    assert "currently in Weekly" in resp.text
+    assert "In Weekly now; ticking it moves it here" in resp.text
 
 
 def test_create_email_group_succeeds_and_redirects_to_edit_page(authed_client, db_path):
@@ -276,8 +274,8 @@ def test_edit_email_group_form_shows_current_values(authed_client, db_path):
 
     resp = authed_client.get(f"/admin/email-groups/{group_id}/edit")
     assert 'value="Weekly Roundup"' in resp.text
-    assert 'value="Weekly \u00b7 {date}"' in resp.text
-    assert 'value="owner@example.com"' in resp.text
+    assert '>Weekly \u00b7 {date}</textarea>' in resp.text
+    assert '>owner@example.com</textarea>' in resp.text
     assert 'value="168"' in resp.text
     assert 'data-schedule-builder' in resp.text
     assert '/static/beehive.js?v=' in resp.text

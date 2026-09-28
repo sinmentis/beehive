@@ -17,3 +17,6 @@ venv/
 
 # Local Copilot memory
 .copilot-memory.md
+
+# Impeccable review captures (regenerated per review)
+.impeccable/review/

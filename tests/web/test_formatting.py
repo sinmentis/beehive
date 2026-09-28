@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from beehive.localization import localizer_for
 from beehive.scheduling import ChannelFetchSchedule
-from beehive.web.formatting import fetch_stats_label, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time
+from beehive.web.formatting import fetch_stats_label, format_count, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time
 
 EN = localizer_for("en")
 ZH = localizer_for("zh-CN")
@@ -142,3 +142,12 @@ def test_fetch_stats_label_sums_across_a_channels_sources():
 
 def test_fetch_stats_label_handles_never_fetched():
     assert fetch_stats_label([{"last_fetch_raw_count": None, "last_fetch_new_count": None}], EN) == ""
+
+
+def test_format_count_uses_the_locale_thousands_separator():
+    assert format_count(4286, "en") == "4,286"
+    assert format_count(4286, "zh-CN") == "4,286"
+    assert format_count(4286, "de") == "4.286"
+    assert format_count(1234567, "fr") == "1\u202f234\u202f567"
+    assert format_count(12, "de") == "12"
+    assert format_count(None, "en") == ""

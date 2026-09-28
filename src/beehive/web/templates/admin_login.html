@@ -1,27 +1,29 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
+{% import "_admin_macros.html" as ui with context %}
 {% block title %}{{ t('web.title.admin_login', product=t('common.product_name')) }}{% endblock %}
 {% block body_class %}page-login{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.nav.admin') }}</span>{% endblock %}
-{% block content %}
-<main id="main-content" class="login-shell">
-  <section class="login-panel" aria-labelledby="login-title">
-    <p class="eyebrow" lang="en">Private control room</p>
+{% block shell %}
+<main id="main-content" class="adm-login">
+  <section class="adm-page" aria-labelledby="login-title">
+    <div class="adm-run"><span class="adm-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span>{{ t('web.nav.admin') }}</span></span></div>
     <h1 id="login-title">{{ t('web.admin.login.heading') }}</h1>
-    <p class="page-lede">{{ t('web.admin.login.lede') }}</p>
-    {% if expired %}<p class="page-banner" role="status">{{ t('web.admin.login.expired') }}</p>{% endif %}
+    <p class="adm-meta">{{ t('web.admin.login.lede') }}</p>
+    {% if expired %}{{ ui.flash(t('web.admin.login.expired'), 'info') }}{% endif %}
     <form method="post" action="/admin/login">
       <input type="hidden" name="next" value="{{ next_path }}">
-      <div class="field">
-        <label for="admin-password">{{ t('web.admin.login.password_label') }}</label>
-        <input id="admin-password" type="password" name="password" placeholder="{{ t('web.admin.login.password_placeholder') }}" required autocomplete="current-password">
-        {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+      <div class="params">
+        <div class="param">
+          <label class="param-label" for="admin-password">{{ t('web.admin.login.password_label') }}</label>
+          <div class="param-ctl"><input class="inp" id="admin-password" type="password" name="password" placeholder="{{ t('web.admin.login.password_placeholder') }}" required autocomplete="current-password"{% if error %} aria-invalid="true" aria-describedby="login-error"{% endif %}></div>
+          {% if error %}<div class="param-note"><p class="field-error" id="login-error" role="alert">{{ error }}</p></div>{% endif %}
+        </div>
       </div>
-      <button class="btn primary full-width" type="submit">{{ t('web.admin.login.submit') }}</button>
+      <button class="btn btn-primary btn-block" type="submit">{{ t('web.admin.login.submit') }}</button>
     </form>
-    {% if last_login %}
-    <p class="last-login">{{ t('web.admin.login.last_login', time=last_login.time, ip=last_login.ip, country=last_login.country, result=(t('web.admin.login.result_success') if last_login.success else t('web.admin.login.result_failure'))) }}</p>
-    {% endif %}
-    <a class="back-link" href="/">{{ t('web.common.back_to_home') }}</a>
+    <div class="fn">
+      {% if last_login %}<p>{{ t('web.admin.login.last_login', time=last_login.time, ip=last_login.ip, country=last_login.country, result=(t('web.admin.login.result_success') if last_login.success else t('web.admin.login.result_failure'))) }}</p>{% endif %}
+      <p><a class="lnk" href="/">{{ t('web.admin.login.back_home') }}</a></p>
+    </div>
   </section>
 </main>
 {% endblock %}
