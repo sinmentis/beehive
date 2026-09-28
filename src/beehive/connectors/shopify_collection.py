@@ -123,6 +123,14 @@ def _extract_image_url(product: dict) -> str | None:
     return None
 
 
+def _product_key(product: object) -> object:
+    """A product's Shopify id, or the entry's own identity when it has none, so a malformed entry
+    is never mistaken for a repeat and still reaches _to_raw_item's validation."""
+    if isinstance(product, dict) and product.get("id") is not None:
+        return str(product["id"])
+    return id(product)
+
+
 def _to_raw_item(product: dict, store_origin: str) -> RawItem:
     if not isinstance(product, dict):
         raise ValueError("product entry must be an object")
@@ -200,7 +208,7 @@ class ShopifyCollectionConnector:
             return Page(items=page_products, has_more=len(page_products) >= _PAGE_SIZE)
 
         products = collect_pages(
-            fetch_page, max_pages=_MAX_PAGES, label="Shopify collection"
+            fetch_page, max_pages=_MAX_PAGES, label="Shopify collection", key=_product_key
         )
 
         # Applied once, after every page is in hand, so pagination above still sees the true,

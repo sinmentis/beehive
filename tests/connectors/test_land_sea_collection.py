@@ -258,25 +258,62 @@ def test_fetch_strips_a_trailing_slash_from_the_collection_url():
     assert calls[0].startswith(_COLLECTION_URL + "?")
 
 
-def test_fetch_stops_using_the_authoritative_total_pages_count():
-    # Page 1 reports only 2 total pages; a 3rd request would be a bug even though every page
-    # returned is "full" (26 items) and would otherwise look like there's more to fetch.
-    full_page = [_tile(tile_id=i) for i in range(26)]
+def test_fetch_stops_at_a_page_that_only_repeats_the_last_one():
+    # The live site's shape: page 1 claims 83 pages, pages past the real end (3 here) repeat the
+    # last page instead of coming back empty. Only the real pages count, each product once.
+    pages = {n: [_tile(tile_id=n * 1000 + i) for i in range(26)] for n in (1, 2, 3)}
     calls = []
 
     def fetch_html(url):
         page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
         calls.append(page)
-        return _page_html(full_page, total_pages=2)
+        return _page_html(pages.get(page, pages[3]), total_pages=83 if page == 1 else 3)
 
     items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
         {"collection_url": _COLLECTION_URL}
     )
-    assert calls == [1, 2]
-    assert len(items) == 52
+
+    assert calls == [1, 2, 3, 4]
+    assert len(items) == 78
+    assert len({item.external_id for item in items}) == 78
 
 
-def test_fetch_follows_authoritative_total_beyond_ten_pages():
+def test_fetch_keeps_one_listing_per_product_when_a_page_repeats_a_tile():
+    first = _tile(tile_id=1, price=100.0)
+    repeat = _tile(tile_id=1, price=90.0)
+    page = [first, repeat] + [_tile(tile_id=n) for n in range(2, 26)]
+
+    def fetch_html(url):
+        number = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
+        return _page_html(page if number == 1 else [], total_pages=1)
+
+    items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )
+
+    assert [item.external_id for item in items].count("1") == 1
+    assert len(items) == 25
+
+
+def test_fetch_follows_pages_bigger_than_the_expected_size():
+    # A site-side page-size increase must not end pagination after the first page.
+    pages = {n: [_tile(tile_id=n * 1000 + i) for i in range(30)] for n in (1, 2, 3)}
+    calls = []
+
+    def fetch_html(url):
+        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
+        calls.append(page)
+        return _page_html(pages.get(page, []), total_pages=None)
+
+    items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
+        {"collection_url": _COLLECTION_URL}
+    )
+
+    assert calls == [1, 2, 3, 4]
+    assert len(items) == 90
+
+
+def test_fetch_follows_long_listings_to_their_short_last_page():
     calls = []
 
     def fetch_html(url):
@@ -312,37 +349,7 @@ def test_fetch_falls_back_to_a_short_page_when_total_pages_is_missing():
     assert len(items) == 27
 
 
-def test_fetch_follows_the_reported_total_when_the_site_serves_bigger_pages():
-    # If the site raises its page size, pages stop matching _PAGE_SIZE; the authoritative total
-    # must still drive pagination, or the snapshot silently shrinks to the first page.
-    calls = []
-
-    def fetch_html(url):
-        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
-        calls.append(page)
-        return _page_html([_tile(tile_id=page * 1000 + i) for i in range(30)], total_pages=3)
-
-    items = LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
-        {"collection_url": _COLLECTION_URL}
-    )
-
-    assert calls == [1, 2, 3]
-    assert len(items) == 90
-
-
-def test_fetch_raises_when_a_page_before_the_reported_last_one_is_empty():
-    def fetch_html(url):
-        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
-        tiles = [] if page == 2 else [_tile(tile_id=page * 1000 + i) for i in range(26)]
-        return _page_html(tiles, total_pages=3)
-
-    with pytest.raises(ValueError, match="page 2 of 3 came back empty"):
-        LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
-            {"collection_url": _COLLECTION_URL}
-        )
-
-
-def test_fetch_raises_when_the_reported_total_exceeds_the_page_cap():
+def test_fetch_raises_when_new_products_continue_past_the_page_cap():
     calls = []
 
     def fetch_html(url):
@@ -351,21 +358,6 @@ def test_fetch_raises_when_the_reported_total_exceeds_the_page_cap():
         return _page_html([_tile(tile_id=page * 1000 + i) for i in range(26)], total_pages=176)
 
     # Returning the first 100 pages would retire every listing past them on ingest.
-    with pytest.raises(TruncatedSnapshotError, match="176 pages, above the 100-page cap"):
-        LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
-            {"collection_url": _COLLECTION_URL}
-        )
-    assert calls == [1]
-
-
-def test_fetch_raises_at_the_cap_when_no_total_is_reported_and_pages_stay_full():
-    calls = []
-
-    def fetch_html(url):
-        page = int(parse_qs(urlparse(url).query)["pgNmbr"][0])
-        calls.append(page)
-        return _page_html([_tile(tile_id=page * 1000 + i) for i in range(26)], total_pages=None)
-
     with pytest.raises(TruncatedSnapshotError, match="exceeded the 100-page cap"):
         LandSeaCollectionConnector(fetch_html=fetch_html).fetch(
             {"collection_url": _COLLECTION_URL}

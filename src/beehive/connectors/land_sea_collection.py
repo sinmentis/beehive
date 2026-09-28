@@ -8,15 +8,16 @@ That JS array is valid JSON, so this connector regexes it out of the HTML and js
 still no headless browser needed (Chromium's memory footprint is a bad fit for this host's
 512M container limit, especially right after an unrelated OOM/freeze scare on the same box).
 
-Pagination is a `?pgNmbr=N` query param (confirmed by reading the site's own minified JS); the
-same response also tells us `window.page.totalPagesJs`, an authoritative page count Shopify's
-API never gives us, so -- unlike shopify_collection's pure "did we get a short page back"
-guess -- this connector can stop exactly at the real last page.
+Pagination is a `?pgNmbr=N` query param (confirmed by reading the site's own minified JS). The
+response also carries `window.page.totalPagesJs`, but it is not reliable: in September 2026 page 1
+reported 83 pages while every later page reported 8, and page numbers past the end returned the
+last page again. So the listing ends at a short page or at a page that adds no new product id,
+and repeated tiles are dropped (connectors.paging).
 
 A full /sale listing runs to ~76 pages (~1,976 products), a different order of magnitude from
 the Shopify stores' clearance-only collections. _MAX_PAGES is therefore high enough to follow
-the site's known full catalog while still bounding a bogus or runaway page count; a listing that
-reports more pages than that fails the fetch (connectors.paging) rather than returning a partial
+the site's known full catalog while still bounding a runaway listing; one that still has new
+products past the cap fails the fetch (connectors.paging) rather than returning a partial
 snapshot. The site's optional filter query parameters (for example `?brands=85` or
 `?categories=2`) are preserved when configured, but an unfiltered Source must still fetch every
 authoritative page.
@@ -42,7 +43,6 @@ _PAGE_SIZE = 26
 _MAX_PAGES = 100
 
 _PRODUCT_TILES_RE = re.compile(r"window\.page\.productTiles\s*=\s*(\[.*?\]);", re.DOTALL)
-_TOTAL_PAGES_RE = re.compile(r"window\.page\.totalPagesJs\s*=\s*(\d+)")
 # N2 ERP is not documented, so scan the tile fields most likely to hold an image, accepting either
 # a URL string or an object carrying one under a common sub-key. A missing/foreign shape yields
 # None -- no URL is ever fabricated.
@@ -64,17 +64,14 @@ def _default_fetch_html(url: str) -> str:
     return fetch_text(url, user_agent=_USER_AGENT, timeout=_REQUEST_TIMEOUT_SECONDS)
 
 
-def _parse_page(html: str) -> tuple[list[dict], int | None]:
+def _parse_page(html: str) -> list[dict]:
     tiles_match = _PRODUCT_TILES_RE.search(html)
     if tiles_match is None:
         raise ValueError("land_sea_collection page has no window.page.productTiles block")
     try:
-        tiles = json.loads(tiles_match.group(1))
+        return json.loads(tiles_match.group(1))
     except json.JSONDecodeError as exc:
         raise ValueError("land_sea_collection productTiles block is not valid JSON") from exc
-    total_pages_match = _TOTAL_PAGES_RE.search(html)
-    total_pages = int(total_pages_match.group(1)) if total_pages_match else None
-    return tiles, total_pages
 
 
 def _tile_image_url(tile: dict, store_origin: str) -> str | None:
@@ -94,6 +91,14 @@ def _tile_image_url(tile: dict, store_origin: str) -> str | None:
             # unchanged, so this never invents a host.
             return urljoin(store_origin, candidate)
     return None
+
+
+def _tile_key(tile: object) -> object:
+    """A tile's product id, or the tile's own identity when it has none, so a malformed tile is
+    never mistaken for a repeat and still reaches _to_raw_item's validation."""
+    if isinstance(tile, dict) and tile.get("id") is not None:
+        return str(tile["id"])
+    return id(tile)
 
 
 def _to_raw_item(tile: dict, store_origin: str) -> RawItem:
@@ -156,33 +161,22 @@ class LandSeaCollectionConnector:
         parsed = urlparse(config["collection_url"].rstrip("/"))
         store_origin = f"{parsed.scheme}://{parsed.netloc}"
         base_params = dict(parse_qsl(parsed.query))
-        reported_total: int | None = None
 
         def fetch_page(number: int) -> Page[dict]:
-            nonlocal reported_total
             params = {**base_params, "pgNmbr": str(number)}
             page_url = f"{store_origin}{parsed.path}?{urlencode(params)}"
-            page_tiles, total_pages = _parse_page(self._fetch_html(page_url))
-            if number == 1:
-                reported_total = total_pages
-            if reported_total is None:
-                # No authoritative count: only a short page marks the end.
-                has_more = len(page_tiles) >= _PAGE_SIZE
-            else:
-                # Follow the site's own page count, not the page size, which the site can change.
-                # An empty page before the reported last one means the response is incomplete.
-                if 1 < number <= reported_total and not page_tiles:
-                    raise ValueError(
-                        f"land_sea_collection page {number} of {reported_total} came back empty"
-                    )
-                has_more = number < reported_total
-            return Page(
-                items=page_tiles,
-                has_more=has_more,
-                total_pages=total_pages if number == 1 else None,
-            )
+            page_tiles = _parse_page(self._fetch_html(page_url))
+            # window.page.totalPagesJs is not trusted: page 1 has reported 83 pages while every
+            # later page reported 8, and pages past the end repeat the last one. The end is a
+            # short page, or (via the tile key) a page that adds no new product.
+            return Page(items=page_tiles, has_more=len(page_tiles) >= _PAGE_SIZE)
 
-        tiles = collect_pages(fetch_page, max_pages=_MAX_PAGES, label="Land & Sea collection")
+        tiles = collect_pages(
+            fetch_page,
+            max_pages=_MAX_PAGES,
+            label="Land & Sea collection",
+            key=_tile_key,
+        )
 
         items = []
         for index, tile in enumerate(tiles):
