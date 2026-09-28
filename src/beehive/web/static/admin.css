@@ -12,7 +12,7 @@
  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 
 .adm{--desk:#0A0C0E;--sheet:#111417;--band:#191D21;--field:#0C0E10;--hover:#161A1E;
- --rule:#262B30;--rule-2:#3A4046;--rule-ink:#C9CFD6;
+ --rule:#262B30;--rule-2:#3A4046;--rule-ink:#C9CFD6;--ctl:#666E76;--ctl-danger:#B04A42;
  --ink:#E7EAED;--ink-2:#A7AFB7;--ink-3:#808891;
  --link:#7DB6FF;--link-2:#A9CEFF;--caution:#F0B44C;--danger:#FF6E61;--on-fill:#0A0C0E;
  --sans:"Archivo","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Noto Sans SC","Microsoft YaHei","Hiragino Kaku Gothic ProN","Noto Sans CJK JP","Apple SD Gothic Neo","Noto Sans CJK KR",system-ui,sans-serif;
@@ -85,13 +85,13 @@ body.adm{min-height:100vh;margin:0}
 
 /* Controls. Primary is a solid block of ink; links are the datasheet's blue. */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 12px;
- border:1px solid var(--rule-2);border-radius:2px;background:transparent;color:var(--ink);font:600 .8125rem/1.2 var(--sans);
+ border:1px solid var(--ctl);border-radius:2px;background:transparent;color:var(--ink);font:600 .8125rem/1.2 var(--sans);
  white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}
 .btn:hover{border-color:var(--ink-2);background:var(--hover)}
 .btn:active{background:var(--band)}
 .btn-primary{border-color:var(--ink);background:var(--ink);color:var(--on-fill)}
 .btn-primary:hover{border-color:#fff;background:#fff}
-.btn-danger{border-color:#8C3A33;color:var(--danger)}
+.btn-danger{border-color:var(--ctl-danger);color:var(--danger)}
 .btn-danger:hover{border-color:var(--danger);background:var(--danger);color:var(--on-fill)}
 .btn:disabled,.btn[aria-disabled=true]{border-color:var(--rule);background:transparent;color:var(--ink-3);cursor:not-allowed}
 .btn-sm{min-height:26px;padding:0 9px;font-size:.78rem}
@@ -121,10 +121,10 @@ body.adm{min-height:100vh;margin:0}
 .field-error{color:var(--danger);font-size:.8125rem;font-weight:600;overflow-wrap:anywhere}
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .row>.inp-grow{flex:1 1 220px;width:auto;min-width:0}
-.inp{width:100%;min-height:34px;padding:6px 10px;border:1px solid var(--rule-2);border-radius:2px;background:var(--field);
+.inp{width:100%;min-height:34px;padding:6px 10px;border:1px solid var(--ctl);border-radius:2px;background:var(--field);
  color:var(--ink);font:400 .9375rem/1.4 var(--sans);transition:border-color .15s ease-out,box-shadow .15s ease-out}
 .inp::placeholder{color:var(--ink-3);opacity:1}
-.inp:hover{border-color:#4E555C}
+.inp:hover{border-color:var(--ink-3)}
 .inp:focus{outline:none;border-color:var(--link);box-shadow:0 0 0 1px var(--link)}
 .inp[aria-invalid=true]{border-color:var(--danger)}
 textarea.inp{min-height:132px;line-height:1.65;resize:vertical;field-sizing:content}
@@ -133,14 +133,14 @@ input.inp{text-overflow:ellipsis}
 select.inp{appearance:none;padding-right:32px;background:var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%23A7AFB7' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center/12px}
 .inp-num{width:96px}.inp-time{width:132px}.inp-mid{width:min(260px,100%)}
 .prefixed{display:flex;align-items:stretch;min-width:0}
-.prefixed>span{display:grid;place-items:center;padding:0 10px;border:1px solid var(--rule-2);border-right:0;border-radius:2px 0 0 2px;
+.prefixed>span{display:grid;place-items:center;padding:0 10px;border:1px solid var(--ctl);border-right:0;border-radius:2px 0 0 2px;
  background:var(--band);color:var(--ink-2);font-size:.875rem}
 .prefixed>.inp{border-radius:0 2px 2px 0}
 .unit{color:var(--ink-2);font-size:.875rem}
 .adm input[type=checkbox],.adm input[type=radio]{flex:none;width:16px;height:16px;margin:0;accent-color:var(--ink)}
 .opt{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
 .days{display:flex;flex-wrap:wrap;gap:6px}
-.days label{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:1px solid var(--rule-2);border-radius:2px;cursor:pointer}
+.days label{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 10px;border:1px solid var(--ctl);border-radius:2px;cursor:pointer}
 .days label:has(input:checked){border-color:var(--ink-2);background:var(--band)}
 .savebar{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 10px;
  border-top:1px solid var(--rule-2);background:var(--sheet)}
