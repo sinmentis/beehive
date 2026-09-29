@@ -32,7 +32,7 @@ A single-owner, self-hosted briefing pipeline on SQLite, with per-channel AI ran
 
 ## Capabilities and Constraints
 
-- Server-rendered FastAPI and Jinja templates with no client framework. Public reading pages use `src/beehive/web/static/beehive.css`; the admin and the Owner's workspace (`/research`, `/watchlist`) use only `src/beehive/web/static/admin.css`. All share `beehive.js`. Forms post with CSRF tokens. The CSP allows no inline script and no third-party fonts, so the Archivo font is self-hosted.
+- Server-rendered FastAPI and Jinja templates with no client framework. The home page, the admin and the Owner's workspace (`/research`, `/watchlist`) use only `src/beehive/web/static/admin.css`; the other public reading pages (channel pages, archive, search, deep-read briefs) still use `src/beehive/web/static/beehive.css`. All share `beehive.js`. Forms post with CSRF tokens. The CSP allows no inline script and no third-party fonts, so the Archivo font is self-hosted.
 - Interface copy lives in `src/beehive/translations/web.py`, with admin-only copy in `web_admin.py` and workspace copy in `web_workspace.py`, in seven locales (en, zh-CN, ja, ko, es, fr, de). Parity tests require every key in every locale. The current interface language is Simplified Chinese.
 - Content is long and user-supplied: Chinese and English channel names, full source URLs, multi-paragraph channel profiles, fetch error messages, timezone names. Layouts must hold all of it without overflowing.
 - Domain terms come from CONTEXT.md: Owner, Channel (Editorial, Monitor, Tracker), Source, Email Group, Research Session, Tracker Watch.

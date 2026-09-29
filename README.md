@@ -31,9 +31,9 @@ Beehive collects updates from the sources you care about, ranks each item agains
 
 ### See what matters first
 
-Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic. The home dashboard ranks content published during a configurable Auckland calendar-day window, defaults to three days, falls back to fetch time when publication time is unavailable, and separates all, unread, and read signals.
+Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic. The home page is a desk of every channel: each channel's state and its best few rows, with the top stories for news channels, the best live listings for store monitors, and the good auction lots still open. Stories come from a configurable Auckland calendar-day window, three days by default, falling back to fetch time when publication time is unavailable. The counts at the top open a ranked list of every featured story, filtered to all, unread, read, or 90 and above.
 
-<img src="docs/assets/dashboard-product.png" alt="Beehive dashboard with ranked synthetic signals" width="100%">
+<img src="docs/assets/dashboard-product.png" alt="Beehive home page: a desk of channels, each with its state and top synthetic stories" width="100%">
 
 > The previews use the default English interface. The global language setting also supports Simplified Chinese, Japanese, Korean, Spanish, French, and German.
 
