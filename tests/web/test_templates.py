@@ -48,7 +48,6 @@ def test_shared_stylesheet_defines_responsive_dense_dashboard():
     assert "grid-template-columns:1fr" in content
     assert ":focus-visible" in content
     assert ":lang(zh)" in content
-    assert ".type-option:has(input:focus-visible)" in content
     assert "--muted-2:#686e64" in content
     non_link_cells = re.search(
         r"\.signal-source,\.signal-engagement,\.signal-age\{([^}]*)\}",
