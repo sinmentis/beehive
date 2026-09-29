@@ -250,19 +250,26 @@ def test_channel_empty_state_uses_explicit_styled_class(authed_client):
 
 
 def test_channel_rows_wrap_on_narrow_screens(authed_client, db_path):
-    """Long metadata plus two actions must be allowed to wrap on very small
-    viewports via a narrow-screen media query on the channel row."""
+    """Long metadata plus the row's actions must be allowed to wrap on small screens: the
+    channel list is a stacking table whose no-wrap cells wrap at mid widths and whose rows
+    become labelled lines in the narrow-screen container query."""
     conn = connect(db_path)
     create_channel(conn, "NZ Finance", "economic news", fetch_interval_hours=3)
     conn.close()
     response = authed_client.get("/admin/")
     assert response.status_code == 200
+    assert '<table class="tbl tbl-stack">' in response.text
+    assert '<td class="c-nw c-sched" data-label="Schedule"' in response.text
     stylesheet = (
         Path(__file__).parent.parent.parent
-        / "src" / "beehive" / "web" / "static" / "beehive.css"
+        / "src" / "beehive" / "web" / "static" / "admin.css"
     ).read_text()
-    assert "@media (max-width:720px)" in stylesheet
-    assert "flex-wrap:wrap" in stylesheet
+    mid = stylesheet.split("@container adm (max-width:1180px){", 1)[1].split("\n}", 1)[0]
+    narrow = stylesheet.split("@container adm (max-width:880px){", 1)[1].split("\n}", 1)[0]
+    assert ".tbl .c-nw{white-space:normal}" in mid
+    assert ".tbl-stack,.tbl-stack tbody,.tbl-stack tr,.tbl-stack td{display:block}" in narrow
+    assert ".tbl-stack td[data-label]::before{content:attr(data-label)" in narrow
+    assert ".tbl-stack .nw{white-space:normal}" in narrow
 
 
 def test_clear_without_env_uses_english_exception_with_translated_display_text():

@@ -209,6 +209,60 @@ def _create_auction_item(c, *, external_id="lot-1", closes_in_hours=2):
     ).fetchone()[0]
 
 
+def _story_row(html, item_id):
+    """A story's row, as htmx selects it (`#story-{id}`) from the page a post redirects to."""
+    match = re.search(rf'<tr class="kb-row[^"]*" id="story-{item_id}".*?</tr>', html, re.DOTALL)
+    assert match is not None, f"no row for story {item_id}"
+    return match.group(0)
+
+
+def _section(html, key):
+    match = re.search(rf'<section class="chan-sec" id="{key}".*?</section>', html, re.DOTALL)
+    assert match is not None, key
+    return match.group(0)
+
+
+def _item_id(c, external_id):
+    return c.execute("SELECT id FROM items WHERE external_id = ?", (external_id,)).fetchone()[0]
+
+
+def _row(html, row_id):
+    """A listing or lot row, by its id (`listing-{id}` or `lot-{id}`)."""
+    match = re.search(rf'<tr id="{row_id}"[^>]*>.*?</tr>', html, re.DOTALL)
+    assert match is not None, row_id
+    return match.group(0)
+
+
+def _pager(html):
+    match = re.search(r'<nav class="pager"[^>]*>(.*?)</nav>', html, re.DOTALL)
+    assert match is not None, "no pager"
+    return match.group(1)
+
+
+def _channel_of(c, item_id):
+    return c.execute(
+        "SELECT sources.channel_id FROM items JOIN sources ON sources.id = items.source_id "
+        "WHERE items.id = ?",
+        (item_id,),
+    ).fetchone()[0]
+
+
+def _stories(c, source_id, count, *, title, fetched_at="2026-07-05T08:00:00"):
+    """`count` stories titled "{title} 0" onwards, all fetched at one moment, so they page in id
+    order. 08:00 UTC is 20:00 the same day in Auckland (NZST)."""
+    for index in range(count):
+        external_id = f"{title}-{index}"
+        insert_new(
+            c,
+            source_id,
+            RawItem(external_id=external_id, title=f"{title} {index}", url=f"https://x/{index}"),
+        )
+        c.execute(
+            "UPDATE items SET fetched_at = ? WHERE external_id = ?", (fetched_at, external_id)
+        )
+    c.commit()
+
+
 def test_home_desk_gives_each_channel_a_section_with_its_state(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
@@ -305,13 +359,21 @@ def test_channel_drilldown_shows_item_with_source_badge_and_link(conn, client):
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
-    assert "r/PersonalFinanceNZ" in resp.text
-    assert "RBNZ 降息" in resp.text
-    assert "匹配利率变化" in resp.text
-    assert "412" in resp.text and "189" in resp.text
-    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
-    assert f'href="/items/{item_id}/open"' in resp.text
-    assert resp.text.count(f'href="/items/{item_id}/open"') == 2
+    item_id = _item_id(c, "t1")
+    row = _story_row(resp.text, item_id)
+    # The byline names the subreddit and its engagement.
+    assert (
+        '<td class="c-src" data-label="Source">'
+        "r/PersonalFinanceNZ · 412 upvotes · 189 comments</td>"
+    ) in row
+    assert '<small class="why">匹配利率变化</small>' in row
+    # The summary is the story's one link out; the original title sits beneath it.
+    assert (
+        f'<a href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer" '
+        "data-kb-open>RBNZ 降息"
+    ) in row
+    assert "<small>Rates fall</small>" in row
+    assert resp.text.count(f'href="/items/{item_id}/open"') == 1
 
 
 def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client):
@@ -335,8 +397,10 @@ def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client
     resp = authed_client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "Beta jacket $199" in resp.text
-    assert 'class="votes"' not in resp.text
-    assert "This recommendation was useful" not in resp.text
+    item_id = _item_id(c, "t1")
+    assert f'action="/items/{item_id}/vote"' not in resp.text
+    # The Owner rates a listing with relevance feedback instead.
+    assert f'<form class="vote" method="post" action="/items/{item_id}/relevance"' in resp.text
 
 
 def test_monitor_channel_accepts_newest_fetched_sort(conn, client):
@@ -415,8 +479,12 @@ def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
-    assert "example.com/collections/outlet" in resp.text
-    assert "33% off" in resp.text  # round((299-199)/299*100)
+    assert "Sources: example.com/collections/outlet" in resp.text
+    byline = re.search(r'<span class="lot-where">([^<]*)</span>', resp.text)
+    assert byline is not None
+    assert byline.group(1).startswith("Arc&#39;teryx · Jackets · example.com/collections/outlet")
+    assert '<s class="price-was">299</s>' in resp.text
+    assert '<span class="price-off">−33%</span>' in resp.text  # round((299-199)/299*100)
 
 
 def test_channel_drilldown_shopify_item_not_on_sale_shows_vendor(conn, client):
@@ -494,8 +562,13 @@ def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
-    assert "land-sea.co.nz/sale" in resp.text
-    assert "20% off" in resp.text  # round((189-152)/189*100)
+    assert "land-sea.co.nz/sale</p>" in resp.text
+    byline = re.search(r'<span class="lot-where">([^<]*)</span>', resp.text)
+    assert byline is not None
+    assert byline.group(1).startswith("Teva · ")
+    assert byline.group(1).endswith("land-sea.co.nz/sale")
+    assert '<s class="price-was">189</s>' in resp.text
+    assert '<span class="price-off">−20%</span>' in resp.text  # round((189-152)/189*100)
 
 
 def test_channel_drilldown_land_sea_collection_item_not_on_sale_shows_vendor(
@@ -903,6 +976,90 @@ def test_editorial_channel_paginates_folded_items_and_preserves_search(conn, cli
     assert "Rates summary 0" not in second.text
 
 
+def test_editorial_page_emptied_by_a_read_keeps_its_section_and_pager(conn, authed_client):
+    """Reading the last unread story on a later page leaves that page empty. It keeps its
+    section, saying so, with the pager back to the stories before it."""
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news", highlight_count=1)
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    # One highlight and 24 folded stories fill page 1, which leaves the lowest-scored for page 2.
+    for index in range(26):
+        insert_new(
+            c, source_id, RawItem(external_id=f"t{index}", title=f"Item {index}", url="https://x")
+        )
+        update_ai_ranking(
+            c, source_id, f"t{index}", score=100 - index, summary=f"Summary {index}", rationale="r"
+        )
+    page_two = f"/channels/{channel_id}?page=2"
+    assert _story_row(authed_client.get(page_two).text, _item_id(c, "t25"))
+
+    marked = authed_client.post(
+        f"/items/{_item_id(c, 't25')}/read-state",
+        data={"csrf_token": "csrf1", "is_read": "1", "next_url": page_two},
+    )
+    assert marked.headers["location"] == page_two
+    response = authed_client.get(page_two)
+
+    assert response.status_code == 200
+    more = _section(response.text, "more")
+    assert "Nothing is left on this page." in more
+    assert '<tr class="kb-row' not in more
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}">Previous</a>' in _pager(more)
+    assert '<a href="#more">' in response.text
+
+
+def test_editorial_page_past_the_end_links_back_to_the_last_page_with_stories(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news", highlight_count=1)
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    # One highlight, then 25 folded stories: 24 on page 1 and the last one on page 2.
+    _stories(c, source_id, 26, title="Rates")
+
+    response = client.get(f"/channels/{channel_id}?page=5")
+
+    assert response.status_code == 200
+    more = _section(response.text, "more")
+    assert "Nothing is left on this page." in more
+    pager = _pager(more)
+    # "Previous" skips the empty pages in between, and the pager counts the pages there are.
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}?page=2">Previous</a>' in pager
+    assert "<span>Page 5 of 2</span>" in pager
+
+
+def test_editorial_read_toggle_swaps_the_mark_all_slot_but_not_the_search_form(
+    conn, authed_client
+):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    item_id = _item_id(c, "t1")
+
+    page = authed_client.get(f"/channels/{channel_id}").text
+    toggle = re.search(r'hx-select-oob="([^"]*)"', _story_row(page, item_id))
+    assert toggle is not None
+    swapped = toggle.group(1).split(",")
+
+    # A toggle updates the mark-all form out of band, and every element it names is on the page.
+    assert "#chan-mark-all" in swapped
+    for selector in swapped:
+        assert f'id="{selector.removeprefix("#")}"' in page, selector
+    slot = re.search(r'<div class="swap-slot" id="chan-mark-all">(.*?)</div>', page, re.DOTALL)
+    assert slot is not None
+    assert f'action="/channels/{channel_id}/mark-all-read"' in slot.group(1)
+    # The search form sits outside the slot, so a toggle leaves what is typed in it alone.
+    assert 'id="channel-search"' in page
+    assert 'id="channel-search"' not in slot.group(1)
+    assert 'id="chan-actions"' not in page
+
+    # With nothing left to mark read, the empty slot stays for a later toggle to fill.
+    authed_client.post(
+        f"/items/{item_id}/read-state", data={"csrf_token": "csrf1", "is_read": "1"}
+    )
+    emptied = authed_client.get(f"/channels/{channel_id}?show_read=1").text
+    assert re.search(r'<div class="swap-slot" id="chan-mark-all">\s*</div>', emptied)
+
+
 def test_channel_drilldown_hides_items_below_configured_minimum_score(conn, client):
     _, c = conn
     channel_id = create_channel(
@@ -1038,36 +1195,43 @@ def test_folded_items_show_vote_controls_only_to_owner(conn, client, authed_clie
     anonymous_response = client.get(f"/channels/{channel_id}")
     owner_response = authed_client.get(f"/channels/{channel_id}")
 
-    assert 'class="folded-votes"' not in anonymous_response.text
-    assert f'id="folded-item-{folded_id}"' in owner_response.text
-    assert 'class="folded-votes"' in owner_response.text
-    assert '"origin": "folded"' in owner_response.text
+    # The folded story is a row in the "more" section for both readers.
+    anonymous_row = _story_row(_section(anonymous_response.text, "more"), folded_id)
+    owner_row = _story_row(_section(owner_response.text, "more"), folded_id)
+    assert '<form class="vote"' not in anonymous_row
+    assert "/vote" not in anonymous_response.text
+    # The Owner's toggles post back to this page and swap just this row in from it.
+    assert f'<form class="vote" method="post" action="/items/{folded_id}/vote"' in owner_row
+    assert f'hx-target="#story-{folded_id}" hx-select="#story-{folded_id}"' in owner_row
+    assert f'<input type="hidden" name="next_url" value="/channels/{channel_id}">' in owner_row
 
 
-def test_folded_vote_returns_folded_fragment_and_persists(
+def test_folded_vote_redirects_back_and_persists(
     conn,
     authed_client,
     db_path,
 ):
     _, c = conn
-    channel_id = create_channel(c, "NZ Finance", "economic news")
+    channel_id = create_channel(c, "NZ Finance", "economic news", highlight_count=1)
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(c, source_id, RawItem(external_id="t1", title="Signal", url="https://x"))
-    update_ai_ranking(
-        c, source_id, "t1", score=70, summary="folded summary", rationale="r"
-    )
-    item_id = c.execute("SELECT id FROM items WHERE external_id = 't1'").fetchone()[0]
+    for external_id, score in (("t0", 90), ("t1", 70)):
+        insert_new(c, source_id, RawItem(external_id=external_id, title="Signal", url="https://x"))
+        update_ai_ranking(
+            c, source_id, external_id, score=score, summary=f"{external_id} summary", rationale="r"
+        )
+    item_id = _item_id(c, "t1")
 
     response = authed_client.post(
         f"/items/{item_id}/vote",
-        data={"value": "1", "csrf_token": "csrf1", "origin": "folded"},
+        data={"value": "1", "csrf_token": "csrf1", "next_url": f"/channels/{channel_id}"},
     )
 
-    assert response.status_code == 200
-    assert f'id="folded-item-{item_id}"' in response.text
-    assert 'class="folded-item"' in response.text
-    assert 'aria-pressed="true"' in response.text
-    assert 'class="item' not in response.text
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/channels/{channel_id}"
+    page = authed_client.get(response.headers["location"])
+    row = _story_row(_section(page.text, "more"), item_id)
+    assert 'name="value" value="1" aria-pressed="true"' in row
+    assert 'name="value" value="-1" aria-pressed="false"' in row
     conn2 = connect(db_path)
     assert (
         conn2.execute(
@@ -1235,14 +1399,24 @@ def test_channel_drilldown_shows_unread_count_and_source_summary(
     update_ai_ranking(c, source_id, "t1", score=91, summary="RBNZ 降息", rationale="r")
 
     resp = authed_client.get(f"/channels/{channel_id}")
-    assert "1 new item" in resp.text
-    assert "Sources: r/PersonalFinanceNZ" in resp.text
+    meta = re.search(r'<p class="adm-meta" id="chan-meta">(.*?)</p>', resp.text, re.DOTALL)
+    assert meta is not None
+    assert '<span class="nw">1 unread</span>' in meta.group(1)
+    assert '<p class="adm-meta chan-sources">Sources: r/PersonalFinanceNZ</p>' in resp.text
 
 
 def test_channel_drilldown_404_for_missing_channel(client):
     resp = client.get("/channels/999")
     assert resp.status_code == 404
     assert resp.json() == {"detail": "Channel not found"}
+
+
+@pytest.mark.parametrize("path", ["/channels", "/channels/"])
+def test_channel_index_redirects_to_the_home_desk(client, path):
+    # There is no Channel index page: the home page's desk lists every Channel.
+    resp = client.get(path, follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/"
 
 
 def test_unknown_route_uses_branded_not_found_page(client):
@@ -1390,17 +1564,22 @@ def test_drilldown_shows_static_vote_state_when_anonymous(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
-    insert_new(
-        c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
-    )
-    update_ai_ranking(c, source_id, "t1", score=91, summary="s", rationale="r")
-    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+    for external_id in ("t1", "t2"):
+        insert_new(
+            c, source_id, RawItem(external_id=external_id, title="Rates fall", url="https://x")
+        )
+        update_ai_ranking(c, source_id, external_id, score=91, summary="s", rationale="r")
+    item_id = _item_id(c, "t1")
+    down_id = _item_id(c, "t2")
     upsert_vote(c, item_id, 1)
+    upsert_vote(c, down_id, -1)
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
     assert "hx-post=" not in resp.text
-    assert 'class="vote-state up"' in resp.text
+    assert '<form class="vote"' not in resp.text
+    assert '<span class="st">Relevant</span>' in _story_row(resp.text, item_id)
+    assert '<span class="st st-never">Not relevant</span>' in _story_row(resp.text, down_id)
 
 
 def test_vote_controls_restore_focus_and_announce_status(conn, authed_client):
@@ -1415,13 +1594,17 @@ def test_vote_controls_restore_focus_and_announce_status(conn, authed_client):
 
     resp = authed_client.get(f"/channels/{channel_id}")
 
-    assert f'data-focus-key="item-{item_id}-up"' in resp.text
-    assert f'data-focus-key="item-{item_id}-down"' in resp.text
-    assert f'data-focus-key="item-{item_id}-reason"' not in resp.text
-    assert 'aria-pressed="false"' in resp.text
-    assert 'class="votes" role="group" aria-label="Feedback on this item"' in resp.text
-    assert 'id="feedback-status"' in resp.text
-    assert 'role="status" aria-live="polite"' in resp.text
+    row = _story_row(resp.text, item_id)
+    assert f'<form class="vote" method="post" action="/items/{item_id}/vote"' in row
+    assert f'data-focus-key="vote-{item_id}-up"' in row
+    assert f'data-focus-key="vote-{item_id}-down"' in row
+    assert f'data-focus-key="reason-{item_id}"' not in row
+    assert row.count('aria-pressed="false"') == 2
+    assert 'data-feedback-message="Marked this item as useful"' in row
+    assert 'data-feedback-message="Marked this item as not relevant"' in row
+    assert '<p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>' in (
+        resp.text
+    )
     assert '<script src="/static/beehive.js?v=' in resp.text
 
 
@@ -1485,7 +1668,7 @@ def test_vote_route_rejects_monitor_item(conn, authed_client):
     assert c.execute("SELECT 1 FROM votes WHERE item_id = ?", (item_id,)).fetchone() is None
 
 
-def test_vote_route_casts_upvote_and_returns_fragment(conn, authed_client, db_path):
+def test_vote_route_casts_upvote_and_redirects_to_the_channel(conn, authed_client, db_path):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -1497,13 +1680,16 @@ def test_vote_route_casts_upvote_and_returns_fragment(conn, authed_client, db_pa
     resp = authed_client.post(
         f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"}
     )
-    assert resp.status_code == 200
-    assert 'class="up"' in resp.text
-    assert 'aria-pressed="true"' in resp.text
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/channels/{channel_id}"
 
     conn2 = connect(db_path)
     vote = conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone()
     assert vote["value"] == 1
+    # The page it redirects to carries the row htmx swaps in, with the up vote pressed.
+    row = _story_row(authed_client.get(resp.headers["location"]).text, item_id)
+    assert 'name="value" value="1" aria-pressed="true"' in row
+    assert 'name="value" value="-1" aria-pressed="false"' in row
 
 
 def test_vote_route_clicking_same_polarity_again_unvotes(conn, authed_client, db_path):
@@ -1515,19 +1701,23 @@ def test_vote_route_clicking_same_polarity_again_unvotes(conn, authed_client, db
     )
     item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
-    authed_client.post(
+    first = authed_client.post(
         f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"}
     )
+    assert first.status_code == 303
     resp = authed_client.post(
         f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1"}
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/channels/{channel_id}"
 
     conn2 = connect(db_path)
     assert (
         conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone()
         is None
     )
+    row = _story_row(authed_client.get(resp.headers["location"]).text, item_id)
+    assert 'aria-pressed="true"' not in row
 
 
 def test_vote_route_reason_update_keeps_polarity(conn, authed_client, db_path):
@@ -1546,12 +1736,74 @@ def test_vote_route_reason_update_keeps_polarity(conn, authed_client, db_path):
         f"/items/{item_id}/vote",
         data={"value": "-1", "reason": "too niche", "csrf_token": "csrf1"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/channels/{channel_id}"
 
     conn2 = connect(db_path)
     vote = conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone()
     assert vote["value"] == -1
     assert vote["reason"] == "too niche"
+    # The down vote stays pressed and its reason form shows the saved note.
+    row = _story_row(authed_client.get(resp.headers["location"]).text, item_id)
+    assert 'name="value" value="-1" aria-pressed="true"' in row
+    assert (
+        f'<input class="inp inp-grow" id="reason-{item_id}" type="text" name="reason" '
+        'value="too niche"'
+    ) in row
+
+
+def test_vote_route_redirects_to_a_safe_next_url_or_the_items_channel(conn, authed_client):
+    _, c = conn
+    other_id = create_channel(c, "Other", "profile")
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    assert other_id != channel_id
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    item_id = _item_id(c, "t1")
+
+    # The page the vote came from, with its filters, so htmx can select the row from it.
+    back = f"/channels/{channel_id}?show_read=1&q=Rates&page=2"
+    resp = authed_client.post(
+        f"/items/{item_id}/vote",
+        data={"value": "1", "csrf_token": "csrf1", "next_url": back},
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == back
+
+    # A missing or unsafe return URL falls back to the story's own Channel, and the old
+    # fragment fields change nothing.
+    for extra in (
+        {},
+        {"next_url": "https://evil.example/"},
+        {"next_url": "//evil.example/"},
+        {"next_url": "javascript:alert(1)"},
+        {"origin": "folded", "editorial_page": "3", "editorial_show_read": "true"},
+    ):
+        resp = authed_client.post(
+            f"/items/{item_id}/vote", data={"value": "1", "csrf_token": "csrf1", **extra}
+        )
+        assert resp.status_code == 303, extra
+        assert resp.headers["location"] == f"/channels/{channel_id}", extra
+
+
+@pytest.mark.parametrize(
+    "next_url", ["/\\evil.example/", "/\\/evil.example/", "/channels/1\\..\\admin"]
+)
+def test_vote_route_rejects_a_return_url_with_a_backslash(conn, authed_client, next_url):
+    # Browsers read a backslash as a slash, so "/\evil.example" would leave the site like
+    # "//evil.example" does.
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+
+    resp = authed_client.post(
+        f"/items/{_item_id(c, 't1')}/vote",
+        data={"value": "1", "csrf_token": "csrf1", "next_url": next_url},
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/channels/{channel_id}"
 
 
 def test_vote_route_rejects_wrong_csrf(conn, authed_client, db_path):
@@ -1587,8 +1839,10 @@ def test_viewing_drilldown_as_owner_does_not_implicitly_mark_items_read(
     first = authed_client.get(f"/channels/{channel_id}")
     second = authed_client.get(f"/channels/{channel_id}")
 
-    assert "1 new item" in first.text
-    assert "1 new item" in second.text
+    for response in (first, second):
+        meta = re.search(r'<p class="adm-meta" id="chan-meta">(.*?)</p>', response.text, re.DOTALL)
+        assert meta is not None
+        assert '<span class="nw">1 unread</span>' in meta.group(1)
     item = c.execute("SELECT is_read FROM items WHERE external_id='t1'").fetchone()
     assert item["is_read"] == 0
 
@@ -1766,21 +2020,107 @@ def test_read_state_route_requires_owner(conn, client):
 def test_archive_shows_items_across_channels_grouped_by_day(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
+    other_id = create_channel(c, "Tech", "developer news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    other_source_id = create_source(c, other_id, "reddit_subreddit", {"subreddit": "y"})
     insert_new(
         c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x")
     )
+    insert_new(
+        c, other_source_id, RawItem(external_id="t2", title="Chips ship", url="https://y")
+    )
+    # 08:00 UTC is 20:00 the same day in Auckland (NZST).
     c.execute(
         "UPDATE items SET fetched_at = '2026-07-05T08:00:00' WHERE external_id='t1'"
+    )
+    c.execute(
+        "UPDATE items SET fetched_at = '2026-07-04T08:00:00' WHERE external_id='t2'"
     )
     c.commit()
 
     resp = client.get("/archive")
     assert resp.status_code == 200
-    assert "Rates fall" in resp.text
-    assert "2026-07-05" in resp.text
-    assert '<span class="brand-context">Archive</span>' in resp.text
-    assert 'class="channel-shelf"' not in resp.text
+    # Newest day first, each day a section numbered under the Archive's chapter, with its count,
+    # over its stories, each story naming its Channel.
+    newer = _section(resp.text, "day-2026-07-05")
+    older = _section(resp.text, "day-2026-07-04")
+    assert (
+        '<h2 id="day-2026-07-05-h"><span class="no">4.1</span><span>'
+        '<time datetime="2026-07-05">2026-07-05</time> Sunday</span>'
+    ) in newer
+    assert '<span class="no">4.2</span>' in older
+    assert '<span class="desk-state nw">1 story</span>' in newer
+    rates = _story_row(newer, _item_id(c, "t1"))
+    chips = _story_row(older, _item_id(c, "t2"))
+    assert resp.text.index(newer) < resp.text.index(older)
+    # The rail lists the days on the page under the Archive.
+    assert (
+        '<a href="#day-2026-07-05"><span class="no">4.1</span><span>2026-07-05 Sunday</span></a>'
+    ) in resp.text
+    assert "Rates fall" in rates
+    assert (
+        f'<td class="c-chan" data-label="Channel"><a href="/channels/{channel_id}">'
+        "NZ Finance</a></td>"
+    ) in rates
+    assert f'<a href="/channels/{other_id}">Tech</a>' in chips
+    assert '<span title="2026-07-05 20:00 NZST">20:00</span>' in rates
+    # The Archive is its own chapter of the reading shell.
+    assert '<a href="/archive" aria-current="page">' in resp.text
+    assert '<span aria-current="page">4 Archive</span>' in resp.text
+
+
+def test_archive_files_a_story_under_its_auckland_day_and_time(conn, client):
+    """Stored times are UTC, but a day and a time on the Archive are Auckland's: a UTC evening
+    is the next morning in Auckland, and grouping on the stored date would file it a day early.
+    The zone's rules apply, so summer is NZDT (UTC+13) and winter NZST (UTC+12)."""
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, fetched_at in (
+        ("winter", "2026-07-01T20:30:00"),
+        ("summer", "2026-01-15T11:30:00+00:00"),
+    ):
+        insert_new(
+            c, source_id, RawItem(external_id=external_id, title=external_id, url="https://x")
+        )
+        c.execute(
+            "UPDATE items SET fetched_at = ? WHERE external_id = ?", (fetched_at, external_id)
+        )
+    c.commit()
+
+    resp = client.get("/archive")
+
+    assert resp.status_code == 200
+    days = resp.context["days"]
+    assert [day["key"] for day in days] == ["2026-07-02", "2026-01-16"]
+    assert [(row["time"], row["exact"]) for day in days for row in day["rows"]] == [
+        ("08:30", "2026-07-02 08:30 NZST"),
+        ("00:30", "2026-01-16 00:30 NZDT"),
+    ]
+    assert '<time datetime="2026-07-02">2026-07-02</time>' in resp.text
+    assert '<time datetime="2026-07-01">' not in resp.text
+    assert '<span title="2026-07-02 08:30 NZST">08:30</span>' in _story_row(
+        resp.text, _item_id(c, "winter")
+    )
+    assert '<span title="2026-01-16 00:30 NZDT">00:30</span>' in _story_row(
+        resp.text, _item_id(c, "summer")
+    )
+
+
+def test_archive_date_filter_matches_the_auckland_day_it_groups_by(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Morning story", url="https://x"))
+    c.execute("UPDATE items SET fetched_at = '2026-07-01T20:30:00' WHERE external_id='t1'")
+    c.commit()
+
+    # Listed under 2026-07-02, so filtering on that day finds it and the day before does not.
+    shown_on = client.get("/archive?from=2026-07-02&to=2026-07-02")
+    day_before = client.get("/archive?from=2026-07-01&to=2026-07-01")
+
+    assert [day["key"] for day in shown_on.context["days"]] == ["2026-07-02"]
+    assert day_before.context["days"] == []
 
 
 def test_archive_filters_by_channel_query_param(conn, client):
@@ -1878,6 +2218,177 @@ def test_global_search_finds_items_across_all_channel_workflows(conn, client):
     assert "Tracker" in response.text
 
 
+def _camera_hits(c):
+    """A "camera" hit in each kind of Channel, fetched so that the newest hits sit in the rail's
+    last Channel, plus a Channel with no hit at all."""
+    news_id = create_channel(c, "News", "p")
+    shop_id = create_channel(c, "Shop", "p", kind="monitor")
+    auctions_id = create_channel(c, "Auctions", "p", kind="tracker")
+    quiet_id = create_channel(c, "Quiet", "p")
+    news_source = create_source(c, news_id, "reddit_subreddit", {"subreddit": "x"})
+    shop_source = create_source(
+        c,
+        shop_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    insert_new(
+        c,
+        news_source,
+        RawItem(external_id="story", title="Camera rules tighten", url="https://example.com/s"),
+    )
+    update_ai_ranking(
+        c, news_source, "story", score=90, summary="Camera rules tighten", rationale="r"
+    )
+    insert_new(
+        c,
+        shop_source,
+        RawItem(
+            external_id="listing",
+            title="Camera bag",
+            url="https://example.com/bag",
+            raw_metadata={"price": 80.0, "available": True},
+        ),
+    )
+    _create_auction_item(c, external_id="lot")
+    _create_auction_item(c, external_id="closed-lot", closes_in_hours=-1)
+    for day, external_id in enumerate(("story", "listing", "lot", "closed-lot"), start=1):
+        c.execute(
+            "UPDATE items SET fetched_at = ? WHERE external_id = ?",
+            (f"2026-07-0{day}T08:00:00", external_id),
+        )
+    c.commit()
+    return SimpleNamespace(
+        news=news_id,
+        shop=shop_id,
+        auctions=auctions_id,
+        quiet=quiet_id,
+        story=_item_id(c, "story"),
+        listing=_item_id(c, "listing"),
+        lot=_item_id(c, "lot"),
+        closed_lot=_item_id(c, "closed-lot"),
+    )
+
+
+def test_search_sorts_hits_into_numbered_channel_sections_in_rail_order(conn, client):
+    _, c = conn
+    hits = _camera_hits(c)
+
+    html = client.get("/search?q=camera").text
+
+    # One section per Channel with a hit, in the rail's order rather than the hits' newest-first
+    # order, numbered under the page's chapter and listed in the rail.
+    starts = []
+    for channel_id, number, name, count in (
+        (hits.news, "1.1", "News", "1 result"),
+        (hits.shop, "1.2", "Shop", "1 result"),
+        (hits.auctions, "1.3", "Auctions", "2 results"),
+    ):
+        section = _section(html, f"channel-{channel_id}")
+        starts.append(html.index(section))
+        assert f'<span class="no">{number}</span><span>{name}</span>' in section
+        assert f'<span class="desk-state nw">{count}</span>' in section
+        assert (
+            f'<a class="btn btn-sm" href="/channels/{channel_id}?q=camera">Open channel' in section
+        )
+        assert (
+            f'<a href="#channel-{channel_id}">'
+            f'<span class="no">{number}</span><span>{name}</span></a>'
+        ) in html
+    assert starts == sorted(starts)
+    assert f'id="channel-{hits.quiet}"' not in html
+    # Each section lists its hits, newest first, in its Channel's own rows.
+    assert _story_row(_section(html, f"channel-{hits.news}"), hits.story)
+    assert _row(_section(html, f"channel-{hits.shop}"), f"listing-{hits.listing}")
+    auctions = _section(html, f"channel-{hits.auctions}")
+    assert auctions.index(f'<tr id="lot-{hits.closed_lot}"') < auctions.index(
+        f'<tr id="lot-{hits.lot}"'
+    )
+    assert 'class="is-closed"' in _row(auctions, f"lot-{hits.closed_lot}")
+
+
+def test_search_section_counts_its_channels_hits_on_every_page(conn, client):
+    _, c = conn
+    news_id = create_channel(c, "News", "p")
+    tech_id = create_channel(c, "Tech", "p")
+    news_source = create_source(c, news_id, "reddit_subreddit", {"subreddit": "x"})
+    tech_source = create_source(c, tech_id, "reddit_subreddit", {"subreddit": "y"})
+    _stories(c, news_source, 31, title="Rates update")
+    _stories(c, tech_source, 1, title="Rates chips", fetched_at="2026-07-06T08:00:00")
+
+    first = client.get("/search?q=Rates")
+    second = client.get("/search?q=Rates&page=2")
+
+    # Thirty hits a page, newest first: Tech's one and 29 of News's 31, then News's last two.
+    assert [
+        (section["name"], len(section["rows"]), section["total"])
+        for section in first.context["sections"]
+    ] == [("News", 29, 31), ("Tech", 1, 1)]
+    assert [
+        (section["name"], len(section["rows"]), section["total"])
+        for section in second.context["sections"]
+    ] == [("News", 2, 31)]
+    for response in (first, second):
+        assert '<span class="desk-state nw">31 results</span>' in _section(
+            response.text, f"channel-{news_id}"
+        )
+
+
+def test_search_rows_carry_owner_controls_for_the_owner_only(conn, client, authed_client):
+    _, c = conn
+    hits = _camera_hits(c)
+
+    owner = authed_client.get("/search?q=camera").text
+    reader = client.get("/search?q=camera").text
+
+    story = _story_row(owner, hits.story)
+    assert f'<form method="post" action="/items/{hits.story}/read-state">' in story
+    assert f'<form class="vote" method="post" action="/items/{hits.story}/vote"' in story
+    assert (
+        f'<form class="deep-read-form" method="post" action="/items/{hits.story}/deep-read">'
+    ) in story
+    listing = _row(owner, f"listing-{hits.listing}")
+    assert f'<form class="vote" method="post" action="/items/{hits.listing}/relevance"' in listing
+    lot = _row(owner, f"lot-{hits.lot}")
+    assert f'<form class="watch" method="post" action="/items/{hits.lot}/watch"' in lot
+    assert f'<form class="vote" method="post" action="/items/{hits.lot}/relevance"' in lot
+    # A closed lot can still be rated, but no longer watched.
+    closed_lot = _row(owner, f"lot-{hits.closed_lot}")
+    assert f'action="/items/{hits.closed_lot}/relevance"' in closed_lot
+    assert "/watch" not in closed_lot
+    # Without JavaScript, every control brings the Owner back to this search.
+    for row in (story, listing, lot):
+        assert '<input type="hidden" name="next_url" value="/search?q=camera">' in row
+
+    for row in (
+        _story_row(reader, hits.story),
+        _row(reader, f"listing-{hits.listing}"),
+        _row(reader, f"lot-{hits.lot}"),
+        _row(reader, f"lot-{hits.closed_lot}"),
+    ):
+        assert "<form" not in row
+
+
+def test_search_page_past_the_end_says_so_and_links_to_the_last_page(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "News", "p")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    _stories(c, source_id, 31, title="Rates update")
+
+    response = client.get("/search?q=Rates&page=4")
+
+    assert response.status_code == 200
+    assert response.context["sections"] == []
+    assert "Nothing is left on this page." in response.text
+    assert "No matching items" not in response.text
+    # "Previous" skips the empty pages in between, back to the last page with hits, and the
+    # pager counts the pages there are.
+    pager = _pager(response.text)
+    assert '<a class="btn btn-sm" href="/search?q=Rates&amp;page=2">Previous</a>' in pager
+    assert '<span class="btn btn-sm" aria-disabled="true">Next</span>' in pager
+    assert "<span>Page 4 of 2</span>" in pager
+
+
 def test_archive_never_marks_anything_read(conn, client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
@@ -1954,11 +2465,11 @@ def test_archive_pagination_preserves_active_filters(conn, authed_client):
     ) in response.text
 
 
-def test_archive_strips_vote_reason_from_render_context(conn, client):
-    """Archive is always anonymous (no session dependency), so the private down-vote reason
-    must never reach the template context — not just be left CSS-hidden/unrendered. archive.html
-    happens not to print vote_reason today, so a resp.text check alone can't catch a route-level
-    regression; the context assertion guards the invariant the route strip actually enforces."""
+def test_archive_strips_vote_reason_from_render_context(conn, client, authed_client):
+    """The private down-vote reason must never reach an anonymous reader's archive context --
+    not just be left unrendered. A resp.text check alone can't catch a route-level regression;
+    the context assertion guards the invariant the story view enforces. The Owner sees it in
+    the reason field under their own down vote, as on the channel page."""
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -1970,9 +2481,151 @@ def test_archive_strips_vote_reason_from_render_context(conn, client):
 
     resp = client.get("/archive")
     assert "this is a private reason nobody else should see" not in resp.text
-    ctx_items = [it for _day, day_items in resp.context["groups"] for it in day_items]
-    assert ctx_items, "the down-voted item should appear in the archive context"
-    assert all(it["vote_reason"] is None for it in ctx_items)
+    rows = [row for day in resp.context["days"] for row in day["rows"]]
+    assert rows, "the down-voted item should appear in the archive context"
+    assert all(row["story"].vote_reason is None for row in rows)
+    assert '<form class="reason"' not in resp.text
+
+    owner = authed_client.get("/archive")
+    row = _story_row(owner.text, item_id)
+    assert '<form class="reason"' in row
+    assert 'value="this is a private reason nobody else should see"' in row
+
+
+def test_archive_days_are_numbered_after_every_channel_of_any_kind(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    create_channel(c, "Outlet", "deals", kind="monitor")
+    create_channel(c, "Auctions", "lots", kind="tracker")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    _stories(c, source_id, 1, title="Rates")
+
+    response = client.get("/archive")
+
+    # Featured is 1 and the three Channels 2 to 4, whatever their kind, so the Archive is 5.
+    assert '<span aria-current="page">5 Archive</span>' in response.text
+    assert '<h2 id="day-2026-07-05-h"><span class="no">5.1</span>' in response.text
+    assert (
+        '<a href="#day-2026-07-05"><span class="no">5.1</span><span>2026-07-05 Sunday</span></a>'
+    ) in response.text
+
+
+def test_archive_day_heading_counts_the_whole_day_on_every_page(conn, client):
+    """A day's heading counts its stories under the filters on every page, not just the rows on
+    this one: 31 stories on one Auckland day fill page 1 with 30 and leave 1 for page 2."""
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    _stories(c, source_id, 31, title="Rates update")
+    # The same day, but outside the search below.
+    _stories(c, source_id, 1, title="Chips ship")
+
+    first = client.get("/archive?q=Rates")
+    second = client.get("/archive?q=Rates&page=2")
+    unfiltered = client.get("/archive")
+
+    for response, rows in ((first, 30), (second, 1)):
+        assert [
+            (day["key"], len(day["rows"]), day["total"]) for day in response.context["days"]
+        ] == [("2026-07-05", rows, 31)]
+        assert '<span class="desk-state nw">31 stories</span>' in _section(
+            response.text, "day-2026-07-05"
+        )
+    assert [day["total"] for day in unfiltered.context["days"]] == [32]
+
+
+def test_archive_owner_rates_stories_in_place_and_readers_see_the_rating(
+    conn, client, authed_client
+):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    insert_new(c, source_id, RawItem(external_id="t1", title="Rates fall", url="https://x"))
+    item_id = _item_id(c, "t1")
+    archive_url = "/archive?q=Rates"
+
+    toggles = re.search(
+        r'<form class="vote".*?</form>',
+        _story_row(authed_client.get(archive_url).text, item_id),
+        re.DOTALL,
+    )
+    assert toggles is not None
+    assert f'action="/items/{item_id}/vote"' in toggles.group(0)
+    # The toggles post back to this very page, filters and all, and htmx takes the row from it.
+    assert f'<input type="hidden" name="next_url" value="{archive_url}">' in toggles.group(0)
+    assert f'hx-target="#story-{item_id}" hx-select="#story-{item_id}"' in toggles.group(0)
+
+    voted = authed_client.post(
+        f"/items/{item_id}/vote",
+        data={"value": "1", "csrf_token": "csrf1", "next_url": archive_url},
+    )
+
+    assert voted.status_code == 303
+    assert voted.headers["location"] == archive_url
+    owner_row = _story_row(authed_client.get(archive_url).text, item_id)
+    assert 'name="value" value="1" aria-pressed="true"' in owner_row
+    # A reader sees the Owner's rating, with nothing to change it.
+    reader = client.get(archive_url)
+    assert "/vote" not in reader.text
+    assert '<span class="st">Relevant</span>' in _story_row(reader.text, item_id)
+
+
+def test_archive_page_past_the_end_says_so_and_links_to_the_last_page(conn, client):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    _stories(c, source_id, 31, title="Rates update")
+
+    response = client.get("/archive?q=Rates&page=5")
+
+    assert response.status_code == 200
+    assert response.context["days"] == []
+    assert "Nothing is left on this page." in response.text
+    assert "No matching content" not in response.text
+    # "Previous" skips the empty pages in between, back to the last page with stories, and the
+    # pager counts the pages there are.
+    pager = _pager(response.text)
+    assert '<a class="btn btn-sm" href="/archive?q=Rates&amp;page=2">Previous</a>' in pager
+    assert '<span class="btn btn-sm" aria-disabled="true">Next</span>' in pager
+    assert "<span>Page 5 of 2</span>" in pager
+
+
+@pytest.mark.parametrize(
+    "url", ["/archive?page=10000000000000000000", "/search?q=Rates&page=10000000000000000000"]
+)
+def test_a_page_number_beyond_the_database_integers_is_just_past_the_end(conn, client, url):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    _stories(c, source_id, 1, title="Rates")
+
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert "Nothing is left on this page." in response.text
+
+
+@pytest.mark.parametrize(
+    ("query", "shown", "hidden"),
+    [
+        # The day after 9999-12-31 does not exist, so "to" is ignored and "from" still applies.
+        ("from=2026-07-03&to=9999-12-31", "Late story", "Early story"),
+        # Nor does the UTC moment Auckland's 0001-01-01 begins, so "from" is ignored.
+        ("from=0001-01-01&to=2026-07-03", "Early story", "Late story"),
+    ],
+)
+def test_archive_ignores_a_date_bound_outside_the_calendar(conn, client, query, shown, hidden):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    _stories(c, source_id, 1, title="Early story", fetched_at="2026-07-01T08:00:00")
+    _stories(c, source_id, 1, title="Late story", fetched_at="2026-07-05T08:00:00")
+
+    response = client.get(f"/archive?{query}")
+
+    assert response.status_code == 200
+    assert shown in response.text
+    assert hidden not in response.text
 
 
 def test_dashboard_header_links_to_archive_and_admin_login(conn, client):
@@ -2127,7 +2780,10 @@ def test_home_desk_lists_a_channels_top_stories(conn, authed_client):
     assert "<th>Summary</th>" in resp.text
     assert "<th>Source</th>" in resp.text
     assert "<th>Channel</th>" not in resp.text
-    assert '<tr class="kb-row" tabindex="-1" data-channel="NZ Finance">' in resp.text
+    assert (
+        f'<tr class="kb-row" id="story-{item_id}" tabindex="-1" data-channel="NZ Finance">'
+        in resp.text
+    )
     assert '<span class="score is-high">95</span>' in resp.text
     assert (
         f'<a href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer" '
@@ -2490,8 +3146,8 @@ def test_dashboard_filters_and_counts_read_state(conn, authed_client):
     assert "seen item" not in unread_response.text
     assert "seen item" in read_response.text
     assert "fresh item" not in read_response.text
-    assert '<tr class="kb-row is-read"' in all_response.text
-    assert '<tr class="kb-row" tabindex' in all_response.text
+    assert f'<tr class="kb-row is-read" id="story-{_item_id(c, "read")}"' in all_response.text
+    assert f'<tr class="kb-row" id="story-{_item_id(c, "unread")}"' in all_response.text
     assert '<a href="/?view=unread" aria-current="page">Unread' in unread_response.text
 
 
@@ -2978,8 +3634,60 @@ def test_channel_drilldown_hides_read_items_by_default(conn, authed_client):
     resp = authed_client.get(f"/channels/{channel_id}")
     assert "Unread item" in resp.text
     assert "Read item" not in resp.text
-    assert "Show 1 read item" in resp.text
-    assert f'href="/channels/{channel_id}?show_read=1"' in resp.text
+    assert f'<tr class="kb-row is-read" id="story-{item_id}"' not in resp.text
+    # The read filter says what is hidden and links to the full list.
+    seg = re.search(r'<nav class="seg" aria-label="Read state">(.*?)</nav>', resp.text, re.DOTALL)
+    assert seg is not None
+    assert (
+        f'<a href="/channels/{channel_id}" aria-current="page">Unread <span class="n">1</span></a>'
+        in seg.group(1)
+    )
+    assert (
+        f'<a href="/channels/{channel_id}?show_read=1">All <span class="n">2</span></a>'
+        in seg.group(1)
+    )
+
+
+def test_editorial_read_filter_links_keep_the_search_and_mark_the_current_view(
+    conn, authed_client, client
+):
+    _, c = conn
+    channel_id = create_channel(c, "NZ Finance", "economic news")
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for external_id, title in (("new", "Rates rise"), ("seen", "Rates fall")):
+        insert_new(c, source_id, RawItem(external_id=external_id, title=title, url="https://x"))
+    c.execute("UPDATE items SET is_read = 1 WHERE external_id = 'seen'")
+    c.commit()
+
+    def seg(response):
+        match = re.search(
+            r'<nav class="seg" aria-label="Read state">(.*?)</nav>', response.text, re.DOTALL
+        )
+        assert match is not None
+        return match.group(1)
+
+    unread_view = authed_client.get(f"/channels/{channel_id}?q=Rates")
+    all_view = authed_client.get(f"/channels/{channel_id}?show_read=1&q=Rates")
+
+    unread_link = f'<a href="/channels/{channel_id}?q=Rates"'
+    all_link = f'<a href="/channels/{channel_id}?show_read=1&amp;q=Rates"'
+    assert f'{unread_link} aria-current="page">Unread <span class="n">1</span></a>' in seg(
+        unread_view
+    )
+    assert f'{all_link}>All <span class="n">2</span></a>' in seg(unread_view)
+    assert f'{unread_link}>Unread <span class="n">1</span></a>' in seg(all_view)
+    assert f'{all_link} aria-current="page">All <span class="n">2</span></a>' in seg(all_view)
+    assert "Rates fall" not in unread_view.text
+    assert "Rates fall" in all_view.text
+    # Clearing the search keeps the read view.
+    assert (
+        f'Searching “Rates” <a class="lnk" href="/channels/{channel_id}?show_read=1">Clear</a>'
+        in all_view.text
+    )
+    # Anonymous readers have no read state to filter on.
+    anonymous = client.get(f"/channels/{channel_id}?q=Rates")
+    assert '<nav class="seg"' not in anonymous.text
+    assert "Rates fall" in anonymous.text
 
 
 def test_channel_drilldown_shows_read_items_when_show_read_param_present(
@@ -3016,12 +3724,17 @@ def test_anonymous_channel_shows_all_items_without_owner_read_state(conn, client
 
     assert "Unread" in response.text
     assert "Read" in response.text
-    assert "new item" not in response.text
-    assert "Show 1 read item" not in response.text
+    # Both stories are listed with no read state: no unread count, filter or toggles.
+    assert _story_row(response.text, _item_id(c, "unread"))
+    assert _story_row(response.text, _item_id(c, "read"))
+    assert " unread</span>" not in response.text
+    assert 'id="chan-seg"' not in response.text
+    assert "is-read" not in response.text
     assert "/read-state" not in response.text
 
 
-def test_channel_drilldown_no_reveal_line_when_nothing_is_read(conn, authed_client):
+def test_channel_read_filter_counts_match_when_nothing_is_read(conn, authed_client):
+    # With nothing read there is no read story to reveal: All counts the same as Unread.
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -3030,7 +3743,10 @@ def test_channel_drilldown_no_reveal_line_when_nothing_is_read(conn, authed_clie
     )
 
     resp = authed_client.get(f"/channels/{channel_id}")
-    assert 'class="channel-read-link"' not in resp.text
+    seg = re.search(r'<nav class="seg" aria-label="Read state">(.*?)</nav>', resp.text, re.DOTALL)
+    assert seg is not None
+    assert 'aria-current="page">Unread <span class="n">1</span></a>' in seg.group(1)
+    assert '>All <span class="n">1</span></a>' in seg.group(1)
 
 
 def test_channel_drilldown_shows_best_comment_summary_when_present(conn, client):
@@ -3049,8 +3765,10 @@ def test_channel_drilldown_shows_best_comment_summary_when_present(conn, client)
     c.commit()
 
     resp = client.get(f"/channels/{channel_id}")
-    assert 'class="comment-mark"' in resp.text
-    assert "有人指出实际数字不同" in resp.text
+    assert (
+        '<details class="cmt"><summary>Top comment</summary><p>有人指出实际数字不同</p></details>'
+        in _story_row(resp.text, item_id)
+    )
 
 
 def test_channel_drilldown_shows_nothing_extra_when_best_comment_summary_is_absent(
@@ -3065,7 +3783,8 @@ def test_channel_drilldown_shows_nothing_extra_when_best_comment_summary_is_abse
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get(f"/channels/{channel_id}")
-    assert 'class="comment-mark"' not in resp.text
+    assert _story_row(resp.text, _item_id(c, "t1"))
+    assert 'class="cmt"' not in resp.text
 
 
 def test_dashboard_signal_shows_best_comment_summary_when_present(conn, client):
@@ -3106,7 +3825,8 @@ def test_dashboard_signal_shows_nothing_extra_when_best_comment_summary_is_absen
     )
 
     resp = client.get("/")
-    assert 'class="signal-comment"' not in resp.text
+    assert _story_row(resp.text, _item_id(c, "t1"))
+    assert 'class="cmt"' not in resp.text
 
 
 def test_archive_shows_best_comment_summary_when_present(conn, client):
@@ -3125,8 +3845,10 @@ def test_archive_shows_best_comment_summary_when_present(conn, client):
     c.commit()
 
     resp = client.get("/archive")
-    assert 'class="comment-mark"' in resp.text
-    assert "有人指出实际数字不同" in resp.text
+    assert (
+        '<details class="cmt"><summary>Top comment</summary><p>有人指出实际数字不同</p></details>'
+        in _story_row(resp.text, item_id)
+    )
 
 
 def test_archive_shows_nothing_extra_when_best_comment_summary_is_absent(conn, client):
@@ -3139,7 +3861,8 @@ def test_archive_shows_nothing_extra_when_best_comment_summary_is_absent(conn, c
     update_ai_ranking(c, source_id, "t1", score=90, summary="RBNZ 降息", rationale="r")
 
     resp = client.get("/archive")
-    assert 'class="comment-mark"' not in resp.text
+    assert _story_row(resp.text, _item_id(c, "t1"))
+    assert 'class="cmt"' not in resp.text
 
 
 def test_official_source_label_uses_fixed_public_label():
@@ -3237,6 +3960,69 @@ def test_owner_can_toggle_auction_watch_from_channel(conn, authed_client, db_pat
     )
     assert unwatched.status_code == 200
     assert 'aria-pressed="false"' in unwatched.text
+
+
+def test_watch_without_javascript_returns_to_the_page_it_came_from(conn, authed_client):
+    _, c = conn
+    item_id = _create_auction_item(c)
+    back = f"/channels/{_channel_of(c, item_id)}?q=camera"
+
+    watch = re.search(
+        r'<form class="watch".*?</form>',
+        _row(authed_client.get(back).text, f"lot-{item_id}"),
+        re.DOTALL,
+    )
+    assert watch is not None
+    # The watch form carries the page it sits on, filters and all.
+    assert f'<input type="hidden" name="next_url" value="{back}">' in watch.group(0)
+
+    response = authed_client.post(
+        f"/items/{item_id}/watch",
+        data={"csrf_token": "csrf1", "origin": "channel", "next_url": back},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == back
+
+
+@pytest.mark.parametrize(
+    "next_url", ["//evil.example/", "/\\evil.example/", "https://evil.example/"]
+)
+def test_watch_falls_back_to_the_lots_channel_for_an_unsafe_return_url(
+    conn, authed_client, next_url
+):
+    _, c = conn
+    item_id = _create_auction_item(c)
+
+    response = authed_client.post(
+        f"/items/{item_id}/watch",
+        data={"csrf_token": "csrf1", "origin": "channel", "next_url": next_url},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/channels/{_channel_of(c, item_id)}"
+
+
+def test_watch_fragment_keeps_the_pages_return_url(conn, authed_client):
+    _, c = conn
+    item_id = _create_auction_item(c)
+    channel_id = _channel_of(c, item_id)
+    back = f"/channels/{channel_id}?q=camera"
+
+    def toggle(next_url):
+        return authed_client.post(
+            f"/items/{item_id}/watch",
+            data={"csrf_token": "csrf1", "origin": "channel", "next_url": next_url},
+            headers={"HX-Request": "true"},
+        )
+
+    # The swapped-in form still brings a later post without JavaScript back to its page, or to
+    # the lot's Channel when the page it was given is not safe to return to.
+    assert f'<input type="hidden" name="next_url" value="{back}">' in toggle(back).text
+    assert (
+        f'<input type="hidden" name="next_url" value="/channels/{channel_id}">'
+        in toggle("//evil.example/").text
+    )
 
 
 def test_auction_watch_controls_are_owner_only(conn, client):

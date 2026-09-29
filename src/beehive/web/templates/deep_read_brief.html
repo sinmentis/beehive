@@ -1,94 +1,65 @@
-{% extends "base.html" %}
+{% extends "reading_base.html" %}
 {% block title %}{{ t('web.title.deep_read_brief', product=t('common.product_name'), title=item.ai_summary or item.title) }}{% endblock %}
-{% block body_class %}page-deep-read{% endblock %}
+{% set crumbs = [(t('web.deep_read.eyebrow'), none)] %}
 {% block content %}
-<main id="main-content" class="page-shell deep-read-shell">
-  <a class="deep-read-back" href="{{ back_link.href }}">{{ back_link.label }}</a>
-
-  <header class="deep-read-header">
-    <p class="deep-read-kicker">{{ t('web.deep_read.eyebrow') }}</p>
-    <h1 class="deep-read-title" id="deep-read-heading">{{ item.ai_summary or item.title }}</h1>
-    <p class="deep-read-meta">
-      <span class="deep-read-meta-source">{{ t('web.deep_read.source_label', source=item.source_label) }}</span>
-      {% if item.age %}<span class="deep-read-meta-age" title="{{ item.exact_time }}">{{ item.age }}</span>{% endif %}
-      <a class="deep-read-source-link" href="{{ item.safe_url }}" target="_blank" rel="noopener noreferrer">{{ t('web.deep_read.source_link') }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
-    </p>
-  </header>
-
+<div class="adm-head">
+  <div>
+    <h1 id="deep-read-heading">{{ item.ai_summary or item.title }}</h1>
+    <p class="adm-meta"><span>{{ t('web.deep_read.source_label', source=item.source_label) }}</span>
+      {%- if item.age %} · <span class="nw" title="{{ item.exact_time }}">{{ item.age }}</span>{% endif %} · <a class="lnk" href="{{ item.safe_url }}" target="_blank" rel="noopener noreferrer">{{ t('web.deep_read.source_link') }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></p>
+  </div>
   {% if can_start or (status == 'ready' and can_regenerate) %}
-  <div class="deep-read-owner-controls" role="group" aria-label="{{ t('web.deep_read.owner_controls_aria') }}">
-    <form class="deep-read-form" method="post" action="{{ request_url }}">
+  <div class="adm-actions" role="group" aria-label="{{ t('web.deep_read.owner_controls_aria') }}">
+    <form method="post" action="{{ request_url }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="origin" value="{{ form_origin }}">
       {% if channel_id is not none %}<input type="hidden" name="channel_id" value="{{ channel_id }}">{% endif %}
       {% if not can_start %}<input type="hidden" name="regenerate" value="true">{% endif %}
-      <button type="submit" class="btn {{ 'primary' if can_start else 'ghost' }} small"
+      <button class="btn{{ ' btn-primary' if can_start }}" type="submit"
               aria-label="{{ t('web.deep_read.button_start_aria', title=item.ai_summary or item.title) if can_start else t('web.deep_read.button_regenerate_aria') }}">{{ t('web.deep_read.button_start') if can_start else t('web.deep_read.button_regenerate') }}</button>
     </form>
   </div>
   {% endif %}
+</div>
 
-  {% if status == 'ready' and brief %}
-  <article class="deep-read-result" aria-labelledby="deep-read-heading">
+{% if status == 'ready' and brief %}
+<div class="nb brief">
+  <article class="read brief-body" aria-labelledby="deep-read-heading">
     {% if warning_text %}
-    <p class="deep-read-warning" role="note">
-      <span class="deep-read-warning-mark" aria-hidden="true">!</span>
-      <span>{{ warning_text }}</span>
-    </p>
+    <div class="note note-caution" role="note"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.caution') }}</span><div class="note-body">{{ warning_text }}</div></div></div>
     {% endif %}
-
-    <section class="deep-read-section deep-read-bottom-line" aria-labelledby="deep-read-bottom-line-heading">
-      <h2 id="deep-read-bottom-line-heading">{{ t('web.deep_read.section_bottom_line') }}</h2>
-      <p>{{ brief.bottom_line }}</p>
-    </section>
-
-    <section class="deep-read-section" aria-labelledby="deep-read-key-findings-heading">
-      <h2 id="deep-read-key-findings-heading">{{ t('web.deep_read.section_key_findings') }}</h2>
-      <ul class="deep-read-findings">
-        {% for finding in brief.key_findings %}
-        <li>{{ finding }}</li>
-        {% endfor %}
-      </ul>
-    </section>
-
-    <section class="deep-read-section" aria-labelledby="deep-read-important-figures-heading">
-      <h2 id="deep-read-important-figures-heading">{{ t('web.deep_read.section_important_figures') }}</h2>
-      {% if brief.important_figures %}
-      <ul class="deep-read-figures">
-        {% for figure in brief.important_figures %}
-        <li class="deep-read-figure">
-          <span class="deep-read-figure-value">{{ figure.value }}</span>
-          <span class="deep-read-figure-label">{{ figure.label }}</span>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <p class="deep-read-muted">{{ t('web.deep_read.no_important_figures') }}</p>
-      {% endif %}
-    </section>
-
-    <section class="deep-read-section" aria-labelledby="deep-read-why-it-matters-heading">
-      <h2 id="deep-read-why-it-matters-heading">{{ t('web.deep_read.section_why_it_matters') }}</h2>
-      <p>{{ brief.why_it_matters }}</p>
-    </section>
-
+    <h2 id="brief-bottom-line"><span class="no">{{ sec.bottom_line }}</span><span>{{ t('web.deep_read.section_bottom_line') }}</span></h2>
+    <p class="answer">{{ brief.bottom_line }}</p>
+    <h2 id="brief-findings"><span class="no">{{ sec.findings }}</span><span>{{ t('web.deep_read.section_key_findings') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.reading.brief.count', count=brief.key_findings|length, number=brief.key_findings|length|count(locale)) }}</span></span></h2>
+    <ol>{% for finding in brief.key_findings %}<li>{{ finding }}</li>{% endfor %}</ol>
+    <h2 id="brief-why"><span class="no">{{ sec.why }}</span><span>{{ t('web.deep_read.section_why_it_matters') }}</span></h2>
+    <p>{{ brief.why_it_matters }}</p>
     {% if brief.limitations %}
-    <section class="deep-read-section deep-read-limitations" aria-labelledby="deep-read-limitations-heading">
-      <h2 id="deep-read-limitations-heading">{{ t('web.deep_read.section_limitations') }}</h2>
-      <p>{{ brief.limitations }}</p>
-    </section>
+    <div class="note" role="note"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.info') }}</span><div class="note-body"><b>{{ t('web.deep_read.section_limitations') }}</b> {{ brief.limitations }}</div></div></div>
     {% endif %}
-
-    <p class="deep-read-provenance">
-      {% if generated_at %}{{ t('web.deep_read.generated_at_label', time=generated_at) }}{% endif %}
-      {% if generated_at and language_display_name %}<span aria-hidden="true"> · </span>{% endif %}
-      {% if language_display_name %}{{ t('web.deep_read.generated_language_label', language=language_display_name) }}{% endif %}
-    </p>
   </article>
-  {% else %}
-  {% include "_deep_read_status.html" %}
-  {% endif %}
-</main>
+  <aside class="nb-side" aria-label="{{ t('web.deep_read.section_important_figures') }}">
+    <div class="side-box" id="brief-figures">
+      <h2><span class="no">{{ sec.figures }}</span><span>{{ t('web.deep_read.section_important_figures') }}</span>{% if brief.important_figures %}<span class="tools">{{ t('web.reading.brief.count', count=brief.important_figures|length, number=brief.important_figures|length|count(locale)) }}</span>{% endif %}</h2>
+      {% if brief.important_figures %}
+      <ul class="figs">{% for figure in brief.important_figures %}<li><b>{{ figure.value }}</b><span>{{ figure.label }}</span></li>{% endfor %}</ul>
+      {% else %}
+      <p class="side-snip">{{ t('web.deep_read.no_important_figures') }}</p>
+      {% endif %}
+    </div>
+    <div class="side-box" id="brief-source">
+      <h2><span class="no">{{ sec.source }}</span><span>{{ t('web.reading.col_source') }}</span></h2>
+      <p class="side-title"><a href="{{ item.safe_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></p>
+      <p class="side-meta">{{ item.source_label }}{% if item.exact_time %} · {{ item.exact_time }}{% endif %}</p>
+      {% if generated_at or language_display_name %}
+      <p class="side-meta">{% if generated_at %}{{ t('web.deep_read.generated_at_label', time=generated_at) }}{% endif %}{% if generated_at and language_display_name %} · {% endif %}{% if language_display_name %}{{ t('web.deep_read.generated_language_label', language=language_display_name) }}{% endif %}</p>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+{% else %}
+{% include "_deep_read_status.html" %}
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>

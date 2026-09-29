@@ -1,158 +1,81 @@
-{% extends "base.html" %}
+{% extends "reading_base.html" %}
+{% import "_reading_macros.html" as rd with context %}
 {% block title %}{{ t('web.title.channel', product=t('common.product_name'), channel=page.channel_name) }}{% endblock %}
-{% block body_class %}page-channel page-channel-monitor{% endblock %}
-{% block secondary_navigation %}
-  {% set active_channel_id = page.channel_id %}
-  {% set channel_navigation_all_active = false %}
-  {% include "_channel_shelf.html" %}
-{% endblock %}
-{% block content %}
-<main id="main-content" class="page-shell channel-shell monitor-shell">
-  <header class="channel-toolbar channel-toolbar--catalogue">
-    <a class="channel-back" href="/">{{ t('web.channel.back_home') }}</a>
-    <div class="channel-heading">
-      <p class="channel-workflow">{{ t('web.channel.monitor_label') }}</p>
-      <h1 class="channel-title">{{ page.channel_name }}</h1>
-      <p class="channel-statline"><span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
-    </div>
-    <p class="channel-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
-  </header>
-  {% include "_channel_criteria.html" %}
 
-  <form class="monitor-controls" method="get" action="/channels/{{ page.channel_id }}">
-    {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
-    <label class="monitor-search">
-      <span>{{ t('web.monitor.search_label') }}</span>
-      <input type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}">
-    </label>
-    <fieldset class="monitor-multi-filter">
-      <legend>{{ t('web.monitor.source_label') }}</legend>
-      <details class="monitor-multiselect" name="monitor-filter">
-        <summary title="{{ page.sources|join(', ') if page.sources else t('web.monitor.all_sources') }}">
-          <span>{{ page.sources|join(', ') if page.sources else t('web.monitor.all_sources') }}</span>
-        </summary>
-        <div class="monitor-multiselect-options" role="group" aria-label="{{ t('web.monitor.source_label') }}">
-          {% for option in page.source_options %}
-          <label class="monitor-multiselect-option">
-            <input type="checkbox" name="source" value="{{ option }}"{% if option in page.sources %} checked{% endif %}>
-            <span>{{ option }}</span>
-          </label>
-          {% else %}
-          <span class="monitor-multiselect-empty">{{ t('web.monitor.all_sources') }}</span>
-          {% endfor %}
-        </div>
-      </details>
-    </fieldset>
-    <fieldset class="monitor-multi-filter monitor-multi-filter--vendor">
-      <legend>{{ t('web.monitor.vendor_label') }}</legend>
-      <details class="monitor-multiselect" name="monitor-filter">
-        <summary title="{{ page.vendors|join(', ') if page.vendors else t('web.monitor.all_vendors') }}">
-          <span>{{ page.vendors|join(', ') if page.vendors else t('web.monitor.all_vendors') }}</span>
-        </summary>
-        <div class="monitor-multiselect-options" role="group" aria-label="{{ t('web.monitor.vendor_label') }}">
-          {% for option in page.vendor_options %}
-          <label class="monitor-multiselect-option">
-            <input type="checkbox" name="vendor" value="{{ option }}"{% if option in page.vendors %} checked{% endif %}>
-            <span>{{ option }}</span>
-          </label>
-          {% else %}
-          <span class="monitor-multiselect-empty">{{ t('web.monitor.all_vendors') }}</span>
-          {% endfor %}
-        </div>
-      </details>
-    </fieldset>
-    <fieldset class="monitor-multi-filter">
-      <legend>{{ t('web.monitor.gender_label') }}</legend>
-      <details class="monitor-multiselect" name="monitor-filter">
-        <summary title="{{ page.gender_labels|join(', ') if page.gender_labels else t('web.monitor.all_genders') }}">
-          <span>{{ page.gender_labels|join(', ') if page.gender_labels else t('web.monitor.all_genders') }}</span>
-        </summary>
-        <div class="monitor-multiselect-options" role="group" aria-label="{{ t('web.monitor.gender_label') }}">
-          {% for option in page.gender_options %}
-          <label class="monitor-multiselect-option">
-            <input type="checkbox" name="gender" value="{{ option.value }}"{% if option.selected %} checked{% endif %}>
-            <span>{{ option.label }}</span>
-          </label>
-          {% endfor %}
-        </div>
-      </details>
-    </fieldset>
-    <label>
-      <span>{{ t('web.monitor.sort_label') }}</span>
-      <select name="sort">
-        <option value="score"{% if page.sort.value == 'score' %} selected{% endif %}>{{ t('web.monitor.sort_score') }}</option>
-        <option value="newest"{% if page.sort.value == 'newest' %} selected{% endif %}>{{ t('web.monitor.sort_newest') }}</option>
-        <option value="discount"{% if page.sort.value == 'discount' %} selected{% endif %}>{{ t('web.monitor.sort_discount') }}</option>
-        <option value="price_asc"{% if page.sort.value == 'price_asc' %} selected{% endif %}>{{ t('web.monitor.sort_price_low') }}</option>
-        <option value="price_desc"{% if page.sort.value == 'price_desc' %} selected{% endif %}>{{ t('web.monitor.sort_price_high') }}</option>
-      </select>
-    </label>
-    <label class="monitor-checkbox">
-      <input type="checkbox" name="on_sale" value="true"{% if page.on_sale_only %} checked{% endif %}>
-      <span>{{ t('web.monitor.on_sale_only') }}</span>
-    </label>
-    <div class="monitor-control-actions">
-      <button type="submit" class="monitor-apply">{{ t('web.archive.apply_filters') }}</button>
-      <a href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a>
-    </div>
-  </form>
-
-  <section class="catalogue-section" aria-labelledby="monitor-available-title">
-    <header class="catalogue-heading">
-      <div>
-        <p class="section-kicker">{{ t('web.channel.monitor_label') }}</p>
-        <h2 id="monitor-available-title">{{ t('web.monitor.available_heading') }}</h2>
-      </div>
-      <span>{{ t('web.channel.folded_count', count=page.pagination.total) }}</span>
-    </header>
-
-    {% if page.items %}
-    <div class="monitor-grid">
-      {% for item in page.items %}
-      {% set monitor_item_history = false %}
-      {% include "_monitor_item.html" %}
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="channel-panel-empty">
-      {% if page.search or page.sources or page.vendors or page.genders or page.on_sale_only %}
-      <h3>{{ t('web.monitor.empty_filtered_heading') }}</h3>
-      <p>{{ t('web.monitor.empty_filtered_body') }}</p>
+{#- A filter that takes several values: a disclosure whose summary names the choice. -#}
+{% macro multiselect(name, label, options, all_label) -%}
+{%- set chosen = options|selectattr('selected')|map(attribute='label')|list %}
+<div class="fld">
+  <span id="ms-{{ name }}-label">{{ label }}</span>
+  <details class="ms" name="monitor-filter">
+    <summary class="inp" aria-describedby="ms-{{ name }}-label">{{ chosen|join(', ') if chosen else all_label }}</summary>
+    <div class="ms-panel" role="group" aria-labelledby="ms-{{ name }}-label">
+      {% for option in options %}
+      <label class="opt"><input type="checkbox" name="{{ name }}" value="{{ option.value }}"{% if option.selected %} checked{% endif %}><span>{{ option.label }}</span></label>
       {% else %}
-      <h3>{{ t('web.monitor.empty_heading') }}</h3>
-      <p>{{ t('web.monitor.empty_body') }}</p>
-      {% endif %}
-    </div>
-    {% endif %}
-
-    {% set pagination = page.pagination %}
-    {% set previous_url = monitor_previous_url %}
-    {% set next_url = monitor_next_url %}
-    {% set pagination_aria = t('web.monitor.pagination_aria') %}
-    {% include "_channel_pagination.html" %}
-  </section>
-
-  {% if page.history_pagination.total %}
-  <details class="catalogue-history"{% if page.history_pagination.page > 1 %} open{% endif %}>
-    <summary>
-      <span>
-        <strong>{{ t('web.monitor.unavailable_heading') }}</strong>
-        <small>{{ t('web.monitor.unavailable_body') }}</small>
-      </span>
-      <span>{{ t('web.channel.folded_count', count=page.history_pagination.total) }}</span>
-    </summary>
-    <div class="monitor-grid monitor-grid--history">
-      {% for item in page.history %}
-      {% set monitor_item_history = true %}
-      {% include "_monitor_item.html" %}
+      <span class="muted">{{ all_label }}</span>
       {% endfor %}
     </div>
-    {% set pagination = page.history_pagination %}
-    {% set previous_url = monitor_history_previous_url %}
-    {% set next_url = monitor_history_next_url %}
-    {% set pagination_aria = t('web.monitor.pagination_aria') %}
-    {% include "_channel_pagination.html" %}
   </details>
+</div>
+{%- endmacro %}
+
+
+{% block content %}
+<div class="adm-head">
+  <div>
+    <h1>{{ page.channel_name }}</h1>
+    <p class="adm-meta"><span class="nw">{{ t('web.channel.monitor_label') }}</span> · <span class="nw">{{ t('web.reading.desk.listings', count=page.pagination.total, number=page.pagination.total|count(locale)) }}</span> · <span class="nw" title="{{ freshness_exact }}">{{ freshness }}</span>
+      {%- if fetch_stats %} · <span>{{ fetch_stats }}</span>{% endif %}</p>
+    <p class="adm-meta chan-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
+  </div>
+</div>
+{{ rd.criteria(page, criteria_toggle_url) }}
+
+<form class="fields" method="get" action="/channels/{{ page.channel_id }}" role="search" aria-label="{{ t('web.reading.filters_aria') }}">
+  {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
+  <label class="fld fld-grow"><span>{{ t('web.monitor.search_label') }}</span><input class="inp" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}"></label>
+  {{ multiselect('source', t('web.monitor.source_label'), source_choices, t('web.monitor.all_sources')) }}
+  {{ multiselect('vendor', t('web.monitor.vendor_label'), vendor_choices, t('web.monitor.all_vendors')) }}
+  {{ multiselect('gender', t('web.monitor.gender_label'), gender_choices, t('web.monitor.all_genders')) }}
+  <label class="fld"><span>{{ t('web.monitor.sort_label') }}</span>
+    <select class="inp" name="sort">
+      {% for value, key in [('score', 'sort_score'), ('newest', 'sort_newest'), ('discount', 'sort_discount'), ('price_asc', 'sort_price_low'), ('price_desc', 'sort_price_high')] %}
+      <option value="{{ value }}"{% if page.sort.value == value %} selected{% endif %}>{{ t('web.monitor.' ~ key) }}</option>
+      {% endfor %}
+    </select></label>
+  <label class="opt fld-check"><input type="checkbox" name="on_sale" value="true"{% if page.on_sale_only %} checked{% endif %}><span>{{ t('web.monitor.on_sale_only') }}</span></label>
+  <div class="fld-act"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button><a class="lnk" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a></div>
+</form>
+
+<section class="chan-sec" id="available" aria-labelledby="available-h">
+  <h2 id="available-h"><span class="no">{{ sec.available }}</span><span>{{ t('web.monitor.available_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.reading.desk.listings', count=page.pagination.total, number=page.pagination.total|count(locale)) }}</span></span></h2>
+  {% if page.items %}
+  {{ rd.listing_table(page.items) }}
+  {{ rd.pager(page.pagination, monitor_previous_url, monitor_next_url, t('web.monitor.pagination_aria')) }}
+  {% elif page.pagination.page > 1 and page.pagination.total %}
+  {{ rd.past_end() }}
+  {{ rd.pager(page.pagination, monitor_previous_url, monitor_next_url, t('web.monitor.pagination_aria')) }}
+  {% elif page.search or page.sources or page.vendors or page.genders or page.on_sale_only %}
+  <div class="empty"><b>{{ t('web.monitor.empty_filtered_heading') }}</b>{{ t('web.monitor.empty_filtered_body') }}<div><a class="btn" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a></div></div>
+  {% else %}
+  <div class="empty"><b>{{ t('web.monitor.empty_heading') }}</b>{{ t('web.monitor.empty_body') }}</div>
   {% endif %}
-</main>
+</section>
+
+{% if sec.history %}
+<section class="chan-sec" id="history" aria-labelledby="history-h">
+  <h2 id="history-h"><span class="no">{{ sec.history }}</span><span>{{ t('web.monitor.unavailable_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.history_pagination.total) }}</span></span></h2>
+  <details class="more"{% if page.history_pagination.page > 1 %} open{% endif %}>
+    <summary>{{ t('web.reading.channel.show_history', count=page.history_pagination.total, number=page.history_pagination.total|count(locale)) }}</summary>
+    <p class="hint">{{ t('web.monitor.unavailable_body') }}</p>
+    {% if page.history %}{{ rd.listing_table(page.history) }}{% else %}{{ rd.past_end() }}{% endif %}
+    {{ rd.pager(page.history_pagination, monitor_history_previous_url, monitor_history_next_url, t('web.reading.pager_aria', name=t('web.monitor.unavailable_heading'))) }}
+  </details>
+</section>
+{% endif %}
+<p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
+{% endblock %}
+{% block scripts %}
+{% if is_admin %}<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>{% endif %}
 {% endblock %}

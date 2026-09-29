@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
@@ -600,16 +601,16 @@ def delete_by_channel(conn: sqlite3.Connection, channel_id: int) -> int:
     return cur.rowcount
 
 
-def list_archive(
-    conn: sqlite3.Connection,
+def _archive_where(
+    *,
     channel_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     read_state: str | None = None,
     search: str | None = None,
-    page: int = 1,
-    page_size: int = 30,
-) -> tuple[list[dict], int]:
+    fetched_from: str | None = None,
+    fetched_before: str | None = None,
+) -> tuple[str, list]:
     # date(...) truncates fetched_at's full ISO-T timestamp to just its date part before
     # comparing, so a bare "YYYY-MM-DD" date_to/date_from correctly includes/excludes an
     # entire day — comparing the raw timestamp strings directly would make date_to exclude
@@ -630,6 +631,12 @@ def list_archive(
     if date_to is not None:
         where.append("date(items.fetched_at) <= date(?)")
         params.append(date_to)
+    if fetched_from is not None:
+        where.append("datetime(items.fetched_at) >= datetime(?)")
+        params.append(fetched_from)
+    if fetched_before is not None:
+        where.append("datetime(items.fetched_at) < datetime(?)")
+        params.append(fetched_before)
     if read_state == "read":
         where.append("items.is_read = 1")
     elif read_state == "unread":
@@ -642,7 +649,32 @@ def list_archive(
         )
         like_pattern = f"%{search}%"
         params.extend([like_pattern, like_pattern, like_pattern])
-    where_clause = " AND ".join(where)
+    return " AND ".join(where), params
+
+
+def list_archive(
+    conn: sqlite3.Connection,
+    channel_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    read_state: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 30,
+    fetched_from: str | None = None,
+    fetched_before: str | None = None,
+) -> tuple[list[dict], int]:
+    """`date_from`/`date_to` compare the stored (UTC) date; `fetched_from`/`fetched_before`
+    bound the fetch time itself, so a caller can filter by the host's local days."""
+    where_clause, params = _archive_where(
+        channel_id=channel_id,
+        date_from=date_from,
+        date_to=date_to,
+        read_state=read_state,
+        search=search,
+        fetched_from=fetched_from,
+        fetched_before=fetched_before,
+    )
 
     total = conn.execute(
         f"SELECT COUNT(*) FROM items JOIN sources ON sources.id = items.source_id "
@@ -650,6 +682,11 @@ def list_archive(
         f"WHERE {where_clause}",
         params,
     ).fetchone()[0]
+    offset = (page - 1) * page_size
+    if offset >= total:
+        # A page past the end has no rows, however far past; SQLite could not even take its
+        # offset once it passes 64 bits.
+        return [], total
 
     rows = conn.execute(
         f"SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
@@ -660,10 +697,72 @@ def list_archive(
         f"JOIN channels ON channels.id = sources.channel_id "
         f"LEFT JOIN votes ON votes.item_id = items.id "
         f"WHERE {where_clause} ORDER BY items.fetched_at DESC, items.id DESC LIMIT ? OFFSET ?",
-        params + [page_size, (page - 1) * page_size],
+        params + [page_size, offset],
     ).fetchall()
 
     return [_row_to_dict(r) for r in rows], total
+
+
+def count_archive_by_day(
+    conn: sqlite3.Connection,
+    days: Sequence[tuple[str, str, str]],
+    *,
+    channel_id: int | None = None,
+    read_state: str | None = None,
+    search: str | None = None,
+) -> dict[str, int]:
+    """Archive stories per day under the same filters as `list_archive`, in one pass. Each day
+    is (key, start, end): its UTC fetch-time bounds, start inclusive, so a caller can count the
+    host's local days."""
+    if not days:
+        return {}
+    where_clause, params = _archive_where(
+        channel_id=channel_id,
+        read_state=read_state,
+        search=search,
+        fetched_from=min(start for _, start, _ in days),
+        fetched_before=max(end for _, _, end in days),
+    )
+    cases = " ".join(
+        "WHEN datetime(items.fetched_at) >= datetime(?) "
+        "AND datetime(items.fetched_at) < datetime(?) THEN ?"
+        for _ in days
+    )
+    case_params = [value for key, start, end in days for value in (start, end, key)]
+    rows = conn.execute(
+        f"SELECT CASE {cases} END AS day, COUNT(*) FROM items "
+        f"JOIN sources ON sources.id = items.source_id "
+        f"JOIN channels ON channels.id = sources.channel_id "
+        f"WHERE {where_clause} GROUP BY day",
+        case_params + params,
+    ).fetchall()
+    return {day: count for day, count in rows if day is not None}
+
+
+def _search_where(term: str) -> tuple[str, list]:
+    like_pattern = f"%{term}%"
+    return (
+        "items.superseded_at IS NULL AND "
+        "(items.title LIKE ? OR items.ai_summary LIKE ? OR "
+        "items.ai_rationale LIKE ? OR items.body LIKE ?)",
+        [like_pattern, like_pattern, like_pattern, like_pattern],
+    )
+
+
+def count_search_results_by_channel(conn: sqlite3.Connection, *, search: str) -> dict[int, int]:
+    """Search hits per Channel id, matching `list_search_results`."""
+    term = search.strip()
+    if not term:
+        return {}
+    where_clause, params = _search_where(term)
+    rows = conn.execute(
+        "SELECT channels.id, COUNT(*) FROM items "
+        "JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        f"WHERE {where_clause} GROUP BY channels.id",
+        params,
+    ).fetchall()
+    return {channel_id: count for channel_id, count in rows}
 
 
 def list_search_results(
@@ -676,13 +775,7 @@ def list_search_results(
     term = search.strip()
     if not term:
         return [], 0
-    like_pattern = f"%{term}%"
-    params = [like_pattern, like_pattern, like_pattern, like_pattern]
-    where_clause = (
-        "items.superseded_at IS NULL AND "
-        "(items.title LIKE ? OR items.ai_summary LIKE ? OR "
-        "items.ai_rationale LIKE ? OR items.body LIKE ?)"
-    )
+    where_clause, params = _search_where(term)
     total = conn.execute(
         "SELECT COUNT(*) FROM items "
         "JOIN sources ON sources.id = items.source_id "
@@ -690,6 +783,10 @@ def list_search_results(
         f"WHERE {where_clause}",
         params,
     ).fetchone()[0]
+    offset = (page - 1) * page_size
+    if offset >= total:
+        # Past the end, however far: see list_archive.
+        return [], total
     rows = conn.execute(
         "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
         "channels.name AS channel_name, channels.id AS item_channel_id, "
@@ -700,7 +797,7 @@ def list_search_results(
         "LEFT JOIN votes ON votes.item_id = items.id "
         f"WHERE {where_clause} "
         "ORDER BY items.fetched_at DESC, items.id DESC LIMIT ? OFFSET ?",
-        params + [page_size, (page - 1) * page_size],
+        params + [page_size, offset],
     ).fetchall()
     return [_row_to_dict(row) for row in rows], total
 

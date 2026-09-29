@@ -1,56 +1,43 @@
-{# Pending states poll; terminal states intentionally omit HTMX triggers. #}
-{% if is_pending %}
-<section id="deep-read-status" class="deep-read-status deep-read-status-pending" role="status" aria-live="polite"
-          hx-get="{{ status_url }}" hx-trigger="every 3s" hx-swap="outerHTML">
-  <p class="deep-read-kicker">{{ t('web.deep_read.eyebrow') }}</p>
-  <h2>{{ t('web.deep_read.pending_heading') }}</h2>
-  <p class="deep-read-status-body">{{ t('web.deep_read.pending_body') }}</p>
-  <div class="deep-read-skeleton" aria-hidden="true">
-    <div class="skeleton-group">
-      <span class="skeleton-line skeleton-line--full"></span>
-      <span class="skeleton-line skeleton-line--3-4"></span>
-    </div>
-    <div class="skeleton-group">
-      <span class="skeleton-line skeleton-line--full"></span>
-      <span class="skeleton-line skeleton-line--full"></span>
-      <span class="skeleton-line skeleton-line--1-2"></span>
-    </div>
-    <div class="skeleton-group skeleton-figures">
-      <span class="skeleton-figure"></span>
-      <span class="skeleton-figure"></span>
-      <span class="skeleton-figure"></span>
-    </div>
-    <div class="skeleton-group">
-      <span class="skeleton-line skeleton-line--full"></span>
-      <span class="skeleton-line skeleton-line--1-3"></span>
-    </div>
-  </div>
-  <p class="sr-only">{{ t('web.deep_read.pending_live_region') }}</p>
-</section>
-{% elif status == 'ready' %}
-<section id="deep-read-status" class="deep-read-status deep-read-status-ready" role="status" aria-live="polite">
+{#- The brief while it is being written, or why it could not be: one numbered section whose
+    heading carries the state. A pending brief polls, and each poll re-renders the whole section,
+    heading included, so its state never goes stale; the status route answers a finished one with
+    HX-Redirect to the full page. Terminal states do not poll. -#}
+{% if status == 'ready' %}
+<section id="deep-read-status" class="brief-status" role="status" aria-live="polite">
   <p class="sr-only">{{ t('web.deep_read.ready_announcement') }}</p>
 </section>
-{% elif status == 'failed' %}
-<section id="deep-read-status" class="deep-read-status deep-read-status-failed" role="status" aria-live="polite">
-  <p class="deep-read-kicker">{{ t('web.deep_read.eyebrow') }}</p>
-  <h2 class="deep-read-failure-heading">{{ failure.heading }}</h2>
-  <p class="deep-read-status-body deep-read-status-body-failed">{{ failure.explanation }}</p>
-  <p class="deep-read-failure-next">{{ failure.next_step }}</p>
+{% else %}
+{% if is_pending %}{% set state = t('web.reading.brief.state_pending') %}
+{% elif status == 'failed' %}{% set state = t('web.reading.brief.state_failed') %}
+{% elif can_start %}{% set state = t('web.reading.brief.state_not_started') %}
+{% else %}{% set state = t('web.reading.brief.state_unavailable') %}{% endif %}
+<section id="deep-read-status" class="brief-status" role="status" aria-live="polite" aria-labelledby="deep-read-status-h"
+         {%- if is_pending %} hx-get="{{ status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  <h2 id="deep-read-status-h"><span class="no">{{ sec.status }}</span><span>{{ t('web.deep_read.eyebrow') }}</span><span class="tools"><span class="desk-state nw">{{ state }}</span></span></h2>
+  {% if is_pending %}
+  <p class="adm-lede">{{ t('web.deep_read.pending_body') }}</p>
+  <div class="skel brief-skel" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+  <p class="sr-only">{{ t('web.deep_read.pending_live_region') }}</p>
+  {% elif status == 'failed' %}
+  <div class="note note-danger"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.danger') }}</span>
+    <div class="note-body"><b>{{ failure.heading }}</b> {{ failure.explanation }}<small>{{ failure.next_step }}</small></div>
+    {% if can_regenerate %}
+    <div class="note-act">
+      <form method="post" action="{{ request_url }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="origin" value="{{ form_origin }}">
+        {% if channel_id is not none %}<input type="hidden" name="channel_id" value="{{ channel_id }}">{% endif %}
+        <input type="hidden" name="regenerate" value="true">
+        <button class="btn btn-sm" type="submit" aria-label="{{ t('web.deep_read.button_retry_aria', title=item.ai_summary or item.title) }}">{{ t('web.deep_read.button_retry') }}</button>
+      </form>
+    </div>
+    {% endif %}
+  </div></div>
   <p class="sr-only">{{ t('web.deep_read.failed_announcement') }}</p>
-  {% if can_regenerate %}
-  <form class="deep-read-form" method="post" action="{{ request_url }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="hidden" name="origin" value="{{ form_origin }}">
-    {% if channel_id is not none %}<input type="hidden" name="channel_id" value="{{ channel_id }}">{% endif %}
-    <input type="hidden" name="regenerate" value="true">
-    <button type="submit" class="btn ghost small"
-            aria-label="{{ t('web.deep_read.button_retry_aria', title=item.ai_summary or item.title) }}">{{ t('web.deep_read.button_retry') }}</button>
-  </form>
+  {% elif can_start %}
+  <div class="empty">{{ t('web.reading.brief.not_started') }}</div>
+  {% else %}
+  <div class="empty">{{ t('web.deep_read.failure_unavailable') }}</div>
   {% endif %}
-</section>
-{% elif not can_start %}
-<section id="deep-read-status" class="deep-read-status deep-read-status-unavailable" role="status" aria-live="polite">
-  <p class="deep-read-status-body">{{ t('web.deep_read.failure_unavailable') }}</p>
 </section>
 {% endif %}

@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
 from urllib.parse import urlencode, urlparse
 
@@ -21,8 +21,8 @@ from pydantic import BeforeValidator, Field
 from beehive.channels import get_definition, require_channel_kind
 from beehive.channels.tracker import adapter_for_source
 from beehive.channels.views import (
-    EditorialPage,
     EditorialItemView,
+    EditorialPage,
     EditorialQuery,
     MonitorGender,
     MonitorPage,
@@ -35,7 +35,10 @@ from beehive.channels.views import (
     TrackerStatus,
     WatchlistQuery,
     build_channel_page,
+    build_editorial_item_views,
+    build_monitor_item_views,
     build_tracker_item_view,
+    build_tracker_item_views,
     build_watchlist_page,
 )
 from beehive.collector.deep_read_trigger import request_deep_read_worker
@@ -51,12 +54,13 @@ from beehive.notify import build_notifier
 from beehive.db.channels import get_channel, list_channels
 from beehive.db.deep_reads import (
     get_deep_read,
-    get_deep_reads_for_items,
     request_deep_read,
 )
 from beehive.db.items import (
+    count_archive_by_day,
     count_dashboard_signals,
     count_dashboard_signals_by_channel,
+    count_search_results_by_channel,
     get_item,
     list_archive,
     list_dashboard_highlights,
@@ -72,11 +76,11 @@ from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.featured import featured_utc_bounds, load_featured_window_days
 from beehive.domain.channels import ReadModel
 from beehive.localization import Localizer
+from beehive.scheduling import HOST_TZ
 from beehive.web.deep_read_view import (
     ALLOWED_ORIGINS,
     brief_url,
     build_brief_context,
-    decorate_deep_read_state,
 )
 from beehive.web.deps import (
     get_db,
@@ -96,7 +100,7 @@ from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.link_safety import safe_external_href
 from beehive.web.official_feed_labels import official_feed_label
 from beehive.web.home import build_channel_desk, build_ranked_stories
-from beehive.web.reading import render_reading
+from beehive.web.reading import channel_chapter_number, number_sections, render_reading
 from beehive.web.workspace import render_workspace
 from beehive.tracker_reminders import send_tracker_reminder_for_item
 
@@ -270,15 +274,6 @@ def _monitor_page_url(
     return f"/channels/{page.channel_id}?{urlencode(params)}"
 
 
-def _editorial_item_from_page(
-    page: EditorialPage, item_id: int
-) -> EditorialItemView | None:
-    for item in (*page.highlighted, *page.folded):
-        if item.id == item_id:
-            return item
-    return None
-
-
 def _tracker_page_url(
     page: TrackerPage,
     *,
@@ -320,16 +315,70 @@ def _tracker_page_url(
     return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
 
 
-def _group_by_day(items: list[dict]) -> list[tuple[str, list[dict]]]:
+def _local_day_bounds(
+    date_from: str | None, date_to: str | None
+) -> tuple[str | None, str | None]:
+    """The UTC fetch-time range that covers the given Auckland days, both inclusive, so the
+    Archive filters by the same day it files each story under. A date that does not parse, or
+    whose bound falls outside the calendar, is ignored, like a blank one."""
+
+    def start_of(day: str | None, days_later: int) -> str | None:
+        if not day:
+            return None
+        try:
+            local_day = date.fromisoformat(day) + timedelta(days=days_later)
+            start = datetime.combine(local_day, time.min, tzinfo=HOST_TZ).astimezone(timezone.utc)
+        except (ValueError, OverflowError):
+            return None
+        return start.replace(tzinfo=None).isoformat(timespec="seconds")
+
+    return start_of(date_from, 0), start_of(date_to, 1)
+
+
+_WEEKDAY_KEYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def _archive_days(
+    groups: list[tuple[str, list[dict]]], totals: dict[str, int], t: Localizer
+) -> list[dict]:
+    """The Archive page's day sections: each Auckland day on the page, its anchor and weekday,
+    and how many stories it holds under the current filters across every page."""
+    return [
+        {
+            "key": day,
+            "anchor": f"day-{day}",
+            "label": t.text(
+                f"web.weekday.{_WEEKDAY_KEYS[date.fromisoformat(day).weekday()]}"
+            ),
+            "rows": rows,
+            "total": totals.get(day, len(rows)),
+        }
+        for day, rows in groups
+    ]
+
+
+def _group_by_local_day(
+    items: list[dict], stories: tuple[EditorialItemView, ...]
+) -> list[tuple[str, list[dict]]]:
+    """Archive rows grouped by the Auckland day they were fetched, newest first as listed, each
+    with its local fetch time. Stored times are UTC, so the day and the time are converted
+    together; grouping on the stored date would file an Auckland morning under yesterday."""
     groups: dict[str, list[dict]] = {}
-    for item in items:
-        day = item["fetched_at"][:10]
-        groups.setdefault(day, []).append(item)
+    for item, story in zip(items, stories, strict=True):
+        fetched = datetime.fromisoformat(item["fetched_at"])
+        if fetched.tzinfo is None:
+            fetched = fetched.replace(tzinfo=timezone.utc)
+        local = fetched.astimezone(HOST_TZ)
+        groups.setdefault(local.date().isoformat(), []).append(
+            {
+                "story": story,
+                "channel_name": item["channel_name"],
+                "channel_id": item["item_channel_id"],
+                "time": local.strftime("%H:%M"),
+                "exact": host_local_time_label(item["fetched_at"]),
+            }
+        )
     return list(groups.items())
-
-
-def _time_label(iso_str: str) -> str:
-    return datetime.fromisoformat(iso_str).strftime("%H:%M")
 
 
 def _ranked_list_url(
@@ -390,6 +439,16 @@ def _editorial_page_url(
     return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
 
 
+def _editorial_clear_search_url(page: EditorialPage) -> str:
+    params: dict[str, str | int] = {}
+    if page.show_read:
+        params["show_read"] = 1
+    if page.criteria.showing_below_threshold:
+        params["show_below"] = 1
+    query = urlencode(params)
+    return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
+
+
 def _editorial_show_read_url(page: EditorialPage) -> str:
     params: dict[str, str | int] = {"show_read": 1}
     if page.search:
@@ -400,7 +459,8 @@ def _editorial_show_read_url(page: EditorialPage) -> str:
 
 
 def _safe_return_url(value: str | None, fallback: str) -> str:
-    if not value or not value.startswith("/") or value.startswith("//"):
+    # Browsers read a backslash as a slash, so "/\host" would leave the site like "//host".
+    if not value or not value.startswith("/") or value.startswith("//") or "\\" in value:
         return fallback
     return value
 
@@ -532,8 +592,9 @@ def dashboard(
         t,
         "dashboard.html",
         context,
+        is_owner=is_admin,
         channels=channels,
-        featured_unread=unread_signal_count if is_admin else None,
+        featured_unread=unread_signal_count,
     )
 
 
@@ -551,6 +612,13 @@ def open_item(
         if item["channel_kind"] == "editorial":
             mark_read(conn, item_id)
     return RedirectResponse(safe_external_href(item["url"]), status_code=302)
+
+
+@router.get("/channels", include_in_schema=False)
+@router.get("/channels/", include_in_schema=False)
+def channels_index() -> RedirectResponse:
+    """There is no separate Channel index: the home page's desk lists every Channel."""
+    return RedirectResponse("/", status_code=302)
 
 
 @router.get("/channels/{channel_id}", response_class=HTMLResponse)
@@ -622,11 +690,9 @@ def channel_drilldown(
     )
 
     sources = list_sources(conn, channel_id)
-
-    templates = request.app.state.templates
+    channels = list_channels(conn)
     context = {
         "page": page,
-        "nav_channels": list_channels(conn),
         "freshness": freshness_label(sources, t),
         "freshness_exact": freshness_exact_time(sources),
         "fetch_stats": fetch_stats_label(sources, t),
@@ -652,11 +718,18 @@ def channel_drilldown(
             showing_below=page.criteria.showing_below_threshold,
         ),
     }
+    sections: list[tuple[str, str, str]] = []
     if isinstance(page, EditorialPage):
+        if page.folded_pagination.page == 1:
+            sections.append(("top", t.text("web.channel.priority_heading"), "#top"))
+        # A later page keeps its section when it has emptied (its last unread story was just
+        # read), so the reader still has the pager back.
+        if page.folded or page.folded_pagination.page > 1:
+            sections.append(("more", t.text("web.channel.folded_heading"), "#more"))
         if page.folded_pagination.has_previous:
             context["editorial_previous_url"] = _editorial_page_url(
                 page,
-                page.folded_pagination.page - 1,
+                page.folded_pagination.previous_page,
                 include_read_filter=is_admin,
             )
         if page.folded_pagination.has_next:
@@ -665,15 +738,30 @@ def channel_drilldown(
                 page.folded_pagination.page + 1,
                 include_read_filter=is_admin,
             )
-        context["editorial_page"] = page.folded_pagination.page
-        context["editorial_show_read"] = page.show_read
-        context["editorial_show_below"] = page.criteria.showing_below_threshold
-        context["editorial_search"] = page.search or ""
         context["editorial_show_read_url"] = _editorial_show_read_url(page)
+        context["editorial_unread_url"] = _editorial_page_url(
+            page, 1, include_read_filter=False
+        )
+        context["editorial_clear_search_url"] = _editorial_clear_search_url(page)
     if isinstance(page, MonitorPage):
+        sections.append(("available", t.text("web.monitor.available_heading"), "#available"))
+        if page.history_pagination.total:
+            sections.append(("history", t.text("web.monitor.unavailable_heading"), "#history"))
+        context["source_choices"] = [
+            {"value": option, "label": option, "selected": option in page.sources}
+            for option in page.source_options
+        ]
+        context["vendor_choices"] = [
+            {"value": option, "label": option, "selected": option in page.vendors}
+            for option in page.vendor_options
+        ]
+        context["gender_choices"] = [
+            {"value": option.value, "label": option.label, "selected": option.selected}
+            for option in page.gender_options
+        ]
         if page.pagination.has_previous:
             context["monitor_previous_url"] = _monitor_page_url(
-                page, active_page=page.pagination.page - 1
+                page, active_page=page.pagination.previous_page
             )
         if page.pagination.has_next:
             context["monitor_next_url"] = _monitor_page_url(
@@ -681,16 +769,27 @@ def channel_drilldown(
             )
         if page.history_pagination.has_previous:
             context["monitor_history_previous_url"] = _monitor_page_url(
-                page, history_page=page.history_pagination.page - 1
+                page, history_page=page.history_pagination.previous_page
             )
         if page.history_pagination.has_next:
             context["monitor_history_next_url"] = _monitor_page_url(
                 page, history_page=page.history_pagination.page + 1
             )
     if isinstance(page, TrackerPage):
+        if page.watched:
+            sections.append(("watched", t.text("web.tracker.watched_heading"), "#watched"))
+        if page.ending_pagination.total:
+            sections.append(("ending", t.text("web.tracker.ending_heading"), "#ending"))
+        if page.upcoming_pagination.total:
+            sections.append(("upcoming", t.text("web.tracker.upcoming_heading"), "#upcoming"))
+        if page.history_pagination.total:
+            sections.append(("history", t.text("web.tracker.history_heading"), "#history"))
+        context["open_total"] = (
+            len(page.watched) + page.ending_pagination.total + page.upcoming_pagination.total
+        )
         if page.ending_pagination.has_previous:
             context["tracker_ending_previous_url"] = _tracker_page_url(
-                page, ending_page=page.ending_pagination.page - 1
+                page, ending_page=page.ending_pagination.previous_page
             )
         if page.ending_pagination.has_next:
             context["tracker_ending_next_url"] = _tracker_page_url(
@@ -698,7 +797,7 @@ def channel_drilldown(
             )
         if page.upcoming_pagination.has_previous:
             context["tracker_upcoming_previous_url"] = _tracker_page_url(
-                page, upcoming_page=page.upcoming_pagination.page - 1
+                page, upcoming_page=page.upcoming_pagination.previous_page
             )
         if page.upcoming_pagination.has_next:
             context["tracker_upcoming_next_url"] = _tracker_page_url(
@@ -706,13 +805,23 @@ def channel_drilldown(
             )
         if page.history_pagination.has_previous:
             context["tracker_history_previous_url"] = _tracker_page_url(
-                page, history_page=page.history_pagination.page - 1
+                page, history_page=page.history_pagination.previous_page
             )
         if page.history_pagination.has_next:
             context["tracker_history_next_url"] = _tracker_page_url(
                 page, history_page=page.history_pagination.page + 1
             )
-    return templates.TemplateResponse(request, page.template_name, context)
+    toc_sections, section_numbers = number_sections(
+        channel_chapter_number(channels, channel_id), sections
+    )
+    context.update(
+        current_chapter=f"channel-{channel_id}",
+        toc_sections=toc_sections,
+        sec=section_numbers,
+    )
+    return render_reading(
+        request, t, page.template_name, context, is_owner=is_admin, channels=channels
+    )
 
 
 @router.get("/watchlist", response_class=HTMLResponse)
@@ -892,6 +1001,7 @@ def toggle_tracker_watch(
         # The Watch List reloads the same view. htmx follows the redirect and swaps the list,
         # counts and warnings from the fresh page, so nothing on it describes a removed lot.
         return RedirectResponse(_safe_return_url(next_url, "/watchlist"), status_code=303)
+    channel_url = f"/channels/{actual_channel_id}" if actual_channel_id is not None else "/"
     if request.headers.get("HX-Request") == "true":
         item_view = build_tracker_item_view(
             conn,
@@ -906,6 +1016,7 @@ def toggle_tracker_watch(
             {
                 "item": item_view,
                 "csrf_token": session["csrf_token"],
+                "return_url": _safe_return_url(next_url, channel_url),
                 "watch_origin": "channel",
                 "watch_target": "this",
                 "watch_swap": "outerHTML",
@@ -913,30 +1024,25 @@ def toggle_tracker_watch(
             },
         )
 
-    if origin in {"channel", "folded"} and actual_channel_id is not None:
-        return RedirectResponse(
-            f"/channels/{actual_channel_id}",
-            status_code=303,
-        )
+    # Without JavaScript the post returns to the page it came from, filters and all.
+    if origin in {"channel", "folded"}:
+        return RedirectResponse(_safe_return_url(next_url, channel_url), status_code=303)
     return RedirectResponse("/", status_code=303)
 
 
-@router.post("/items/{item_id}/vote", response_class=HTMLResponse)
+@router.post("/items/{item_id}/vote")
 def vote_on_item(
     item_id: int,
-    request: Request,
     value: int = Form(...),
     csrf_token: str = Form(...),
     reason: str | None = Form(None),
-    origin: str = Form("channel"),
-    editorial_page: int = Form(1),
-    editorial_show_read: bool = Form(False),
-    editorial_show_below: bool = Form(False),
-    editorial_search: str | None = Form(None),
+    next_url: str | None = Form(None),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
-    t: Localizer = Depends(get_localizer),
 ):
+    """The Owner's relevance vote on an Editorial story. Voting the same way again clears it; a
+    reason keeps the down vote and saves the note. The response redirects back to the page, and
+    htmx swaps the story's row in place from it."""
     verify_csrf(session, csrf_token)
     if value not in (1, -1):
         raise HTTPException(status_code=422, detail="value must be 1 or -1")
@@ -954,55 +1060,9 @@ def vote_on_item(
     else:
         upsert_vote(conn, item_id, value, None)
 
-    item = get_item(conn, item_id)
-    assert item is not None
     channel_id = _item_channel_id(conn, item)
-    channel = get_channel(conn, channel_id) if channel_id is not None else None
-    if channel is None:
-        raise HTTPException(status_code=404, detail="Channel not found")
-    page = build_channel_page(
-        conn,
-        channel,
-        t=t,
-        now=datetime.now(timezone.utc),
-        is_owner=True,
-        csrf_token=session["csrf_token"],
-        show_read=editorial_show_read,
-        show_below_score=editorial_show_below,
-        editorial_query=EditorialQuery(
-            page=max(1, editorial_page),
-            search=editorial_search,
-        ),
-    )
-    if not isinstance(page, EditorialPage):
-        raise HTTPException(
-            status_code=422,
-            detail="This action is only available for Editorial items",
-        )
-    item_view = _editorial_item_from_page(page, item_id)
-    if item_view is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-
-    templates = request.app.state.templates
-    template_name = "_folded_item.html" if origin == "folded" else "_item_card.html"
-    return templates.TemplateResponse(
-        request,
-        template_name,
-        {
-            "item": item_view,
-            "csrf_token": session["csrf_token"],
-            "is_owner": True,
-            "editorial_page": max(1, editorial_page),
-            "editorial_show_read": editorial_show_read,
-            "editorial_show_below": editorial_show_below,
-            "editorial_search": editorial_search or "",
-            "return_url": _editorial_page_url(
-                page,
-                max(1, editorial_page),
-                include_read_filter=True,
-            ),
-        },
-    )
+    fallback = f"/channels/{channel_id}" if channel_id is not None else "/"
+    return RedirectResponse(_safe_return_url(next_url, fallback), status_code=303)
 
 
 @router.post("/items/{item_id}/relevance", response_class=HTMLResponse)
@@ -1148,34 +1208,63 @@ def search(
     )
     is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
+    now = datetime.now(timezone.utc)
+    channels = list_channels(conn)
+    # The page's hits, newest first, sorted into one section per Channel in rail order. Each
+    # section uses its Channel's own rows: stories, listings or lots.
+    hits_by_channel: dict[int, list[dict]] = {}
     for item in items:
-        _decorate_item(item, t)
-        item["time_label"] = _time_label(item["fetched_at"])
-        item["vote_reason"] = None
-        item["workflow_label"] = t.text(
-            f"web.channel.{item['channel_kind']}_label"
+        hits_by_channel.setdefault(item["item_channel_id"], []).append(item)
+    totals = count_search_results_by_channel(conn, search=q) if items else {}
+    sections = []
+    for channel in channels:
+        hits = hits_by_channel.get(channel["id"])
+        if not hits:
+            continue
+        if channel["kind"] == "editorial":
+            rows = build_editorial_item_views(
+                conn, hits, t=t, now=now, is_owner=is_admin, csrf_token=csrf_token
+            )
+        elif channel["kind"] == "monitor":
+            rows = build_monitor_item_views(conn, hits, t=t)
+        else:
+            rows = build_tracker_item_views(conn, hits, t=t, now=now, is_owner=is_admin)
+        sections.append(
+            {
+                "anchor": f"channel-{channel['id']}",
+                "name": channel["name"],
+                "kind": channel["kind"],
+                "rows": rows,
+                "total": totals.get(channel["id"], len(hits)),
+                "href": f"/channels/{channel['id']}?{urlencode({'q': q.strip()})}",
+            }
         )
-
-    previous_url = _search_url(q, page - 1) if page > 1 else None
-    next_url = (
-        _search_url(q, page + 1)
-        if page * _SEARCH_PAGE_SIZE < total
-        else None
+    toc_sections, section_numbers = number_sections(
+        1, [(section["anchor"], section["name"], f"#{section['anchor']}") for section in sections]
     )
-    return request.app.state.templates.TemplateResponse(
+
+    pagination = Pagination(page=page, per_page=_SEARCH_PAGE_SIZE, total=total)
+    previous_url = _search_url(q, pagination.previous_page) if pagination.has_previous else None
+    next_url = _search_url(q, page + 1) if pagination.has_next else None
+    return render_reading(
         request,
+        t,
         "search.html",
         {
-            "items": items,
+            "sections": sections,
+            "sec": section_numbers,
+            "toc_sections": toc_sections,
             "query": q,
             "total": total,
-            "page": page,
+            "pagination": pagination,
             "previous_url": previous_url,
             "next_url": next_url,
             "is_admin": is_admin,
             "csrf_token": csrf_token,
             "return_url": _search_url(q, page),
         },
+        is_owner=is_admin,
+        channels=channels,
     )
 
 
@@ -1210,63 +1299,69 @@ def archive(
     to = to or None
     is_admin = session is not None
     effective_read_state = read_state if is_admin else None
+    fetched_from, fetched_before = _local_day_bounds(from_, to)
     items, total = list_archive(
         conn,
         channel_id=channel_id,
-        date_from=from_,
-        date_to=to,
+        fetched_from=fetched_from,
+        fetched_before=fetched_before,
         read_state=effective_read_state,
         search=q,
         page=page,
         page_size=_ARCHIVE_PAGE_SIZE,
     )
     csrf_token = session["csrf_token"] if is_admin else None
-    deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in items])
-    for item in items:
-        _decorate_item(item, t)
-        item["time_label"] = _time_label(item["fetched_at"])
-        item["vote_reason"] = (
-            None  # archive is always anonymous: never surface the private reason
-        )
-        decorate_deep_read_state(
-            item, deep_reads.get(item["id"]), is_admin, "archive", None, csrf_token
+    stories = build_editorial_item_views(
+        conn,
+        items,
+        t=t,
+        now=datetime.now(timezone.utc),
+        is_owner=is_admin,
+        csrf_token=csrf_token,
+        deep_read_origin="archive",
+    )
+    groups = _group_by_local_day(items, stories)
+    day_totals = count_archive_by_day(
+        conn,
+        [(day, *_local_day_bounds(day, day)) for day, _ in groups],
+        channel_id=channel_id,
+        read_state=effective_read_state,
+        search=q,
+    )
+    days = _archive_days(groups, day_totals, t)
+    channels = list_channels(conn)
+    # The Archive is the rail's last chapter; its sections are the days on this page.
+    toc_sections, section_numbers = number_sections(
+        len(channels) + 2,
+        [(day["key"], f"{day['key']} {day['label']}", f"#{day['anchor']}") for day in days],
+    )
+    pagination = Pagination(page=page, per_page=_ARCHIVE_PAGE_SIZE, total=total)
+
+    def page_url(target: int) -> str:
+        return _archive_page_url(
+            target,
+            channel_id=channel_id,
+            date_from=from_,
+            date_to=to,
+            read_state=effective_read_state,
+            search=q,
         )
 
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    return render_reading(
         request,
+        t,
         "archive.html",
         {
-            "groups": _group_by_day(items),
-            "channels": list_channels(conn, kind="editorial"),
+            "days": days,
+            "sec": section_numbers,
+            "toc_sections": toc_sections,
+            "channels": [channel for channel in channels if channel["kind"] == "editorial"],
             "total": total,
-            "page": page,
-            "has_prev": page > 1,
-            "has_next": page * _ARCHIVE_PAGE_SIZE < total,
+            "pagination": pagination,
             "previous_url": (
-                _archive_page_url(
-                    page - 1,
-                    channel_id=channel_id,
-                    date_from=from_,
-                    date_to=to,
-                    read_state=effective_read_state,
-                    search=q,
-                )
-                if page > 1
-                else None
+                page_url(pagination.previous_page) if pagination.has_previous else None
             ),
-            "next_url": (
-                _archive_page_url(
-                    page + 1,
-                    channel_id=channel_id,
-                    date_from=from_,
-                    date_to=to,
-                    read_state=effective_read_state,
-                    search=q,
-                )
-                if page * _ARCHIVE_PAGE_SIZE < total
-                else None
-            ),
+            "next_url": page_url(page + 1) if pagination.has_next else None,
             "selected_channel": channel_id,
             "selected_from": from_ or "",
             "selected_to": to or "",
@@ -1274,15 +1369,10 @@ def archive(
             "selected_search": q or "",
             "is_admin": is_admin,
             "csrf_token": csrf_token,
-            "return_url": _archive_page_url(
-                page,
-                channel_id=channel_id,
-                date_from=from_,
-                date_to=to,
-                read_state=effective_read_state,
-                search=q,
-            ),
+            "return_url": page_url(page),
         },
+        is_owner=is_admin,
+        channels=channels,
     )
 
 
@@ -1321,6 +1411,36 @@ def _resolve_brief_origin(
     if channel is None:
         return None, None, None
     return origin, channel_id, channel["name"]
+
+
+def _brief_chapter(
+    channels: list[dict], origin: str | None, channel_id: int | None
+) -> tuple[str, int]:
+    """The rail chapter a brief sits in and its number: the Channel it was opened from, the
+    Archive, or Featured."""
+    if origin == "channel" and channel_id is not None:
+        return f"channel-{channel_id}", channel_chapter_number(channels, channel_id)
+    if origin == "archive":
+        return "archive", len(channels) + 2
+    return "featured", 1
+
+
+def _brief_sections(
+    t: Localizer, context: dict, chapter_number: int
+) -> tuple[list[tuple[str, str, str]], dict[str, str]]:
+    """A brief's numbered sections under its chapter: a finished brief's five parts, or else the
+    one status section that says where it stands."""
+    if context["status"] == "ready" and context["brief"] is not None:
+        sections = [
+            ("bottom_line", t.text("web.deep_read.section_bottom_line"), "#brief-bottom-line"),
+            ("findings", t.text("web.deep_read.section_key_findings"), "#brief-findings"),
+            ("why", t.text("web.deep_read.section_why_it_matters"), "#brief-why"),
+            ("figures", t.text("web.deep_read.section_important_figures"), "#brief-figures"),
+            ("source", t.text("web.reading.col_source"), "#brief-source"),
+        ]
+    else:
+        sections = [("status", t.text("web.deep_read.eyebrow"), "#deep-read-status")]
+    return number_sections(chapter_number, sections)
 
 
 @router.post("/items/{item_id}/deep-read")
@@ -1413,8 +1533,14 @@ def deep_read_brief(
         t=t,
     )
 
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "deep_read_brief.html", context)
+    channels = list_channels(conn)
+    context["current_chapter"], chapter_number = _brief_chapter(
+        channels, resolved_origin, resolved_channel_id
+    )
+    context["toc_sections"], context["sec"] = _brief_sections(t, context, chapter_number)
+    return render_reading(
+        request, t, "deep_read_brief.html", context, is_owner=is_owner, channels=channels
+    )
 
 
 @router.get("/items/{item_id}/brief/status", response_class=HTMLResponse)
@@ -1449,6 +1575,10 @@ def deep_read_brief_status(
     )
 
     templates = request.app.state.templates
+    # Each poll re-renders the status section with its numbered heading, so it is numbered the
+    # same way as on the page.
+    _, chapter_number = _brief_chapter(list_channels(conn), resolved_origin, resolved_channel_id)
+    _, context["sec"] = _brief_sections(t, context, chapter_number)
     response = templates.TemplateResponse(request, "_deep_read_status.html", context)
     # Ready is terminal regardless of whether the cached result later turns out to parse (a
     # malformed cache still stops polling -- the brief page itself renders the localized

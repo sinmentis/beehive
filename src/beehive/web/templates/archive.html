@@ -1,99 +1,59 @@
-{% extends "base.html" %}
+{% extends "reading_base.html" %}
+{% import "_reading_macros.html" as rd with context %}
 {% block title %}{{ t('web.title.archive', product=t('common.product_name')) }}{% endblock %}
-{% block body_class %}page-archive{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.nav.archive') }}</span>{% endblock %}
+{% set current_chapter = "archive" %}
 {% block content %}
-<main id="main-content" class="page-shell archive-shell">
-  <header class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow">{{ t('web.archive.eyebrow') }}</p>
-      <h1>{{ t('web.archive.heading') }}</h1>
-      <p class="page-lede">{{ t('web.archive.lede') }}</p>
-    </div>
-    <div class="result-stat">
-      <strong>{{ total }}</strong>
-      <span>{{ t('web.archive.result_count_label') }}</span>
-    </div>
-  </header>
-
-  <form class="filters archive-filters" method="get" aria-label="{{ t('web.archive.filters_aria') }}">
-    <div class="field search-field">
-      <label for="archive-query">{{ t('web.archive.query_label') }}</label>
-      <input id="archive-query" type="search" name="q" value="{{ selected_search }}" placeholder="{{ t('web.archive.query_placeholder') }}">
-    </div>
-    {% if is_admin %}
-    <div class="field">
-      <label for="archive-channel">{{ t('web.archive.channel_label') }}</label>
-      <select id="archive-channel" name="channel">
-        <option value="">{{ t('web.archive.channel_all') }}</option>
-        {% for c in channels %}
-        <option value="{{ c.id }}" {{ "selected" if selected_channel == c.id else "" }}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    {% endif %}
-    <div class="field">
-      <label for="archive-from">{{ t('web.archive.from_label') }}</label>
-      <input id="archive-from" type="date" name="from" value="{{ selected_from }}">
-    </div>
-    <div class="field">
-      <label for="archive-to">{{ t('web.archive.to_label') }}</label>
-      <input id="archive-to" type="date" name="to" value="{{ selected_to }}">
-    </div>
-    <div class="field">
-      <label for="archive-state">{{ t('web.archive.read_state_label') }}</label>
-      <select id="archive-state" name="read_state">
-        <option value="" {{ "selected" if selected_read_state == "" else "" }}>{{ t('web.archive.read_state_all') }}</option>
-        <option value="unread" {{ "selected" if selected_read_state == "unread" else "" }}>{{ t('web.archive.read_state_unread') }}</option>
-        <option value="read" {{ "selected" if selected_read_state == "read" else "" }}>{{ t('web.archive.read_state_read') }}</option>
-      </select>
-    </div>
-    <div class="filter-actions">
-      <button class="btn primary" type="submit">{{ t('web.archive.apply_filters') }}</button>
-      <a class="text-action" href="/archive">{{ t('web.archive.clear_filters') }}</a>
-    </div>
-  </form>
-
-  {% if groups %}
-  <div class="archive-groups">
-    {% for day, day_items in groups %}
-    <section class="day-group" aria-labelledby="day-{{ loop.index }}">
-      <h2 class="day-label" id="day-{{ loop.index }}">{{ day }}</h2>
-      <div class="archive-list">
-        {% for item in day_items %}
-        <article class="archive-row{{ ' read' if is_admin and item.is_read else '' }}">
-          <div class="archive-main">
-            <p class="archive-source"><span class="source-marker" aria-hidden="true"></span>{{ item.channel_name }} · {{ item.source_label }}</p>
-            <h3><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h3>
-            {% if item.best_comment_summary %}
-            <p class="best-comment"><span class="comment-mark" aria-hidden="true">“</span>{{ item.best_comment_summary }}</p>
-            {% endif %}
-          </div>
-          <div class="archive-side">
-            {{ item.time_label }}{% if item.vote_value == 1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_up_state_aria') }}">↑</span>{% elif item.vote_value == -1 %}<span class="vote-mark" aria-label="{{ t('web.item.vote_down_state_aria') }}">↓</span>{% endif %}
-            {% set is_owner = is_admin %}
-            {% include "_read_state_control.html" %}
-            {% set deep_read_variant = "side" %}
-            {% include "_deep_read_action.html" %}
-          </div>
-        </article>
-        {% endfor %}
-      </div>
-    </section>
-    {% endfor %}
+<div class="adm-head">
+  <div>
+    <h1>{{ t('web.archive.heading') }}</h1>
+    <p class="adm-meta" id="archive-meta"><span class="nw">{{ t('web.reading.results', count=total, number=total|count(locale)) }}</span> · {{ t('web.archive.lede') }}</p>
   </div>
-  {% else %}
-  <div class="empty-state">
-    <span class="empty-mark" aria-hidden="true"></span>
-    <h3>{{ t('web.archive.empty_heading') }}</h3>
-    <p>{{ t('web.archive.empty_body') }}</p>
-  </div>
+</div>
+
+<form class="fields" method="get" action="/archive" aria-label="{{ t('web.archive.filters_aria') }}">
+  <label class="fld fld-grow"><span>{{ t('web.archive.query_label') }}</span><input class="inp" id="archive-query" type="search" name="q" value="{{ selected_search }}" placeholder="{{ t('web.archive.query_placeholder') }}" aria-keyshortcuts="/" data-kb-search></label>
+  {% if is_admin %}
+  <label class="fld"><span>{{ t('web.archive.channel_label') }}</span>
+    <select class="inp" id="archive-channel" name="channel"><option value="">{{ t('web.archive.channel_all') }}</option>{% for c in channels %}<option value="{{ c.id }}"{% if selected_channel == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
   {% endif %}
+  <label class="fld"><span>{{ t('web.archive.from_label') }}</span><input class="inp inp-date" id="archive-from" type="date" name="from" value="{{ selected_from }}"></label>
+  <label class="fld"><span>{{ t('web.archive.to_label') }}</span><input class="inp inp-date" id="archive-to" type="date" name="to" value="{{ selected_to }}"></label>
+  {% if is_admin %}
+  <label class="fld"><span>{{ t('web.archive.read_state_label') }}</span>
+    <select class="inp" id="archive-state" name="read_state">
+      <option value=""{% if selected_read_state == "" %} selected{% endif %}>{{ t('web.archive.read_state_all') }}</option>
+      <option value="unread"{% if selected_read_state == "unread" %} selected{% endif %}>{{ t('web.archive.read_state_unread') }}</option>
+      <option value="read"{% if selected_read_state == "read" %} selected{% endif %}>{{ t('web.archive.read_state_read') }}</option>
+    </select></label>
+  {% endif %}
+  <div class="fld-act"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button><a class="lnk" href="/archive">{{ t('web.archive.clear_filters') }}</a></div>
+</form>
 
-  <nav class="pager" aria-label="{{ t('web.archive.pager_aria') }}">
-    {% if previous_url %}<a href="{{ previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
-    <span>{{ t('web.archive.page_label', page=page) }}</span>
-    {% if next_url %}<a href="{{ next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
-  </nav>
-</main>
+<div id="archive-list" data-refocus-slot>
+  {% for day in days %}
+  <section class="chan-sec" id="{{ day.anchor }}" aria-labelledby="{{ day.anchor }}-h">
+    <h2 id="{{ day.anchor }}-h"><span class="no">{{ sec[day.key] }}</span><span><time datetime="{{ day.key }}">{{ day.key }}</time> {{ day.label }}</span><span class="tools"><span class="desk-state nw">{{ t('web.reading.meta.stories', count=day.total, number=day.total|count(locale)) }}</span></span></h2>
+    <div class="tbl-wrap"><table class="tbl tbl-feed">
+      {{ rd.story_head(with_channel=true) }}
+      <tbody>
+        {% for row in day.rows %}{{ rd.story_row(row.story, 'archive-list', '#archive-meta,#toc-count-featured', row.channel_name, row.channel_id, votes=true, when=row.time, when_title=row.exact) }}{% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+  {% else %}
+  {% if pagination.page > 1 and pagination.total %}
+  {{ rd.past_end() }}
+  {% else %}
+  <div class="empty" tabindex="-1" data-refocus-fallback><b>{{ t('web.archive.empty_heading') }}</b>{{ t('web.archive.empty_body') }}</div>
+  {% endif %}
+  {% endfor %}
+  {{ rd.pager(pagination, previous_url, next_url, t('web.archive.pager_aria')) }}
+</div>
+
+<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
+<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+<p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
+{% endblock %}
+{% block scripts %}
+{% if is_admin %}<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>{% endif %}
 {% endblock %}

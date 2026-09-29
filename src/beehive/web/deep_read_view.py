@@ -299,30 +299,3 @@ def build_brief_context(*, item: dict, deep_read: DeepRead | None, is_owner: boo
         "can_regenerate": is_owner and status in ("ready", "failed"),
         "is_pending": status in ("pending", "processing"),
     }
-
-
-def decorate_deep_read_state(item: dict, deep_read: DeepRead | None, is_owner: bool,
-                              origin: str, channel_id: int | None,
-                              csrf_token: str | None) -> None:
-    """List-view (Dashboard/Channel/Archive) decoration: attaches an item["deep_read"] state/
-    action bundle for the dependent UI todo to render, WITHOUT touching any of the item's own
-    read/open/vote fields. Only ranked items (ai_score is not None) get a bundle -- an unranked
-    item can never have a deep-read row (the request route and the worker both reject it), so
-    item["deep_read"] is left as None for those."""
-    if item.get("ai_score") is None:
-        item["deep_read"] = None
-        return
-    status = deep_read.status if deep_read is not None else "not_requested"
-    item["deep_read"] = {
-        "status": status,
-        "origin": origin,
-        "channel_id": channel_id if origin == "channel" else None,
-        "csrf_token": csrf_token if is_owner else None,
-        "request_url": f"/items/{item['id']}/deep-read",
-        "brief_url": brief_url(item["id"], origin, channel_id),
-        "can_start": is_owner and status == "not_requested",
-        "can_regenerate": is_owner and status in ("ready", "failed"),
-        "is_pending": status in ("pending", "processing"),
-        "is_ready": status == "ready",
-        "is_failed": status == "failed",
-    }

@@ -1,73 +1,53 @@
-{% extends "base.html" %}
+{% extends "reading_base.html" %}
+{% import "_reading_macros.html" as rd with context %}
 {% block title %}{{ t('web.title.search', product=t('common.product_name')) }}{% endblock %}
-{% block body_class %}page-archive page-search{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.search.heading') }}</span>{% endblock %}
+{% set current_chapter = "featured" %}
+{% set crumbs = [(t('web.search.heading'), none)] %}
 {% block content %}
-<main id="main-content" class="page-shell archive-shell">
-  <header class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow">{{ t('web.search.eyebrow') }}</p>
-      <h1>{{ t('web.search.heading') }}</h1>
-      <p class="page-lede">{{ t('web.search.lede') }}</p>
-    </div>
-    <div class="result-stat">
-      <strong>{{ total }}</strong>
-      <span>{{ t('web.search.result_count_label') }}</span>
-    </div>
-  </header>
+<div class="adm-head">
+  <div>
+    <h1>{{ t('web.search.heading') }}</h1>
+    <p class="adm-meta" id="search-meta">{% if query %}<span class="nw">{{ t('web.reading.results', count=total, number=total|count(locale)) }}</span> · {% endif %}{{ t('web.search.lede') }}</p>
+  </div>
+</div>
+<form class="fields" method="get" action="/search" role="search">
+  <label class="fld fld-grow"><span>{{ t('web.dashboard.search_label') }}</span><input class="inp" id="global-query" type="search" name="q" value="{{ query }}" required placeholder="{{ t('web.reading.search_placeholder') }}" aria-keyshortcuts="/" data-kb-search></label>
+  <div class="fld-act"><button class="btn btn-primary" type="submit">{{ t('web.search.submit') }}</button></div>
+</form>
 
-  <form class="filters archive-filters" method="get" role="search">
-    <div class="field search-field">
-      <label for="global-query">{{ t('web.dashboard.search_label') }}</label>
-      <input id="global-query" type="search" name="q" value="{{ query }}" required
-             placeholder="{{ t('web.dashboard.search_placeholder') }}">
-    </div>
-    <div class="filter-actions">
-      <button class="btn primary" type="submit">{{ t('web.search.submit') }}</button>
-    </div>
-  </form>
-
-  {% if items %}
-  <div class="archive-list search-results">
-    {% for item in items %}
-    <article class="archive-row">
-      <div class="archive-main">
-        <p class="archive-source">
-          <span class="source-marker" aria-hidden="true"></span>
-          {{ item.workflow_label }} · <a href="/channels/{{ item.item_channel_id }}">{{ item.channel_name }}</a> · {{ item.source_label }}
-        </p>
-        <h2><a href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.ai_summary or item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></h2>
-        {% if item.ai_rationale %}<p class="search-rationale">{{ item.ai_rationale }}</p>{% endif %}
-        {% if item.auction_pricing_facts %}
-        <p class="tracker-pricing">{% for fact in item.auction_pricing_facts %}<span>{{ fact }}</span>{% endfor %}</p>
-        {% elif item.engagement_label %}
-        <p class="search-facts">{{ item.engagement_label }}</p>
-        {% endif %}
-      </div>
-      <div class="archive-side">
-        <span>{{ item.time_label }}</span>
-        {% if item.channel_kind == 'editorial' %}
-        {% set is_owner = is_admin %}
-        {% include "_read_state_control.html" %}
-        {% endif %}
-      </div>
-    </article>
+<div id="search-list" data-refocus-slot>
+  {% if sections %}
+  <div class="cols">
+    {% for section in sections %}
+    <section class="chan-sec" id="{{ section.anchor }}" aria-labelledby="{{ section.anchor }}-h">
+      <h2 id="{{ section.anchor }}-h"><span class="no">{{ sec[section.anchor] }}</span><span>{{ section.name }}</span>
+        <span class="tools"><span class="desk-state nw">{{ t('web.reading.results', count=section.total, number=section.total|count(locale)) }}</span>
+          <a class="btn btn-sm" href="{{ section.href }}">{{ t('web.reading.desk.open_channel') }}<span class="sr-only">: {{ section.name }}</span></a></span></h2>
+      {% if section.kind == 'editorial' %}
+      <div class="tbl-wrap"><table class="tbl tbl-feed">
+        {{ rd.story_head() }}
+        <tbody>{% for story in section.rows %}{{ rd.story_row(story, 'search-list', '#toc-count-featured', section.name, why=true, votes=true) }}{% endfor %}</tbody>
+      </table></div>
+      {% elif section.kind == 'monitor' %}
+      {{ rd.listing_table(section.rows) }}
+      {% else %}
+      {{ rd.lot_table(section.rows) }}
+      {% endif %}
+    </section>
     {% endfor %}
   </div>
+  {% elif query and pagination.page > 1 and pagination.total %}
+  {{ rd.past_end() }}
   {% elif query %}
-  <div class="empty-state">
-    <span class="empty-mark" aria-hidden="true"></span>
-    <h2>{{ t('web.search.empty_heading') }}</h2>
-    <p>{{ t('web.search.empty_body') }}</p>
-  </div>
+  <div class="empty" tabindex="-1" data-refocus-fallback><b>{{ t('web.search.empty_heading') }}</b>{{ t('web.search.empty_body') }}</div>
   {% endif %}
+  {{ rd.pager(pagination, previous_url, next_url, t('web.reading.pager_aria', name=t('web.search.heading'))) }}
+</div>
 
-  {% if previous_url or next_url %}
-  <nav class="pager" aria-label="{{ t('web.archive.pager_aria') }}">
-    {% if previous_url %}<a href="{{ previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
-    <span>{{ t('web.archive.page_label', page=page) }}</span>
-    {% if next_url %}<a href="{{ next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
-  </nav>
-  {% endif %}
-</main>
+<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
+<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+<p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
+{% endblock %}
+{% block scripts %}
+{% if is_admin %}<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>{% endif %}
 {% endblock %}

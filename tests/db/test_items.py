@@ -7,7 +7,9 @@ from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.items import (
     MutableUpsertOutcome,
+    count_archive_by_day,
     count_dashboard_signals,
+    count_search_results_by_channel,
     delete_by_channel,
     get_item,
     insert_new,
@@ -536,6 +538,141 @@ def test_list_archive_combines_search_with_channel_filter(conn, source_id):
     items, total = list_archive(conn, channel_id=channel_id, search="rates")
     assert total == 1
     assert items[0]["external_id"] == "t1"
+
+
+# Winter Auckland days (NZST, UTC+12) as (key, UTC start, UTC end): 2 July runs from 12:00 UTC on
+# 1 July up to, but not including, 12:00 UTC on 2 July.
+_JULY_2 = ("2026-07-02", "2026-07-01T12:00:00", "2026-07-02T12:00:00")
+_JULY_3 = ("2026-07-03", "2026-07-02T12:00:00", "2026-07-03T12:00:00")
+_JULY_10 = ("2026-07-10", "2026-07-09T12:00:00", "2026-07-10T12:00:00")
+
+
+def test_count_archive_by_day_counts_each_day_from_its_start_up_to_its_end(conn, source_id):
+    for external_id, fetched_at in (
+        ("before", "2026-07-01T11:59:59"),
+        ("first-second", "2026-07-01T12:00:00"),
+        ("last-second", "2026-07-02T11:59:59+00:00"),
+        ("next-midnight", "2026-07-02T12:00:00"),
+        ("between-days", "2026-07-05T00:00:00"),
+        ("end-of-last-day", "2026-07-10T12:00:00"),
+    ):
+        insert_new(conn, source_id, _raw_item(external_id))
+        conn.execute(
+            "UPDATE items SET fetched_at = ? WHERE external_id = ?", (fetched_at, external_id)
+        )
+    conn.commit()
+
+    counts = count_archive_by_day(conn, [_JULY_2, _JULY_3, _JULY_10])
+
+    assert counts["2026-07-02"] == 2
+    # A story fetched at the stroke of midnight belongs to the day that begins then.
+    assert counts["2026-07-03"] == 1
+    # A story between the days asked for, or at the very end of the last one, is no day's.
+    assert counts.get("2026-07-10", 0) == 0
+    assert sum(counts.values()) == 3
+
+
+def test_count_archive_by_day_applies_the_archive_filters(conn, source_id):
+    channel_id = conn.execute(
+        "SELECT channel_id FROM sources WHERE id=?", (source_id,)
+    ).fetchone()[0]
+    other_channel_id = create_channel(conn, "Other", "profile")
+    other_source_id = create_source(
+        conn, other_channel_id, "reddit_subreddit", {"subreddit": "y"}
+    )
+    monitor_channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    monitor_source_id = create_source(
+        conn,
+        monitor_channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    insert_new(conn, source_id, _raw_item("unread", title="Rates rise"))
+    insert_new(conn, source_id, _raw_item("read", title="Rates fall"))
+    insert_new(conn, source_id, _raw_item("housing", title="Housing update"))
+    insert_new(conn, other_source_id, _raw_item("elsewhere", title="Rates elsewhere"))
+    # Neither a Monitor listing nor a superseded row is an Archive story.
+    insert_new(conn, monitor_source_id, _raw_item("listing", title="Rates jacket"))
+    conn.execute(
+        "INSERT INTO items (source_id, external_id, title, url, superseded_at) "
+        "VALUES (?, 'old', 'Rates old copy', 'https://x', '2026-07-01T00:00:00')",
+        (source_id,),
+    )
+    mark_read(conn, conn.execute("SELECT id FROM items WHERE external_id='read'").fetchone()[0])
+    conn.execute("UPDATE items SET fetched_at = '2026-07-02T00:00:00'")
+    conn.commit()
+
+    for filters, expected in (
+        ({}, 4),
+        ({"channel_id": channel_id}, 3),
+        ({"read_state": "unread"}, 3),
+        ({"read_state": "read"}, 1),
+        ({"search": "Rates"}, 3),
+        ({"channel_id": channel_id, "read_state": "unread", "search": "Rates"}, 1),
+    ):
+        assert count_archive_by_day(conn, [_JULY_2], **filters) == {"2026-07-02": expected}, filters
+        # The same stories the Archive lists under those filters.
+        assert list_archive(conn, **filters)[1] == expected, filters
+
+
+def test_count_archive_by_day_without_days_counts_nothing(conn, source_id):
+    insert_new(conn, source_id, _raw_item("t1"))
+
+    assert count_archive_by_day(conn, []) == {}
+
+
+def test_count_search_results_by_channel_counts_what_search_lists(conn, source_id):
+    channel_id = conn.execute(
+        "SELECT channel_id FROM sources WHERE id=?", (source_id,)
+    ).fetchone()[0]
+    monitor_channel_id = create_channel(conn, "Outlet", "deals", kind="monitor")
+    monitor_source_id = create_source(
+        conn,
+        monitor_channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/outlet"},
+    )
+    quiet_channel_id = create_channel(conn, "Quiet", "profile")
+    quiet_source_id = create_source(conn, quiet_channel_id, "reddit_subreddit", {"subreddit": "z"})
+    # One hit in each field search reads: the title, the AI summary, the AI rationale, the body.
+    insert_new(conn, source_id, _raw_item("in-title", title="Needle in the title"))
+    for external_id, summary, rationale in (
+        ("in-summary", "Needle in the summary", "r"),
+        ("in-rationale", "s", "Needle in the rationale"),
+    ):
+        insert_new(conn, source_id, _raw_item(external_id, title="Plain"))
+        update_ai_ranking(
+            conn, source_id, external_id, score=80, summary=summary, rationale=rationale
+        )
+    insert_new(
+        conn,
+        monitor_source_id,
+        RawItem(
+            external_id="in-body", title="Plain jacket", url="https://x", body="Needle in the body"
+        ),
+    )
+    insert_new(conn, quiet_source_id, _raw_item("miss", title="Nothing to see"))
+    conn.execute(
+        "INSERT INTO items (source_id, external_id, title, url, superseded_at) "
+        "VALUES (?, 'old', 'Needle old copy', 'https://x', '2026-07-01T00:00:00')",
+        (monitor_source_id,),
+    )
+    conn.commit()
+
+    counts = count_search_results_by_channel(conn, search=" Needle ")
+    items, total = list_search_results(conn, search=" Needle ")
+
+    assert counts == {channel_id: 3, monitor_channel_id: 1}
+    assert sum(counts.values()) == total == len(items)
+
+
+@pytest.mark.parametrize("search", ["", "   "])
+def test_count_search_results_by_channel_counts_nothing_for_a_blank_search(
+    conn, source_id, search
+):
+    insert_new(conn, source_id, _raw_item("t1", title="Rates fall"))
+
+    assert count_search_results_by_channel(conn, search=search) == {}
 
 
 def test_list_dashboard_highlights_orders_by_score_across_channels(conn, source_id):

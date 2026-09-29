@@ -1,0 +1,182 @@
+{#- Parts shared by the reading pages. Import with context: rows read is_admin, csrf_token and
+    return_url from the page. -#}
+
+{#- A score is a tabular numeral: 90 and above in full ink, under 60 faint, unranked a dash. -#}
+{% macro score(value) -%}
+{%- if value is none %}<span class="score is-low">—</span>
+{%- else %}<span class="score{{ ' is-high' if value >= 90 else (' is-low' if value < 60 else '') }}">{{ value }}</span>{% endif -%}
+{%- endmacro %}
+
+{#- The Owner's relevance toggles for one item, as a real form: htmx swaps `target` from the page
+    the post redirects back to, and without JavaScript the page simply reloads. -#}
+{% macro relevance(item_id, value, action, target, focus_prefix) -%}
+<form class="vote" method="post" action="{{ action }}" role="group" aria-label="{{ t('web.item.feedback_group_aria') }}" hx-post="{{ action }}" hx-target="#{{ target }}" hx-select="#{{ target }}" hx-swap="outerHTML">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="next_url" value="{{ return_url }}">
+  <button class="tg" type="submit" name="value" value="1" aria-pressed="{{ 'true' if value == 1 else 'false' }}"
+          data-focus-key="{{ focus_prefix }}-up" data-feedback-message="{{ t('web.item.vote_up_feedback') }}">{{ t('web.feedback.relevant') }}</button>
+  <button class="tg is-neg" type="submit" name="value" value="-1" aria-pressed="{{ 'true' if value == -1 else 'false' }}"
+          data-focus-key="{{ focus_prefix }}-down" data-feedback-message="{{ t('web.item.vote_down_feedback') }}">{{ t('web.feedback.not_relevant') }}</button>
+</form>
+{%- endmacro %}
+
+{#- One story row. The blue square is unread and is also the read toggle; `region` is the id of
+    the block the toggle re-renders in place and `oob` the counts it updates with it.
+    `channel_id` adds the channel column, `why` the AI's reason, `votes` the Owner's relevance
+    toggles, and `when`/`when_title` replace the age column. -#}
+{% macro story_row(story, region, oob, channel_name, channel_id=none, why=false, votes=false, when=none, when_title=none) %}
+<tr class="kb-row{{ ' is-read' if is_admin and story.is_read }}" id="story-{{ story.id }}" tabindex="-1" data-channel="{{ channel_name }}">
+  {% if is_admin %}
+  <td class="c-rd">
+    <form method="post" action="/items/{{ story.id }}/read-state">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="is_read" value="{{ 0 if story.is_read else 1 }}">
+      <input type="hidden" name="next_url" value="{{ return_url }}">
+      <button class="rd{{ ' is-read' if story.is_read }}" type="submit"
+              title="{{ t('web.item.mark_unread' if story.is_read else 'web.item.mark_read') }}"
+              aria-label="{{ t('web.item.mark_unread_aria' if story.is_read else 'web.item.mark_read_aria', title=story.title) }}"
+              hx-post="/items/{{ story.id }}/read-state" hx-target="#{{ region }}" hx-select="#{{ region }}" hx-swap="outerHTML"
+              hx-select-oob="{{ oob }}" data-feedback-message="{{ t('web.reading.marked_unread' if story.is_read else 'web.reading.marked_read') }}"></button>
+    </form>
+  </td>
+  {% endif %}
+  <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(story.ai_score) }}</td>
+  <td class="c-sum">
+    <a href="{{ story.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ story.ai_summary or story.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+    {%- if story.ai_summary %}<small>{{ story.title }}</small>{% endif %}
+    {%- if why and story.ai_rationale %}<small class="why">{{ story.ai_rationale }}</small>{% endif %}
+    {%- if story.best_comment_summary %}
+    <details class="cmt"><summary>{{ t('web.reading.best_comment') }}</summary><p>{{ story.best_comment_summary }}</p></details>
+    {%- endif %}
+    {%- if votes and is_admin and story.vote_value == -1 %}
+    <form class="reason" method="post" action="/items/{{ story.id }}/vote" hx-post="/items/{{ story.id }}/vote" hx-target="#story-{{ story.id }}" hx-select="#story-{{ story.id }}" hx-swap="outerHTML">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next_url" value="{{ return_url }}">
+      <input type="hidden" name="value" value="-1">
+      <label for="reason-{{ story.id }}">{{ t('web.item.reason_label') }}</label>
+      <span class="row"><input class="inp inp-grow" id="reason-{{ story.id }}" type="text" name="reason" value="{{ story.vote_reason or '' }}" placeholder="{{ t('web.item.reason_placeholder') }}">
+      <button class="btn btn-sm" type="submit" data-focus-key="reason-{{ story.id }}" data-feedback-message="{{ t('web.item.reason_feedback') }}">{{ t('web.reading.reason_save') }}</button></span>
+    </form>
+    {%- endif %}
+  </td>
+  {% if channel_id is not none %}<td class="c-chan" data-label="{{ t('web.dashboard.column_channel') }}"><a href="/channels/{{ channel_id }}">{{ channel_name }}</a></td>{% endif %}
+  <td class="c-src" data-label="{{ t('web.reading.col_source') }}">{{ story.byline|join(' · ') }}</td>
+  <td class="c-age" data-label="{{ t('web.dashboard.column_time') }}">
+    {%- if when %}<span{% if when_title %} title="{{ when_title }}"{% endif %}>{{ when }}</span>
+    {%- elif story.age %}<span title="{{ story.exact_time }}">{{ story.age }}</span>
+    {%- else %}<span class="muted">—</span>{% endif -%}
+  </td>
+  <td class="c-ops">
+    {%- set item = story %}{% include "_deep_read_action.html" %}
+    {%- if votes and is_admin %}{{ relevance(story.id, story.vote_value, '/items/' ~ story.id ~ '/vote', 'story-' ~ story.id, 'vote-' ~ story.id) }}
+    {%- elif votes and story.vote_value == 1 %}<span class="st">{{ t('web.feedback.relevant') }}</span>
+    {%- elif votes and story.vote_value == -1 %}<span class="st st-never">{{ t('web.feedback.not_relevant') }}</span>{% endif -%}
+  </td>
+</tr>
+{% endmacro %}
+
+{% macro story_head(with_channel=false) %}
+<thead><tr>
+  {% if is_admin %}<th class="c-rd"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span></th>{% endif %}
+  <th class="c-score">{{ t('web.dashboard.column_score') }}</th>
+  <th>{{ t('web.reading.col_summary') }}</th>
+  {% if with_channel %}<th>{{ t('web.dashboard.column_channel') }}</th>{% endif %}
+  <th>{{ t('web.reading.col_source') }}</th>
+  <th>{{ t('web.dashboard.column_time') }}</th>
+  <th class="c-ops"><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th>
+</tr></thead>
+{% endmacro %}
+
+{#- The datasheet pager: previous, "page x of y", next. -#}
+{% macro pager(pagination, previous_url, next_url, label) -%}
+{%- if pagination.page_count > 1 or pagination.page > 1 %}
+<nav class="pager" aria-label="{{ label }}">
+  {% if previous_url %}<a class="btn btn-sm" href="{{ previous_url }}">{{ t('web.pagination.previous') }}</a>{% else %}<span class="btn btn-sm" aria-disabled="true">{{ t('web.pagination.previous') }}</span>{% endif %}
+  <span>{{ t('web.pagination.page_of', page=pagination.page, pages=[pagination.page_count, 1]|max) }}</span>
+  {% if next_url %}<a class="btn btn-sm" href="{{ next_url }}">{{ t('web.pagination.next') }}</a>{% else %}<span class="btn btn-sm" aria-disabled="true">{{ t('web.pagination.next') }}</span>{% endif %}
+</nav>
+{%- endif %}
+{%- endmacro %}
+
+{#- The Owner's view of a Channel's match criteria, as a boxed note. -#}
+{% macro criteria(page, toggle_url) -%}
+{%- if is_admin %}
+<div class="note chan-criteria" role="note" aria-label="{{ t('web.channel.criteria_aria') }}"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.info') }}</span>
+  <div class="note-body"><b>{{ t('web.channel.criteria_summary', matched=page.criteria.matched_count|count(locale), total=page.criteria.total_count|count(locale)) }}</b>
+    <small>{{ t('web.channel.criteria_threshold', score=page.criteria.minimum_score) }}{% if page.criteria.unranked_count %} · {{ t('web.channel.criteria_unranked', count=page.criteria.unranked_count) }}{% endif %}</small></div>
+  <div class="note-act">
+    {%- if page.criteria.hidden_count %}<a class="btn btn-sm" href="{{ toggle_url }}">{{ t('web.channel.criteria_apply_threshold') if page.criteria.showing_below_threshold else t('web.channel.criteria_show_hidden', count=page.criteria.hidden_count) }}</a>{% endif %}
+    <a class="lnk" href="/admin/channels/{{ page.channel_id }}/edit">{{ t('web.channel.criteria_edit') }}</a>
+  </div>
+</div></div>
+{%- endif %}
+{%- endmacro %}
+
+{#- A lot or listing's photo, or an empty frame of the same size. -#}
+{% macro thumb(url) -%}
+{%- if url %}<img class="lot-img" src="{{ url }}" alt="" width="80" height="60" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif -%}
+{%- endmacro %}
+
+{#- A page past the end of its list: what was on it has gone (its last unread story was read),
+    so it says so above the pager instead of going blank. -#}
+{% macro past_end() -%}
+<div class="empty" tabindex="-1" data-refocus-fallback><b>{{ t('web.reading.past_end') }}</b></div>
+{%- endmacro %}
+
+{#- One Monitor listing. A listing that is out of stock or gone reads as closed with its state. -#}
+{% macro listing_row(listing) %}
+{%- set closed = not (listing.is_present and listing.is_available) %}
+<tr id="listing-{{ listing.id }}"{% if closed %} class="is-closed"{% endif %}>
+  <td class="c-lot c-wide"><div class="lot">
+    {{ thumb(listing.image_url) }}
+    <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer">{{ listing.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+    <span class="lot-where">{{ [listing.vendor, listing.product_type, listing.source_label]|select|join(' · ') }}</span>
+    {%- if closed %}<span class="lot-state"><span class="st st-never">{{ t('web.monitor.status_out_of_stock') if listing.is_present else t('web.monitor.status_removed') }}</span></span>{% endif %}
+    {%- if listing.ai_rationale %}<small class="why">{{ listing.ai_rationale }}</small>{% endif %}
+  </div></td>
+  <td class="c-price-now" data-label="{{ t('web.reading.col_price') }}">
+    {%- if listing.price_label %}<span class="price-now">{{ listing.price_label }}</span>{% else %}<span class="muted">{{ t('web.monitor.price_unavailable') }}</span>{% endif %}
+    {%- if listing.discount_percent and listing.compare_at_price_label %}<small><span class="sr-only">{{ t('web.reading.was_price') }} </span><s class="price-was">{{ listing.compare_at_price_label }}</s></small>{% endif %}
+    {%- if listing.change and listing.change.event_type == 'price_drop' %}<small class="chg">{{ t('background.digest_event_price_drop') }}{% if listing.change.old_price_label and listing.change.new_price_label %} · {{ t('background.digest_event_price_detail', old=listing.change.old_price_label, new=listing.change.new_price_label) }}{% endif %}</small>
+    {%- elif listing.change and listing.change.event_type == 'back_in_stock' %}<small class="chg">{{ t('background.digest_event_back_in_stock') }}</small>
+    {%- elif listing.change and listing.change.event_type == 'discovered' %}<small class="chg">{{ t('background.digest_event_new') }}</small>{% endif -%}
+  </td>
+  <td class="c-nw" data-label="{{ t('web.reading.col_discount') }}">{% if listing.discount_percent %}<span class="price-off">−{{ listing.discount_percent }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+  <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(listing.ai_score) }}</td>
+  {% if is_admin %}<td class="c-ops"><div class="ops-stack">{% set item = listing %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div></td>{% endif %}
+</tr>
+{% endmacro %}
+
+{% macro listing_table(listings) %}
+<div class="tbl-wrap"><table class="tbl tbl-stack">
+  <thead><tr><th>{{ t('web.reading.col_listing') }}</th><th>{{ t('web.reading.col_price') }}</th><th>{{ t('web.reading.col_discount') }}</th><th class="c-score">{{ t('web.dashboard.column_score') }}</th>{% if is_admin %}<th class="c-ops"><span class="sr-only">{{ t('web.feedback.prompt') }}</span></th>{% endif %}</tr></thead>
+  <tbody>{% for listing in listings %}{{ listing_row(listing) }}{% endfor %}</tbody>
+</table></div>
+{% endmacro %}
+
+{#- One Tracker lot. A closed lot reads as closed; the Owner can watch an open one. -#}
+{% macro lot_row(lot) %}
+<tr id="lot-{{ lot.id }}"{% if not lot.is_active %} class="is-closed"{% endif %}>
+  <td class="c-lot c-wide"><div class="lot">
+    {{ thumb(lot.image_url) }}
+    <a class="lot-title" href="{{ lot.open_url }}" target="_blank" rel="noopener noreferrer">{{ lot.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+    {% if lot.context %}<span class="lot-where">{{ lot.context }}</span>{% endif %}
+    {%- if lot.ai_rationale or lot.ai_summary %}<small class="why">{{ lot.ai_rationale or lot.ai_summary }}</small>{% endif %}
+  </div></td>
+  <td class="c-when c-words" data-label="{{ t('web.reading.col_closes') }}">
+    {%- if lot.deadline and lot.is_active %}<span class="nw">{{ lot.deadline_relative_label }}</span><small class="nw">{{ lot.deadline|short_time }}</small>
+    {%- elif lot.deadline %}<span class="nw">{{ t('web.tracker.closed') }}</span><small class="nw">{{ lot.deadline|short_time }}</small>
+    {%- else %}<span class="muted">{{ t('web.tracker.no_deadline') }}</span>{% endif -%}
+  </td>
+  <td class="c-price" data-label="{{ t('web.workspace.watch.col_price') }}">{% if lot.pricing_facts %}<div class="kv">{% for fact in lot.pricing_facts %}<span>{{ fact }}</span>{% endfor %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+  <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(lot.ai_score) }}</td>
+  {% if is_admin %}<td class="c-ops"><div class="ops-stack">{% set item = lot %}{% set watch_origin = 'channel' %}{% include "_tracker_watch_control.html" %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div></td>{% endif %}
+</tr>
+{% endmacro %}
+
+{% macro lot_table(lots) %}
+<div class="tbl-wrap"><table class="tbl tbl-stack">
+  <thead><tr><th>{{ t('web.workspace.watch.col_lot') }}</th><th>{{ t('web.reading.col_closes') }}</th><th>{{ t('web.workspace.watch.col_price') }}</th><th class="c-score">{{ t('web.dashboard.column_score') }}</th>{% if is_admin %}<th class="c-ops"><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th>{% endif %}</tr></thead>
+  <tbody>{% for lot in lots %}{{ lot_row(lot) }}{% endfor %}</tbody>
+</table></div>
+{% endmacro %}

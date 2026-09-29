@@ -1,17 +1,13 @@
+{#- Watch or stop watching a lot. The watch route re-renders just this form for htmx; without
+    JavaScript the post redirects back to the page it came from. -#}
 {% if item.is_watchable %}
-<button type="button"
-        class="watch-toggle{{ ' active' if item.is_watched else '' }}"
-        aria-label="{{ t('web.tracker.watch_remove_aria' if item.is_watched else 'web.tracker.watch_add_aria', title=item.title) }}"
-        aria-pressed="{{ 'true' if item.is_watched else 'false' }}"
-        data-focus-key="tracker-{{ item.id }}-watch"
-        data-feedback-message="{{ t('web.tracker.watch_removed_feedback' if item.is_watched else 'web.tracker.watch_added_feedback') }}"
-        hx-post="/items/{{ item.id }}/watch"
-        hx-vals='{{ {"csrf_token": csrf_token, "origin": watch_origin} | tojson }}'
-        hx-target="{{ watch_target }}" hx-swap="{{ watch_swap }}">
-  <span class="watch-icon" aria-hidden="true">
-    <span class="watch-icon-add">+</span>
-    <span class="watch-icon-active">✓</span>
-  </span>
-  <span>{{ t('web.tracker.remove_watch' if watch_remove_mode else ('web.tracker.watching' if item.is_watched else 'web.tracker.watch')) }}</span>
-</button>
+<form class="watch" method="post" action="/items/{{ item.id }}/watch" hx-post="/items/{{ item.id }}/watch" hx-target="this" hx-swap="outerHTML">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="origin" value="{{ watch_origin or 'channel' }}">
+  {% if return_url %}<input type="hidden" name="next_url" value="{{ return_url }}">{% endif %}
+  <button class="tg tg-watch" type="submit" aria-pressed="{{ 'true' if item.is_watched else 'false' }}"
+          aria-label="{{ t('web.tracker.watch_remove_aria' if item.is_watched else 'web.tracker.watch_add_aria', title=item.title) }}"
+          data-focus-key="tracker-{{ item.id }}-watch"
+          data-feedback-message="{{ t('web.tracker.watch_removed_feedback' if item.is_watched else 'web.tracker.watch_added_feedback') }}">{{ t('web.tracker.watching' if item.is_watched else 'web.tracker.watch') }}</button>
+</form>
 {% endif %}

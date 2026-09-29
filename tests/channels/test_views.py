@@ -29,6 +29,7 @@ from beehive.channels.views import (
     WatchlistPage,
     WatchlistQuery,
     build_channel_page,
+    build_tracker_item_views,
     build_watchlist_page,
 )
 from beehive.connectors.base import RawItem
@@ -36,9 +37,9 @@ from beehive.db.channels import create_channel, get_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.deep_reads import request_deep_read
 from beehive.db.item_events import record_or_coalesce_event, suppress_item_events
-from beehive.db.items import insert_new, update_ai_ranking, update_best_comment
+from beehive.db.items import get_item, insert_new, update_ai_ranking, update_best_comment
 from beehive.db.sources import create_source
-from beehive.db.tracker_watches import add_tracker_watch
+from beehive.db.tracker_watches import add_tracker_watch, get_watched_item_ids
 from beehive.db.votes import upsert_vote
 from beehive.localization import localizer_for
 
@@ -851,6 +852,15 @@ def test_pagination_defaults_and_validation_directly():
         Pagination(page=1, per_page=10, total=-1)
 
 
+@pytest.mark.parametrize(
+    ("page", "total", "previous_page"),
+    [(3, 25, 2), (2, 25, 1), (7, 25, 3), (7, 0, 1)],
+)
+def test_pagination_previous_page_from_past_the_end_is_the_last_page(page, total, previous_page):
+    # From a page past the end, "previous" skips the empty pages in between.
+    assert Pagination(page=page, per_page=10, total=total).previous_page == previous_page
+
+
 def test_monitor_tolerates_malformed_optional_metadata(conn):
     channel, source_id = _monitor_channel(conn)
     _add_item(conn, source_id, "bad", raw_metadata={
@@ -1175,6 +1185,65 @@ def test_tracker_watch_state_is_generic_and_owner_scoped(conn):
     assert [v.id for v in anon.ending_soon] == [watched]
     assert anon.ending_soon[0].is_watched is False
     assert anon.ending_soon[0].is_watchable is False
+
+
+def test_tracker_item_views_keep_the_given_order_open_or_closed(conn):
+    _, source_id = _tracker_channel(conn)
+    later = _add_item(conn, source_id, "later",
+                      raw_metadata=_auction_metadata(_NOW + timedelta(hours=30)), score=70)
+    closed = _add_item(conn, source_id, "closed",
+                       raw_metadata=_auction_metadata(_NOW - timedelta(hours=1)), score=90)
+    sooner = _add_item(conn, source_id, "sooner",
+                       raw_metadata=_auction_metadata(_NOW + timedelta(hours=2)), score=80)
+
+    views = build_tracker_item_views(
+        conn, [get_item(conn, item_id) for item_id in (later, closed, sooner)],
+        t=_EN, now=_NOW, is_owner=True,
+    )
+
+    # Unlike a channel page's sections, nothing is sorted by deadline or dropped once closed.
+    assert [view.id for view in views] == [later, closed, sooner]
+    assert [view.is_active for view in views] == [True, False, True]
+    assert views[1].deadline_relative_label == "Closed"
+
+
+def test_tracker_item_views_show_the_owners_watches_to_the_owner_only(conn, monkeypatch):
+    _, source_id = _tracker_channel(conn)
+    watched = _add_item(conn, source_id, "watched",
+                        raw_metadata=_auction_metadata(_NOW + timedelta(hours=2)), score=80)
+    unwatched = _add_item(conn, source_id, "unwatched",
+                          raw_metadata=_auction_metadata(_NOW + timedelta(hours=3)), score=80)
+    closed = _add_item(conn, source_id, "closed",
+                       raw_metadata=_auction_metadata(_NOW - timedelta(hours=1)), score=80)
+    add_tracker_watch(conn, watched, _NOW)
+    # Watched while it was still open.
+    add_tracker_watch(conn, closed, _NOW - timedelta(hours=2))
+    rows = [get_item(conn, item_id) for item_id in (watched, unwatched, closed)]
+    lookups = []
+
+    def _recording_lookup(connection, item_ids):
+        lookups.append(list(item_ids))
+        return get_watched_item_ids(connection, item_ids)
+
+    monkeypatch.setattr("beehive.channels.views.get_watched_item_ids", _recording_lookup)
+
+    owner = build_tracker_item_views(conn, rows, t=_EN, now=_NOW, is_owner=True)
+    anonymous = build_tracker_item_views(conn, rows, t=_EN, now=_NOW, is_owner=False)
+
+    # The Owner can watch an open lot and stop watching any watched one, closed or not.
+    assert [(view.is_watched, view.is_watchable) for view in owner] == [
+        (True, True), (False, True), (True, True),
+    ]
+    assert [(view.is_watched, view.is_watchable) for view in anonymous] == [(False, False)] * 3
+    # One lookup for the Owner's whole list, and none at all for an anonymous reader.
+    assert lookups == [[watched, unwatched, closed]]
+
+
+def test_tracker_item_views_require_timezone_aware_now(conn):
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_tracker_item_views(
+            conn, [], t=_EN, now=datetime(2026, 7, 22, 10, 0), is_owner=True
+        )
 
 
 def test_tracker_terminal_status_moves_lot_to_history(conn):

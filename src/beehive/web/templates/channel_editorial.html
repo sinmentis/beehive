@@ -1,85 +1,84 @@
-{% extends "base.html" %}
+{% extends "reading_base.html" %}
+{% import "_reading_macros.html" as rd with context %}
 {% block title %}{{ t('web.title.channel', product=t('common.product_name'), channel=page.channel_name) }}{% endblock %}
-{% block body_class %}page-channel page-channel-editorial{% endblock %}
-{% block secondary_navigation %}
-  {% set active_channel_id = page.channel_id %}
-  {% set channel_navigation_all_active = false %}
-  {% include "_channel_shelf.html" %}
-{% endblock %}
+{% set oob = '#chan-meta,#chan-mark-all,#chan-seg,#toc-count-featured' %}
 {% block content %}
-<main id="main-content" class="page-shell channel-shell">
-  <header class="channel-toolbar">
-    <a class="channel-back" href="/">{{ t('web.channel.back_home') }}</a>
-    <div class="channel-heading">
-      <p class="channel-workflow">{{ t('web.channel.editorial_label') }}</p>
-      <h1 class="channel-title">{{ page.channel_name }}</h1>
-      <p class="channel-statline">{% if is_owner %}{{ t('web.channel.unread_count', count=page.unread_count) }} · {% endif %}<span title="{{ freshness_exact }}">{{ freshness }}</span>{% if fetch_stats %} · {{ fetch_stats }}{% endif %}</p>
-    </div>
-    <p class="channel-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
-    <form class="channel-search" method="get" role="search">
-      {% if is_owner and page.show_read %}<input type="hidden" name="show_read" value="1">{% endif %}
+<div class="adm-head">
+  <div>
+    <h1>{{ page.channel_name }}</h1>
+    <p class="adm-meta" id="chan-meta"><span class="nw">{{ t('web.channel.editorial_label') }}</span>
+      {%- if is_admin %} · <span class="nw">{{ t('web.reading.desk.unread', count=page.unread_count, number=page.unread_count|count(locale)) }}</span>{% endif %} · <span class="nw" title="{{ freshness_exact }}">{{ freshness }}</span>
+      {%- if fetch_stats %} · <span>{{ fetch_stats }}</span>{% endif %}</p>
+    <p class="adm-meta chan-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
+  </div>
+  <div class="adm-actions">
+    <form class="head-search" method="get" action="/channels/{{ page.channel_id }}" role="search">
+      {% if is_admin and page.show_read %}<input type="hidden" name="show_read" value="1">{% endif %}
       {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
       <label class="sr-only" for="channel-search">{{ t('web.dashboard.search_label') }}</label>
-      <input id="channel-search" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.dashboard.search_placeholder') }}">
+      <input class="inp" id="channel-search" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.reading.search_placeholder') }}" aria-keyshortcuts="/" data-kb-search>
+      <button class="btn" type="submit">{{ t('web.reading.search_submit') }}</button>
     </form>
-    {% if is_owner and ((page.read_count and not page.show_read) or page.unread_count) %}
-    <div class="channel-read-actions">
-      {% if page.read_count and not page.show_read %}
-      <a class="channel-read-link" href="{{ editorial_show_read_url }}">{{ t('web.channel.expand_read', count=page.read_count) }}</a>
-      {% endif %}
-      {% if page.unread_count %}
-      <form class="inline-form" method="post" action="/channels/{{ page.channel_id }}/mark-all-read">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="next_url" value="{{ return_url }}">
-        <button type="submit" class="mark-read-button">{{ t('web.channel.mark_all_read') }}</button>
-      </form>
-      {% endif %}
-    </div>
-    {% endif %}
-    <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
-  </header>
-  {% include "_channel_criteria.html" %}
-
-  {% if page.folded_pagination.page == 1 %}
-  <section class="channel-section" aria-labelledby="priority-title">
-    <header class="channel-section-heading">
-      <h2 id="priority-title">{{ t('web.channel.priority_heading') }}</h2>
-      <span class="section-count"><span lang="en">Top</span> {{ page.highlighted|length }}</span>
-    </header>
-    {% for item in page.highlighted %}
-    {% include "_item_card.html" %}
-    {% else %}
-    <div class="channel-empty">
-      <strong>{{ t('web.channel.empty_priority_heading') }}</strong>
-      <p>{{ t('web.channel.empty_priority_body') }}</p>
-    </div>
-    {% endfor %}
-  </section>
-  {% endif %}
-
-  {% if page.folded %}
-  <section class="channel-section" aria-labelledby="folded-title">
-    <header class="channel-section-heading">
-      <h2 id="folded-title">{{ t('web.channel.folded_heading') }}</h2>
-      <span class="section-count">{{ t('web.channel.folded_count', count=page.folded|length) }}</span>
-    </header>
-    <div class="folded-list">
-      {% for item in page.folded %}
-      {% include "_folded_item.html" %}
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-  {% if page.folded_pagination.page_count > 1 or page.folded_pagination.page > 1 %}
-  <nav class="pager" aria-label="{{ t('web.archive.pager_aria') }}">
-    {% if editorial_previous_url %}<a href="{{ editorial_previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
-    <span>{{ t('web.archive.page_label', page=page.folded_pagination.page) }}</span>
-    {% if editorial_next_url %}<a href="{{ editorial_next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
+    {#- A read toggle swaps only this, so the search field above keeps what is typed in it. #}
+    <div class="swap-slot" id="chan-mark-all">
+    {%- if is_admin and page.unread_count %}
+    <form method="post" action="/channels/{{ page.channel_id }}/mark-all-read">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next_url" value="{{ return_url }}">
+      <button class="btn" type="submit">{{ t('web.channel.mark_all_read') }}</button>
+    </form>
+    {%- endif %}</div>
+  </div>
+</div>
+{{ rd.criteria(page, criteria_toggle_url) }}
+{% if is_admin or page.search %}
+<div class="filters" id="chan-seg">
+  {% if is_admin %}
+  <nav class="seg" aria-label="{{ t('web.reading.channel.read_filter_aria') }}">
+    <a href="{{ editorial_unread_url }}"{% if not page.show_read %} aria-current="page"{% endif %}>{{ t('web.dashboard.state_unread') }} <span class="n">{{ page.unread_count|count(locale) }}</span></a>
+    <a href="{{ editorial_show_read_url }}"{% if page.show_read %} aria-current="page"{% endif %}>{{ t('web.dashboard.tab_all') }} <span class="n">{{ (page.unread_count + page.read_count)|count(locale) }}</span></a>
   </nav>
   {% endif %}
-</main>
+  {% if page.search %}<span class="hint">{{ t('web.reading.channel.searching', query=page.search) }} <a class="lnk" href="{{ editorial_clear_search_url }}">{{ t('web.archive.clear_filters') }}</a></span>{% endif %}
+</div>
+{% endif %}
+
+<div id="chan-stories" data-refocus-slot>
+<div class="cols">
+  {% if sec.top %}
+  <section class="chan-sec" id="top" aria-labelledby="top-h">
+    <h2 id="top-h"><span class="no">{{ sec.top }}</span><span>{{ t('web.channel.priority_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.highlighted|length) }}</span></span></h2>
+    {% if page.highlighted %}
+    <div class="tbl-wrap"><table class="tbl tbl-feed">
+      {{ rd.story_head() }}
+      <tbody>{% for story in page.highlighted %}{{ rd.story_row(story, 'chan-stories', oob, page.channel_name, why=true, votes=true) }}{% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    <div class="empty" tabindex="-1" data-refocus-fallback><b>{{ t('web.channel.empty_priority_heading') }}</b>{{ t('web.channel.empty_priority_body') }}</div>
+    {% endif %}
+  </section>
+  {% endif %}
+  {% if sec.more %}
+  <section class="chan-sec" id="more" aria-labelledby="more-h">
+    <h2 id="more-h"><span class="no">{{ sec.more }}</span><span>{{ t('web.channel.folded_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.folded_pagination.total) }}</span></span></h2>
+    {% if page.folded %}
+    <div class="tbl-wrap"><table class="tbl tbl-feed">
+      {{ rd.story_head() }}
+      <tbody>{% for story in page.folded %}{{ rd.story_row(story, 'chan-stories', oob, page.channel_name, votes=true) }}{% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    {{ rd.past_end() }}
+    {% endif %}
+    {{ rd.pager(page.folded_pagination, editorial_previous_url, editorial_next_url, t('web.reading.pager_aria', name=t('web.channel.folded_heading'))) }}
+  </section>
+  {% endif %}
+</div>
+</div>
+
+<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
+<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+<p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}
-<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>
-<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
+{% if is_admin %}<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>{% endif %}
 {% endblock %}

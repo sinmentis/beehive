@@ -1,4 +1,5 @@
 {% extends "reading_base.html" %}
+{% import "_reading_macros.html" as rd with context %}
 {% block title %}{{ t('web.title.dashboard', product=t('common.product_name')) }}{% endblock %}
 {% set current_chapter = "featured" %}
 {% if list_view %}
@@ -8,57 +9,6 @@
 {% else %}{% set list_label = t('web.dashboard.tab_all') %}{% endif %}
 {% set crumbs = [(list_label, none)] %}
 {% endif %}
-
-{#- A score is a tabular numeral: 90 and above in full ink, under 60 faint, unranked a dash. -#}
-{% macro score(value) -%}
-{%- if value is none %}<span class="score is-low">—</span>
-{%- else %}<span class="score{{ ' is-high' if value >= 90 else (' is-low' if value < 60 else '') }}">{{ value }}</span>{% endif -%}
-{%- endmacro %}
-
-{#- One story row. The blue square is unread and is also the read toggle; `region` is the id of
-    the block the toggle re-renders in place. `channel` adds the ranked list's channel column. -#}
-{% macro story_row(story, region, oob, channel_name, channel_id=none) %}
-<tr class="kb-row{{ ' is-read' if is_admin and story.is_read }}" tabindex="-1" data-channel="{{ channel_name }}">
-  {% if is_admin %}
-  <td class="c-rd">
-    <form method="post" action="/items/{{ story.id }}/read-state">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="is_read" value="{{ 0 if story.is_read else 1 }}">
-      <input type="hidden" name="next_url" value="{{ return_url }}">
-      <button class="rd{{ ' is-read' if story.is_read }}" type="submit"
-              title="{{ t('web.item.mark_unread' if story.is_read else 'web.item.mark_read') }}"
-              aria-label="{{ t('web.item.mark_unread_aria' if story.is_read else 'web.item.mark_read_aria', title=story.title) }}"
-              hx-post="/items/{{ story.id }}/read-state" hx-target="#{{ region }}" hx-select="#{{ region }}" hx-swap="outerHTML"
-              hx-select-oob="{{ oob }}" data-feedback-message="{{ t('web.reading.marked_unread' if story.is_read else 'web.reading.marked_read') }}"></button>
-    </form>
-  </td>
-  {% endif %}
-  <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(story.ai_score) }}</td>
-  <td class="c-sum">
-    <a href="{{ story.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ story.ai_summary or story.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
-    {%- if story.ai_summary %}<small>{{ story.title }}</small>{% endif %}
-    {%- if story.best_comment_summary %}
-    <details class="cmt"><summary>{{ t('web.reading.best_comment') }}</summary><p>{{ story.best_comment_summary }}</p></details>
-    {%- endif %}
-  </td>
-  {% if channel_id is not none %}<td class="c-chan" data-label="{{ t('web.dashboard.column_channel') }}"><a href="/channels/{{ channel_id }}">{{ channel_name }}</a></td>{% endif %}
-  <td class="c-src" data-label="{{ t('web.reading.col_source') }}">{{ story.byline|join(' · ') }}</td>
-  <td class="c-age" data-label="{{ t('web.dashboard.column_time') }}">{% if story.age %}<span title="{{ story.exact_time }}">{{ story.age }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-  <td class="c-ops">{% set item = story %}{% include "_deep_read_action.html" %}</td>
-</tr>
-{% endmacro %}
-
-{% macro story_head(with_channel=false) %}
-<thead><tr>
-  {% if is_admin %}<th class="c-rd"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span></th>{% endif %}
-  <th class="c-score">{{ t('web.dashboard.column_score') }}</th>
-  <th>{{ t('web.reading.col_summary') }}</th>
-  {% if with_channel %}<th>{{ t('web.dashboard.column_channel') }}</th>{% endif %}
-  <th>{{ t('web.reading.col_source') }}</th>
-  <th>{{ t('web.dashboard.column_time') }}</th>
-  <th class="c-ops"><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th>
-</tr></thead>
-{% endmacro %}
 
 {% macro count_link(text, href) -%}
 {%- if list_view %}<span class="nw">{{ text }}</span>{% else %}<a class="meta-link nw" href="{{ href }}">{{ text }}</a>{% endif -%}
@@ -107,9 +57,9 @@
 <div id="home-list" data-refocus-slot>
   {% if ranked %}
   <div class="tbl-wrap"><table class="tbl tbl-feed">
-    {{ story_head(with_channel=true) }}
+    {{ rd.story_head(with_channel=true) }}
     <tbody>
-      {% for row in ranked %}{{ story_row(row.story, 'home-list', '#home-meta,#home-seg,#toc-count-featured', row.channel_name, row.channel_id) }}{% endfor %}
+      {% for row in ranked %}{{ rd.story_row(row.story, 'home-list', '#home-meta,#home-seg,#toc-count-featured', row.channel_name, row.channel_id) }}{% endfor %}
     </tbody>
   </table></div>
   {% if pagination.page_count > 1 %}
@@ -127,6 +77,7 @@
 {% if not has_channels %}
 <div class="empty home-empty"><b>{{ t('web.dashboard.empty_channels_heading') }}</b>{{ t('web.dashboard.empty_channels_body') }}{% if is_admin %}<div><a class="btn btn-primary" href="/admin/channels/new">{{ t('web.dashboard.empty_channels_cta') }}</a></div>{% endif %}</div>
 {% endif %}
+<div class="cols desk">
 {% for section in desk %}
 <section class="desk-sec" id="{{ section.anchor }}" aria-labelledby="{{ section.anchor }}-h" data-refocus-slot>
   <h2 id="{{ section.anchor }}-h"><span class="no">{{ section.number }}</span><span>{{ section.name }}</span>
@@ -147,9 +98,9 @@
   {% if section.kind == 'editorial' %}
   {% if section.stories %}
   <div class="tbl-wrap"><table class="tbl tbl-feed">
-    {{ story_head() }}
+    {{ rd.story_head() }}
     <tbody>
-      {% for story in section.stories %}{{ story_row(story, section.anchor, '#home-meta,#toc-count-featured', section.name) }}{% endfor %}
+      {% for story in section.stories %}{{ rd.story_row(story, section.anchor, '#home-meta,#toc-count-featured', section.name) }}{% endfor %}
     </tbody>
   </table></div>
   {% else %}
@@ -174,7 +125,7 @@
           {%- elif listing.change and listing.change.event_type == 'back_in_stock' %}<small class="chg">{{ t('background.digest_event_back_in_stock') }}</small>{% endif -%}
         </td>
         <td class="c-nw" data-label="{{ t('web.reading.col_discount') }}">{% if listing.discount_percent %}<span class="price-off">−{{ listing.discount_percent }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-        <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(listing.ai_score) }}</td>
+        <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ rd.score(listing.ai_score) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -199,7 +150,7 @@
           {%- if lot.is_watched %}<span class="rem"><span class="st st-busy">{{ t('web.tracker.watching') }}</span></span>{% endif -%}
         </td>
         <td class="c-price" data-label="{{ t('web.workspace.watch.col_price') }}">{% if lot.pricing_facts %}<div class="kv">{% for fact in lot.pricing_facts %}<span>{{ fact }}</span>{% endfor %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
-        <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(lot.ai_score) }}</td>
+        <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ rd.score(lot.ai_score) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -210,6 +161,7 @@
   {% endif %}
 </section>
 {% endfor %}
+</div>
 {% endif %}
 
 <p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>

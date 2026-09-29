@@ -3,7 +3,7 @@
 {% set dr = item.deep_read %}
 {% set dr_title = item.ai_summary or item.title %}
 {% set dr_is_owner = dr.csrf_token is not none %}
-<div class="deep-read-action{% if deep_read_variant %} deep-read-action--{{ deep_read_variant }}{% endif %}"
+<div class="deep-read-action"
      data-deep-read-status="{{ dr.status }}">
   {% if dr.is_ready %}
   <a class="deep-read-chip deep-read-chip-open" href="{{ dr.brief_url }}"

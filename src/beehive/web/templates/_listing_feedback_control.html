@@ -1,12 +1,11 @@
-<form class="listing-feedback" method="post" action="/items/{{ item.id }}/relevance"
-      {% if feedback_hx %}hx-post="/items/{{ item.id }}/relevance" hx-target="this" hx-swap="outerHTML"{% endif %}>
+{#- The Owner's relevance feedback on a listing or lot. The relevance route re-renders just this
+    form for htmx; without JavaScript the post redirects back to the page. -#}
+<form class="vote" method="post" action="/items/{{ item.id }}/relevance" role="group" aria-label="{{ t('web.feedback.prompt') }}"
+      {%- if feedback_hx %} hx-post="/items/{{ item.id }}/relevance" hx-target="this" hx-swap="outerHTML"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="next_url" value="{{ return_url }}">
-  <span>{{ t('web.feedback.prompt') }}</span>
-  <button type="submit" name="value" value="1"{% if item.feedback_value == 1 %} class="active" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>
-    {{ t('web.feedback.relevant') }}
-  </button>
-  <button type="submit" name="value" value="-1"{% if item.feedback_value == -1 %} class="active negative" aria-pressed="true"{% else %} aria-pressed="false"{% endif %}>
-    {{ t('web.feedback.not_relevant') }}
-  </button>
+  <button class="tg" type="submit" name="value" value="1" aria-pressed="{{ 'true' if item.feedback_value == 1 else 'false' }}"
+          data-focus-key="fb-{{ item.id }}-up" data-feedback-message="{{ t('web.item.vote_up_feedback') }}">{{ t('web.feedback.relevant') }}</button>
+  <button class="tg is-neg" type="submit" name="value" value="-1" aria-pressed="{{ 'true' if item.feedback_value == -1 else 'false' }}"
+          data-focus-key="fb-{{ item.id }}-down" data-feedback-message="{{ t('web.item.vote_down_feedback') }}">{{ t('web.feedback.not_relevant') }}</button>
 </form>

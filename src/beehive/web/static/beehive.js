@@ -5,7 +5,12 @@
   let refocusSlot = null;
 
   document.addEventListener("htmx:beforeRequest", (event) => {
-    const element = event.detail.elt;
+    // A form posted by htmx is triggered by the form, but the focus key and the announcement
+    // belong to the button that submitted it.
+    const submitter = event.detail.requestConfig?.triggeringEvent?.submitter;
+    const element = submitter instanceof HTMLElement && event.detail.elt.contains(submitter)
+      ? submitter
+      : event.detail.elt;
     focusKey = element.dataset.focusKey || "";
     feedbackMessage = element.dataset.feedbackMessage || "";
     // Stopping a watch re-renders the whole list, so remember where focus should land by id:
@@ -19,10 +24,10 @@
     }
     // A read toggle re-renders its section, where the next story may now sit in this row's
     // place, so focus returns to the same slot rather than following the story.
-    const slotRow = element.closest("[data-refocus-slot] tbody tr");
+    const slotRow = element.closest("[data-refocus-slot] tr.kb-row");
     const slotRegion = slotRow?.closest("[data-refocus-slot]");
     refocusSlot = slotRow && slotRegion?.id
-      ? { region: slotRegion.id, index: [...slotRow.parentElement.children].indexOf(slotRow) }
+      ? { region: slotRegion.id, index: [...slotRegion.querySelectorAll("tr.kb-row")].indexOf(slotRow) }
       : null;
   });
 
@@ -39,7 +44,7 @@
   document.addEventListener("htmx:afterSwap", () => {
     if (refocusSlot) {
       const region = document.getElementById(refocusSlot.region);
-      const rows = region ? [...region.querySelectorAll("tbody tr")] : [];
+      const rows = region ? [...region.querySelectorAll("tr.kb-row")] : [];
       const row = rows[Math.min(refocusSlot.index, rows.length - 1)];
       // With no row left (the last unread story was just read), focus the region's first link
       // or its empty-state message, so keyboard focus never drops to the page.
@@ -538,9 +543,10 @@
   document.addEventListener("htmx:afterSettle", syncAllBulk);
   syncAllBulk();
 
-  // Keyboard reading on the home page: / or f focuses search, j and k select a story row, o or
-  // Enter opens it. Rows are looked up on every key press, since a read toggle re-renders them.
-  const search = document.querySelector("[data-kb-search]");
+  // Keyboard reading on the reading pages: / or f focuses search, j and k select a story row, o
+  // or Enter opens it. Rows and the search field are looked up on every key press, since an htmx
+  // swap can replace them.
+  const findSearch = () => document.querySelector("[data-kb-search]");
   const selectionStatus = document.getElementById("kb-status");
   let selectedRow = null;
 
@@ -554,7 +560,7 @@
     return focused instanceof HTMLTableRowElement ? focused : null;
   };
 
-  if (!(search instanceof HTMLInputElement)) {
+  if (!(findSearch() instanceof HTMLInputElement)) {
     return;
   }
 
@@ -599,7 +605,8 @@
     }
 
     const key = event.key.toLowerCase();
-    if (!isTyping(event.target) && (key === "/" || key === "f")) {
+    const search = findSearch();
+    if (!isTyping(event.target) && (key === "/" || key === "f") && search instanceof HTMLInputElement) {
       event.preventDefault();
       search.focus();
       search.select();

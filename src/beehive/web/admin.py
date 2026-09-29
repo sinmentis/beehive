@@ -1609,7 +1609,7 @@ def trigger_channel_fetch_batch(
 def _channel_kind_options(t: Localizer) -> tuple[dict, ...]:
     """The New Channel form's kind radios, generated from the ChannelDefinition registry (not a
     hardcoded list) so a newly declared kind appears automatically. input_id matches the
-    CSS/hint toggling convention (`kind-<value>` / `.kind-only-<value>`) in beehive.css."""
+    CSS/hint toggling convention (`kind-<value>` / `.kind-only-<value>`) in admin.css."""
     return tuple(
         {
             "value": definition.kind.value,

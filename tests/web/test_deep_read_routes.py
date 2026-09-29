@@ -1,10 +1,11 @@
 """Route tests for the deep-read owner-only request/regenerate endpoint plus the public/
 optional-session dedicated brief page and its small HTMX status-polling endpoint. Also covers
 Dashboard/Channel/Archive batch-loading and decorating ranked items with deep-read state/action
-metadata (web/deep_read_view.decorate_deep_read_state) without touching their existing read/
+metadata (channels/views.build_editorial_item_views) without touching their existing read/
 open/vote behavior."""
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -95,6 +96,16 @@ def _fail(c, item_id, *, error_code="fetch", error_detail="top secret stack trac
     claimed = claim_deep_read(c, item_id, _NOW, lease_seconds=1500)
     fail_deep_read(c, item_id, claimed.request_version, claimed.claim_token,
                    error_code, error_detail, _NOW)
+
+
+def _crumbs(html):
+    """The running head's trail: the current chapter, then the page."""
+    match = re.search(r'<nav aria-label="You are here">(.*?)</nav>', html, re.DOTALL)
+    assert match is not None
+    return match.group(1)
+
+
+_OWNER_CONTROLS = '<div class="adm-actions" role="group" aria-label="Deep read owner controls">'
 
 
 # ============================================================================
@@ -404,7 +415,8 @@ def test_brief_page_hides_owner_controls_when_anonymous(conn, client):
 
     resp = client.get(f"/items/{item_id}/brief")
     assert resp.status_code == 200
-    assert "deep-read-owner-controls" not in resp.text
+    assert _OWNER_CONTROLS not in resp.text
+    assert 'name="regenerate"' not in resp.text
     assert "csrf_token" not in resp.text
 
 
@@ -416,9 +428,11 @@ def test_brief_page_shows_regenerate_control_to_owner(conn, authed_client):
 
     resp = authed_client.get(f"/items/{item_id}/brief")
     assert resp.status_code == 200
-    assert "deep-read-owner-controls" in resp.text
+    assert _OWNER_CONTROLS in resp.text
+    assert f'<form method="post" action="/items/{item_id}/deep-read">' in resp.text
     assert 'name="csrf_token" value="csrf1"' in resp.text
     assert 'name="regenerate" value="true"' in resp.text
+    assert 'aria-label="Regenerate deep read brief">Regenerate</button>' in resp.text
 
 
 def test_brief_page_never_renders_raw_error_detail(conn, client, authed_client):
@@ -733,8 +747,13 @@ def test_brief_page_falls_back_to_default_back_link_for_unrelated_channel_id(con
 
     resp = client.get(f"/items/{item_id}/brief?origin=channel&channel_id={other_channel_id}")
     assert resp.status_code == 200
-    assert "Finance" not in resp.text
-    assert '<a class="deep-read-back" href="/">← Back</a>' in resp.text
+    # The rail lists every Channel, but the brief files under Featured, never the other Channel.
+    assert resp.context["current_chapter"] == "featured"
+    crumbs = _crumbs(resp.text)
+    assert '<a href="/">1 Featured</a>' in crumbs
+    assert "Finance" not in crumbs
+    assert f'<a href="/channels/{other_channel_id}" aria-current' not in resp.text
+    assert '<a href="/" aria-current=' in resp.text
 
 
 def test_brief_page_shows_correct_back_link_for_the_item_actual_channel(conn, client):
@@ -743,7 +762,24 @@ def test_brief_page_shows_correct_back_link_for_the_item_actual_channel(conn, cl
 
     resp = client.get(f"/items/{item_id}/brief?origin=channel&channel_id={channel_id}")
     assert resp.status_code == 200
-    assert f'<a class="deep-read-back" href="/channels/{channel_id}">← Back to Tech</a>' in resp.text
+    assert resp.context["current_chapter"] == f"channel-{channel_id}"
+    crumbs = _crumbs(resp.text)
+    assert f'<a href="/channels/{channel_id}">2 Tech</a>' in crumbs
+    assert '<span aria-current="page">Deep read</span>' in crumbs
+    assert f'<a href="/channels/{channel_id}" aria-current=' in resp.text
+    assert '<a href="/" aria-current=' not in resp.text
+
+
+def test_brief_page_files_an_archive_origin_under_the_archive(conn, client):
+    _, c = conn
+    _, item_id = _create_ranked_item(c, channel_name="Tech")
+
+    resp = client.get(f"/items/{item_id}/brief?origin=archive")
+    assert resp.status_code == 200
+    assert resp.context["current_chapter"] == "archive"
+    crumbs = _crumbs(resp.text)
+    assert '<a href="/archive">3 Archive</a>' in crumbs
+    assert '<span aria-current="page">Deep read</span>' in crumbs
 
 
 def test_status_route_falls_back_to_default_origin_for_unrelated_channel_id(conn, client):
@@ -828,12 +864,14 @@ def test_archive_decorates_ranked_items_with_deep_read_state(conn, client):
 
     resp = client.get("/archive")
     assert resp.status_code == 200
-    items = [it for _day, day_items in resp.context["groups"] for it in day_items]
-    assert items
-    assert items[0]["deep_read"]["status"] == "failed"
-    assert items[0]["deep_read"]["is_failed"] is True
-    assert items[0]["deep_read"]["origin"] == "archive"
-    assert items[0]["deep_read"]["channel_id"] is None
+    rows = [row for day in resp.context["days"] for row in day["rows"]]
+    assert rows
+    deep_read = rows[0]["story"].deep_read
+    assert deep_read.status == "failed"
+    assert deep_read.is_failed is True
+    assert deep_read.origin == "archive"
+    assert deep_read.channel_id is None
+    assert deep_read.brief_url == f"/items/{item_id}/brief?origin=archive"
 
 
 def test_unranked_items_get_no_deep_read_bundle_in_list_views(conn, client):
@@ -842,17 +880,33 @@ def test_unranked_items_get_no_deep_read_bundle_in_list_views(conn, client):
 
     resp = client.get("/archive")
     assert resp.status_code == 200
-    items = [it for _day, day_items in resp.context["groups"] for it in day_items]
-    assert items
-    assert items[0]["deep_read"] is None
+    rows = [row for day in resp.context["days"] for row in day["rows"]]
+    assert rows
+    assert rows[0]["story"].id == item_id
+    assert rows[0]["story"].deep_read is None
+    assert 'class="deep-read-action"' not in resp.text
 
 
 # ============================================================================
-# POST /items/{item_id}/vote: the outerHTML-swapped _item_card.html fragment must keep the
-# item's deep-read action/control across every vote -- regression for vote_on_item previously
-# never decorating item["deep_read"] before rendering the fragment, which silently dropped the
-# control from the card on every single vote.
+# POST /items/{item_id}/vote answers with a redirect back to the page, and htmx swaps the
+# story's row (#story-{id}) in from that page. The row must keep the item's deep-read action
+# across every vote -- regression for the old fragment path, which once dropped the control
+# from the card on every single vote.
 # ============================================================================
+
+def _vote_and_follow(authed_client, item_id, channel_id):
+    """Vote a story up (or clear its up vote) and fetch the page the vote redirects to, the way
+    htmx does, returning that page and the story's row in it."""
+    resp = authed_client.post(f"/items/{item_id}/vote",
+                               data={"value": "1", "csrf_token": "csrf1"})
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/channels/{channel_id}"
+    page = authed_client.get(resp.headers["location"])
+    assert page.status_code == 200
+    row = re.search(rf'<tr class="kb-row[^"]*" id="story-{item_id}".*?</tr>', page.text, re.DOTALL)
+    assert row is not None
+    return page, row.group(0)
+
 
 def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origin(
     conn, authed_client,
@@ -861,68 +915,61 @@ def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origi
     channel_id, item_id = _create_ranked_item(c, channel_name="Tech")
 
     # 1. never requested -> the "start" control.
-    resp = authed_client.post(f"/items/{item_id}/vote",
-                               data={"value": "1", "csrf_token": "csrf1"})
-    assert resp.status_code == 200
-    dr = resp.context["item"].deep_read
+    page, row = _vote_and_follow(authed_client, item_id, channel_id)
+    dr = page.context["page"].highlighted[0].deep_read
     assert dr.status == "not_requested"
     assert dr.can_start is True
     assert dr.origin == "channel"
     assert dr.channel_id == channel_id
     assert dr.csrf_token == "csrf1"
-    assert "deep-read-chip-start" in resp.text
-    assert 'name="origin" value="channel"' in resp.text
-    assert f'name="channel_id" value="{channel_id}"' in resp.text
+    assert "deep-read-chip-start" in row
+    assert 'name="origin" value="channel"' in row
+    assert f'name="channel_id" value="{channel_id}"' in row
 
     # 2. queued -> the "pending" control.
     request_deep_read(c, item_id, _NOW)
-    resp = authed_client.post(f"/items/{item_id}/vote",
-                               data={"value": "1", "csrf_token": "csrf1"})
-    assert resp.status_code == 200
-    dr = resp.context["item"].deep_read
+    page, row = _vote_and_follow(authed_client, item_id, channel_id)
+    dr = page.context["page"].highlighted[0].deep_read
     assert dr.status == "pending"
     assert dr.is_pending is True
     assert dr.origin == "channel"
     assert dr.channel_id == channel_id
-    assert "deep-read-chip-pending" in resp.text
-    assert f'href="/items/{item_id}/brief?origin=channel' in resp.text
-    assert f'channel_id={channel_id}"' in resp.text
+    assert "deep-read-chip-pending" in row
+    assert f'href="/items/{item_id}/brief?origin=channel' in row
+    assert f'channel_id={channel_id}"' in row
 
     # 3. ready -> the "open" control.
     _complete_ready(c, item_id)
-    resp = authed_client.post(f"/items/{item_id}/vote",
-                               data={"value": "1", "csrf_token": "csrf1"})
-    assert resp.status_code == 200
-    dr = resp.context["item"].deep_read
+    page, row = _vote_and_follow(authed_client, item_id, channel_id)
+    dr = page.context["page"].highlighted[0].deep_read
     assert dr.status == "ready"
     assert dr.is_ready is True
     assert dr.origin == "channel"
     assert dr.channel_id == channel_id
-    assert "deep-read-chip-open" in resp.text
-    assert f'href="/items/{item_id}/brief?origin=channel' in resp.text
-    assert f'channel_id={channel_id}"' in resp.text
+    assert "deep-read-chip-open" in row
+    assert f'href="/items/{item_id}/brief?origin=channel' in row
+    assert f'channel_id={channel_id}"' in row
 
     # 4. failed (via regenerate) -> the "retry" control.
     request_deep_read(c, item_id, _NOW, regenerate=True)
     _fail(c, item_id)
-    resp = authed_client.post(f"/items/{item_id}/vote",
-                               data={"value": "1", "csrf_token": "csrf1"})
-    assert resp.status_code == 200
-    dr = resp.context["item"].deep_read
+    page, row = _vote_and_follow(authed_client, item_id, channel_id)
+    dr = page.context["page"].highlighted[0].deep_read
     assert dr.status == "failed"
     assert dr.is_failed is True
     assert dr.can_regenerate is True
     assert dr.origin == "channel"
     assert dr.channel_id == channel_id
-    assert "deep-read-chip-retry" in resp.text
-    assert 'name="regenerate" value="true"' in resp.text
-    assert 'name="origin" value="channel"' in resp.text
-    assert f'name="channel_id" value="{channel_id}"' in resp.text
+    assert "deep-read-chip-retry" in row
+    assert 'name="regenerate" value="true"' in row
+    assert 'name="origin" value="channel"' in row
+    assert f'name="channel_id" value="{channel_id}"' in row
 
 
 def test_vote_route_derives_the_item_actual_channel_not_any_channel(conn, authed_client):
-    """Regression guard for the derivation itself: creating an unrelated second channel/source
-    beforehand must not confuse which channel_id the vote fragment's deep-read action uses."""
+    """Regression guard for the derivation itself: creating an unrelated second channel
+    beforehand must not confuse which Channel the vote redirects back to, nor the channel_id the
+    row's deep-read action then uses."""
     _, c = conn
     other_channel_id = create_channel(c, "Finance", "economic news")
     channel_id, item_id = _create_ranked_item(c, channel_name="Tech")
@@ -930,7 +977,12 @@ def test_vote_route_derives_the_item_actual_channel_not_any_channel(conn, authed
 
     resp = authed_client.post(f"/items/{item_id}/vote",
                                data={"value": "1", "csrf_token": "csrf1"})
-    assert resp.status_code == 200
-    dr = resp.context["item"].deep_read
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/channels/{channel_id}"
+    assert resp.headers["location"] != f"/channels/{other_channel_id}"
+
+    page = authed_client.get(resp.headers["location"])
+    dr = page.context["page"].highlighted[0].deep_read
     assert dr.channel_id == channel_id
-    assert dr.channel_id != other_channel_id
+    assert f'name="channel_id" value="{channel_id}"' in page.text
+    assert f'name="channel_id" value="{other_channel_id}"' not in page.text

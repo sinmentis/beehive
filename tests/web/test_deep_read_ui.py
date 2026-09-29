@@ -1,11 +1,11 @@
 """Design/UI regression coverage for the deep-read todo: the compact action control that appears
-on every ranked-item list surface (Dashboard rows, highlighted/folded Channel items, Archive
-results) plus the fully redesigned dedicated brief page and its HTMX status partial. Complements
+on every ranked-item list surface (the shared story row on the home page, the Channel sections and
+the Archive) plus the dedicated brief page and its HTMX status partial. Complements
 tests/web/test_deep_read_routes.py (route/auth/view-model behavior) and
 tests/web/test_templates.py (site-wide template guards) -- this file is narrower: it proves every
 surface actually renders the right control for the right state, that no template nests one
 interactive control inside another, that the pending state is a structural skeleton (not a
-spinner), and that the CSS backs the responsive/reduced-motion/touch-target claims."""
+spinner), and that the CSS backs the responsive/reduced-motion/target-size claims."""
 import json
 import re
 from datetime import datetime, timezone
@@ -86,30 +86,55 @@ def _fail(c, item_id):
                     "fetch", "raw trace", _NOW)
 
 
+def _css_rule(css, selector):
+    """The declarations of the rule whose selector list is exactly `selector`."""
+    match = re.search(r"(?:^|[}\n])" + re.escape(selector) + r"\{([^}]*)\}", css)
+    assert match is not None, selector
+    return match.group(1)
+
+
+def _css_block(css, prelude):
+    """The body of the block opened by `prelude`, such as an @container query."""
+    start = css.index(prelude + "{") + len(prelude) + 1
+    depth = 1
+    for index in range(start, len(css)):
+        if css[index] == "{":
+            depth += 1
+        elif css[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[start:index]
+    raise AssertionError(f"{prelude} is never closed")
+
+
+def _story_row_macro():
+    macros = (_TEMPLATES_DIR / "_reading_macros.html").read_text()
+    start = macros.index("{% macro story_row(")
+    return macros[start:macros.index("{% endmacro %}", start)]
+
+
 # ============================================================================
 # Every ranked-item surface renders the shared action control
 # ============================================================================
 
 def test_shared_action_partial_is_wired_into_every_ranked_item_surface():
-    dashboard = (_TEMPLATES_DIR / "dashboard.html").read_text()
-    item_card = (_TEMPLATES_DIR / "_item_card.html").read_text()
+    row = _story_row_macro()
+    # One story row serves every ranked-item list, and its action column carries the control.
+    ops_cell = re.search(r'<td class="c-ops">(.*?)</td>', row, re.DOTALL)
+    assert ops_cell is not None
+    assert '{%- set item = story %}{% include "_deep_read_action.html" %}' in ops_cell.group(1)
+    for template_name in ("dashboard.html", "channel_editorial.html", "archive.html"):
+        template = (_TEMPLATES_DIR / template_name).read_text()
+        assert '{% import "_reading_macros.html" as rd with context %}' in template, template_name
+        assert "rd.story_row(" in template, template_name
+        # The action is an ordinary link in its own column everywhere: no per-surface variant.
+        assert "deep_read_variant" not in template, template_name
+    assert "deep_read_variant" not in row
+    # Highlighted and folded Channel stories are the same row, one call per section.
     channel = (_TEMPLATES_DIR / "channel_editorial.html").read_text()
-    folded_item = (_TEMPLATES_DIR / "_folded_item.html").read_text()
-    archive = (_TEMPLATES_DIR / "archive.html").read_text()
-
-    assert '{% include "_deep_read_action.html" %}' in dashboard
-    assert '{% include "_deep_read_action.html" %}' in item_card
-    assert '{% include "_folded_item.html" %}' in channel
-    assert '{% include "_deep_read_action.html" %}' in folded_item
-    assert '{% include "_deep_read_action.html" %}' in archive
-
-    # Folded Channel items are dense: the control stays hidden at rest. The home page is set in
-    # the datasheet, where the action is an ordinary link in its own column.
-    assert "deep_read_variant" not in dashboard
-    assert 'deep_read_variant = "dense"' in folded_item
-    # Highlighted Channel items keep the action visible beside the age; Archive rows use the side.
-    assert 'deep_read_variant = "meta"' in item_card
-    assert 'deep_read_variant = "side"' in archive
+    assert channel.count("rd.story_row(") == 2
+    for gone in ("_item_card.html", "_folded_item.html"):
+        assert not (_TEMPLATES_DIR / gone).exists(), gone
 
 
 def test_dashboard_row_shows_owner_start_button_when_not_yet_requested(conn, authed_client):
@@ -228,41 +253,50 @@ def test_action_partial_hidden_fields_are_allowlisted_and_never_a_free_text_url(
 
 
 def test_dashboard_row_action_sits_outside_the_summary_link():
-    template = (_TEMPLATES_DIR / "dashboard.html").read_text()
-    summary_cell = re.search(r'<td class="c-sum">(.*?)</td>', template, re.DOTALL)
+    # The home page's rows are the shared story row.
+    assert "rd.story_row(" in (_TEMPLATES_DIR / "dashboard.html").read_text()
+    row = _story_row_macro()
+    summary_cell = re.search(r'<td class="c-sum">(.*?)</td>', row, re.DOTALL)
     assert summary_cell is not None
     assert "_deep_read_action.html" not in summary_cell.group(1), (
         "the deep-read action must be a sibling of the summary link, never nested inside it"
     )
-    assert (
-        '<td class="c-ops">{% set item = story %}{% include "_deep_read_action.html" %}</td>'
-        in template
-    )
+    assert row.index('<td class="c-sum">') < row.index('{% include "_deep_read_action.html" %}')
 
 
-def test_folded_item_action_sits_outside_the_title_link():
-    template = (_TEMPLATES_DIR / "_folded_item.html").read_text()
-    folded_article = re.search(
-        r'<article class="folded-item"[^>]*>(.*?)</article>',
-        template,
-        re.DOTALL,
-    )
-    assert folded_article is not None
-    body = folded_article.group(1)
-    title_link_end = body.index("</a>")
-    action_include_index = body.index('{% include "_deep_read_action.html" %}')
-    assert action_include_index > title_link_end
+def test_folded_item_action_sits_outside_the_title_link(conn, authed_client):
+    _, c = conn
+    channel_id = create_channel(c, "Tech", "developer news", highlight_count=1)
+    source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for score, external_id in ((95, "top"), (94, "folded")):
+        insert_new(c, source_id, RawItem(
+            external_id=external_id, title=external_id, url=f"https://example.com/{external_id}"))
+        update_ai_ranking(c, source_id, external_id, score=score,
+                          summary=f"{external_id} summary", rationale="r")
+    folded_id = c.execute("SELECT id FROM items WHERE external_id='folded'").fetchone()[0]
+
+    resp = authed_client.get(f"/channels/{channel_id}")
+
+    assert resp.status_code == 200
+    folded_section = resp.text[resp.text.index('<section class="chan-sec" id="more"'):]
+    row = re.search(
+        rf'<tr class="kb-row" id="story-{folded_id}".*?</tr>', folded_section, re.DOTALL)
+    assert row is not None
+    title_link = re.search(r"<a [^>]*data-kb-open>(.*?)</a>", row.group(0), re.DOTALL)
+    assert title_link is not None
+    assert "folded summary" in title_link.group(1)
+    assert "deep-read" not in title_link.group(1)
+    assert row.group(0).index(title_link.group(0)) < row.group(0).index('class="deep-read-action"')
+    assert 'class="deep-read-chip deep-read-chip-start"' in row.group(0)
 
 
 def test_channel_item_action_follows_the_age_in_the_metadata_row():
-    template = (_TEMPLATES_DIR / "_item_card.html").read_text()
-    metadata = re.search(r'<div class="meta">(.*?)</div>', template, re.DOTALL)
-    assert metadata is not None
-    body = metadata.group(1)
-    age_index = body.index('class="meta-age"')
-    action_include_index = body.index('{% include "_deep_read_action.html" %}')
-    assert action_include_index > age_index
-    assert 'deep_read_variant = "meta"' in body
+    row = _story_row_macro()
+    age_index = row.index('<td class="c-age"')
+    ops_index = row.index('<td class="c-ops">')
+    action_include_index = row.index('{% include "_deep_read_action.html" %}')
+    assert age_index < ops_index < action_include_index
+    assert "deep_read_variant" not in row
 
 
 # ============================================================================
@@ -281,23 +315,54 @@ def test_brief_page_ready_state_has_conclusion_first_heading_and_all_required_se
 
     assert resp.status_code == 200
     text = resp.text
-    assert '<h1 class="deep-read-title" id="deep-read-heading">s</h1>' in text
-    assert 'class="deep-read-back"' in text
-    assert 'class="deep-read-meta"' in text
-    assert 'class="deep-read-source-link"' in text
+    assert '<h1 id="deep-read-heading">s</h1>' in text
+    # The running head is the way back: the chapter the brief came from, then the brief itself.
+    assert '<a href="/">1 Featured</a>' in text
+    assert '<span aria-current="page">Deep read</span>' in text
+    assert "<span>Source: r/x</span>" in text
+    assert (
+        '<a class="lnk" href="https://example.com/a" target="_blank" rel="noopener noreferrer">'
+        "Read the original source"
+    ) in text
+    article = re.search(
+        r'<article class="read brief-body" aria-labelledby="deep-read-heading">(.*?)</article>',
+        text, re.DOTALL)
+    assert article is not None
+    body = article.group(1)
+    # Conclusion first: the bottom line is the first heading, answered right beneath it. Each
+    # section is numbered under the chapter the brief sits in, and a list counts its items.
+    assert re.findall(r'<h2 id="(brief-[a-z-]+)"><span class="no">([0-9.]+)</span><span>(.*?)</span>', body) == [
+        ("brief-bottom-line", "1.1", "Bottom line"),
+        ("brief-findings", "1.2", "Key findings"),
+        ("brief-why", "1.3", "Why it matters"),
+    ]
+    assert re.search(
+        r'<h2 id="brief-bottom-line"><span class="no">1\.1</span><span>Bottom line</span></h2>\s*'
+        r'<p class="answer">Rates fell by 25 basis points\.</p>', body)
+    assert '<span class="tools"><span class="desk-state nw">2 items</span></span></h2>' in body
+    assert "<ol><li>Inflation cooled</li><li>Wage growth held</li></ol>" in body
+    assert "<p>Borrowing costs will ease for households.</p>" in body
+    assert "<b>Limitations</b> Based on a single central bank statement." in body
+    side = re.search(
+        r'<aside class="nb-side" aria-label="Important figures">(.*?)</aside>', text, re.DOTALL)
+    assert side is not None
+    assert (
+        '<h2><span class="no">1.4</span><span>Important figures</span>'
+        '<span class="tools">1 item</span></h2>'
+    ) in side.group(1)
+    assert '<ul class="figs"><li><b>25bp</b><span>rate cut</span></li></ul>' in side.group(1)
+    assert '<h2><span class="no">1.5</span><span>Source</span></h2>' in side.group(1)
+    assert "Generated" in side.group(1)
     assert text.count("<h2") == 5
-    for heading_id in (
-        "deep-read-bottom-line-heading",
-        "deep-read-key-findings-heading",
-        "deep-read-important-figures-heading",
-        "deep-read-why-it-matters-heading",
-        "deep-read-limitations-heading",
+    # The rail lists the brief's sections under its chapter.
+    for number, label, anchor in (
+        ("1.1", "Bottom line", "#brief-bottom-line"),
+        ("1.2", "Key findings", "#brief-findings"),
+        ("1.3", "Why it matters", "#brief-why"),
+        ("1.4", "Important figures", "#brief-figures"),
+        ("1.5", "Source", "#brief-source"),
     ):
-        assert f'id="{heading_id}"' in text
-        assert f'aria-labelledby="{heading_id}"' in text
-    assert 'class="deep-read-figure-value"' in text
-    assert 'class="deep-read-provenance"' in text
-    assert "Generated" in text
+        assert f'<a href="{anchor}"><span class="no">{number}</span><span>{label}</span></a>' in text
 
 
 def test_brief_page_pending_state_uses_structural_skeleton_not_a_spinner(conn, client):
@@ -309,12 +374,15 @@ def test_brief_page_pending_state_uses_structural_skeleton_not_a_spinner(conn, c
 
     assert resp.status_code == 200
     text = resp.text
-    assert 'class="deep-read-skeleton" aria-hidden="true"' in text
-    assert "skeleton-line" in text
-    assert "skeleton-figure" in text
+    status = re.search(
+        r'<section id="deep-read-status" class="brief-status"(.*?)</section>', text, re.DOTALL)
+    assert status is not None
+    assert 'role="status" aria-live="polite"' in status.group(1)
+    assert f'hx-get="/items/{item_id}/brief/status" hx-trigger="every 3s"' in status.group(1)
+    assert (
+        '<div class="skel brief-skel" aria-hidden="true">' + "<span></span>" * 5 + "</div>"
+    ) in status.group(1)
     assert "spinner" not in text.lower()
-    assert 'role="status"' in text
-    assert 'aria-live="polite"' in text
 
 
 def test_brief_page_omits_empty_limitations_section(conn, client):
@@ -326,7 +394,113 @@ def test_brief_page_omits_empty_limitations_section(conn, client):
     resp = client.get(f"/items/{item_id}/brief")
 
     assert resp.status_code == 200
-    assert "deep-read-limitations-heading" not in resp.text
+    assert "<b>Limitations</b>" not in resp.text
+    assert '<h2 id="brief-why"><span class="no">1.3</span><span>Why it matters</span></h2>' in resp.text
+
+
+@pytest.mark.parametrize(
+    ("query", "chapter"),
+    [
+        ("?origin=channel&channel_id={channel_id}", "3"),
+        ("?origin=archive", "4"),
+        ("?origin=dashboard", "1"),
+        ("", "1"),
+    ],
+)
+def test_brief_sections_are_numbered_under_the_chapter_it_was_opened_from(
+    conn, client, query, chapter
+):
+    _, c = conn
+    # The rail reads 1 Featured, 2 Finance, 3 Tech (the story's Channel), 4 Archive.
+    create_channel(c, "Finance", "economic news")
+    channel_id, item_id = _create_ranked_item(c, channel_name="Tech")
+    request_deep_read(c, item_id, _NOW)
+    _complete_ready(c, item_id)
+
+    resp = client.get(f"/items/{item_id}/brief" + query.format(channel_id=channel_id))
+
+    assert resp.status_code == 200
+    assert [number for number, _, _ in resp.context["toc_sections"]] == [
+        f"{chapter}.{section}" for section in range(1, 6)
+    ]
+    assert f'<h2 id="brief-bottom-line"><span class="no">{chapter}.1</span>' in resp.text
+    assert (
+        f'<a href="#brief-source"><span class="no">{chapter}.5</span><span>Source</span></a>'
+    ) in resp.text
+
+
+@pytest.mark.parametrize(
+    ("is_owner", "state", "query", "number", "word"),
+    [
+        # The Owner can start a brief that was never requested; to a reader it is unavailable.
+        (True, "not_requested", "?origin=channel&channel_id={channel_id}", "2.1", "Not started"),
+        (False, "not_requested", "", "1.1", "Unavailable"),
+        (True, "failed", "?origin=archive", "3.1", "Failed"),
+        (True, "pending", "?origin=channel&channel_id={channel_id}", "2.1", "Being written"),
+        (False, "processing", "", "1.1", "Being written"),
+    ],
+)
+def test_a_brief_that_is_not_ready_is_one_numbered_status_section(
+    conn, client, authed_client, is_owner, state, query, number, word
+):
+    _, c = conn
+    # The rail reads 1 Featured, 2 Tech (the story's Channel), 3 Archive.
+    channel_id, item_id = _create_ranked_item(c)
+    if state != "not_requested":
+        request_deep_read(c, item_id, _NOW)
+    if state == "processing":
+        claim_deep_read(c, item_id, _NOW, lease_seconds=1500)
+    if state == "failed":
+        _fail(c, item_id)
+    reader = authed_client if is_owner else client
+    query = query.format(channel_id=channel_id)
+
+    page = reader.get(f"/items/{item_id}/brief{query}")
+    poll = reader.get(f"/items/{item_id}/brief/status{query}")
+
+    assert page.status_code == poll.status_code == 200
+    # The section is numbered under the brief's chapter and listed in the rail, in place of a
+    # finished brief's five.
+    assert page.context["toc_sections"] == [(number, "Deep read", "#deep-read-status")]
+    assert (
+        f'<a href="#deep-read-status"><span class="no">{number}</span><span>Deep read</span></a>'
+    ) in page.text
+    assert 'id="brief-bottom-line"' not in page.text
+    headings = []
+    for response in (page, poll):
+        section = re.search(
+            r'<section id="deep-read-status"([^>]*)>\s*(<h2 id="deep-read-status-h">.*?</h2>)'
+            r"(.*?)</section>",
+            response.text,
+            re.DOTALL,
+        )
+        assert section is not None
+        attributes, heading, body = section.groups()
+        # Its one heading, first in it, carries the number and the state in words.
+        assert f'<span class="no">{number}</span><span>Deep read</span>' in heading
+        assert f'<span class="desk-state nw">{word}</span>' in heading
+        assert "<h2" not in body
+        # Only a brief still being written polls for its state.
+        assert ("hx-get=" in attributes) is (state in ("pending", "processing"))
+        headings.append(heading)
+    # Each poll re-renders the heading as the page shows it, so its state never goes stale.
+    assert headings[0] == headings[1]
+
+
+def test_brief_figures_heading_has_no_count_without_figures(conn, client):
+    _, c = conn
+    _, item_id = _create_ranked_item(c)
+    request_deep_read(c, item_id, _NOW)
+    _complete_ready(c, item_id, {**_READY_RESULT, "important_figures": []})
+
+    resp = client.get(f"/items/{item_id}/brief")
+
+    # The section keeps its number and its place in the rail, and says there is nothing to count.
+    assert '<h2><span class="no">1.4</span><span>Important figures</span></h2>' in resp.text
+    assert "No notable figures in this article." in resp.text
+    assert (
+        '<a href="#brief-figures"><span class="no">1.4</span><span>Important figures</span></a>'
+    ) in resp.text
 
 
 def test_brief_page_not_requested_offers_generation_to_owner_only(conn, authed_client, client):
@@ -337,9 +511,18 @@ def test_brief_page_not_requested_offers_generation_to_owner_only(conn, authed_c
     owner_resp = authed_client.get(f"/items/{item_id}/brief")
     anon_resp = client.get(f"/items/{item_id}/brief")
 
-    assert 'class="deep-read-owner-controls"' in owner_resp.text
-    assert "csrf_token" in owner_resp.text
-    assert 'class="deep-read-owner-controls"' not in anon_resp.text
+    owner_controls = '<div class="adm-actions" role="group" aria-label="Deep read owner controls">'
+    start_form = f'<form method="post" action="/items/{item_id}/deep-read">'
+    assert owner_controls in owner_resp.text
+    assert start_form in owner_resp.text
+    assert '<input type="hidden" name="csrf_token" value="csrf1">' in owner_resp.text
+    assert 'aria-label="Deep read: s">Deep read</button>' in owner_resp.text
+    assert '<div class="empty">No deep read yet.' in owner_resp.text
+    assert owner_controls not in anon_resp.text
+    assert start_form not in anon_resp.text
+    assert "csrf_token" not in anon_resp.text
+    assert '<div class="empty">Deep read isn&#39;t available for this item right now.</div>' in (
+        anon_resp.text)
 
 
 def test_brief_page_failed_state_offers_retry_to_owner_only(conn, authed_client, client):
@@ -351,13 +534,20 @@ def test_brief_page_failed_state_offers_retry_to_owner_only(conn, authed_client,
     owner_resp = authed_client.get(f"/items/{item_id}/brief")
     anon_resp = client.get(f"/items/{item_id}/brief")
 
-    assert 'class="deep-read-status deep-read-status-failed"' in owner_resp.text
-    assert "raw trace" not in owner_resp.text
-    assert "raw trace" not in anon_resp.text
-    assert 'class="deep-read-failure-heading"' in owner_resp.text
-    assert 'class="deep-read-failure-next"' in owner_resp.text
+    for resp in (owner_resp, anon_resp):
+        failed = re.search(
+            r'<section id="deep-read-status" class="brief-status"[^>]*>(.*?)</section>',
+            resp.text, re.DOTALL)
+        assert failed is not None
+        assert '<div class="note note-danger">' in failed.group(1)
+        assert "<b>Why this failed</b>" in failed.group(1)
+        assert "raw trace" not in resp.text
+    assert "<small>Try again. If it keeps failing, open the original source above.</small>" in (
+        owner_resp.text)
     assert 'name="regenerate" value="true"' in owner_resp.text
+    assert 'aria-label="Retry deep read: s">Retry</button>' in owner_resp.text
     assert 'name="regenerate" value="true"' not in anon_resp.text
+    assert "Retry</button>" not in anon_resp.text
 
 
 # ============================================================================
@@ -366,13 +556,12 @@ def test_brief_page_failed_state_offers_retry_to_owner_only(conn, authed_client,
 
 def test_status_partial_only_polls_while_pending():
     content = (_TEMPLATES_DIR / "_deep_read_status.html").read_text()
-    branches = content.split("{% elif")
-    pending_branch = branches[0]
-    assert "hx-get=" in pending_branch
-    assert 'hx-trigger="every 3s"' in pending_branch
-    assert 'hx-swap="outerHTML"' in pending_branch
-    for terminal_branch in branches[1:]:
-        assert "hx-get=" not in terminal_branch
+    # The one polling attribute set is guarded by the pending state; terminal states never poll.
+    assert content.count("hx-get=") == 1
+    assert (
+        '{%- if is_pending %} hx-get="{{ status_url }}" hx-trigger="every 3s" '
+        'hx-swap="outerHTML"{% endif %}'
+    ) in content
     assert content.count('role="status"') == content.count('aria-live="polite"')
     assert 'class="sr-only"' in content
 
@@ -388,48 +577,51 @@ def test_deep_read_brief_page_reuses_the_status_partial_for_non_ready_states():
 # Responsive styles and touch targets
 # ============================================================================
 
-def test_css_defines_deep_read_responsive_breakpoints_and_touch_targets():
-    css = (_STATIC_DIR / "beehive.css").read_text()
+def test_css_defines_deep_read_responsive_layout_and_target_sizes():
+    css = (_STATIC_DIR / "admin.css").read_text()
 
-    breakpoint_760 = re.search(r"@media \(max-width:760px\)\{(.*?)\n\}", css, re.DOTALL)
-    assert breakpoint_760 is not None
-    assert ".deep-read-" in breakpoint_760.group(1)
+    # Mid widths: the brief's side column (figures and source) drops below the text.
+    mid = _css_block(css, "@container adm (max-width:1180px)")
+    assert ".nb{grid-template-columns:minmax(0,1fr)}" in mid
+    assert ".nb-side{position:static;margin-top:28px}" in mid
 
-    breakpoint_720_blocks = re.findall(
-        r"@media \(max-width:720px\)\{(.*?)\n\}", css, re.DOTALL)
-    assert any(".deep-read-" in block for block in breakpoint_720_blocks)
-    assert any("folded-actions" in block for block in breakpoint_720_blocks)
-    assert ".folded-item .deep-read-action--dense{justify-self:end}" in css
+    # Narrow screens: a story's summary takes the whole line and its deep-read action wraps
+    # beneath it; a failed brief's retry drops under the explanation.
+    narrow = _css_block(css, "@container adm (max-width:880px)")
+    assert ".tbl-feed .c-sum{flex:1 1 100%;min-width:0}" in narrow
+    assert ".tbl-feed .c-ops{width:auto;font-size:.78rem}" in narrow
+    assert ".note-row{grid-template-columns:1fr}" in narrow
+    assert ".note-act{justify-content:flex-start;padding-top:0}" in narrow
 
-    touch_block = re.search(
-        r"@media \(hover:none\),\(pointer:coarse\)\{(.*?)\n\}", css, re.DOTALL)
-    assert touch_block is not None
-    assert ".deep-read-chip{min-height:2.75rem" in touch_block.group(1)
-    assert ".deep-read-owner-controls .deep-read-form" in css
-    assert ".deep-read-status-failed .deep-read-form" in css
-    assert ".deep-read-status-failed .btn{width:100%;min-height:2.75rem}" in css
-    assert ".deep-read-status-failed .deep-read-failure-heading" in css
-    assert "font-family:var(--font-display)" in css
-    assert "var(--display)" not in css
+    # Buttons and toggles keep a target of at least 24px.
+    assert "min-height:32px" in _css_rule(css, ".btn")
+    assert "min-height:26px" in _css_rule(css, ".btn-sm")
+    assert "min-height:26px" in _css_rule(css, ".tg")
+
+    # The deep-read action reads as the datasheet's link, in the sheet's own font.
+    chip = _css_rule(css, ".adm .deep-read-chip")
+    assert "color:var(--link)" in chip
+    assert "font:inherit" in chip
 
 
 def test_css_avoids_gradients_and_inline_styles_in_deep_read_rules():
-    css = (_STATIC_DIR / "beehive.css").read_text()
-    compact_action_start = css.index("/* Deep read: compact action control")
-    compact_action_css = css[compact_action_start:css.index("\n.filters{")]
-    assert "gradient(" not in compact_action_css
-
-    brief_page_start = css.index("/* Deep read: dedicated brief page")
-    brief_page_css = css[brief_page_start:]
-    assert "gradient(" not in brief_page_css
+    css = (_STATIC_DIR / "admin.css").read_text()
+    # The datasheet is flat throughout, the deep-read rules included.
+    assert ".adm .deep-read-chip{" in css
+    assert ".brief-body .answer{" in css
+    assert "gradient(" not in css
+    for template_name in (
+        "_deep_read_action.html", "_deep_read_status.html", "deep_read_brief.html"
+    ):
+        assert 'style="' not in (_TEMPLATES_DIR / template_name).read_text(), template_name
 
 
 def test_skeleton_animation_is_covered_by_reduced_motion_override():
-    css = (_STATIC_DIR / "beehive.css").read_text()
-    assert "@media (prefers-reduced-motion:reduce)" in css
-    reduced_motion = re.search(
-        r"@media \(prefers-reduced-motion:reduce\)\{(.*?)\n\}", css, re.DOTALL)
-    assert reduced_motion is not None
-    assert "animation-duration:.01ms!important" in reduced_motion.group(1)
-    assert ".skeleton-line{" in css
-    assert "animation:skeleton-pulse" in css
+    css = (_STATIC_DIR / "admin.css").read_text()
+    status = (_TEMPLATES_DIR / "_deep_read_status.html").read_text()
+    assert '<div class="skel brief-skel" aria-hidden="true">' in status
+    assert "animation:skel " in _css_rule(css, ".skel span")
+    assert "@keyframes skel{" in css
+    reduced_motion = _css_block(css, "@media (prefers-reduced-motion:reduce)")
+    assert ".skel span{animation:none}" in reduced_motion
+    assert ".adm *{transition:none!important}" in reduced_motion

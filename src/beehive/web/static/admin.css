@@ -62,7 +62,10 @@ body.adm{min-height:100vh;margin:0}
 .foot-count{min-width:18px;height:18px;padding:0 4px;border:1px solid var(--link);border-radius:2px;color:var(--link);
  font-size:.72rem;font-weight:700;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
 .adm-main{min-width:0;padding:16px}
-.adm-page{min-width:0;max-width:1320px;padding:16px 28px 36px;background:var(--sheet);border:1px solid var(--rule)}
+/* The sheet fills the screen, however wide. What sits on it keeps a readable shape: prose holds
+   its measure, form fields their width, independent sections flow into columns (.cols) and a
+   long reading table into newspaper columns. */
+.adm-page{min-width:0;padding:16px 28px 36px;background:var(--sheet);border:1px solid var(--rule)}
 
 /* Running head: where you are, and the clock every schedule is read against. */
 .adm-run{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 16px;margin-bottom:20px;padding-bottom:8px;
@@ -309,7 +312,7 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .seg .n{color:var(--ink-3);font-weight:400;font-variant-numeric:tabular-nums}
 .filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px}
 .filters form{display:flex;flex:1 1 420px;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;margin:0}
-.filters .inp{flex:1 1 200px;width:auto;min-width:0;min-height:32px}
+.filters .inp{flex:1 1 200px;width:auto;min-width:0;max-width:40rem;min-height:32px}
 .filters select.inp{flex:0 1 200px}
 
 /* A watched lot: its photo, then the title, with the auction as a quiet second line. */
@@ -469,7 +472,7 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .rd.htmx-request{cursor:wait;opacity:.6}
 
 /* Channel desk: one section per Channel, its state in the heading, a short table under it. */
-.desk-sec{scroll-margin-top:16px}
+.desk-sec,.chan-sec{scroll-margin-top:16px}
 .desk-state{color:var(--ink-2);font-size:.8125rem}
 .home-empty{margin-top:24px}
 .tbl .c-sum{min-width:20em;overflow-wrap:anywhere}
@@ -505,6 +508,143 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .adm kbd{display:inline-block;min-width:1.6em;padding:0 4px;border:1px solid var(--rule-2);border-radius:2px;background:var(--field);
  color:var(--ink-2);font:600 .72rem/1.5 var(--sans);text-align:center}
 
+/* Channel pages, the archive and search: the same sheet, head and rows as the home page. */
+.chan-sources{margin-top:2px;font-size:.8125rem}
+.chan-criteria{margin-top:18px}
+.adm-head+.filters,.chan-criteria+.filters{margin-top:18px}
+.chan-sec>.adm-lede{margin-top:0}
+/* A slot htmx swaps on its own adds no box, so an empty one leaves no gap in its row. */
+.swap-slot{display:contents}
+.chan-empty{margin-top:24px}
+.tbl small.why{margin-top:4px;color:var(--ink-2);font-size:.8125rem;line-height:1.55}
+.lot .why{grid-column:2}
+.lot-state{grid-column:2;margin-top:2px;font-size:.78rem}
+
+/* A two-state toggle: a word with a square that fills when it is on. The Owner's relevance and
+   watch controls use it; the pressed state is read from aria-pressed, never from colour alone. */
+.vote,.watch{display:inline-flex;gap:6px;margin:0;vertical-align:middle}
+.c-ops>.deep-read-action+.vote{margin:6px 0 0}
+.c-ops>.vote,.c-ops>.watch{margin-left:12px}
+.c-ops>.watch+.vote{margin-left:6px}
+.ops-stack{display:grid;justify-items:end;gap:6px}
+.tg{display:inline-flex;align-items:center;gap:6px;min-height:26px;padding:0 9px;border:1px solid var(--ctl);border-radius:2px;
+ background:none;color:var(--ink-2);font:600 .78rem/1.2 var(--sans);white-space:nowrap;cursor:pointer;
+ transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}
+.tg::before{content:"";flex:none;width:7px;height:7px;box-shadow:inset 0 0 0 1.5px currentColor}
+.tg:hover{border-color:var(--ink-2);color:var(--ink)}
+.tg[aria-pressed=true]{border-color:var(--ink-2);background:var(--band);color:var(--ink)}
+.tg[aria-pressed=true]::before{background:currentColor}
+.tg.is-neg[aria-pressed=true]{border-color:var(--ctl-danger);color:var(--danger)}
+.tg.htmx-request,.vote.htmx-request .tg{cursor:wait;opacity:.6}
+.reason{display:grid;gap:4px;max-width:44rem;margin:8px 0 0}
+.reason label{color:var(--ink-2);font-size:.78rem}
+.reason .inp{min-height:30px;font-size:.875rem}
+
+/* Filter bars: labelled fields in a row that wraps; the free-text field takes the slack. */
+.fields{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 12px;margin:18px 0 0;padding:12px 0 14px;
+ border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.fld{display:grid;gap:4px;min-width:0}
+.fld>span{color:var(--ink-2);font:600 .78rem/1.3 var(--sans);font-stretch:85%}
+.fld>.inp,.fld select.inp{min-height:32px}
+/* A select is as wide as its longest option; auction categories are whole sale titles. */
+.fld select.inp{max-width:20rem}
+.fld-grow{flex:1 1 16rem;max-width:40rem}
+.fld-check{min-height:32px}
+.fld-act{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;min-height:32px}
+.inp-date{width:auto;min-width:10.5rem}
+/* A multi-choice filter: the summary reads like a select and opens a checklist below it. */
+.ms{position:relative}
+.ms>summary{display:flex;align-items:center;min-width:10rem;max-width:22rem;padding-right:32px;list-style:none;cursor:pointer;
+ overflow-wrap:anywhere;background:var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%23A7AFB7' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center/12px}
+.ms>summary::-webkit-details-marker{display:none}
+.ms[open]>summary{border-color:var(--link)}
+.ms-panel{position:absolute;z-index:5;top:calc(100% + 4px);left:0;display:grid;gap:2px;min-width:100%;width:max-content;
+ max-width:min(28rem,90vw);max-height:340px;overflow:auto;padding:8px;border:1px solid var(--rule-2);border-radius:2px;
+ background:var(--sheet);box-shadow:0 14px 32px -10px rgba(0,0,0,.7)}
+.ms-panel .opt{padding:4px 6px;border-radius:2px;font-size:.875rem;overflow-wrap:anywhere}
+.ms-panel .opt:hover{background:var(--hover)}
+
+/* A section kept for reference: closed by default, its rows set back like closed lots. */
+.more>summary{width:max-content;max-width:100%;color:var(--link);font-size:.875rem;cursor:pointer;
+ text-decoration:underline;text-decoration-color:rgba(125,182,255,.4);text-underline-offset:3px}
+.more>summary:hover{color:var(--link-2)}
+.more[open]>summary{margin-bottom:6px}
+.more>.hint{margin-bottom:10px}
+
+/* The brief: its text at a reading measure, the figures and the source in the side column. */
+.brief{margin-top:24px}
+.adm .brief-body>h2{margin:26px 0 8px;font-size:.9375rem;scroll-margin-top:16px}
+.adm .brief-body>h2:first-child,.brief-body>.note+h2{margin-top:0}
+/* The side column's numbered labels keep their small caption size, count and all. */
+.brief .side-box{scroll-margin-top:16px}
+.adm .brief .side-box h2{display:flex;gap:4px 8px}
+.adm .brief .side-box h2 .no{min-width:0}
+.adm .brief .side-box h2 .tools{font-size:inherit}
+.brief-body>.note{margin:0 0 20px}
+.brief-body>.note:last-child{margin:26px 0 0}
+.brief-body .answer{font-size:1.0625rem;line-height:1.75}
+/* Important figures: the number first, what it counts beneath it. */
+.figs{display:grid}
+.figs li{padding:8px 0;border-bottom:1px solid var(--rule)}
+.figs b{display:block;color:var(--ink);font-size:1.0625rem;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.figs span{display:block;margin-top:2px;color:var(--ink-2);font-size:.8125rem;line-height:1.5;overflow-wrap:anywhere}
+.brief-status{margin-top:24px;max-width:72ch;scroll-margin-top:16px}
+.adm .brief-status>h2{margin:0 0 8px}
+.brief-skel span{height:12px}
+.brief-skel span:nth-child(4){width:90%}
+.brief-skel span:nth-child(5){width:40%}
+
+/* Error pages: one sheet on the desk, the status code in the running head. */
+.err-page .adm-page{width:min(560px,100%)}
+.err-code{color:var(--ink-3);font-variant-numeric:tabular-nums}
+.err-page h1{margin-top:6px}
+.err-page .adm-meta{margin-top:8px;font-size:.9375rem;line-height:1.65}
+.err-act{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:22px}
+
+/* Wide sheets: sections that stand alone (a channel on the home page, the parts of a channel
+   page) flow into as many columns as fit at 60rem or more each, so a large screen shows more at
+   once instead of stretching every row. auto-fit lets a lone section take the full width. */
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,60rem),1fr));gap:0 48px;align-items:start}
+.cols>*{min-width:0}
+@container adm (min-width:1800px){
+ /* Forms: a field stops at a comfortable width and the note column takes the rest. */
+ .params-head,.param{grid-template-columns:minmax(160px,220px) minmax(0,960px) minmax(290px,1fr)}
+ /* Reading layouts: the text keeps its measure and the side column sits beside it. */
+ .nb{grid-template-columns:minmax(0,960px) minmax(300px,440px);justify-content:start}
+}
+/* Wide tables: a reading table whose box fits two 56rem columns and their gap (115.5rem, 1848px)
+   sets its rows as entries in newspaper columns, like a printed catalogue. The order runs down
+   each column, so reading and keyboard order stay as listed, and a row's source, time, facts and
+   actions sit under its title instead of a screen away. Narrower boxes keep the table. */
+.page-reading .tbl-wrap{container:ledger/inline-size}
+@container ledger (min-width:115.5rem){
+ .page-reading :is(.tbl-feed,.tbl-stack){display:block;columns:4 56rem;column-gap:3.5rem;column-rule:1px solid var(--rule)}
+ .page-reading :is(.tbl-feed,.tbl-stack) thead{display:none}
+ .page-reading :is(.tbl-feed,.tbl-stack) tbody{display:block}
+ .page-reading :is(.tbl-feed,.tbl-stack) tr{break-inside:avoid;border-bottom:1px solid var(--rule)}
+ .page-reading :is(.tbl-feed,.tbl-stack) td{width:auto;padding:0;border:0}
+ /* A story: its read square and score in the lead, the summary, then its facts and actions. */
+ .tbl-feed tr{--lead:calc(2.1rem + 12px);position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;
+  padding:11px 0 11px var(--lead)}
+ .tbl-feed tr:has(.c-rd){--lead:calc(22px + 2.1rem + 24px)}
+ .tbl-feed .c-rd{position:absolute;top:10px;left:0;width:22px}
+ .tbl-feed .c-score{position:absolute;top:11px;left:0;width:2.1rem;text-align:left}
+ .tbl-feed .c-rd+.c-score{left:34px}
+ .tbl-feed .c-sum{flex:1 1 100%;min-width:0}
+ .tbl-feed :is(.c-chan,.c-src,.c-age){min-width:0;color:var(--ink-2);font-size:.8125rem}
+ .tbl-feed .c-ops{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-left:auto;font-size:.8125rem}
+ .tbl-feed .c-ops>.vote,.tbl-feed .c-ops>.deep-read-action+.vote{margin:0}
+ /* A listing or lot: its photo and title, then its labelled facts and actions under the title. */
+ .page-reading .tbl-stack tr{--lead:calc(80px + 12px);display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 22px;
+  padding:12px 0 12px var(--lead)}
+ .page-reading .tbl-stack td.c-lot{flex:1 1 100%;margin-left:calc(-1 * var(--lead))}
+ .page-reading .tbl-stack td[data-label]{display:flex;align-items:baseline;gap:8px;min-width:0}
+ .page-reading .tbl-stack td[data-label]::before{content:attr(data-label);flex:none;color:var(--ink-3);font-size:.78rem}
+ .page-reading .tbl-stack td[data-label] small{margin-top:0}
+ .page-reading .tbl-stack .c-ops{margin-left:auto}
+ .page-reading .tbl-stack .ops-stack{grid-auto-flow:column;align-items:center}
+}
+
 /* Mid widths: let table cells wrap before anything is allowed to overflow. */
 @container adm (max-width:1180px){
  .adm-main{padding:8px}
@@ -524,7 +664,7 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 }
 /* Narrow screens: the contents become a top bar, tables become labelled rows. */
 @container adm (max-width:880px){
- .adm-shell{grid-template-columns:1fr}
+ .adm-shell{grid-template-columns:1fr;grid-template-rows:auto 1fr}
  .adm-toc{position:static;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 12px;height:auto;padding:10px 12px;
   border-right:0;border-bottom:1px solid var(--rule)}
  .adm-toc>nav{flex:1 0 100%;min-width:0}
@@ -591,5 +731,10 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
  .tbl-feed .c-sum{flex:1 1 100%;min-width:0}
  .tbl-feed :is(.c-chan,.c-src,.c-age){min-width:0;color:var(--ink-2);font-size:.78rem}
  .tbl-feed .c-ops{width:auto;font-size:.78rem}
+ .c-ops>.vote,.c-ops>.watch{margin:4px 0 0}
+ .ops-stack{grid-auto-flow:column;justify-content:start;justify-items:start}
+ .fields{gap:10px}
+ .fld-grow{flex-basis:100%;max-width:none}
+ .ms>summary{max-width:none}
 }
 @media (prefers-reduced-motion:reduce){.adm *{transition:none!important}.skel span{animation:none}}

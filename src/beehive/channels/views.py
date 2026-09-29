@@ -308,6 +308,11 @@ class Pagination:
         return self.page < self.page_count
 
     @property
+    def previous_page(self) -> int:
+        """Where "previous" leads: the page before, or from a page past the end, the last one."""
+        return max(1, min(self.page - 1, self.page_count))
+
+    @property
     def offset(self) -> int:
         return (self.page - 1) * self.per_page
 
@@ -335,7 +340,7 @@ class ChannelCriteriaView:
 @dataclass(frozen=True, slots=True)
 class DeepReadActionView:
     """State + allowlisted URLs for one ranked Editorial item's Deep Read control. Mirrors the
-    display contract of web/deep_read_view.decorate_deep_read_state; `csrf_token` is present only
+    display contract of the brief page (web/deep_read_view.build_brief_context); `csrf_token` is present only
     for the owner."""
 
     status: str
@@ -467,7 +472,7 @@ def _editorial_item(
         vote_reason=_clean_text(item.get("vote_reason")) if is_owner else None,
         best_comment_summary=_clean_text(item.get("best_comment_summary")),
         # Only a ranked item can carry a Deep Read (the request route and worker both reject an
-        # unranked item), matching web/deep_read_view.decorate_deep_read_state.
+        # unranked item).
         deep_read=(
             _deep_read_action(
                 item_id,
@@ -1408,6 +1413,33 @@ def build_monitor_item_views(
     latest change marker."""
     events = latest_actionable_events_for_items(conn, [_req_int(item, "id") for item in items])
     return tuple(_monitor_item(item, t, events.get(_req_int(item, "id"))) for item in items)
+
+
+def build_tracker_item_views(
+    conn: sqlite3.Connection,
+    items: list[Row],
+    *,
+    t: Localizer,
+    now: datetime,
+    is_owner: bool,
+) -> tuple[TrackerItemView, ...]:
+    """Views for an already-chosen list of Tracker rows, open or closed, in the given order,
+    with the Owner's watch state."""
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    watched_ids = (
+        get_watched_item_ids(conn, [_req_int(item, "id") for item in items]) if is_owner else set()
+    )
+    return tuple(
+        _tracker_item(
+            item,
+            t,
+            now,
+            is_watched=_req_int(item, "id") in watched_ids,
+            is_owner=is_owner,
+        )
+        for item in items
+    )
 
 
 def build_open_tracker_views(

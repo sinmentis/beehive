@@ -1,14 +1,15 @@
-{% extends "base.html" %}
+{#- An error page: one sheet on the desk, like the admin login. Error handlers run without the
+    route dependencies, so the page does not build the reading rail. -#}
+{% extends "datasheet_base.html" %}
 {% block title %}{{ error_title }} · {{ t('common.product_name') }}{% endblock %}
 {% block body_class %}page-error{% endblock %}
-{% block content %}
-<main id="main-content" class="not-found-shell">
-  <div>
-    <p class="eyebrow" lang="en">{{ status_code }}</p>
-    <h1>{{ error_title }}</h1>
-    <p class="page-lede">{{ error_message }}</p>
-    <a class="btn primary" href="/">{{ t('web.error.back_home') }}</a>
-  </div>
-  <div class="not-found-code" aria-hidden="true">{{ status_code }}</div>
+{% block shell %}
+<main id="main-content" class="adm-login err-page">
+  <section class="adm-page" aria-labelledby="err-title">
+    <div class="adm-run"><a class="adm-brand" href="/" aria-label="{{ t('web.nav.brand_aria', product=t('common.product_name')) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span>{{ t('web.reading.shell.label') }}</span></a><span class="err-code">{{ status_code }}</span></div>
+    <h1 id="err-title">{{ error_title }}</h1>
+    <p class="adm-meta">{{ error_message }}</p>
+    <div class="err-act"><a class="btn btn-primary" href="/">{{ t('web.error.back_home') }}</a></div>
+  </section>
 </main>
 {% endblock %}

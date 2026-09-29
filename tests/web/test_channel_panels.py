@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -103,6 +104,18 @@ def _tracker_metadata(closes_in_hours, *, image_url="https://cdn.example.com/lot
     }
 
 
+def _section(html, key):
+    match = re.search(rf'<section class="chan-sec" id="{key}".*?</section>', html, re.DOTALL)
+    assert match is not None, key
+    return match.group(0)
+
+
+def _row(html, row_id):
+    match = re.search(rf'<tr id="{row_id}"[^>]*>.*?</tr>', html, re.DOTALL)
+    assert match is not None, row_id
+    return match.group(0)
+
+
 def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client):
     _, connection = conn
     channel_id = create_channel(
@@ -163,18 +176,76 @@ def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client
 
     assert response.status_code == 200
     assert response.template.name == "channel_monitor.html"
-    assert "page-channel-monitor" in response.text
+    # The Channel is its own chapter of the reading shell, labelled with its kind.
+    assert '<body class="adm page-reading">' in response.text
+    assert f'<a href="/channels/{channel_id}" aria-current="page">' in response.text
+    assert '<span class="nw">Monitor</span>' in response.text
     assert "Beta Jacket" in response.text
     assert "Trail Shoe" not in response.text
-    assert "Price drop" in response.text
-    assert "100 → 80" in response.text
-    assert "20% off" in response.text
-    assert "example.com/collections/sale" in response.text
+    jacket = _row(_section(response.text, "available"), f"listing-{jacket_id}")
+    assert '<small class="chg">Price drop · 100 → 80</small>' in jacket
+    assert '<s class="price-was">100</s>' in jacket
+    assert '<span class="price-off">−20%</span>' in jacket
+    assert (
+        '<span class="lot-where">Arc&#39;teryx · Footwear · example.com/collections/sale</span>'
+        in jacket
+    )
     assert "shopify_collection" not in response.text
     assert 'referrerpolicy="no-referrer"' in response.text
     assert "javascript:alert(1)" not in response.text
-    assert 'class="votes"' not in response.text
+    # Anonymous readers get no feedback controls, and a listing has no deep read.
+    assert '<form class="vote"' not in response.text
+    assert "/relevance" not in response.text
     assert "deep-read" not in response.text
+
+
+def test_monitor_listing_change_tags_name_what_changed(conn, client):
+    _, connection = conn
+    channel_id = create_channel(connection, "Gear", "outdoor gear", kind="monitor")
+    source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/gear"},
+    )
+    dropped = _add_ranked_item(
+        connection,
+        source_id,
+        "dropped",
+        "Dropped Jacket",
+        _monitor_metadata(price=80, compare_at_price=100, on_sale=True),
+    )
+    restocked = _add_ranked_item(
+        connection, source_id, "restocked", "Restocked Boot", _monitor_metadata(price=150)
+    )
+    fresh = _add_ranked_item(
+        connection, source_id, "fresh", "Fresh Hat", _monitor_metadata(price=30)
+    )
+    quiet = _add_ranked_item(
+        connection, source_id, "quiet", "Quiet Sock", _monitor_metadata(price=10)
+    )
+    observed_at = datetime.now(timezone.utc).isoformat()
+    record_or_coalesce_event(
+        connection, dropped, "price_drop", {"old_price": 100, "new_price": 80}, observed_at
+    )
+    record_or_coalesce_event(connection, restocked, "back_in_stock", {}, observed_at)
+    record_or_coalesce_event(connection, fresh, "discovered", {}, observed_at)
+
+    response = client.get(f"/channels/{channel_id}")
+
+    assert response.status_code == 200
+    available = _section(response.text, "available")
+    # The tag sits in the price cell, under the price it explains.
+    dropped_row = _row(available, f"listing-{dropped}")
+    assert re.search(
+        r'<td class="c-price-now" data-label="Price"><span class="price-now">80</span>.*?'
+        r'<small class="chg">Price drop · 100 → 80</small></td>',
+        dropped_row,
+        re.DOTALL,
+    )
+    assert '<small class="chg">Back in stock</small>' in _row(available, f"listing-{restocked}")
+    assert '<small class="chg">New</small>' in _row(available, f"listing-{fresh}")
+    assert 'class="chg"' not in _row(available, f"listing-{quiet}")
 
 
 def test_monitor_panel_accepts_multiple_vendor_and_source_filters(conn, client):
@@ -344,6 +415,71 @@ def test_monitor_pagination_preserves_filters_in_navigation(conn, client):
     assert "Page 2 of 2" in second.text
 
 
+@pytest.mark.parametrize(
+    ("page_param", "section"), [("page", "available"), ("history_page", "history")]
+)
+def test_monitor_section_past_the_end_says_so_above_its_pager(conn, client, page_param, section):
+    _, connection = conn
+    channel_id = create_channel(connection, "Gear", "outdoor gear", kind="monitor")
+    source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/gear"},
+    )
+    _add_ranked_item(connection, source_id, "live", "Live Jacket", _monitor_metadata(price=100))
+    _add_ranked_item(
+        connection,
+        source_id,
+        "sold-out",
+        "Sold-out Jacket",
+        _monitor_metadata(price=90, available=False),
+    )
+
+    response = client.get(f"/channels/{channel_id}", params={page_param: 5})
+
+    assert response.status_code == 200
+    past_end = _section(response.text, section)
+    assert "Nothing is left on this page." in past_end
+    assert '<tr id="listing-' not in past_end
+    # "Previous" leads back to the last page with listings, the first, and the pager counts the
+    # one page there is.
+    assert (
+        f'<a class="btn btn-sm" href="/channels/{channel_id}?sort=score">Previous</a>' in past_end
+    )
+    assert "<span>Page 5 of 1</span>" in past_end
+
+
+@pytest.mark.parametrize(
+    ("page_param", "section", "closes_in_hours"),
+    [
+        ("ending_page", "ending", 3),
+        ("upcoming_page", "upcoming", 48),
+        ("history_page", "history", -2),
+    ],
+)
+def test_tracker_section_past_the_end_says_so_above_its_pager(
+    conn, client, page_param, section, closes_in_hours
+):
+    _, connection = conn
+    channel_id = create_channel(connection, "Auctions", "tools", kind="tracker")
+    source_id = create_source(connection, channel_id, "all_about_auctions", {})
+    _add_ranked_item(
+        connection, source_id, "lot", "Cordless drill", _tracker_metadata(closes_in_hours)
+    )
+
+    response = client.get(f"/channels/{channel_id}", params={page_param: 5})
+
+    assert response.status_code == 200
+    past_end = _section(response.text, section)
+    assert "Nothing is left on this page." in past_end
+    assert "Cordless drill" not in response.text
+    # "Previous" leads back to the last page with lots, the first, and the pager counts the one
+    # page there is.
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}">Previous</a>' in past_end
+    assert "<span>Page 5 of 1</span>" in past_end
+
+
 def test_tracker_panel_groups_watched_deadlines_and_history_without_duplicates(
     conn,
     authed_client,
@@ -390,21 +526,39 @@ def test_tracker_panel_groups_watched_deadlines_and_history_without_duplicates(
 
     assert response.status_code == 200
     assert response.template.name == "channel_tracker.html"
-    assert "page-channel-tracker" in response.text
-    assert "Watched" in response.text
-    assert "Ending within 24 hours" in response.text
-    assert "Upcoming" in response.text
-    assert "Permanent history" in response.text
+    assert '<body class="adm page-reading">' in response.text
+    assert '<span class="nw">Tracker</span>' in response.text
+    # Each group is a numbered section, listed under the Channel's chapter in the rail.
+    for number, key, heading in (
+        ("2.1", "watched", "Watched"),
+        ("2.2", "ending", "Ending within 24 hours"),
+        ("2.3", "upcoming", "Upcoming"),
+        ("2.4", "history", "Permanent history"),
+    ):
+        assert (
+            f'<a href="#{key}"><span class="no">{number}</span><span>{heading}</span></a>'
+            in response.text
+        )
+        assert f'<span class="no">{number}</span><span>{heading}</span>' in _section(
+            response.text, key
+        )
     page = response.context["page"]
     assert [item.id for item in page.watched] == [watched_id]
     assert watched_id not in {
         item.id for item in (*page.ending_soon, *page.upcoming, *page.history)
     }
-    assert "Current bid: NZD 50" in response.text
-    assert f'hx-post="/items/{watched_id}/watch"' in response.text
-    assert 'aria-pressed="true"' in response.text
+    # The watched lot is listed once, in its own section, with its watch toggle pressed.
+    assert response.text.count(f'<tr id="lot-{watched_id}"') == 1
+    watched = _row(_section(response.text, "watched"), f"lot-{watched_id}")
+    assert "Current bid: NZD 50" in watched
+    assert f'hx-post="/items/{watched_id}/watch"' in watched
+    assert '<button class="tg tg-watch" type="submit" aria-pressed="true"' in watched
+    history = _section(response.text, "history")
+    assert "Closed grinder" in history
+    assert '<tr id="lot-' in history and 'class="is-closed"' in history
     assert 'referrerpolicy="no-referrer"' in response.text
-    assert 'class="votes"' not in response.text
+    # Lots take relevance feedback, never the Editorial vote, and have no deep read.
+    assert not re.search(r'action="/items/\d+/vote"', response.text)
     assert "deep-read" not in response.text
 
 
@@ -429,9 +583,11 @@ def test_tracker_watch_htmx_returns_generic_control_fragment(conn, authed_client
     assert response.status_code == 200
     assert response.template.name == "_tracker_watch_control.html"
     assert f'hx-post="/items/{item_id}/watch"' in response.text
-    assert 'aria-pressed="true"' in response.text
-    assert 'class="item' not in response.text
-    assert 'class="folded-item"' not in response.text
+    assert '<button class="tg tg-watch" type="submit" aria-pressed="true"' in response.text
+    # Just the control: no row around it.
+    assert response.text.lstrip().startswith('<form class="watch"')
+    assert response.text.count("<form") == 1
+    assert "<tr" not in response.text
 
 
 def test_tracker_large_sections_use_server_side_pagination(conn, client):
