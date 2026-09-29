@@ -1,6 +1,6 @@
 ---
-name: Beehive Admin
-description: "The Owner's datasheet, set dark. Records the admin design system in src/beehive/web/static/admin.css. Public reading pages use beehive.css and are not described here."
+name: Beehive Datasheet
+description: "The Owner's datasheet, set dark. Records the design system in src/beehive/web/static/admin.css, shared by the admin and the Owner's workspace (/research, /watchlist). Public reading pages use beehive.css and are not described here."
 colors:
   desk: "#0A0C0E"
   sheet: "#111417"
@@ -32,11 +32,26 @@ typography:
     fontSize: "1rem"
     fontWeight: 700
     lineHeight: 1.35
+  subhead:
+    fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
+    fontSize: "0.9375rem"
+    fontWeight: 700
+    lineHeight: 1.35
+  lead:
+    fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
+    fontSize: "1.0625rem"
+    fontWeight: 500
+    lineHeight: 1.75
   body:
     fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
     fontSize: "0.9375rem"
     fontWeight: 400
     lineHeight: 1.55
+  reading:
+    fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
+    fontSize: "0.9375rem"
+    fontWeight: 400
+    lineHeight: 1.75
   data:
     fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
     fontSize: "0.875rem"
@@ -62,6 +77,11 @@ typography:
     fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
     fontSize: "0.78rem"
     fontWeight: 400
+  tag:
+    fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
+    fontSize: "0.7rem"
+    fontWeight: 700
+    lineHeight: "15px"
   numeric:
     fontFamily: "Archivo, PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Noto Sans SC, Microsoft YaHei, Hiragino Kaku Gothic ProN, Noto Sans CJK JP, Apple SD Gothic Neo, Noto Sans CJK KR, system-ui, sans-serif"
     fontSize: "0.875rem"
@@ -170,6 +190,16 @@ components:
     rounded: "{rounded.control}"
     padding: "0 4px"
     height: "18px"
+  rail-count-info:
+    textColor: "{colors.link}"
+    rounded: "{rounded.control}"
+    padding: "0 4px"
+    height: "18px"
+  rail-sublink-current:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    height: "28px"
   running-head:
     textColor: "{colors.ink-2}"
     typography: "{typography.caption}"
@@ -186,6 +216,12 @@ components:
     typography: "{typography.note}"
   tag-modified:
     textColor: "{colors.link}"
+    typography: "{typography.tag}"
+    rounded: "{rounded.control}"
+    padding: "0 5px"
+  tag-unread:
+    textColor: "{colors.link}"
+    typography: "{typography.tag}"
     rounded: "{rounded.control}"
     padding: "0 5px"
   savebar:
@@ -235,29 +271,107 @@ components:
   empty-state:
     textColor: "{colors.ink-2}"
     padding: "18px 14px"
+  segmented-filter:
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.control}"
+    padding: "0 11px"
+    height: "32px"
+  segmented-filter-hover:
+    backgroundColor: "{colors.hover}"
+    textColor: "{colors.ink}"
+  segmented-filter-current:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.ink}"
+  session-tabs:
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.control}"
+    padding: "4px 8px"
+    height: "38px"
+  session-tabs-current:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.ink}"
+  lot-photo:
+    backgroundColor: "{colors.field}"
+    rounded: "{rounded.square}"
+    width: "80px"
+    height: "60px"
+  lot-where:
+    textColor: "{colors.ink-3}"
+    typography: "{typography.caption}"
+  price-facts:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.caption}"
+  reading-column:
+    textColor: "{colors.ink}"
+    typography: "{typography.reading}"
+    width: "72ch"
+  answer-lead:
+    textColor: "{colors.ink}"
+    typography: "{typography.lead}"
+  citation:
+    textColor: "{colors.link}"
+  citation-hover:
+    textColor: "{colors.link-2}"
+  turn:
+    padding: "16px 0"
+  turn-label:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.label}"
+    width: "104px"
+  notebook-side:
+    width: "300px"
+  side-facts-row:
+    padding: "7px 0"
+  evidence-snippet:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.note}"
+  evidence-group-row:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.label}"
+    padding: "14px 10px 4px"
+  evidence-row-excluded:
+    textColor: "{colors.ink-3}"
+  run-reason:
+    textColor: "{colors.danger}"
+    typography: "{typography.data}"
+  plan-latest:
+    padding: "12px 10px 4px"
+  skeleton-line:
+    backgroundColor: "{colors.band}"
+    height: "10px"
+  hint:
+    textColor: "{colors.ink-3}"
+  pager-field:
+    width: "80px"
+    height: "28px"
 ---
 
-# Design System: Beehive Admin
+# Design System: Beehive Datasheet
 
-> **Scope.** This file records the admin design system only. That means every page under `/admin/` plus the admin login, styled by `src/beehive/web/static/admin.css`, with shared behaviour in `src/beehive/web/static/beehive.js`. The public reading pages (dashboard, channel pages, archive, watch list, research) use `src/beehive/web/static/beehive.css`, which is a different visual world and is not described here. Don't carry tokens from `beehive.css` into admin, or from this file into public pages.
+> **Scope.** This file records one datasheet system with two shells. The admin is every page under `/admin/` plus the admin login. The Owner's workspace is `/research` (the session list, a session's four pages, the new-research form, the run-budget preview and the source form) and `/watchlist`. Both are styled only by `src/beehive/web/static/admin.css`, both render through the shared document `templates/datasheet_base.html` (extended by `admin_base.html` and `workspace_base.html`), and both share behaviour in `src/beehive/web/static/beehive.js`. The public reading pages (dashboard, channel pages, archive) use `src/beehive/web/static/beehive.css`, which is a different visual world and is not described here. Don't carry tokens from `beehive.css` into the datasheet, or from this file into public pages.
 
 ## Overview
 
 **Creative North Star: "The Owner's Datasheet"**
 
-Admin reads like a technical datasheet for one person's pipeline, set dark. A graphite sheet lies on a darker desk. A contents rail on the left numbers the chapters. A running head gives the location and the Auckland clock that every schedule is read against, and each section carries a number that matches the rail. Every setting is a parameter row with its value and a note. Every list is a banded table under a heavy ink rule. The density is working density, with 15px body text, 32px controls and hairlines between rows. Nothing is padded out for show.
+The admin and the Owner's workspace read like a technical datasheet for one person's pipeline, set dark. A graphite sheet lies on a darker desk. A contents rail on the left numbers the chapters. A running head gives the location and the Auckland clock that every schedule is read against, and each section carries a number that matches the rail. Every setting is a parameter row with its value and a note. Every list is a banded table under a heavy ink rule. The density is working density, with 15px body text, 32px controls and hairlines between rows. Nothing is padded out for show.
 
-Colour is a signal. Ink on graphite carries everything that is fine. Amber appears only where something waits on the Owner, red only for failure or a destructive action, and blue for links, focus and unsaved edits. State is always a shape plus a word. Controls have 2px corners and everything else is square. Depth comes from tone, and the one drop shadow belongs to the removal popover.
+The workspace is the same sheet with its own rail of two chapters, 1 研究 and 2 关注列表. A research session reads like a notebook. The conclusion is the first turn of a transcript, follow-up questions continue below it, and on a desktop window wider than 1180px a sticky side column shows the source behind a citation. Long AI text sits at a 72ch reading measure, and citations are small blue numbers. The watch list is a banded table of lots by deadline. Each lot's reminder state sits under its deadline, and failed reminders are boxed above the list.
 
-The system refuses the card-grid SaaS console, so there are no tiles, no dashboards of boxes and no decorative colour. The Owner visits rarely, so every page says what it controls and what state it is in. Unsaved rows are marked and counted, and destructive rows open in place into a typed confirmation.
+Colour is a signal. Ink on graphite carries everything that is fine. Amber appears only where something waits on the Owner, red only for failure or a destructive action, and blue for links, focus, unsaved edits and unread results. State is always a shape plus a word. Controls have 2px corners and everything else is square. Depth comes from tone, and the one drop shadow belongs to the removal popover.
+
+The system refuses the card-grid SaaS console and the chat window, so there are no tiles, no dashboards of boxes, no chat bubbles and no decorative colour. The Owner visits admin rarely, so every page says what it controls and what state it is in. Unsaved rows are marked and counted, and destructive rows open in place into a confirmation that says what goes and whether it can be undone.
 
 **Key Characteristics:**
 - Graphite sheet on a darker desk, flat and tonal.
+- One document, two shells: the admin (管理) and the Owner's workspace (工作区), each with its own numbered rail and footer.
 - Every form is a parameter table (参数 | 设置 | 说明) and every list is a banded table under a heavy ink rule.
+- A research conversation is a transcript with a label column, conclusion first, beside a sticky side column for the cited source.
+- Long AI text at a 72ch measure, with small blue citation numbers.
 - Boxed notes tagged 说明 / 注意 / 警告 / 完成.
-- Colour only where the Owner is needed. Amber for attention, red for failure, blue for links and focus.
+- Colour only where the Owner is needed. Amber for attention, red for failure, blue for links, focus and unread results.
 - State is a square mark plus a word.
-- Archivo throughout, condensed only in column heads and numbers, with tabular figures wherever numbers change.
+- Archivo throughout, condensed only in column heads, labels and numbers, with tabular figures wherever numbers change.
 - 2px corners on controls, square containers.
 - Nothing overflows at 1440, 1024 or 390px, and units never split.
 
@@ -266,41 +380,41 @@ The system refuses the card-grid SaaS console, so there are no tiles, no dashboa
 A restrained graphite palette with three functional signals, and each signal has one meaning.
 
 ### Primary
-- **Datasheet Blue** (#7DB6FF): the only interactive colour. It marks links, the focus outline and field ring, the 已修改 tag on changed rows, the unsaved count in the save bar, the research unread counter, and in-progress state marks. It is never a fill.
-- **Pale Datasheet Blue** (#A9CEFF): link hover, and hover on names in tables.
+- **Datasheet Blue** (#7DB6FF): the only interactive colour. It marks links, the focus outline and field ring, the 已修改 tag on changed rows, the unsaved count in the save bar, the research unread count (in the admin footer, on the workspace rail and as the unread tag on a session), citation numbers and the outline of the one in view, and in-progress state marks. It is never a fill.
+- **Pale Datasheet Blue** (#A9CEFF): link hover, and hover on names in tables, lot titles, citation numbers and cited titles.
 
 ### Secondary
-- **Attention Amber** (#F0B44C): something waits on the Owner. It marks paused sources, warnings, caution notes (注意) and the counts on the contents rail. A healthy page doesn't show it.
+- **Attention Amber** (#F0B44C): something waits on the Owner. It marks paused sources, warnings, caution notes (注意) and the attention counts on the contents rail, such as failed reminders on 2 关注列表. On the watch list it also marks the deadline of a lot that closes within the hour. A healthy page doesn't show it.
 
 ### Tertiary
-- **Fault Red** (#FF6E61): failure and destruction. It marks failed fetches, error lines, danger notes (警告), danger buttons and links, the removal popover, invalid fields and field errors.
+- **Fault Red** (#FF6E61): failure and destruction. It marks failed fetches, failed runs and reminders, a run's failure reason, error lines, danger notes (警告), danger buttons and links, the removal popover, invalid fields and field errors.
 - **Danger Stroke** (#B04A42): the resting boundary of danger buttons. It is darker than Fault Red so a danger button stays quiet until hovered, and it holds at least 3.15:1 on every admin surface.
 
 ### Neutral
 - **Desk Black** (#0A0C0E): the desk under the sheet, and the page background behind the shell.
 - **Graphite Sheet** (#111417): the sheet, the contents rail, the save bar and the popover body.
-- **Header Band** (#191D21): table and parameter head rows, the current rail entry, checked selection rows, prefix cells and highlighted rows.
-- **Hover Wash** (#161A1E): hover on table rows, rail entries and buttons.
-- **Recessed Field** (#0C0E10): input wells, confirmation panels, raw errors and the plain-text preview. It sits darker than the sheet, so fields read as sunk.
-- **Hairline** (#262B30): row dividers, the sheet and rail edges, facts dividers, raw-error boxes, and the faded border of disabled buttons.
-- **Rule Stroke** (#3A4046): structural lines only. It draws the line under table heads and the parameter head row, the save bar's top edge, the confirmation panel's top edge, the plain-text preview border, dashed empty-state boxes and the scrollbar thumb. It is never a control boundary.
+- **Header Band** (#191D21): table and parameter head rows, the current rail entry and rail sub-page, the current segment of a segmented filter and the current session tab, checked selection rows, prefix cells, highlighted rows and skeleton lines.
+- **Hover Wash** (#161A1E): hover on table rows, rail entries, filter segments and buttons.
+- **Recessed Field** (#0C0E10): input wells, confirmation panels, raw errors, the plain-text preview and the well behind a lot photo. It sits darker than the sheet, so fields read as sunk.
+- **Hairline** (#262B30): row and turn dividers, side-facts rows, the line between a deadline and its reminder, the sheet and rail edges, facts dividers, raw-error boxes, lot photo edges, and the faded border of disabled buttons.
+- **Rule Stroke** (#3A4046): structural lines only. It draws the line under table heads and the parameter head row, the save bar's top edge, the confirmation panel's top edge, the plain-text preview border, the dividers inside a segmented filter and the session tabs, the group bar on grouped evidence rows, the line beside an older plan's source list, the underline of a cited title, dashed empty-state boxes and the scrollbar thumb. It is never a control boundary.
 - **Control Stroke** (#666E76): the resting boundary of every enabled control, meaning buttons, fields (inputs, selects, textareas and one-line fields), prefix cells and weekday chips. It holds at least 3.27:1 on every admin surface.
-- **Ink Rule** (#C9CFD6): the heavy rules over tables and parameter tables, the running-head rule, the filled "ok" mark and the 完成 note.
+- **Ink Rule** (#C9CFD6): the heavy rules over tables, parameter tables, the transcript, side-column boxes and the newest plan, the running-head rule, the filled "ok" mark and the 完成 note.
 - **Sheet Ink** (#E7EAED): primary text, and the fill of the primary button.
-- **Secondary Ink** (#A7AFB7): notes, meta lines, column heads and the 说明 note.
-- **Faint Ink** (#808891): chapter and section numbers, placeholders, stacked-row labels, empty values, disabled text, and the border of a hovered field. It holds at least 4.7:1 on every admin surface.
+- **Secondary Ink** (#A7AFB7): notes, meta lines, column heads, transcript labels, side-box heads, snippets, price-fact lines, closed and archived rows, and the 说明 note.
+- **Faint Ink** (#808891): chapter and section numbers, placeholders, stacked-row labels, empty values, disabled text, hints, times under a transcript label, the auction line under a lot, list markers in AI text, excluded evidence, and the border of a hovered field. It holds at least 4.7:1 on every admin surface.
 - **Fill Ink** (#0A0C0E): text on solid fills (primary button, note tags, danger hover, popover head). It has the same value as the desk but is its own role.
 
-A few component states use fixed values that are deliberately not tokens: primary hover #FFFFFF, danger link hover #FF9A90, text selection #28507F under white text, the popover backdrop `rgba(5,6,7,.6)`, and link underlines at 40% of their link colour. Reuse them only in those states.
+A few component states use fixed values that are deliberately not tokens: primary hover #FFFFFF, danger link hover #FF9A90, text selection #28507F under white text, the popover backdrop `rgba(5,6,7,.6)`, link underlines at 40% of their link colour, and a closed lot's photo in grayscale at 65% opacity. Reuse them only in those states.
 
 ### Named Rules
-**The Owner-Needed Rule.** Colour appears only where something needs the Owner. Amber means attention, red means failure or a destructive action, and blue means a link, focus or an unsaved edit. Everything else is ink on graphite, so a healthy page shows no amber and no red outside its danger rows.
+**The Owner-Needed Rule.** Colour appears only where something needs the Owner. Amber means attention, red means failure or a destructive action, and blue means a link, focus, an unsaved edit, an unread result or work in progress. Everything else is ink on graphite, so a healthy page shows no amber and no red outside its danger rows.
 
 **The Solid Ink Rule.** The primary action is a solid block of ink with dark text. Blue never fills a control, and amber never fills a button.
 
-**The Shape-Plus-Word Rule.** Every state is a 9px square plus its word. Settled states are filled (ok in ink rule, error in red). Waiting states are hollow (paused and warning in amber, never fetched in faint ink, in progress in blue). Colour never carries a state alone.
+**The Shape-Plus-Word Rule.** Every state is a 9px square plus its word. Settled states are filled (ok in ink rule, error in red). Waiting states are hollow (paused and warning in amber, never fetched, scheduled or excluded in faint ink, in progress in blue). Colour never carries a state alone.
 
-**The Visible Control Rule.** Every outlined control the stylesheet draws (buttons, fields, prefix cells, weekday chips) rests on the control stroke, or the danger stroke on danger buttons, and both hold at least 3:1 on every admin surface. The rule stroke draws structure only and never outlines a control. States only strengthen the boundary (secondary ink on a hovered button or a checked chip, faint ink on a hovered field, blue on focus, red when invalid). Only disabled buttons fade to the hairline.
+**The Visible Control Rule.** Every outlined control the stylesheet draws (buttons, fields, prefix cells, weekday chips, segmented filters, session tabs) rests on the control stroke, or the danger stroke on danger buttons, and both hold at least 3:1 on every admin surface. The rule stroke draws structure only and never outlines a control. States only strengthen the boundary (secondary ink on a hovered button or a checked chip, faint ink on a hovered field, blue on focus, red when invalid). Only disabled buttons fade to the hairline.
 
 ## Typography
 
@@ -310,39 +424,47 @@ A few component states use fixed values that are deliberately not tokens: primar
 
 **Character:** One grotesque in several widths and weights, set like a spec sheet. Bold full-width heads name things, and condensed semibold column heads and numbers pack the data.
 
-Archivo ships as two woff2 subsets (latin and latin-ext) in `static/fonts/`, with `font-display: swap`, and the latin file is preloaded by the admin shell. The CSP (`default-src 'self'`) rules out third-party font hosts. `font-synthesis: none` stops the browser from faking bold or italic in fallback faces.
+Archivo ships as two woff2 subsets (latin and latin-ext) in `static/fonts/`, with `font-display: swap`, and the latin file is preloaded by the shared shell document. The CSP (`default-src 'self'`) rules out third-party font hosts. `font-synthesis: none` stops the browser from faking bold or italic in fallback faces.
 
 Archivo covers Latin only. In the zh-CN interface, Chinese text in headings, labels and column heads renders in the platform CJK sans, which has no width axis. The condensed heads therefore show only on Latin runs such as channel names, numbers and times. The direction's "Archivo with condensed headers" lands fully only in Latin locales.
 
 ### Hierarchy
-- **Headline** (700, 1.5rem/24px, 1.25): the page h1, with a 14px meta line of counts under it in secondary ink. It wraps balanced and breaks anywhere rather than overflow.
+- **Headline** (700, 1.5rem/24px, 1.25): the page h1, with a 14px meta line of counts under it in secondary ink. It wraps balanced and breaks anywhere rather than overflow. A research question set as the h1 also keeps CJK words whole.
 - **Title** (700, 1rem/16px, 1.35): numbered section heads. The number sits in faint ink at 600 in a 2.4em column, and section tools (counts, small buttons) align right on the same line.
+- **Subhead** (700, 0.9375rem/15px, 1.35): an unnumbered head inside a numbered section, such as AI 计划 under 1.3, with 30px above and 6px below. The heads inside AI text (主要发现, 来源一致之处) use the same size and weight with 22px above and 8px below.
+- **Lead** (500, 1.0625rem/17px, 1.75): the bottom line of a research conclusion, the first answer in the notebook. Facts-strip values share the size at 600 with tabular figures.
 - **Body** (400, 0.9375rem/15px, 1.55): base text. Field values use the same size at 1.4. Ledes stop at 72ch.
+- **Reading** (400, 0.9375rem/15px, 1.75): long AI text (conclusions, replies, plan summaries) at the 72ch measure. Paragraphs sit 10px apart and list items 9px apart, indented 1.35em. Ordered lists take decimal markers and unordered lists square ones, in faint ink with tabular figures. The Owner's own question in a turn is ink at 600 and 1.7.
 - **Data** (400, 0.875rem/14px, 1.45): table cells, note bodies and meta lines. Parameter labels use it at 600.
 - **Note** (400, 0.8125rem/13px, 1.6): the note column of parameter rows, secondary lines in forms and popovers, and confirmation labels. Key values inside a note go bold in ink.
 - **Button** (600, 0.8125rem/13px, 1.2): button labels. Small buttons drop to 0.78rem.
-- **Label** (600, 0.78rem/12.5px, 1.3, 85% width): column heads, the parameter head row and fact labels.
-- **Caption** (400, 0.78rem/12.5px): secondary lines under table values, the running head, footnote strips, stacked-row labels, and error and caution lines.
+- **Label** (600, 0.78rem/12.5px, 1.3, 85% width): column heads, the parameter head row, fact labels, side-column box heads and evidence group rows. The transcript's label column uses it at 1.4.
+- **Caption** (400, 0.78rem/12.5px): secondary lines under table values, the running head, footnote strips, stacked-row labels, error and caution lines, the auction line under a lot and price-fact lines.
+- **Tag** (700, 0.7rem/11.2px, 15px line): the outlined tags beside a label, 已修改 on a changed row and the unread tag on a session.
 - **Numeric** (400, 0.875rem/14px, tabular, 88% width): numeric table columns, right-aligned.
 - **Mono** (400, 0.8125rem/13px, 1.75): the plain-text email preview. Raw error text uses 0.75rem at 1.55.
-- Counters and tags sit at 0.7–0.72rem and 700 (rail counts, the 已修改 tag). Footnote references use 0.68rem.
+- Rail counts sit at 0.72rem and 700. Citation numbers are 0.75rem at 600 with tabular figures, and 0.8125rem where one leads the citation card's title. Footnote references use 0.68rem.
 
 ### Named Rules
-**The Condensed Head Rule.** Width marks data. Column heads and fact labels set at 85% width and numeric columns at 88%. Headings and body text stay at full width.
+**The Condensed Head Rule.** Width marks data. Column heads, fact labels, transcript labels, side-column box heads and group rows set at 85% width, and numeric columns at 88%. Headings and body text stay at full width.
 
-**The Tabular Figures Rule.** Every number that changes (counts, the clock, chapter and section numbers, numeric columns, facts) uses tabular figures, so columns and counters never jitter.
+**The Tabular Figures Rule.** Every number that changes (counts, the clock, chapter and section numbers, numeric columns, facts, citation numbers, filter counts and list markers) uses tabular figures, so columns and counters never jitter.
+
+**The Reading Measure Rule.** Long AI text sits at 72ch with 1.75 line height, and a conclusion's bottom line leads at 17px. Ledes stop at the same 72ch. Tables, forms and notes keep working density.
 
 ## Layout
 
-The shell has two columns, a 216px contents rail and a fluid column that holds one sheet. The rail is sticky, runs the full viewport height and scrolls on its own. Its footer (back to the site, watch list, research, sign out) sits at the bottom above a hairline. The sheet sits on the desk with a 16px margin, is at most 1320px wide, and has a 16px top, 28px side and 36px bottom inset inside a 1px hairline edge.
+Both shells use one document (`datasheet_base.html`) with two columns, a 216px contents rail and a fluid column that holds one sheet. The rail is sticky, runs the full viewport height and scrolls on its own. Its footer sits at the bottom above a hairline. The admin's footer holds back to the site, watch list, research and sign out, and the workspace's holds 返回阅读, 管理后台 and 退出登录. The sheet sits on the desk with a 16px margin, is at most 1320px wide, and has a 16px top, 28px side and 36px bottom inset inside a 1px hairline edge.
 
 Every sheet opens with the running head. The location sits on the left (chapter number and name, then crumbs separated by ›) and the Auckland clock on the right, with a 2px ink rule under both and 20px of space below. The page head comes next, with the h1 and its meta line on the left and actions on the right, wrapping under the title when space runs out. Sections follow as numbered heads (N.M, matching the rail's sub-entries), with 32px above and 10px below. A chapter's attention notes come before the list they concern.
 
 Parameter tables use three columns: label at 140–190px, control fluid, and note at 200–290px. The gutter is 24px, the side inset 10px, and each row has 14px of padding above and below. Controls in a row sit 8px apart and wrap when they run out of room.
 
+A research session's conclusion page is a notebook. The reading column is fluid, and a 300px side column sits 36px to its right, sticky 16px from the top, with its boxes 18px apart. Inside the reading column the transcript runs as turns, each with a 104px label column and the words 20px beside it, and 16px above and below (20px above the conclusion). A session's four parts (1.1 conclusion and follow-ups, 1.2 evidence, 1.3 sources and plan, 1.4 runs) are separate pages under the same head, listed in the rail as sub-pages, or as tabs under the head at the narrow rule. The watch list puts its attention notes (2.1) above the list (2.2). Irreversible clean-ups (delete the session, clear closed watches) sit at the foot of the page, 36px below the content.
+
 Breakpoints are container queries on the `adm` container (the body), not media queries.
-- **Mid (1180px and below):** the desk margin drops to 8px and the sheet inset to 14px 18px 32px. Table cells take 8px at the sides, no-wrap cells relax, and operation columns wrap. Parameter columns become 120–160px, fluid and 180–240px, with an 18px gutter.
-- **Narrow (880px and below):** the rail becomes a wrapping top bar, with chapters in a row, sub-sections hidden and footer links at the right. The sheet runs edge to edge without a border at 14px 14px 28px. Parameter rows stack label, control and note, and the head row hides. Banded tables become labelled stacked rows, and notes move their tag above the body.
+- **Mid (1180px and below):** the desk margin drops to 8px and the sheet inset to 14px 18px 32px. Table cells take 8px at the sides, no-wrap cells relax, and operation columns wrap. Parameter columns become 120–160px, fluid and 180–240px, with an 18px gutter. The notebook drops to one column. The side column follows the transcript as a static block 28px below it, and its citation box hides, because a citation opens its source in a new tab at this width.
+- **Narrow (880px and below):** the rail becomes a wrapping top bar, with chapters in a row, sub-sections hidden and footer links at the right. The sheet runs edge to edge without a border at 14px 14px 28px. Parameter rows stack label, control and note, and the head row hides. Banded tables become labelled stacked rows, and notes move their tag above the body. Transcript turns stack, and the label column becomes a wrapping line above the words. A lot photo grows to 88×66px, the lot cell leaves 28px on the right for the row checkbox, and the filter form takes a full line under the segments. A research session lists its four pages as a 2×2 tab grid under the page head, and the watch list's select-all moves into the section tools, because the table head is hidden.
 
 ### Named Rules
 **The No-Overflow Rule.** No text leaves its box at 1440, 1024 or 390px. Free-length values wrap (one-line fields, break-anywhere cells), and bounded values ellipsize. No layout depends on sideways scrolling. The table wrapper's scroll is a guard, not a layout.
@@ -351,33 +473,36 @@ Breakpoints are container queries on the `adm` container (the body), not media q
 
 **The Stacked Row Rule.** At 880px and below, every multi-column list becomes labelled rows. Each value is led by its column name in a 76px faint-ink label column, the row checkbox moves to the top right, and operations drop to the bottom.
 
+**The Side Column Rule.** On a desktop window wider than 1180px, a citation shows its source in the side column beside the text, so checking it never leaves the page. At 1180px and narrower, the side column follows the transcript, its citation box hides, and a citation opens the source in a new tab.
+
 ## Elevation & Depth
 
-The system is flat. Depth is three steps of graphite. The desk sits lowest, the sheet lies on it behind a hairline edge, and header bands sit one step lighter than the sheet. Fields sit one step darker than the sheet, so they read as wells. Hover is a tone change, never a lift. The only drop shadow belongs to the source-removal popover, which opens in the top layer over a 60% near-black backdrop.
+The system is flat. Depth is three steps of graphite. The desk sits lowest, the sheet lies on it behind a hairline edge, and header bands sit one step lighter than the sheet. Fields sit one step darker than the sheet, so they read as wells. Hover is a tone change, never a lift. The sticky save bar and the notebook's sticky side column hold their place without a shadow. The only drop shadow belongs to the source-removal popover, which opens in the top layer over a 60% near-black backdrop.
 
 ### Shadow Vocabulary
 - **Popover lift** (`box-shadow: 0 18px 40px -8px rgba(0,0,0,.65)`): the removal popover only.
 - **Field focus ring** (`box-shadow: 0 0 0 1px var(--link)`): doubles the blue border of a focused field. It is a ring, not elevation.
 - **Hollow mark** (`box-shadow: inset 0 0 0 1.5px <tone>`): draws the hollow state squares.
+- **Group bar** (`box-shadow: inset 2px 0 0 var(--rule-2)`): the 2px rule-stroke bar on the first cell of evidence rows that belong to a duplicate group. It is a rule, not elevation, and it never takes a tone.
 
 ### Named Rules
 **The Flat Sheet Rule.** Depth is tone. The desk sits below the sheet, bands sit above it and fields sink into it. Nothing floats except the removal popover.
 
 ## Shapes
 
-Everything is a rectangle, ruled like a datasheet. Controls and counters take a 2px corner. That covers buttons, fields, rail entries, weekday chips, prefix cells, rail counts and the 已修改 tag. The sheet, tables, notes, the popover, facts strips, empty states and code blocks are square. Lines do the structural work. A 2px ink rule sits under the running head. A 1.5px ink rule opens every table, parameter table, selection table and facts strip. Notes and the popover take 1.5px borders in their tone, and 1px lines in the hairline and rule-stroke tones do everything else. Controls are outlined apart from all of this, in 1px of the control stroke. Empty states use a dashed rule-stroke border. State marks are 9px squares. The one non-rectangular form is the product's hexagon mark from `favicon.svg`, drawn as an 18px stroked outline beside the product name.
+Everything is a rectangle, ruled like a datasheet. Controls and counters take a 2px corner. That covers buttons, fields, rail entries, weekday chips, prefix cells, segmented filters, session tabs, rail counts, and the 已修改 and unread tags. The sheet, tables, notes, the popover, facts strips, side-column boxes, lot photos, empty states, skeleton lines and code blocks are square. Lines do the structural work. A 2px ink rule sits under the running head. A 1.5px ink rule opens every table, parameter table, selection table, facts strip, transcript and side-column box, and the newest plan. Notes and the popover take 1.5px borders in their tone, and 1px lines in the hairline and rule-stroke tones do everything else. Two 2px rule-stroke bars group things, one on the first cell of grouped evidence rows and one beside an older plan's source list. Controls are outlined apart from all of this, in 1px of the control stroke. Empty states use a dashed rule-stroke border. State marks are 9px squares, and the citation number in view takes a 1px blue outline at a 1px offset. The one non-rectangular form is the product's hexagon mark from `favicon.svg`, drawn as an 18px stroked outline beside the product name.
 
 ### Named Rules
 **The Two Corner Rule.** Controls and counters get 2px, and containers get none.
 
-**The Heavy Ink Rule.** A 1.5px ink rule opens every table and parameter table. Hairlines do everything else.
+**The Heavy Ink Rule.** A 1.5px ink rule opens every table, parameter table, transcript and side-column box. Hairlines do everything else.
 
 ## Components
 
 ### Buttons
 Quiet rectangles, labelled in words.
 - **Shape:** 2px corners, 32px tall, 12px sides, never wrapping.
-- **Primary:** a solid block of sheet ink with fill-ink text, brightening to pure white on hover and dimming to the ink rule tone while pressed, by mouse or keyboard. It is reserved for the page's main commitment, such as create, save, sign in or send a test.
+- **Primary:** a solid block of sheet ink with fill-ink text, brightening to pure white on hover and dimming to the ink rule tone while pressed, by mouse or keyboard. It is reserved for the page's main commitment, such as create, save, sign in, send a test, preview or start a research run, refresh a session, or send a follow-up.
 - **Hover / Focus:** colour-only transitions at 150ms ease-out. Focus is the global 2px blue outline at a 2px offset.
 - **Secondary (default):** transparent, with a 1px control-stroke border and ink text. On hover the border moves to secondary ink and the hover wash fills it. Active uses the band.
 - **Danger:** transparent, with red text and a danger-stroke border. On hover it fills solid red with fill-ink text. It appears only in danger rows and the removal popover.
@@ -386,12 +511,13 @@ Quiet rectangles, labelled in words.
 
 ### Links
 - Links are datasheet blue with a 40% blue underline at a 3px offset. On hover they turn pale blue with a full underline. Danger links are red.
-- Row operations in tables are links, even when they post a form, so five operations (test, edit, pause, copy, remove) stay one quiet line.
+- Row operations in tables are links, even when they post a form, so five operations (test, edit, pause, copy, remove) stay one quiet line. The workspace does the same for exclude and restore, stop watching and retry a reminder, and sets its older-plan disclosure as a link.
 
 ### State Marks
 - **Style:** a 9px square and a word, 7px apart, never wrapping.
 - **In a sentence:** `.st-line` puts the same square before a whole sentence in a note column, for example a refresh in progress or a failure reason. The square stays on the first line and the words wrap, so a long status never overflows.
 - **States:** ok is a filled ink-rule square with normal text. Paused and warning are a hollow amber square with amber semibold text. Error is a filled red square with red semibold text. Never fetched is a hollow faint square with faint text. In progress is a hollow blue square with blue text.
+- **In the workspace:** runs mark completed as ok, failed as error, cancelled as never and queued or running as in progress. Reminders mark 已发送 as ok, 发送失败 as error and 正在发送 as in progress, and 已安排 and 没有提醒 take the hollow faint square. Excluded evidence carries a hollow faint 已排除. A lot that closes within the hour marks its deadline as a warning.
 - The channel and source lists carry a legend of the marks in the footnote strip below them.
 
 ### Inputs / Fields
@@ -401,13 +527,22 @@ Quiet rectangles, labelled in words.
 - **Bounded and free-length values:** names, numbers, times and selects are inputs, and input text ellipsizes. Values of any length (URLs, queries, email addresses, subject templates, source names) use the one-line field (`ui.line_field`). It is a one-row textarea that wraps and grows with its content (`field-sizing: content`, with a script fallback). Enter submits the form and pasted line breaks are dropped. Literal values turn off spellcheck, autocapitalize and autocorrect.
 - **Multi-line:** the channel profile is a textarea at least 132px tall at 1.65 line height, growing with its content.
 - **Sizes and variants:** number fields are 96px, time fields 132px, and mid selects up to 260px. Growing fields flex from 220px. Selects draw a 12px chevron in secondary ink. A prefix cell (such as `r/`) joins its field in band fill under the same control-stroke border. Checkboxes and radios are 16px native controls tinted ink. Weekday chips are 30px labels with a control-stroke border, and a checked chip takes a secondary-ink border and band fill.
+- **Workspace sizes:** filter fields drop to 32px to sit level with the segments and buttons. The composer's textarea starts at 92px. The pager's page field is 80px wide and 28px tall.
 
 ### Navigation
-- **Contents rail:** a brand line (the hexagon mark, the product name at 700, and 管理 in secondary ink at 500), then numbered chapters as 32px rows with a 22px column of faint tabular numbers. Entries sit in secondary ink, take the hover wash and ink on hover, and the current chapter takes the band, ink and 600. The current chapter lists its N.M sections as 28px sub-rows at 13px.
+- **Contents rail:** a brand line (the hexagon mark, the product name at 700, and the shell's name in secondary ink at 500, 管理 or 工作区, linking to that shell's home), then numbered chapters as 32px rows with a 22px column of faint tabular numbers. Entries sit in secondary ink, take the hover wash and ink on hover, and the current chapter takes the band, ink and 600. The current chapter lists its N.M sections as 28px sub-rows at 13px. When those sections are separate pages, as a research session's four parts are, the open one takes the band and ink at regular weight and the chapter stays marked.
 - **Attention counts:** a chapter that needs the Owner shows an 18px amber-outlined count with a full sentence for screen readers. Each problem is counted once, in the chapter where it is fixed.
-- **Rail footer:** back to the site, watch list, research (with a blue-outlined unread count) and sign out, at 13px.
-- **Running head:** 12.5px secondary ink. Crumbs are links that underline on hover, and the clock uses tabular figures.
+- **Unread count:** in the workspace, 1 研究 counts finished results the Owner hasn't opened, in the same count outlined in blue, while 2 关注列表 counts failed reminders in amber. A chapter shows one count at most, and attention wins.
+- **Rail footer:** the admin's holds back to the site, watch list, research (with a blue-outlined unread count) and sign out. The workspace's holds 返回阅读, 管理后台 and 退出登录. Both are 13px.
+- **Running head:** 12.5px secondary ink. Crumbs are links that underline on hover, and the clock uses tabular figures. A research question is cut to 40 characters in the crumbs.
 - **Mobile:** at the narrow rule the rail becomes a wrapping top bar, with chapters in one row and footer links at the right.
+- **Session tabs:** at the narrow rule, where the rail hides its sub-rows, a research session lists its four pages 14px under the page head as a 2×2 grid of 38px cells, with the rail's sub-row labels. The grid takes a control-stroke outline with 2px corners and rule-stroke dividers. Labels are 13px semibold in secondary ink, the current page takes the band and ink, and focus draws inside the cell. Wider screens hide the grid.
+
+### Segmented Filter
+One outlined control that switches a list's view, such as the watch list's 进行中 / 已结束 / 全部.
+- **Style:** a control-stroke outline with 2px corners holding 32px link segments with 11px sides at 13px semibold in secondary ink. Rule-stroke lines divide the segments, and each segment ends in its count in faint regular tabular figures.
+- **States:** hover takes the hover wash and ink. The current view takes the band and ink. Focus draws the blue outline 2px inside the segment.
+- **Filter row:** the segments come first, then a search field and a select at 32px, a secondary apply button, and a clear link once a filter is set. The row wraps and sits 12px above its table.
 
 ### Parameter Table
 The signature form, 参数 | 设置 | 说明 (Parameter | Setting | Notes).
@@ -416,6 +551,7 @@ The signature form, 参数 | 设置 | 说明 (Parameter | Setting | Notes).
 - A changed row shows the 已修改 tag after its label, a blue outlined 11px bold tag with 2px corners. Radio and checkbox groups carry the tag in their section head instead.
 - The sticky save bar closes the form on the sheet tone above a rule-stroke line. It holds the primary save, then 放弃修改 once something has changed, an optional cancel, and the blue count "N 项修改还没保存". After a rejected save the bar stays unsaved and says so, and discard reloads the saved page.
 - Single-setting forms (language, model, featured window, default recipient) put their own secondary button in the row instead of a save bar.
+- Workspace forms (new research, source form) use the table without change tracking. There are no 已修改 tags, and the bar holds the primary action, a cancel and a faint hint. The new-research form puts its sources in a selection table between two parameter tables.
 
 ### Banded Table
 The signature list.
@@ -424,32 +560,89 @@ The signature list.
 - **Cell holds:** cells set `text-wrap: pretty`, which resets wrapping and outranks a single-class `white-space: nowrap`. Scope any cell-level hold under the table, as the build's `.tbl .c-nw` and `.tbl .c-num` rules do, or the unit breaks anyway.
 - **Lines under a value:** a caption line in secondary ink, a failure line in red, or a caution line in amber. A raw error folds into a disclosure, set in 12px mono on the field fill.
 - **Footnote strip:** below the table, in caption type. It holds the mark legend, notes, and numbered footnotes referenced by a faint superscript "(1)".
-- **Selection tables:** source type, channel kind and group members use the same ink rule. Each row holds a radio or checkbox, a semibold name, a description and a side note. The checked row takes the band, keyboard focus draws a blue outline inside the row, and unavailable rows go faint.
+- **Selection tables:** source type, channel kind, group members and a new research's sources use the same ink rule. Each row holds a radio or checkbox, a semibold name, a description and a side note. The checked row takes the band, keyboard focus draws a blue outline inside the row, and unavailable rows go faint.
+- **Unread and archived rows:** a session with a finished result the Owner hasn't opened carries the blue unread tag after its question. Archived sessions and closed lots set their rows in secondary ink.
+- **Times:** every short time uses one label in Auckland time (今天 14:21, 明天 09:00, 昨天 22:10, or 2026-10-02 10:02 further out), from the `short_time` filter both shells share.
+
+### Watched Lot Row
+The watch list's banded table holds a checkbox, the lot, 截止与提醒, 出价, and the 取消关注 link.
+- **Lot cell:** an 80×60px photo, cover-cropped inside a hairline edge on the field fill (an empty well when there is no photo), beside the title in semibold ink and the auction line in faint caption type, clamped to two lines. The title opens the lot in a new tab and turns pale blue with an underline on hover.
+- **Deadline and reminder cell:** at least 9.5em wide. The relative deadline (2 天后截止) comes first with its exact time as a caption line. Below a hairline with 6px either side, the reminder state follows as a state mark with its time or hint on a caption line, and a failed reminder adds a 立即重试提醒 link. A closed lot shows 已结束 with its closing time, and a lot without a deadline says so in faint ink.
+- **Price facts:** at least 11.5em wide. The first fact (the current bid, or that there is none) leads at 14px semibold in ink, and the rest (the estimate with buyer's premium, the RRP, the sold price) follow as caption lines in secondary ink. A lot without prices shows a faint dash.
+- **Closed rows:** text drops to secondary ink and the photo to grayscale at 65% opacity.
+- **Failed reminders first:** 2.1 需要注意 boxes every failed reminder as a 警告 note above the list, whatever the filter, with its deadline, the folded raw error, a small retry button and a link to delivery health. When nothing failed it shows a 完成 note, and a missing reminder address is a 注意 note.
+- **Removing:** row checkboxes belong to a form outside the table. The head checkbox selects all and shows a partial pick as indeterminate, and the section tools show 已选 N 个 beside a small danger button that stays disabled until something is picked. At the narrow rule, where the table head is hidden, a semibold 全选 checkbox joins the section tools before the count, and both select-alls stay in step. Stopping one watch re-renders the list, the head counts and the rail count from the server, moves focus to the next lot's title (else the previous one, else the settings button) and announces the change in a polite live region.
+
+### Notebook Transcript
+The conclusion page of a research session (1.1). It is a transcript, not a chat.
+- **Turns:** rows under one 1.5px ink rule, each closed by a hairline. The label column says who and when in label type, with 综合结论 and its version, time and sufficiency, 你 for the Owner, and 回答 for a reply. Versions and times sit on caption lines in faint ink with tabular figures.
+- **Conclusion:** always the first turn. The bottom line is the lead, in ink at 500. Key findings, agreements, conflicts, unknowns and evidence coverage follow under in-text heads in reading type. General model knowledge comes last in a 说明 note inside the reading column, as a 14px list in secondary ink with no citations. When the conclusion can be rewritten, a small 重新生成结论 button and a faint hint sit 18px below.
+- **Citation numbers:** a bracketed number right after the claim, in 12px semibold blue with tabular figures, 3px from the text, raised 0.1em and never wrapping. Hover turns it pale blue with an underline. The number shown in the side column, and every copy of it in the text, takes a 1px blue outline.
+- **Follow-ups:** the Owner's question is ink at 600 and 1.7. A reply is reading type that keeps its line breaks. A pending reply is a 回答 turn holding skeleton lines, and a reply that failed is a faint hint. A failure to send is a 警告 note under the transcript.
+- **Composer:** last. A semibold label, a textarea from 92px, then a row with a faint hint on the left and the primary 发送 on the right.
+- **No conclusion yet:** the first turn is muted and holds an empty state.
+
+### Side Column
+On a desktop window wider than 1180px the side column sits beside the transcript, sticky 16px from the top.
+- **Boxes:** each opens with the 1.5px ink rule and 10px of space, headed in label type in secondary ink.
+- **Citation box (引用):** a faint hint until a number is clicked, then that source's card, which leads with its title. The title line starts with the citation number in 13px blue tabular figures, then the linked title in semibold ink with a rule-stroke underline that turns pale blue on hover. Under it sit the publisher and quality as a faint caption line (with a hollow faint 已排除 mark once excluded), then the saved excerpt at 13px in secondary ink at 1.65, or a note in the same style that no excerpt was saved. Last come a row with a small 排除这条证据 button (restore once excluded) and an 打开原文 link, and a faint hint that the conclusion has to be rewritten after excluding.
+- **Session facts (这次研究):** rows split by hairlines, 7px above and below, with the label in secondary ink on the left and the value right-aligned in tabular figures. Evidence, sources and runs link to their pages, and the model is plain text.
+
+### Evidence Table
+1.2 lists every evidence item in the latest snapshot, a page at a time.
+- **Columns:** the citation number, right-aligned in tabular figures; the title with its snippet; the publisher, at least 6.5em; the quality; and an exclude or restore link.
+- **Snippet:** under the semibold title at 13px in secondary ink at 1.6, clamped to three lines on purpose. The title opens the full text in a new tab.
+- **Duplicate groups:** a group row in label type and secondary ink, with 14px above, 4px below and no rule, says how many reports of one story follow. Each grouped row carries the group bar on its first cell.
+- **Excluded rows:** text drops to faint ink, the title to secondary ink struck through in faint ink, and the quality cell adds a hollow faint 已排除 mark. When everything is excluded, a 注意 note says so above the table.
+
+### Sources and Plan
+1.3 holds what the next run searches and what the AI planned on each run.
+- **Sources:** a banded table of source, who added it, and edit and remove links (remove in red, while more than one source is left), with a small 添加信源 button in the section tools. While a run is going, a 说明 note says the sources are locked.
+- **Newest plan:** under an unnumbered subhead (AI 计划) and a lede, the newest plan shows in full as a block under a 1.5px ink rule, with 12px 10px 4px padding. Its run and version sit in bold with the time in faint ink, then the summary in reading type, then a banded table of the planned sources and their rationale.
+- **Older plans:** one disclosure, set as a blue link (看其余 N 个计划版本), opens a table of run and version, time, and summary. Each summary carries its own disclosure, 信源与理由（N）, in 13px blue text with the native marker. Open, it lists every source in semibold ink with its reason below in secondary ink, indented 12px behind a 2px rule-stroke line.
+
+### Run History
+1.4 has one row per run.
+- **Columns:** the run number in bold with its kind as a caption line, a state mark, the start time, the duration, the work (deep reads, with plan versions and attempts as a caption line), and the outcome.
+- **Outcome:** up to three lines, each on its own and each shown only when it applies. The failure reason comes first as a red sentence at the data size. The snapshot the run sealed (快照 N：X 条证据) and the conclusion it wrote (结论第 N 版 · sufficiency) follow in ink at the data size, 4px below a reason. A failed run that sealed evidence shows both its reason and its snapshot, and a conclusion is credited to the run that wrote it, including a retry that only rewrote the conclusion. The stored technical detail folds under 原始错误 after the lines, in mono on the field fill. A run with none of these shows a faint in-progress or no-outcome note.
+
+### Running Work
+- **Status note:** while a run is queued or running, a 说明 note heads every session page with the run and its state in bold, the phase, a hint and three skeleton lines. It refreshes every three seconds. A failed run leaves a 警告 note with the reason and the folded raw error. The control beside the title is a cancel button while a run is going and the primary 刷新研究 otherwise.
+- **Skeleton lines:** three 10px bars in the band tone at full, 75% and 50% width, 8px apart, pulsing to 45% opacity over 1.6s. They hold still under reduced motion. There is never a spinner.
 
 ### Boxed Notes
 The datasheet's callouts.
 - **Style:** a square box with a 1.5px border in its tone. A solid tag cell at least 64px wide carries the tone word in 13px bold fill ink, tracked 0.02em (0.12em in CJK). The body is 14px with 10px 14px padding, and actions sit in a cell on the right.
 - **Tones:** 说明 Note (secondary ink), 注意 Caution (amber), 警告 Warning (red) and 完成 Done (ink rule). Confirmations after an action use Done. Failures use Warning and are announced as alerts.
 - Notes stack 8px apart. At the narrow rule the tag becomes a strip above the body.
+- Notes also sit inside the reading column (the model-knowledge 说明 note, 22px below the text) and in a session's status region (a running or failed run).
 
 ### Danger Row and Removal Popover
-- **Danger row:** a Warning note built on a disclosure. Closed, it shows the bold title, what will go with its counts, the 7-day undo hint and a small danger button. Open, the button becomes 取消 and a confirmation panel unfolds below on the field fill, under a rule-stroke line. The panel reads "输入“name”以确认。" and holds a growing input and a danger submit.
+- **Danger row:** a Warning note built on a disclosure. Closed, it shows the bold title, what will go with its counts, an undo hint and a small danger button. Open, the button becomes 取消 and a confirmation panel unfolds below on the field fill, under a rule-stroke line. A deletion is typed. In the admin the hint is the 7-day undo, and the panel reads "输入“name”以确认。" with a growing input and a danger submit. Deleting a research session can't be undone, so its hint says 不能撤销。 and its panel asks for the word 删除 (delete in each locale) the same way. A list cleanup that keeps the records behind it, such as clearing closed watches (the lots and their history stay), also says 不能撤销。 but asks once. Its panel states what goes in one sentence above the danger submit, with no typed field.
 - **Removal popover:** removing a source uses the native popover, so the table row stays in place. It is up to 460px wide, with a 1.5px red border and a red head strip with the title in 14px bold fill ink. Below come the source name, what goes with it, the undo hint and the same typed confirmation, with a cancel.
 
 ### Containers
 - **Sheet:** see Layout.
-- **Facts strip:** auto-fit cells of at least 150px between a 1.5px ink rule and a hairline, split by hairlines. A condensed label sits on top and a 17px semibold tabular value below.
+- **Facts strip:** auto-fit cells of at least 150px between a 1.5px ink rule and a hairline, split by hairlines. A condensed label sits on top and a 17px semibold tabular value below. The run-budget preview sets a run's limits in one.
 - **Empty state:** a dashed rule-stroke box with 18px 14px padding, a bold ink first line over secondary-ink text, and the primary action below.
 - **Plain-text preview:** 13px mono at 1.75 on the field fill with a rule-stroke border, at most 560px tall and scrolling inside.
+- **Pager:** 10px below a table, small previous and next buttons (a disabled one takes the hairline border and faint ink), the page count in 13px secondary ink, and on long lists a page field with a small jump button.
+- **Empty states** also sit inside a turn and under each session section. Only an empty research list offers the primary action (a new session). An empty watch list offers a secondary button to all lots or back to the site.
 
 ### Named Rules
 **The Parameter Row Rule.** Every form is a parameter table. The label names the parameter, the control holds the value, and the note says what it does, what is in effect now and what went wrong.
 
 **The Counted Save Rule.** A changed row is tagged 已修改 in blue and counted in the sticky save bar. After a rejected save the bar stays unsaved and says so.
 
-**The Typed Confirmation Rule.** A destructive action opens in place (or, for a source, in a popover) into a confirmation that names what goes, gives the counts, says it can be undone for 7 days, and asks the Owner to type the name.
+**The In-Place Confirmation Rule.** A destructive action opens in place (or, for a source, in a popover) into a confirmation that names what goes, gives the counts and says whether it can be undone. Deleting data is typed. Admin removals, which can be undone for 7 days, ask for the name, and deleting a research session, which can't, asks for the word 删除. A list cleanup that keeps the records behind it, such as clearing closed watches, asks once, in words.
 
 **The Boxed Note Rule.** Callouts are square boxes in their tone, with a solid tag cell that says the tone in words (说明, 注意, 警告, 完成).
+
+**The Notebook Rule.** A research conversation is a transcript. Who and when sit in a label column with the words beside them. The conclusion is the first turn, follow-ups continue below it and the composer comes last. Never chat bubbles, never cards.
+
+**The Citation Number Rule.** A citation is a small blue number in brackets right after the claim it supports. Its visible text is only the number, and the source's title and quality go to the tooltip and to screen readers.
+
+**The Labelled Skeleton Rule.** Work in progress shows skeleton lines inside a note or turn that says what is running. Never a spinner.
 
 ## Do's and Don'ts
 
@@ -458,17 +651,23 @@ The datasheet's callouts.
 - **Do** use the one-line field (`ui.line_field`) for any value without a length limit, such as URLs, queries, email addresses, subject templates and source names. Keep bounded values as inputs.
 - **Do** keep units whole in table cells with `ui.units`, `ui.keep` and `.nw`, and break URL paths with `ui.url_path`. Mark multi-column list tables to stack at the narrow rule (`.tbl-stack`, with `data-label` on each cell).
 - **Do** pair every state with a square mark and a word, and add amber or red only when the Owner has to act.
-- **Do** give each destructive action its own Warning row (`ui.danger`) that opens in place into a typed confirmation naming what goes and the 7-day undo.
-- **Do** use tabular figures for every changing number, and condense only column heads, fact labels and numeric columns.
-- **Do** keep all admin styling in `admin.css`. Templates carry no inline `style=` (a test enforces this), scripts load only from the site (`script-src 'self'`), and fonts are self-hosted.
+- **Do** give each destructive action its own Warning row (`ui.danger`) that opens in place into a confirmation naming what goes. Pass a `confirmation_value` for any deletion of data, keep the one-step worded confirmation for list cleanups, and pass a `hint` whenever the admin's 7-day undo doesn't apply, so the row never promises an undo that doesn't exist.
+- **Do** use tabular figures for every changing number, and condense only label type (column heads, fact labels, transcript labels, box heads, group rows) and numeric columns.
+- **Do** set long AI text in the reading column (`.read`, 72ch), lead a conclusion with its bottom line (`.answer`), and mark citations with `rx.cite`.
+- **Do** format every short time with the shared `short_time` filter, so both shells write today, tomorrow, yesterday and full dates the same way, in Auckland time.
+- **Do** show running work as labelled skeleton lines, and mark closed lots and archived sessions with `.is-closed`.
+- **Do** keep all admin and workspace styling in `admin.css`, and render both shells through `datasheet_base.html`. Templates carry no inline `style=` (a test enforces this), scripts load only from the site (`script-src 'self'`), and fonts are self-hosted.
 - **Do** write 频道 and 信源 in Chinese copy. English capitalises Channel and Source as product terms.
 
 ### Don't:
 - **Don't** build card grids, tiles or dashboards of boxes. Lists are banded tables and settings are parameter rows, and a row of figures is a ruled facts strip.
-- **Don't** fill a control, tag or mark with blue. Blue is for links, focus, unsaved edits and work in progress, and the primary action is solid ink.
+- **Don't** set a conversation as chat bubbles or cards. Turns are rows with a label column.
+- **Don't** fill a control, tag or mark with blue. Blue is for links, focus, unsaved edits, unread results and work in progress, and the primary action is solid ink.
 - **Don't** use amber or red for emphasis or decoration.
 - **Don't** round containers, or give any control more than 2px.
 - **Don't** lift things off the sheet with drop shadows. Change the tone instead. The removal popover is the only shadow.
+- **Don't** put a kicker or eyebrow above a heading or a title. Caption lines go under the value they describe. The running head and facts labels are structure, not kickers.
+- **Don't** give a row, note or card a coloured side stripe. The only left bars are 2px rule-stroke lines that group things, on grouped evidence rows and beside an older plan's source list.
 - **Don't** set free-length text on one unbreakable line, or let a layout depend on sideways scrolling at 1440, 1024 or 390px.
 - **Don't** write "Channel" in Chinese copy.
 - **Don't** outline a control with the rule stroke. Outlined controls take the control stroke (`--ctl`), or the danger stroke (`--ctl-danger`) on danger buttons, and both hold at least 3:1 on every admin surface.

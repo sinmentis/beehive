@@ -12,6 +12,8 @@ One Owner: the person who self-hosts Beehive. Only the Owner signs in. Admin is 
 
 The Owner uses admin mostly from a desktop browser, and opens it rarely, only when a configuration needs to change. Every admin page has to be understandable without remembering how it worked last time. Phone use must still work but is secondary.
 
+The Owner also has a workspace for their own research and watched lots. The Watch List is opened often, mostly on a phone, to see which reminder failed and which lot closes next. Research is used on a desktop to read a conclusion, check the sources behind it, exclude bad evidence, ask follow-up questions and see why a run failed.
+
 ## Product Purpose
 
 Beehive is a self-hosted AI briefing system. It collects items from chosen sources, ranks each item against a channel-specific interest profile, and delivers conclusion-first summaries through a personal dashboard and scheduled email. Monitor channels watch shopping catalogues for new listings, price drops and restocks. Tracker channels follow time-bound listings such as auctions.
@@ -30,8 +32,8 @@ A single-owner, self-hosted briefing pipeline on SQLite, with per-channel AI ran
 
 ## Capabilities and Constraints
 
-- Server-rendered FastAPI and Jinja templates with no client framework. Public pages use `src/beehive/web/static/beehive.css`; admin pages use only `src/beehive/web/static/admin.css`. Both share `beehive.js`. Forms post with CSRF tokens. The CSP allows no inline script and no third-party fonts, so the Archivo font is self-hosted.
-- Interface copy lives in `src/beehive/translations/web.py`, with admin-only copy in `web_admin.py`, in seven locales (en, zh-CN, ja, ko, es, fr, de). Parity tests require every key in every locale. The current interface language is Simplified Chinese.
+- Server-rendered FastAPI and Jinja templates with no client framework. Public reading pages use `src/beehive/web/static/beehive.css`; the admin and the Owner's workspace (`/research`, `/watchlist`) use only `src/beehive/web/static/admin.css`. All share `beehive.js`. Forms post with CSRF tokens. The CSP allows no inline script and no third-party fonts, so the Archivo font is self-hosted.
+- Interface copy lives in `src/beehive/translations/web.py`, with admin-only copy in `web_admin.py` and workspace copy in `web_workspace.py`, in seven locales (en, zh-CN, ja, ko, es, fr, de). Parity tests require every key in every locale. The current interface language is Simplified Chinese.
 - Content is long and user-supplied: Chinese and English channel names, full source URLs, multi-paragraph channel profiles, fetch error messages, timezone names. Layouts must hold all of it without overflowing.
 - Domain terms come from CONTEXT.md: Owner, Channel (Editorial, Monitor, Tracker), Source, Email Group, Research Session, Tracker Watch.
 - A channel's workflow is chosen at creation and never changes. Each connector declares which workflows it supports.
