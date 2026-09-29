@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container still has no Copilot token, so the Research worker fetches the list within a few
   seconds and again every day. The row says when the list was fetched, and flags a refresh that
   failed or never started, or a saved model that is no longer offered.
+- Reading pages carry Open Graph and Twitter card tags with a social card image, so a shared
+  link previews with its title and description; a deep-read brief previews with its bottom line.
+  The pages still send `noindex, nofollow`. An Apple touch icon joins a favicon redrawn in the new
+  mark.
 
 ### Changed
 
@@ -76,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Removing a Source now asks for its name or shop domain instead of its connector type, and the
   activity log names Sources by their current label. The Chinese UI says 频道 instead of Channel.
   Old `?tab=ai` and `?tab=delivery` links still work.
+- The reading pages (home, channel pages, archive, search and deep-read briefs) and the Owner's
+  workspace (Research, Watch List) share the admin's dark datasheet design, and the old
+  `beehive.css` stylesheet is gone. The home page is a desk with a section per Channel. Every
+  page numbers its sections in the contents rail and states each one's count or state in its
+  heading. The sheet has no width cap: on wide screens sections sit side by side and long tables
+  set their rows in newspaper columns. The archive groups and filters by Auckland day, search
+  sorts each page of hits into a section per Channel, and `/channels/` redirects home.
 - Email Groups now consume actionable Channel events and may render mixed Editorial, Monitor, and
   Tracker sections without sending empty scheduled messages.
 - The digest timer now evaluates Email Group schedules and Research completion notifications every
@@ -91,7 +102,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an explicit warning about missing comments, edits, links, and truncated long posts.
 - Featured now ranks only content published during a configurable Auckland calendar-day window,
   defaulting to three days and falling back to fetch time when publication time is unavailable.
-- Featured table columns can be resized with pointer dragging or the keyboard.
 - The SQLite schema is versioned with `PRAGMA user_version`. `init_schema` only migrates a database
   that is behind and refuses one that a newer, incompatible release migrated; `--mode migrate` is
   the explicit release step.

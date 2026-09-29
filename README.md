@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/github-social-preview.png" alt="Beehive turns noisy feeds into a personal AI briefing" width="100%">
+  <img src="docs/assets/github-social-preview.png" alt="Beehive: turn noisy feeds into a focused daily brief. A dark reading page with a channel's top stories, ranked and scored." width="100%">
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 <table>
   <tr>
-    <td><strong>9 source families</strong><br><sub>News, communities, stores, and auctions</sub></td>
+    <td><strong>10 source families</strong><br><sub>News, communities, stores, and auctions</sub></td>
     <td><strong>Self-hosted</strong><br><sub>Your data and schedule</sub></td>
     <td><strong>SQLite</strong><br><sub>Simple operations</sub></td>
     <td><strong>MIT</strong><br><sub>Open source</sub></td>
@@ -29,17 +29,28 @@ Beehive collects updates from the sources you care about, ranks each item agains
 
 ## Product tour
 
+Every page shares one dark reading design: a contents rail of numbered chapters, a sheet whose
+sections carry their state in the heading, and banded tables where nothing is cut short.
+
 ### See what matters first
 
 Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic. The home page is a desk of every channel: each channel's state and its best few rows, with the top stories for news channels, the best live listings for store monitors, and the good auction lots still open. Stories come from a configurable Auckland calendar-day window, three days by default, falling back to fetch time when publication time is unavailable. The counts at the top open a ranked list of every featured story, filtered to all, unread, read, or 90 and above.
 
 <img src="docs/assets/dashboard-product.png" alt="Beehive home page: a desk of channels, each with its state and top synthetic stories" width="100%">
 
-> The previews use the default English interface. The global language setting also supports Simplified Chinese, Japanese, Korean, Spanish, French, and German.
+> The previews use synthetic data and the default English interface. The global language setting also supports Simplified Chinese, Japanese, Korean, Spanish, French, and German.
+
+### Built for big screens
+
+The sheet fills the window at any size, from a phone to a 4K monitor. On a wide screen, channel sections sit side by side, and a long list such as an archive day, a search result, or a store catalogue sets its rows in newspaper columns, with each row's source, time, price, and actions under its title.
+
+<img src="docs/assets/wide-screen.png" alt="Beehive home page at 2560 pixels wide: six channel sections in two columns, with news stories, store listings, and auction lots" width="100%">
 
 ### Read the evidence without leaving Beehive
 
 The owner can request an asynchronous AI deep read for any ranked item. Beehive safely fetches and extracts the stored article URL, then produces a cached 500–800 word brief with a bottom line, key findings, important figures, why it matters, and limitations. Partial or paywalled source material is labeled rather than presented as complete.
+
+<img src="docs/assets/deep-read-brief.png" alt="A deep-read brief: the bottom line, key findings, and why it matters, with important figures and the source beside the text" width="100%">
 
 ### Control every signal
 
@@ -60,6 +71,8 @@ The Channel workflow is selected at creation and remains immutable:
 Each connector explicitly declares which workflows it supports. The admin Source picker only shows
 compatible connectors, and persistence and collection reject incompatible combinations rather than
 silently treating every Channel the same.
+
+<img src="docs/assets/channel-monitor.png" alt="A store monitor channel: live listings with price, discount, AI score, and the reason each one matched" width="100%">
 
 ## How it works
 
@@ -333,6 +346,8 @@ and the always-on Research worker with its reconcile timer. See
 ## Privacy and indexing
 
 Beehive is designed for a personal dashboard. It sends `X-Robots-Tag: noindex, nofollow` and matching HTML metadata by default. Authentication protects administration and write actions, but deployment-level access control is still recommended if the read surface contains private interests or summaries.
+
+Staying out of search results does not stop link previews: reading pages carry Open Graph and Twitter card tags, so a shared link shows its title, a short description, and the Beehive card. A deep-read brief's preview uses its bottom line.
 
 Every Research Session route additionally requires an authenticated Owner session, including
 read-only views, so there is no public or unauthenticated route to a Research Session at all.

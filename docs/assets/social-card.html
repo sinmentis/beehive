@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<!-- The Beehive social card: a reading page set larger, styled by the site's own admin.css with
+     synthetic stories. Re-render both sizes from the repository root whenever the reading design
+     changes (see DESIGN.md, Brand Assets):
+
+       npx playwright@1.63.0-alpha-2026-08-05 screenshot --viewport-size="1280, 640" --wait-for-timeout=500 \
+         "file://$PWD/docs/assets/social-card.html" docs/assets/github-social-preview.png
+       npx playwright@1.63.0-alpha-2026-08-05 screenshot --viewport-size="1200, 630" --wait-for-timeout=500 \
+         "file://$PWD/docs/assets/social-card.html" src/beehive/web/static/social-card.png
+
+     The first is the README hero and the GitHub social preview, the second the site's og:image. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="../../src/beehive/web/static/admin.css">
+<style>
+  /* The card is a real reading page, set larger: the rail, the running head, the page head with
+     the product's line as its h1, and the first channel section of the desk. */
+  html,body{height:100%;overflow:hidden}
+  .card .adm-shell{height:100vh;min-height:0;overflow:hidden}
+  .card .adm-toc{height:100vh}
+  .card .adm-main{overflow:hidden}
+  .card .adm-page{height:calc(100vh - 32px);overflow:hidden}
+  .card .adm-head{margin-top:18px}
+  .card h1{max-width:15.5em;font-size:52px;line-height:1.08;letter-spacing:-.022em;text-wrap:balance}
+  .card .lede{max-width:40em;margin-top:14px;color:var(--ink-2);font-size:19px;line-height:1.45}
+  .card .lede-meta{margin-top:8px;font-size:14px}
+  .card .desk-sec h2{margin-top:46px}
+</style>
+</head>
+<body class="adm page-reading card">
+<div class="adm-shell">
+  <aside class="adm-toc">
+    <span class="adm-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>Beehive<span>Reading</span></span>
+    <nav>
+      <ol class="toc">
+        <li><a aria-current="page"><span class="no">1</span><span>Featured</span><span><span class="toc-n">14</span></span></a></li>
+        <li><a><span class="no">2</span><span>Global Markets</span><span></span></a></li>
+        <li><a><span class="no">3</span><span>AI &amp; Software</span><span></span></a></li>
+        <li><a><span class="no">4</span><span>New Zealand</span><span></span></a></li>
+        <li><a><span class="no">5</span><span>Personal Finance NZ</span><span></span></a></li>
+        <li><a><span class="no">6</span><span>Outdoor Gear Clearance</span><span></span></a></li>
+        <li><a><span class="no">7</span><span>Auctions</span><span></span></a></li>
+        <li><a><span class="no">8</span><span>Archive</span><span></span></a></li>
+      </ol>
+    </nav>
+  </aside>
+  <main class="adm-main">
+    <div class="adm-page">
+      <div class="adm-run"><nav><span>1 Featured</span></nav><span>Self-hosted · MIT licensed</span></div>
+      <div class="adm-head">
+        <div>
+          <h1>Turn noisy feeds into a focused daily brief.</h1>
+          <p class="lede">Self-hosted intelligence for the topics you actually care about.</p>
+          <p class="adm-meta lede-meta">Interest-aware · AI-ranked · Concise</p>
+        </div>
+      </div>
+      <section class="desk-sec">
+        <h2><span class="no">1.1</span><span>Global Markets</span>
+          <span class="tools"><span class="desk-state nw">4 in 3 days</span><span class="desk-state nw">3 unread</span><span class="btn btn-sm">Open channel</span></span></h2>
+        <div class="tbl-wrap"><table class="tbl tbl-feed">
+          <thead><tr><th class="c-rd"></th><th class="c-score">Score</th><th>Summary</th><th>Source</th><th>Time</th><th class="c-ops"></th></tr></thead>
+          <tbody>
+            <tr><td class="c-rd"><span class="rd"></span></td><td class="c-score"><span class="score is-high">96</span></td>
+              <td class="c-sum"><a>Federal Reserve signals a patient approach to the next rate decision.</a><small>Fed officials see no rush to move rates as inflation cools</small></td>
+              <td class="c-src">Market Wire</td><td class="c-age">10 minutes ago</td><td class="c-ops"><div class="deep-read-action"><a class="deep-read-chip">Open brief</a></div></td></tr>
+            <tr><td class="c-rd"><span class="rd"></span></td><td class="c-score"><span class="score">88</span></td>
+              <td class="c-sum"><a>Large-cap technology shares retreat as earnings expectations reset.</a><small>Tech giants slip as investors reprice earnings</small></td>
+              <td class="c-src">Ledger Daily</td><td class="c-age">1 hour ago</td><td class="c-ops"><div class="deep-read-action"><a class="deep-read-chip">Deep read</a></div></td></tr>
+            <tr><td class="c-rd"><span class="rd"></span></td><td class="c-score"><span class="score">72</span></td>
+              <td class="c-sum"><a>Energy shares outperform while broader earnings forecasts hold steady.</a><small>Energy leads as forecasts stay put</small></td>
+              <td class="c-src">Market Wire</td><td class="c-age">3 hours ago</td><td class="c-ops"><div class="deep-read-action"><a class="deep-read-chip">Deep read</a></div></td></tr>
+          </tbody>
+        </table></div>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>
