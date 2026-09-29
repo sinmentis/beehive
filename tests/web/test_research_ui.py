@@ -108,7 +108,7 @@ def test_synthesis_citation_link_has_safe_attributes(authed_client, conn):
     assert 'rel="noopener noreferrer"' in resp.text
     # External-link screen-reader text accompanies every such citation link.
     match = re.search(
-        r'<a class="research-citation-chip"[^>]*>(.*?)</a>', resp.text)
+        r'<a class="cite"[^>]*>(.*?)</a>', resp.text)
     assert match is not None
     assert "sr-only" in match.group(1)
     assert f"[{citation_number}]" in match.group(1)
@@ -149,9 +149,9 @@ def test_model_knowledge_is_labeled_and_never_carries_citations(authed_client, c
     resp = authed_client.get(f"/research/{session_id}?tab=synthesis")
     assert "Historically, central banks move slowly" in resp.text
     idx = resp.text.index("Historically, central banks move slowly")
-    # No citation chip immediately surrounding the model-knowledge note.
+    # No citation link immediately surrounding the model-knowledge note.
     window = resp.text[max(0, idx - 200):idx + 200]
-    assert "research-citation-chip" not in window
+    assert 'class="cite"' not in window
 
 
 # ============================================================================
@@ -173,7 +173,7 @@ def test_pending_run_uses_skeleton_not_spinner(authed_client, conn):
     _, c = conn
     session_id, *_ = _build_synthesis_scenario(c)
     resp = authed_client.get(f"/research/{session_id}/status")
-    assert "research-skeleton" in resp.text
+    assert 'class="skel"' in resp.text
     assert "spinner" not in resp.text.lower()
 
 
@@ -193,7 +193,9 @@ def test_failed_run_shows_captured_error_detail_as_technical_disclosure(authed_c
         error_detail="StructuredResponseError: no fenced ```json block found in core response")
     resp = authed_client.get(f"/research/{session_id}")
     assert resp.status_code == 200
-    assert "research-error-detail" in resp.text
+    # The plain reason leads; the stored technical detail stays folded underneath it.
+    assert "Writing the conclusion failed." in resp.text
+    assert '<details class="raw-error">' in resp.text
     assert "StructuredResponseError" in resp.text
 
 
@@ -203,7 +205,8 @@ def test_failed_run_without_captured_detail_shows_no_disclosure(authed_client, c
     _fail_a_claimed_run(c, session_id, error_detail=None)
     resp = authed_client.get(f"/research/{session_id}")
     assert resp.status_code == 200
-    assert "research-error-detail" not in resp.text
+    assert "Writing the conclusion failed." in resp.text
+    assert '<details class="raw-error">' not in resp.text
 
 
 # ============================================================================
@@ -215,7 +218,8 @@ def test_evidence_empty_state_before_any_run_completes(authed_client, conn):
     session_id = create_research_session(c, "Q", T0).id
     resp = authed_client.get(f"/research/{session_id}?tab=evidence")
     assert resp.status_code == 200
-    assert "empty-state" in resp.text
+    assert "research-empty" in resp.text
+    assert "No evidence yet" in resp.text
 
 
 def test_plan_empty_state_before_any_plan_revision(authed_client, conn):
@@ -226,7 +230,8 @@ def test_plan_empty_state_before_any_plan_revision(authed_client, conn):
     enqueue_research_run(c, session_id, T0)
     resp = authed_client.get(f"/research/{session_id}?tab=plan")
     assert resp.status_code == 200
-    assert "empty-state" in resp.text
+    assert "research-empty" in resp.text
+    assert "No plan yet" in resp.text
 
 
 def test_synthesis_empty_state_before_any_synthesis(authed_client, conn):
@@ -234,13 +239,15 @@ def test_synthesis_empty_state_before_any_synthesis(authed_client, conn):
     session_id = create_research_session(c, "Q", T0).id
     resp = authed_client.get(f"/research/{session_id}?tab=synthesis")
     assert resp.status_code == 200
-    assert "empty-state" in resp.text
+    assert "research-empty" in resp.text
+    assert "No synthesis yet" in resp.text
 
 
 def test_research_list_empty_state(authed_client):
     resp = authed_client.get("/research")
     assert resp.status_code == 200
-    assert "empty-state" in resp.text
+    assert "research-empty" in resp.text
+    assert 'href="/research/new"' in resp.text
 
 
 # ============================================================================

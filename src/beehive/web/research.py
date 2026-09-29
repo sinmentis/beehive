@@ -58,10 +58,13 @@ from beehive.research.limits import (
 from beehive.research.synthesis import SynthesisError, exclude_evidence_item, restore_evidence_item
 from beehive.web import research_view
 from beehive.web.deps import get_db, get_localizer, require_admin_session, verify_csrf
+from beehive.web.workspace import render_workspace
 
 router = APIRouter(prefix="/research")
 
-_TABS = frozenset({"synthesis", "plan", "evidence", "history"})
+# The session's pages, in contents-rail order: conclusion and follow-ups, evidence, sources and
+# plan, run history. Each is its own page; only the first one polls or holds the conversation.
+_TABS = ("synthesis", "evidence", "plan", "history")
 
 # Connectors an Owner may pick directly from the create-session form. Reddit is deliberately not
 # in this list -- it is offered separately as its own "seed" text field (see module docstring
@@ -208,16 +211,22 @@ def research_list(
     active = list_research_sessions(conn, ResearchSessionStatus.ACTIVE)
     archived = list_research_sessions(conn, ResearchSessionStatus.ARCHIVED)
     unread_ids = unread_completed_research_session_ids(conn)
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "research_list.html", {
-        "active_rows": [
-            research_view.build_session_row(s, t, is_unread=s.id in unread_ids)
-            for s in active
-        ],
-        "archived_rows": [
-            research_view.build_session_row(s, t, is_unread=s.id in unread_ids)
-            for s in archived
-        ],
+    stats = research_view.load_session_stats(conn)
+
+    def rows(sessions):
+        return [
+            research_view.build_session_row(
+                s, t, is_unread=s.id in unread_ids, stats=stats.get(s.id))
+            for s in sessions
+        ]
+
+    active_rows, archived_rows = rows(active), rows(archived)
+    every_row = active_rows + archived_rows
+    return render_workspace(request, t, "research_list.html", {
+        "active_rows": active_rows,
+        "archived_rows": archived_rows,
+        "run_total": sum(row.run_count for row in every_row),
+        "failed_run_total": sum(row.failed_run_count for row in every_row),
     })
 
 
@@ -229,7 +238,6 @@ def _render_new_form(request: Request, session: dict, t: Localizer, *, question:
                       keyword: str = "", reddit_subreddit: str = "",
                       selected_connectors: list[str] | None = None, error: str | None = None,
                       status_code: int = 200) -> HTMLResponse:
-    templates = request.app.state.templates
     selected = set(selected_connectors or [])
     connector_options = [
         {
@@ -240,7 +248,7 @@ def _render_new_form(request: Request, session: dict, t: Localizer, *, question:
         }
         for connector_type in _SELECTABLE_CONNECTORS
     ]
-    return templates.TemplateResponse(request, "research_new.html", {
+    return render_workspace(request, t, "research_new.html", {
         "csrf_token": session["csrf_token"],
         "question": question,
         "keyword": keyword,
@@ -248,6 +256,8 @@ def _render_new_form(request: Request, session: dict, t: Localizer, *, question:
         "connector_options": connector_options,
         "error": error,
         "max_question_length": research_view.MAX_QUESTION_LENGTH,
+        "max_keyword_length": research_view.MAX_KEYWORD_LENGTH,
+        "max_subreddit_length": research_view.MAX_SUBREDDIT_LENGTH,
     }, status_code=status_code)
 
 
@@ -292,8 +302,9 @@ def new_session_preview(
             error=error,
             status_code=400,
         )
-    return request.app.state.templates.TemplateResponse(
+    return render_workspace(
         request,
+        t,
         "research_run_preview.html",
         {
             "csrf_token": session["csrf_token"],
@@ -350,17 +361,20 @@ def _render_source_form(
     t: Localizer,
     session_id: int,
     *,
+    question: str,
     source=None,
     connector_type: str = "google_news_query",
     value: str = "",
     error: str | None = None,
     status_code: int = 200,
 ):
-    return request.app.state.templates.TemplateResponse(
+    return render_workspace(
         request,
+        t,
         "research_source_form.html",
         {
             "session_id": session_id,
+            "question": question,
             "csrf_token": session["csrf_token"],
             "source": source,
             "connector_type": connector_type,
@@ -385,7 +399,8 @@ def new_research_source(
 ):
     if not _sources_are_mutable(conn, session_id):
         return RedirectResponse(f"/research/{session_id}?action_error=source", status_code=303)
-    return _render_source_form(request, session, t, session_id)
+    return _render_source_form(
+        request, session, t, session_id, question=_require_session(conn, session_id).question)
 
 
 @router.post("/{session_id}/sources/new")
@@ -421,6 +436,7 @@ def create_research_source_submit(
             session,
             t,
             session_id,
+            question=_require_session(conn, session_id).question,
             connector_type=connector_type,
             value=value,
             error=t.text("web.research.source_form.invalid"),
@@ -459,6 +475,7 @@ def edit_research_source(
         session,
         t,
         session_id,
+        question=_require_session(conn, session_id).question,
         source=source,
         connector_type=source.connector_type,
         value=_source_form_value(source.connector_type, source.config),
@@ -505,6 +522,7 @@ def edit_research_source_submit(
             session,
             t,
             session_id,
+            question=_require_session(conn, session_id).question,
             source=source,
             connector_type=source.connector_type,
             value=value,
@@ -569,14 +587,6 @@ def research_detail(
         session_id,
         origin=ResearchSourceOrigin.OWNER,
     )
-
-    synthesis_document = research_view.load_synthesis_document(conn, session_id)
-    synthesis_view = research_view.build_synthesis_tab_view(synthesis_document, t)
-    evidence_view = research_view.build_evidence_tab_view(conn, session_id, t, page=page)
-    plan_views = research_view.build_session_plan_views(conn, session_id, t)
-    history_view = research_view.build_research_history_view(conn, session_id, t)
-    conversation_view = research_view.build_conversation_view(
-        conn, research_session, synthesis_document, evidence_view.all_excluded, t)
     run_status_view = research_view.build_run_status_view(run, t)
 
     is_archived = research_session.status is ResearchSessionStatus.ARCHIVED
@@ -584,8 +594,7 @@ def research_detail(
     can_edit_sources = not is_archived and not has_active_run
     latest_revision = get_latest_evidence_state_revision(conn, session_id)
 
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "research_detail.html", {
+    context = {
         "session_id": session_id,
         "csrf_token": session["csrf_token"],
         "research_session": research_session,
@@ -593,16 +602,16 @@ def research_detail(
         "is_archived": is_archived,
         "active_tab": active_tab,
         "sources": research_view.build_source_rows(sources, t),
+        "summary": research_view.build_session_summary(conn, session_id, len(sources), t),
         "run_status": run_status_view,
         "status_url": f"/research/{session_id}/status",
         "messages_status_url": f"/research/{session_id}/messages/status",
-        "synthesis": synthesis_view,
-        "plan_revisions": plan_views,
-        "history": history_view,
-        "evidence": evidence_view,
-        "conversation": conversation_view,
         "can_refresh": not is_archived and not has_active_run,
-        "can_archive": not is_archived and not has_active_run and not conversation_view.has_pending_request,
+        "can_archive": (
+            not is_archived
+            and not has_active_run
+            and not research_view.has_pending_chat_request(conn, session_id)
+        ),
         "can_unarchive": is_archived,
         "can_mutate_evidence": not is_archived,
         "can_edit_sources": can_edit_sources,
@@ -615,7 +624,28 @@ def research_detail(
             t.text(_ACTION_ERROR_KEYS[action_error])
             if action_error in _ACTION_ERROR_KEYS else None
         ),
-    })
+    }
+    if active_tab == "synthesis":
+        synthesis_document = research_view.load_synthesis_document(conn, session_id)
+        synthesis_view = research_view.build_synthesis_tab_view(synthesis_document, t)
+        conversation_view = research_view.build_conversation_view(
+            conn, research_session, synthesis_document,
+            research_view.evidence_all_excluded(conn, session_id), t)
+        context.update({
+            "synthesis": synthesis_view,
+            "conversation": conversation_view,
+            "cited_evidence": research_view.build_cited_evidence(
+                conn, session_id,
+                research_view.cited_evidence_ids(synthesis_view, conversation_view), t),
+        })
+    elif active_tab == "evidence":
+        context["evidence"] = research_view.build_evidence_tab_view(
+            conn, session_id, t, page=page)
+    elif active_tab == "plan":
+        context["plan_revisions"] = research_view.build_session_plan_views(conn, session_id, t)
+    else:
+        context["history"] = research_view.build_research_history_view(conn, session_id, t)
+    return render_workspace(request, t, "research_detail.html", context)
 
 
 @router.get("/{session_id}/status", response_class=HTMLResponse)
@@ -657,17 +687,22 @@ def research_messages_status(
 ):
     research_session = _require_session(conn, session_id)
     synthesis_document = research_view.load_synthesis_document(conn, session_id)
-    evidence_view = research_view.build_evidence_tab_view(conn, session_id, t)
     conversation_view = research_view.build_conversation_view(
-        conn, research_session, synthesis_document, evidence_view.all_excluded, t)
+        conn, research_session, synthesis_document,
+        research_view.evidence_all_excluded(conn, session_id), t)
     templates = request.app.state.templates
-    return templates.TemplateResponse(request, "_research_conversation.html", {
+    response = templates.TemplateResponse(request, "_research_conversation.html", {
         "conversation_fragment_only": True,
         "conversation": conversation_view,
         "session_id": session_id,
         "csrf_token": session["csrf_token"],
         "messages_status_url": f"/research/{session_id}/messages/status",
     })
+    # Only a pending reply polls, so a settled answer here means the reply just landed. Reload so
+    # the citations it added get their cards in the side column.
+    if not conversation_view.has_pending_request:
+        response.headers["HX-Refresh"] = "true"
+    return response
 
 
 # ============================================================================
@@ -680,7 +715,7 @@ def research_refresh_preview(
     request: Request,
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
-    _t: Localizer = Depends(get_localizer),
+    t: Localizer = Depends(get_localizer),
 ):
     if not _sources_are_mutable(conn, session_id):
         return RedirectResponse(
@@ -688,8 +723,9 @@ def research_refresh_preview(
             status_code=303,
         )
     research_session = _require_session(conn, session_id)
-    return request.app.state.templates.TemplateResponse(
+    return render_workspace(
         request,
+        t,
         "research_run_preview.html",
         {
             "csrf_token": session["csrf_token"],
@@ -792,11 +828,26 @@ def research_cancel(
 # Evidence exclude / restore
 # ============================================================================
 
+def _evidence_return_url(session_id: int, return_to: str, page: int, *,
+                         failed: bool = False) -> str:
+    """Back to the conclusion (its citation card) or to the same Evidence page. Only these two
+    fixed destinations exist, so the posted values can never steer the redirect elsewhere."""
+    if return_to == "synthesis":
+        url = f"/research/{session_id}"
+        return f"{url}?action_error=evidence" if failed else url
+    url = f"/research/{session_id}?tab=evidence"
+    if page > 1:
+        url += f"&page={page}"
+    return f"{url}&action_error=evidence" if failed else url
+
+
 @router.post("/{session_id}/evidence/{item_id}/exclude")
 def research_evidence_exclude(
     session_id: int,
     item_id: int,
     csrf_token: str = Form(...),
+    return_to: str = Form("evidence"),
+    page: int = Form(1),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -804,13 +855,13 @@ def research_evidence_exclude(
     research_session = _require_session(conn, session_id)
     if research_session.status is not ResearchSessionStatus.ACTIVE:
         return RedirectResponse(
-            f"/research/{session_id}?tab=evidence&action_error=evidence", status_code=303)
+            _evidence_return_url(session_id, return_to, page, failed=True), status_code=303)
     try:
         exclude_evidence_item(conn, session_id, item_id, research_view.utcnow())
     except (SynthesisError, ValueError):
         return RedirectResponse(
-            f"/research/{session_id}?tab=evidence&action_error=evidence", status_code=303)
-    return RedirectResponse(f"/research/{session_id}?tab=evidence", status_code=303)
+            _evidence_return_url(session_id, return_to, page, failed=True), status_code=303)
+    return RedirectResponse(_evidence_return_url(session_id, return_to, page), status_code=303)
 
 
 @router.post("/{session_id}/evidence/{item_id}/restore")
@@ -818,6 +869,8 @@ def research_evidence_restore(
     session_id: int,
     item_id: int,
     csrf_token: str = Form(...),
+    return_to: str = Form("evidence"),
+    page: int = Form(1),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -825,13 +878,13 @@ def research_evidence_restore(
     research_session = _require_session(conn, session_id)
     if research_session.status is not ResearchSessionStatus.ACTIVE:
         return RedirectResponse(
-            f"/research/{session_id}?tab=evidence&action_error=evidence", status_code=303)
+            _evidence_return_url(session_id, return_to, page, failed=True), status_code=303)
     try:
         restore_evidence_item(conn, session_id, item_id, research_view.utcnow())
     except (SynthesisError, ValueError):
         return RedirectResponse(
-            f"/research/{session_id}?tab=evidence&action_error=evidence", status_code=303)
-    return RedirectResponse(f"/research/{session_id}?tab=evidence", status_code=303)
+            _evidence_return_url(session_id, return_to, page, failed=True), status_code=303)
+    return RedirectResponse(_evidence_return_url(session_id, return_to, page), status_code=303)
 
 
 # ============================================================================
@@ -899,11 +952,17 @@ def research_unarchive(
 def research_delete(
     session_id: int,
     csrf_token: str = Form(...),
+    confirmation: str = Form(""),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
 ):
     verify_csrf(session, csrf_token)
     _require_session(conn, session_id)
+    # A hard delete cannot be undone, so it needs the typed word, like the admin's deletes.
+    if confirmation.strip().casefold() != t.text("web.workspace.session.delete_word").casefold():
+        return RedirectResponse(
+            f"/research/{session_id}?action_error=delete", status_code=303)
     if not hard_delete_research_session(conn, session_id):
         return RedirectResponse(
             f"/research/{session_id}?action_error=delete", status_code=303)

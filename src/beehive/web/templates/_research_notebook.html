@@ -1,0 +1,103 @@
+{#- 1.1 Conclusion and follow-ups. The conclusion is the first answer in a transcript; follow-up
+    questions and replies continue below it, and the composer comes last. The side column holds
+    the source behind the citation the Owner clicked and the session's facts. Conclusion-first
+    order per CONTEXT.md: bottom line, key findings, agreements, conflicts, unknowns, evidence
+    coverage, then the separate, citation-free model knowledge. -#}
+<h2 id="conclusion"><span class="no">1.1</span><span>{{ t('web.workspace.session.title_synthesis') }}</span></h2>
+<div class="nb">
+  <div class="nb-main">
+    <section class="turns" aria-labelledby="research-synthesis-title">
+      <h3 id="research-synthesis-title" class="sr-only">{{ t('web.research.synthesis.heading') }}</h3>
+      {% if synthesis.has_synthesis %}
+      <article class="turn turn-answer">
+        <div class="turn-who">{{ t('web.workspace.session.synthesis_who') }}<small>{{ t('web.workspace.version', version=synthesis.version) }}</small><small>{{ synthesis.created_at|short_time }}</small><small>{{ synthesis.sufficiency_label }}</small></div>
+        <div class="turn-body read">
+          {% for finding in synthesis.bottom_line %}
+          <p class="answer">{{ finding.text }}{% for c in finding.citations %}{{ rx.cite(c) }}{% endfor %}</p>
+          {% endfor %}
+          {% for heading, findings, ordered in [
+            (t('web.research.synthesis.section_key_findings'), synthesis.key_findings, True),
+            (t('web.research.synthesis.section_agreements'), synthesis.source_agreements, False),
+            (t('web.research.synthesis.section_conflicts'), synthesis.source_conflicts, False),
+            (t('web.research.synthesis.section_unknowns'), synthesis.unknowns, True),
+            (t('web.research.synthesis.section_evidence_coverage'), synthesis.evidence_coverage, False),
+          ] if findings %}
+          <h4>{{ heading }}</h4>
+          <{{ 'ol' if ordered else 'ul' }}>
+            {% for finding in findings %}<li>{{ finding.text }}{% for c in finding.citations %}{{ rx.cite(c) }}{% endfor %}</li>{% endfor %}
+          </{{ 'ol' if ordered else 'ul' }}>
+          {% endfor %}
+          {% if synthesis.model_knowledge %}
+          <div class="note note-info model-knowledge"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.info') }}</span><div class="note-body">
+            <b>{{ t('web.research.synthesis.section_model_knowledge') }}</b> {{ t('web.research.synthesis.model_knowledge_hint') }}
+            <ul>{% for note in synthesis.model_knowledge %}<li>{{ note }}</li>{% endfor %}</ul>
+          </div></div></div>
+          {% endif %}
+          {% if can_retry_synthesis %}
+          <form class="turn-act" method="post" action="/research/{{ session_id }}/retry-synthesis">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-sm">{{ t('web.workspace.session.retry_conclusion') }}</button>
+            <span class="hint">{{ t('web.workspace.session.retry_hint') }}</span>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% else %}
+      <article class="turn turn-muted">
+        <div class="turn-who">{{ t('web.workspace.session.synthesis_who') }}</div>
+        <div class="turn-body">
+          <div class="empty research-empty"><b>{{ t('web.research.synthesis.empty_heading') }}</b>{{ t('web.research.synthesis.empty_body') }}</div>
+          {% if can_retry_synthesis %}
+          <form class="turn-act" method="post" action="/research/{{ session_id }}/retry-synthesis">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-sm">{{ t('web.workspace.session.retry_conclusion') }}</button>
+            <span class="hint">{{ t('web.workspace.session.retry_hint') }}</span>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% endif %}
+    </section>
+    {% include "_research_conversation.html" %}
+  </div>
+
+  <aside class="nb-side" aria-label="{{ t('web.workspace.session.side_aria') }}">
+    {% if cited_evidence %}
+    <section class="side-box" data-cite-panel aria-labelledby="cite-panel-title" aria-live="polite">
+      <h2 id="cite-panel-title">{{ t('web.workspace.session.cite_heading') }}</h2>
+      <p class="hint" data-cite-empty>{{ t('web.workspace.session.cite_hint') }}</p>
+      {% for item in cited_evidence %}
+      <div class="cite-card" id="cite-card-{{ item.id }}" data-cite-card="{{ item.id }}" tabindex="-1" hidden>
+        <p class="side-title"><span class="cite-no">[{{ item.citation_number }}]</span> <a href="{{ item.href }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a></p>
+        <p class="side-meta">{{ ui.units(item.publisher ~ ' · ' ~ item.quality_label) }}{% if item.is_excluded %} · <span class="st st-never">{{ t('web.research.evidence.excluded_state') }}</span>{% endif %}</p>
+        {% if item.snippet %}<p class="side-snip">{{ item.snippet }}</p>{% else %}<p class="side-snip hint">{{ t('web.workspace.session.no_snippet') }}</p>{% endif %}
+        <div class="row side-act">
+          {% if can_mutate_evidence %}
+          <form method="post" action="{{ item.restore_url if item.is_excluded else item.exclude_url }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="return_to" value="synthesis">
+            <button type="submit" class="btn btn-sm">{{ t('web.research.evidence.restore_action') if item.is_excluded else t('web.workspace.session.exclude_cited') }}</button>
+          </form>
+          {% endif %}
+          <a class="lnk" href="{{ item.href }}" target="_blank" rel="noopener noreferrer">{{ t('web.workspace.session.open_source') }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+        </div>
+        {% if can_mutate_evidence and not item.is_excluded %}<p class="hint side-hint">{{ t('web.workspace.session.exclude_hint') }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+    <section class="side-box" aria-labelledby="session-facts-title">
+      <h2 id="session-facts-title">{{ t('web.workspace.session.facts_heading') }}</h2>
+      <dl class="side-facts">
+        <div><dt>{{ t('web.workspace.session.title_evidence') }}</dt><dd><a class="lnk" href="{{ tab_urls.evidence }}">{{ t('web.workspace.session.meta_evidence', count=summary.evidence_count, number=summary.evidence_count|count(locale)) }}</a></dd></div>
+        <div><dt>{{ t('web.workspace.session.fact_sources') }}</dt><dd><a class="lnk" href="{{ tab_urls.plan }}">{{ t('web.workspace.session.meta_sources', count=summary.source_count, number=summary.source_count|count(locale)) }}</a></dd></div>
+        <div><dt>{{ t('web.workspace.session.fact_runs') }}</dt><dd><a class="lnk" href="{{ tab_urls.history }}">{{ t('web.workspace.session.fact_runs_value', count=summary.run_count, failed=summary.failed_run_count) }}</a></dd></div>
+        {% if summary.synthesis_model %}<div><dt>{{ t('web.workspace.session.fact_model') }}</dt><dd>{{ summary.synthesis_model }}</dd></div>{% endif %}
+      </dl>
+    </section>
+  </aside>
+</div>
+
+<div class="danger-block">
+{{ ui.danger("delete-session", t('web.research.detail.delete_heading'), t('web.workspace.session.delete_body', sources=summary.source_count, runs=summary.run_count, evidence=summary.evidence_count|count(locale)), t('web.research.detail.delete_action'), "/research/" ~ session_id ~ "/delete", t('web.workspace.session.delete_word'), t('web.research.detail.delete_confirm_action'), hint=t('web.workspace.danger.no_undo')) }}
+</div>

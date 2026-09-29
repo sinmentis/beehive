@@ -1,46 +1,41 @@
-{# Conversation panel -- accepts `conversation` (research_view.ConversationTabView),
-   `session_id`, `csrf_token`, `messages_status_url`. Polls only while a chat reply is pending or
-   processing; a terminal (no active request) render omits hx-trigger entirely. #}
+{#- Follow-up questions and replies, continuing the transcript under the conclusion. Accepts
+    `conversation` (research_view.ConversationTabView), `session_id`, `csrf_token` and
+    `messages_status_url`. Polls only while a reply is queued or being written; a settled render
+    omits hx-trigger entirely. -#}
 {% if not conversation_fragment_only %}
-<section id="research-conversation" class="research-conversation" aria-labelledby="research-conversation-title">
+<section id="research-conversation" aria-labelledby="research-conversation-title">
 {% endif %}
-<div id="research-conversation-content"
-     {% if conversation.has_pending_request %}hx-get="{{ messages_status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
-  <h2 id="research-conversation-title">{{ t('web.research.conversation.heading') }}</h2>
-  {% if conversation.failure_message %}
-  <p class="error" role="alert">{{ conversation.failure_message }}</p>
-  {% endif %}
-
-  <div class="research-message-list" role="log">
+<div id="research-conversation-content"{% if conversation.has_pending_request %} hx-get="{{ messages_status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  <h3 id="research-conversation-title" class="sr-only">{{ t('web.research.conversation.heading') }}</h3>
+  {% if conversation.messages or conversation.has_pending_request %}
+  <div class="turns" role="log" aria-labelledby="research-conversation-title">
     {% for message in conversation.messages %}
     {% include "_research_message.html" %}
-    {% else %}
-    <p class="research-conversation-empty">{{ t('web.research.conversation.empty') }}</p>
     {% endfor %}
     {% if conversation.has_pending_request %}
-    <div class="research-message research-message-assistant research-message-generating" aria-hidden="true">
-      <div class="research-skeleton">
-        <div class="skeleton-group">
-          <span class="skeleton-line skeleton-line--full"></span>
-          <span class="skeleton-line skeleton-line--1-2"></span>
-        </div>
-      </div>
-    </div>
+    <article class="turn" aria-hidden="true">
+      <div class="turn-who">{{ t('web.workspace.session.role_reply') }}</div>
+      <div class="turn-body"><div class="skel"><span></span><span></span><span></span></div></div>
+    </article>
     {% endif %}
   </div>
+  {% endif %}
   {% if conversation.has_pending_request %}
   <p class="sr-only" role="status">{{ t('web.research.conversation.reply_generating') }}</p>
   {% endif %}
+  {% if conversation.failure_message %}
+  <div class="note note-danger convo-state" role="alert"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.danger') }}</span><div class="note-body">{{ conversation.failure_message }}</div></div></div>
+  {% endif %}
 
   {% if conversation.can_submit %}
-  <form class="research-message-form" method="post" action="/research/{{ session_id }}/messages">
+  <form class="composer" method="post" action="/research/{{ session_id }}/messages">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label for="research-message-input">{{ t('web.research.conversation.input_label') }}</label>
-    <textarea id="research-message-input" name="content" required></textarea>
-    <button type="submit" class="btn primary small">{{ t('web.research.conversation.submit') }}</button>
+    <label for="research-message-input">{{ t('web.workspace.session.composer_label') }}</label>
+    <textarea class="inp" id="research-message-input" name="content" required></textarea>
+    <div class="row"><span class="hint">{{ t('web.workspace.session.composer_hint') }}</span><button type="submit" class="btn btn-primary">{{ t('web.research.conversation.submit') }}</button></div>
   </form>
   {% elif conversation.disabled_reason %}
-  <p class="hint research-conversation-disabled">{{ conversation.disabled_reason }}</p>
+  <p class="hint convo-state">{{ conversation.disabled_reason }}</p>
   {% endif %}
 </div>
 {% if not conversation_fragment_only %}

@@ -1,0 +1,20 @@
+{% extends "datasheet_base.html" %}
+{% block body_class %}page-workspace{% endblock %}
+{% block contract %}
+<!-- Workspace direction contract (impeccable seed f5d11c5a)
+THESIS: The workspace is where the Owner reads what Research found and keeps an eye on the lots they watch. A research session reads like a notebook: the conclusion is the first answer, follow-up questions continue below it, and a sticky side column shows the source behind any citation. It refuses chat bubbles and card grids.
+OWN-WORLD: The admin datasheet, unchanged: graphite sheet on a darker desk, ink #E7EAED, heavy ink rule over banded table heads, Archivo, 2px corners, boxed notes tagged 说明 / 注意 / 警告. Long AI text sits at a 72ch reading measure; citations are small blue numbers.
+STORY: On a phone the Owner opens the watch list, sees any reminder that failed first, then every lot by deadline with its reminder state, and removes one in place. On a desktop window wider than 1180px they open a research session, read the conclusion, click a citation to check the source without leaving the page, exclude a bad one, and ask a follow-up; narrower, the citation opens the source.
+FIRST VIEWPORT: Rail with 1 研究 (blue unread count) and 2 关注列表 (amber failure count); running head with location and the Auckland clock; the question as h1 with counts, refresh and archive at right; the conclusion as the first turn beside the sticky citation card and session facts.
+FORM: Datasheet, dark, notebook structure. Dealt 6, 3, 5 with 6 leading; the Owner locked 6 (notebook). Seed f5d11c5a.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict and DESIGN.md
+-->
+{% endblock %}
+{% block rail_foot %}
+      <a href="/">{{ t('web.admin.shell.back_to_site') }}</a>
+      <a href="/admin/">{{ t('web.workspace.shell.admin_link') }}</a>
+      <form method="post" action="/admin/logout">
+        <input type="hidden" name="csrf_token" value="{{ global_csrf_token }}">
+        <button type="submit">{{ t('web.nav.logout') }}</button>
+      </form>
+    {% endblock %}

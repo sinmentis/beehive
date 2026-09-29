@@ -1,48 +1,52 @@
 (() => {
   let focusKey = "";
   let feedbackMessage = "";
-  let fallbackFocusElement = null;
+  let fallbackFocusSelector = "";
 
   document.addEventListener("htmx:beforeRequest", (event) => {
     const element = event.detail.elt;
     focusKey = element.dataset.focusKey || "";
     feedbackMessage = element.dataset.feedbackMessage || "";
+    // Stopping a watch re-renders the whole list, so remember where focus should land by id:
+    // the next lot, else the previous one, else the page's settings link.
     const removableItem = element.closest(".watchlist-item");
     if (removableItem) {
-      fallbackFocusElement = (
-        removableItem.nextElementSibling?.querySelector("button, a")
-        || removableItem.previousElementSibling?.querySelector("button, a")
-        || document.querySelector(".watchlist-settings-link")
-      );
+      const neighbour = removableItem.nextElementSibling || removableItem.previousElementSibling;
+      fallbackFocusSelector = neighbour?.id
+        ? `#${CSS.escape(neighbour.id)} .lot-title`
+        : ".watchlist-settings-link";
     }
   });
+
+  const announce = (message) => {
+    const status = document.getElementById("feedback-status");
+    if (message && status) {
+      status.textContent = "";
+      requestAnimationFrame(() => {
+        status.textContent = message;
+      });
+    }
+  };
 
   document.addEventListener("htmx:afterSwap", () => {
     if (focusKey) {
       const target = document.querySelector(
         `[data-focus-key="${CSS.escape(focusKey)}"]`,
       );
+      const fallback = fallbackFocusSelector
+        ? document.querySelector(fallbackFocusSelector)
+        : null;
       if (target) {
         target.focus();
-      } else if (fallbackFocusElement instanceof HTMLElement) {
-        fallbackFocusElement.focus();
+      } else if (fallback instanceof HTMLElement) {
+        fallback.focus();
       }
     }
-
-    if (feedbackMessage) {
-      const message = feedbackMessage;
-      const status = document.getElementById("feedback-status");
-      if (status) {
-        status.textContent = "";
-        requestAnimationFrame(() => {
-          status.textContent = message;
-        });
-      }
-    }
+    announce(feedbackMessage);
 
     focusKey = "";
     feedbackMessage = "";
-    fallbackFocusElement = null;
+    fallbackFocusSelector = "";
   });
 
   const channelForm = document.querySelector(".channel-bulk-form");
@@ -564,6 +568,92 @@
     };
     window.setTimeout(checkRefresh, 2000);
   }
+
+  // Research conclusion: on a wide screen a citation number shows its source in the side column
+  // instead of opening a new tab. When the side column sits under the text (narrow screens), or
+  // the cited item has no card, the link keeps its normal behaviour.
+  const citePanel = document.querySelector("[data-cite-panel]");
+  const citeSide = citePanel?.closest(".nb-side");
+  if (citePanel instanceof HTMLElement && citeSide instanceof HTMLElement) {
+    const citeEmpty = citePanel.querySelector("[data-cite-empty]");
+    document.addEventListener("click", (event) => {
+      const link = event.target instanceof Element ? event.target.closest("a.cite[data-cite]") : null;
+      if (
+        !(link instanceof HTMLAnchorElement) || event.defaultPrevented || event.button !== 0
+        || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+        || getComputedStyle(citeSide).position !== "sticky"
+      ) {
+        return;
+      }
+      const id = CSS.escape(link.dataset.cite || "");
+      const card = citePanel.querySelector(`[data-cite-card="${id}"]`);
+      if (!(card instanceof HTMLElement)) {
+        return;
+      }
+      event.preventDefault();
+      citePanel.querySelectorAll("[data-cite-card]").forEach((other) => {
+        other.hidden = other !== card;
+      });
+      if (citeEmpty instanceof HTMLElement) {
+        citeEmpty.hidden = true;
+      }
+      document.querySelectorAll("a.cite[aria-current]").forEach((other) => {
+        other.removeAttribute("aria-current");
+      });
+      document.querySelectorAll(`a.cite[data-cite="${id}"]`).forEach((same) => {
+        same.setAttribute("aria-current", "true");
+      });
+    });
+  }
+
+  // Bulk selection whose row checkboxes sit in a table outside the form (form="…"): count the
+  // picked rows, keep the header checkbox in step, and hold the submit until something is picked.
+  // Delegated by form id, because the list can be re-rendered in place.
+  const bulkBoxes = (form) => [...form.elements].filter(
+    (element) => element instanceof HTMLInputElement && element.type === "checkbox",
+  );
+  const syncBulk = (form) => {
+    const id = CSS.escape(form.id);
+    const all = bulkBoxes(form);
+    const picked = all.filter((box) => box.checked).length;
+    const countLabel = document.querySelector(`[data-bulk-count="${id}"]`);
+    if (countLabel instanceof HTMLElement) {
+      countLabel.textContent = (countLabel.dataset.template || "__COUNT__")
+        .replace("__COUNT__", String(picked));
+    }
+    document.querySelectorAll(`[data-bulk-submit="${id}"]`).forEach((button) => {
+      button.disabled = picked === 0;
+    });
+    // Wide screens use the table-head checkbox, phones the one beside the count.
+    document.querySelectorAll(`[data-bulk-all="${id}"]`).forEach((selectAll) => {
+      if (selectAll instanceof HTMLInputElement) {
+        selectAll.checked = all.length > 0 && picked === all.length;
+        selectAll.indeterminate = picked > 0 && picked < all.length;
+      }
+    });
+  };
+  const syncAllBulk = () => {
+    document.querySelectorAll("form[data-bulk-form][id]").forEach(syncBulk);
+  };
+  document.addEventListener("change", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) {
+      return;
+    }
+    if (input.dataset.bulkAll) {
+      const form = document.getElementById(input.dataset.bulkAll);
+      if (form instanceof HTMLFormElement) {
+        bulkBoxes(form).forEach((box) => {
+          box.checked = input.checked;
+        });
+        syncBulk(form);
+      }
+    } else if (input.form?.matches("[data-bulk-form][id]")) {
+      syncBulk(input.form);
+    }
+  });
+  document.addEventListener("htmx:afterSettle", syncAllBulk);
+  syncAllBulk();
 
   const search = document.querySelector(".dashboard-search input[type='search']");
   const rows = [...document.querySelectorAll(".signal-row")];

@@ -293,6 +293,148 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .adm-login form{margin-top:18px}
 .adm-login .btn-block{margin-top:16px}
 
+/* Workspace: the Owner's research and watch list, set in the same datasheet. */
+/* Rail: a finished research result the Owner has not opened is counted in blue; attention stays amber. */
+.toc-count.is-info{border-color:var(--link);color:var(--link)}
+.adm-head .adm-actions>div{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Segmented filter: one bordered group of links, the current view filled with the band. */
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--ctl);border-radius:2px}
+.seg a{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 11px;color:var(--ink-2);
+ font-size:.8125rem;font-weight:600;white-space:nowrap;transition:background-color .15s ease-out,color .15s ease-out}
+.seg a+a{border-left:1px solid var(--rule-2)}
+.seg a:hover{background:var(--hover);color:var(--ink)}
+.seg a[aria-current]{background:var(--band);color:var(--ink)}
+.seg a:focus-visible{outline-offset:-2px}
+.seg .n{color:var(--ink-3);font-weight:400;font-variant-numeric:tabular-nums}
+.filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px}
+.filters form{display:flex;flex:1 1 420px;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;margin:0}
+.filters .inp{flex:1 1 200px;width:auto;min-width:0;min-height:32px}
+.filters select.inp{flex:0 1 200px}
+
+/* A watched lot: its photo, then the title, with the auction as a quiet second line. */
+.lot{display:grid;grid-template-columns:80px minmax(0,1fr);gap:2px 12px;align-items:start}
+.lot-img{grid-row:span 2;display:block;width:80px;height:60px;object-fit:cover;border:1px solid var(--rule);background:var(--field)}
+.lot-title{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.lot-title:hover{color:var(--link-2);text-decoration:underline;text-underline-offset:3px}
+.lot-where{display:-webkit-box;overflow:hidden;color:var(--ink-3);font-size:.78rem;font-weight:400;
+ -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.kv{display:grid;gap:1px}
+.kv span{color:var(--ink-2);font-size:.78rem;overflow-wrap:anywhere}
+.kv span:first-child{color:var(--ink);font-size:.875rem;font-weight:600}
+.tbl .c-price{min-width:11.5em}
+.tbl .c-when{min-width:9.5em}
+.tbl .c-when small{display:block}
+.tbl .c-when .rem{display:block;margin-top:6px;padding-top:6px;border-top:1px solid var(--rule)}
+.tbl .c-when form{margin:2px 0 0}
+.tbl tr.is-closed td{color:var(--ink-2)}
+.tbl tr.is-closed .lot-img{filter:grayscale(1);opacity:.65}
+.tbl tr.is-closed .lot-title,.tbl tr.is-closed .c-name a,.tbl tr.is-closed .kv span:first-child{color:var(--ink-2)}
+.unread-tag{display:inline-block;margin-left:8px;padding:0 5px;border:1px solid var(--link);border-radius:2px;color:var(--link);
+ font-size:.7rem;font-weight:700;line-height:15px;vertical-align:1px;white-space:nowrap}
+
+/* Long AI text reads at a book measure inside the sheet. */
+.read{max-width:72ch}
+.read p{margin:0}
+.read p+p{margin-top:10px}
+.read :is(h3,h4){margin:22px 0 8px;color:var(--ink);font-size:.9375rem;font-weight:700}
+.read ol,.read ul{display:grid;gap:9px;margin:0;padding-left:1.35em}
+.read ol{list-style:decimal}
+.read ul{list-style:square}
+.read li{padding-left:2px}
+.read li::marker{color:var(--ink-3);font-variant-numeric:tabular-nums}
+.read p,.read li{line-height:1.75}
+.read .note{margin-top:22px}
+.read .note ul{margin-top:6px}
+.read .note li{color:var(--ink-2);font-size:.875rem;line-height:1.7}
+.answer{color:var(--ink);font-size:1.0625rem;font-weight:500}
+.cite{margin-left:3px;color:var(--link);font-size:.75rem;font-weight:600;font-variant-numeric:tabular-nums;
+ white-space:nowrap;vertical-align:.1em}
+.cite:hover{color:var(--link-2);text-decoration:underline;text-underline-offset:2px}
+.cite[aria-current]{outline:1px solid var(--link);outline-offset:1px}
+
+/* A conversation is a transcript: who and when in a label column, the words beside them. */
+.nb-main>.turns:first-child{border-top:1.5px solid var(--rule-ink)}
+.turn{display:grid;grid-template-columns:104px minmax(0,1fr);gap:4px 20px;padding:16px 0;border-bottom:1px solid var(--rule)}
+.turn-who{padding-top:3px;color:var(--ink-2);font:600 .78rem/1.4 var(--sans);font-stretch:85%}
+.turn-who small{display:block;margin-top:2px;color:var(--ink-3);font-weight:400;font-stretch:100%;font-variant-numeric:tabular-nums}
+.turn-owner .turn-body{color:var(--ink);font-weight:600;line-height:1.7}
+.turn-answer{padding-top:20px}
+.turn-muted .turn-body{color:var(--ink-2)}
+.turn-act{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:18px}
+.turn-act form{margin:0}
+.composer{display:grid;gap:8px;padding:16px 0 0}
+.composer label{font-weight:600}
+.composer textarea.inp{min-height:92px}
+.composer .row{justify-content:space-between}
+.hint{color:var(--ink-3);font-size:.8125rem;overflow-wrap:anywhere}
+.convo-state{margin-top:16px}
+.msg{white-space:pre-line}
+.danger-block{margin-top:36px}
+.adm h3.sec{margin:30px 0 6px;font:700 .9375rem/1.35 var(--sans)}
+.plan-latest{padding:12px 10px 4px;border-top:1.5px solid var(--rule-ink)}
+.plan-latest .read{margin:6px 0 12px}
+.plan-when{font-size:.875rem;overflow-wrap:anywhere}
+.plan-when .muted{margin-left:6px;font-size:.8125rem}
+
+/* Notebook: the reading column with a sticky side column beside it. */
+.nb{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0 36px;align-items:start}
+.nb-side{position:sticky;top:16px;display:grid;gap:18px}
+.side-box{padding-top:10px;border-top:1.5px solid var(--rule-ink)}
+.adm .side-box h2{display:block;margin:0 0 8px;color:var(--ink-2);font:600 .78rem/1.3 var(--sans);font-stretch:85%}
+.side-title{margin:0 0 4px;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.side-title a{text-decoration:underline;text-decoration-color:var(--rule-2);text-underline-offset:3px}
+.side-title a:hover{color:var(--link-2);text-decoration-color:currentColor}
+.side-meta{margin:0 0 8px;color:var(--ink-3);font-size:.78rem;overflow-wrap:anywhere}
+.side-snip{margin:0 0 10px;color:var(--ink-2);font-size:.8125rem;line-height:1.65;overflow-wrap:anywhere}
+.side-box form{margin:0}
+.side-act{font-size:.8125rem}
+.side-hint{margin-top:6px}
+.side-facts{display:grid;margin:0}
+.side-facts div{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--rule);font-size:.875rem}
+.side-facts dt{flex:none;color:var(--ink-2)}
+.side-facts dd{min-width:0;margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cite-card:focus{outline:none}
+
+/* Evidence rows: the snippet is clamped on purpose; the title opens the full text. */
+.snip{display:-webkit-box;overflow:hidden;margin-top:2px;color:var(--ink-2);font-size:.8125rem;font-weight:400;line-height:1.6;
+ -webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.tbl tr.grp>td{padding-top:14px;padding-bottom:4px;border-bottom:0;color:var(--ink-2);font:600 .78rem/1.3 var(--sans);font-stretch:85%}
+.tbl tr.in-grp>td:first-child{box-shadow:inset 2px 0 0 var(--rule-2)}
+.tbl tr.is-excluded td{color:var(--ink-3)}
+.tbl tr.is-excluded .c-name a{color:var(--ink-2);text-decoration:line-through;text-decoration-color:var(--ink-3)}
+.tbl .reason{display:block;color:var(--danger);overflow-wrap:anywhere}
+.tbl .outcome{display:block}
+.tbl .reason+.outcome{margin-top:4px}
+.plan-sources{margin-top:6px;font-size:.8125rem}
+.plan-sources summary{width:max-content;max-width:100%;color:var(--link);cursor:pointer}
+.plan-sources summary:hover{color:var(--link-2)}
+.plan-sources dl{display:grid;gap:2px 0;margin:6px 0 2px;padding-left:12px;border-left:2px solid var(--rule-2)}
+.plan-sources dt{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.plan-sources dd{margin:0 0 6px;color:var(--ink-2);overflow-wrap:anywhere}
+.cite-no{color:var(--link);font-size:.8125rem;font-variant-numeric:tabular-nums}
+.session-tabs,.bulk-all-narrow{display:none}
+.tbl .c-src{min-width:6.5em;overflow-wrap:break-word}
+.adm h1.question{word-break:keep-all}
+.pager{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:10px;color:var(--ink-2);font-size:.8125rem}
+.pager form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0}
+.pager .inp{width:80px;min-height:28px}
+
+/* Plan revisions: the newest in full, older ones behind one disclosure. */
+.plan-more{margin-top:14px}
+.plan-more>summary{width:max-content;max-width:100%;color:var(--link);font-size:.875rem;cursor:pointer;
+ text-decoration:underline;text-decoration-color:rgba(125,182,255,.4);text-underline-offset:3px}
+.plan-more>summary:hover{color:var(--link-2)}
+.plan-more[open]>summary{margin-bottom:10px}
+
+/* A run in progress: labelled skeleton lines, never a spinner. */
+.skel{display:grid;gap:8px;margin-top:10px}
+.skel span{display:block;height:10px;background:var(--band);animation:skel 1.6s ease-in-out infinite}
+.skel span:nth-child(2){width:75%}
+.skel span:nth-child(3){width:50%}
+@keyframes skel{50%{opacity:.45}}
+.adm-status:not(:empty){margin-top:16px}
+
 /* Mid widths: let table cells wrap before anything is allowed to overflow. */
 @container adm (max-width:1180px){
  .adm-main{padding:8px}
@@ -304,6 +446,10 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
  .tbl .c-ops-wrap>*+*{margin-left:0}
  .tbl .c-name{min-width:9em}.tbl .c-wide{min-width:12em}
  .params-head,.param{grid-template-columns:minmax(120px,160px) minmax(0,1fr) minmax(180px,240px);gap:0 18px}
+ .nb{grid-template-columns:minmax(0,1fr)}
+ .nb-side{position:static;margin-top:28px}
+ /* Citations open the source itself here, so the card column has nothing to show. */
+ .nb-side [data-cite-panel]{display:none}
 }
 /* Narrow screens: the contents become a top bar, tables become labelled rows. */
 @container adm (max-width:880px){
@@ -338,5 +484,20 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
  .pick-row{grid-template-columns:24px minmax(0,1fr)}
  .pick-row>:nth-child(n+3){grid-column:2}
  .adm-login{min-height:auto}
+ .turn{grid-template-columns:1fr}
+ .turn-who{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px}
+ .turn-who small{margin-top:0}
+ .lot{grid-template-columns:88px minmax(0,1fr)}
+ .lot-img{width:88px;height:66px}
+ .tbl-stack td.c-lot{padding-right:28px}
+ .filters form{flex-basis:100%}
+ .session-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:14px 0 0;border:1px solid var(--ctl);border-radius:2px}
+ .session-tabs a{display:flex;align-items:center;justify-content:center;min-height:38px;padding:4px 8px;color:var(--ink-2);
+  font-size:.8125rem;font-weight:600;text-align:center;overflow-wrap:anywhere}
+ .session-tabs a:nth-child(even){border-left:1px solid var(--rule-2)}
+ .session-tabs a:nth-child(n+3){border-top:1px solid var(--rule-2)}
+ .session-tabs a[aria-current]{background:var(--band);color:var(--ink)}
+ .session-tabs a:focus-visible{outline-offset:-2px}
+ .bulk-all-narrow{display:inline-flex;font-weight:600}
 }
-@media (prefers-reduced-motion:reduce){.adm *{transition:none!important}}
+@media (prefers-reduced-motion:reduce){.adm *{transition:none!important}.skel span{animation:none}}

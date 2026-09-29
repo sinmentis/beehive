@@ -1,56 +1,25 @@
-{# Run status widget: polled by GET {status_url} every 3s while a run is pending/processing.
-   Terminal states intentionally omit hx-trigger so polling stops on its own. #}
+{#- Run status: polled by GET {status_url} every 3s while a run is queued or running. A settled
+    run omits hx-trigger so polling stops on its own, and the route asks htmx to reload the page. -#}
 {% if not status_fragment_only %}
-<section id="research-status" class="research-status" role="status" aria-live="polite">
+<section id="research-status" class="adm-status" role="status" aria-live="polite">
 {% endif %}
-<div id="research-status-content" class="research-status-state research-status-{{ 'pending' if run_status.is_pending else ('failed' if run_status.error_message else 'idle') }}"
-     {% if run_status.is_pending %}hx-get="{{ status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+<div id="research-status-content"{% if run_status.is_pending %} hx-get="{{ status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
 {% if run_status.is_pending %}
-  <p class="research-status-line">
-    <strong>{{ run_status.status_label }}</strong>
-    {% if run_status.phase_label %}<span>{{ run_status.phase_label }}</span>{% endif %}
-  </p>
-  <div class="research-skeleton" aria-hidden="true">
-    <div class="skeleton-group">
-      <span class="skeleton-line skeleton-line--full"></span>
-      <span class="skeleton-line skeleton-line--3-4"></span>
-      <span class="skeleton-line skeleton-line--1-2"></span>
-    </div>
-  </div>
-  <p class="sr-only">{{ t('web.research.status.pending_live_region') }}</p>
-{% else %}
-  {% if run_status.has_run %}
-  <p class="research-status-line"><strong>{{ run_status.status_label }}</strong></p>
-  {% endif %}
-  {% if run_status.error_message %}
-  <p class="error">{{ run_status.error_message }}</p>
-  {% endif %}
-  {% if run_status.error_detail %}
-  <details class="research-error-detail">
-    <summary>{{ t('web.research.run_error.detail_label') }}</summary>
-    <p class="research-error-detail-text">{{ run_status.error_detail }}</p>
-  </details>
-  {% endif %}
+  <div class="note note-info"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.info') }}</span><div class="note-body">
+    <b>{{ t('web.workspace.status.running', run=run_status.run_id, status=run_status.status_label) }}</b>{% if run_status.phase_label %} {{ run_status.phase_label }}{% endif %}
+    <small>{{ t('web.workspace.status.running_hint') }}</small>
+    <div class="skel" aria-hidden="true"><span></span><span></span><span></span></div>
+    <p class="sr-only">{{ t('web.research.status.pending_live_region') }}</p>
+  </div></div></div>
+{% elif run_status.error_message %}
+  <div class="note note-danger"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.danger') }}</span><div class="note-body">
+    <b>{{ t('web.workspace.status.failed', run=run_status.run_id) }}</b> {{ run_status.error_message }}
+    {% if run_status.error_detail %}<details class="raw-error"><summary>{{ t('web.research.run_error.detail_label') }}</summary><code>{{ run_status.error_detail }}</code></details>{% endif %}
+  </div></div></div>
 {% endif %}
 </div>
-{% if not status_fragment_only %}
-<div id="research-status-actions">
-  {% if run_status.is_pending and run_status.can_cancel %}
-  <form class="research-status-action" method="post" action="/research/{{ session_id }}/cancel">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit" class="btn ghost small">{{ t('web.research.status.cancel') }}</button>
-  </form>
-  {% elif can_refresh and not is_archived %}
-  <a class="btn primary small research-status-action" href="/research/{{ session_id }}/refresh-preview">{{ t('web.research.status.refresh') }}</a>
-  {% endif %}
-</div>
-{% elif not run_status.is_pending %}
-<div id="research-status-actions" hx-swap-oob="outerHTML">
-  {% if can_refresh and not is_archived %}
-  <a class="btn primary small research-status-action" href="/research/{{ session_id }}/refresh-preview">{{ t('web.research.status.refresh') }}</a>
-  {% endif %}
-</div>
-{% endif %}
 {% if not status_fragment_only %}
 </section>
+{% elif not run_status.is_pending %}
+{% include "_research_status_actions.html" %}
 {% endif %}

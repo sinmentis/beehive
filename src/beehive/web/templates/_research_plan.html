@@ -1,77 +1,72 @@
-{# Current persisted Sources are operational inputs; Plan revisions below are immutable history. #}
-<section class="research-tab-panel research-plan" aria-labelledby="research-plan-title">
-  <h2 id="research-plan-title" class="sr-only">{{ t('web.research.plan.heading') }}</h2>
-  <section class="research-current-sources" aria-labelledby="research-current-sources-title">
-    <div class="research-section-heading">
-      <div>
-        <h3 id="research-current-sources-title">{{ t('web.research.sources.heading') }}</h3>
-        <p class="hint">{{ t('web.research.sources.body') }}</p>
-      </div>
-      {% if can_edit_sources %}
-      <a class="btn ghost small" href="/research/{{ research_session.id }}/sources/new">{{ t('web.research.sources.add') }}</a>
-      {% endif %}
-    </div>
-    <ul class="source-list research-source-management">
-      {% for source in sources %}
-      <li class="source-row">
-        <span>
-          <span class="source-name">{{ source.label }}</span>
-          <span class="research-source-origin">{{ source.origin_label }}</span>
-        </span>
+{#- 1.3 Sources and plan. The Owner's sources are what the next run searches; the plan is what the
+    AI proposed on each run, kept as history. The newest plan shows in full, older ones sit
+    behind one disclosure so the page stays short. -#}
+{% import "_research_macros.html" as rx with context %}
+<h2 id="sources"><span class="no">1.3</span><span>{{ t('web.workspace.session.title_plan') }}</span>{% if can_edit_sources %}<span class="tools"><a class="btn btn-sm" href="/research/{{ session_id }}/sources/new">{{ t('web.research.sources.add') }}</a></span>{% endif %}</h2>
+<p class="adm-lede">{{ t('web.workspace.plan.sources_lede') }}</p>
+{% if not can_edit_sources and not is_archived %}
+<div class="note note-info sources-locked"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.info') }}</span><div class="note-body">{{ t('web.workspace.plan.locked_running') }}</div></div></div>
+{% endif %}
+<div class="tbl-wrap"><table class="tbl tbl-stack">
+  <thead><tr><th>{{ t('web.workspace.plan.col_source') }}</th><th>{{ t('web.workspace.plan.col_origin') }}</th><th><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th></tr></thead>
+  <tbody>
+    {% for source in sources %}
+    <tr>
+      <td class="c-name c-wide">{{ source.label }}</td>
+      <td class="c-nw" data-label="{{ t('web.workspace.plan.col_origin') }}">{{ source.origin_label }}</td>
+      <td class="c-ops">
         {% if can_edit_sources %}
-        <span class="row-actions">
-          <a class="btn ghost small" href="/research/{{ research_session.id }}/sources/{{ source.id }}/edit">{{ t('common.edit') }}</a>
-          {% if sources|length > 1 %}
-          <form method="post" action="/research/{{ research_session.id }}/sources/{{ source.id }}/delete">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="btn ghost small">{{ t('common.remove') }}</button>
-          </form>
-          {% endif %}
-        </span>
+        <a class="lnk" href="/research/{{ session_id }}/sources/{{ source.id }}/edit">{{ t('common.edit') }}</a>
+        {% if sources|length > 1 %}
+        <form method="post" action="/research/{{ session_id }}/sources/{{ source.id }}/delete" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="lnk lnk-danger">{{ t('common.remove') }}</button>
+        </form>
         {% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </section>
-  <div class="research-section-heading research-plan-history-heading">
-    <div>
-      <h3>{{ t('web.research.plan.history_heading') }}</h3>
-      <p class="hint">{{ t('web.research.plan.history_body') }}</p>
-    </div>
-  </div>
-  {% if plan_revisions %}
-  <div class="research-plan-list">
-    {% for revision in plan_revisions %}
-    <details class="research-plan-revision"{% if loop.first %} open{% endif %}>
-      <summary class="research-plan-revision-heading">
-        <span>{{ t('web.research.plan.run_version_label', run=revision.run_id, version=revision.version) }}</span>
-        {% if loop.first %}
-        <span class="research-plan-latest-badge">{{ t('web.research.plan.latest_badge') }}</span>
         {% endif %}
-        <span class="research-plan-time">{{ revision.created_at_label }}</span>
-      </summary>
-      {% if revision.is_available %}
-      <p class="research-plan-summary">{{ revision.summary }}</p>
-      {% if revision.sources %}
-      <ul class="source-list research-plan-sources">
-        {% for source in revision.sources %}
-        <li class="source-row">
-          <span class="source-name">{{ source.label }}</span>
-          <span class="research-plan-rationale">{{ source.rationale }}</span>
-        </li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-      {% else %}
-      <p class="research-plan-summary research-plan-unavailable">{{ revision.summary }}</p>
-      {% endif %}
-    </details>
+      </td>
+    </tr>
     {% endfor %}
-  </div>
-  {% else %}
-  <div class="empty-state compact-empty">
-    <h3>{{ t('web.research.plan.empty_heading') }}</h3>
-    <p>{{ t('web.research.plan.empty_body') }}</p>
-  </div>
+  </tbody>
+</table></div>
+
+<h3 class="sec" id="plan">{{ t('web.workspace.plan.plan_heading') }}</h3>
+<p class="adm-lede">{{ t('web.workspace.plan.plan_lede') }}</p>
+{% if plan_revisions %}
+{% set latest = plan_revisions[0] %}
+<div class="plan-latest">
+  <p class="plan-when"><b>{{ t('web.research.plan.run_version_label', run=latest.run_id, version=latest.version) }}</b> <span class="muted">{{ latest.created_at_label }}</span></p>
+  <div class="read"><p>{{ latest.summary }}</p></div>
+  {% if latest.is_available and latest.sources %}
+  <div class="tbl-wrap"><table class="tbl tbl-stack">
+    <thead><tr><th>{{ t('web.workspace.plan.col_source') }}</th><th>{{ t('web.workspace.plan.col_rationale') }}</th></tr></thead>
+    <tbody>{% for source in latest.sources %}<tr><td class="c-name">{{ source.label }}</td><td class="c-wide" data-label="{{ t('web.workspace.plan.col_rationale') }}">{{ source.rationale }}</td></tr>{% endfor %}</tbody>
+  </table></div>
   {% endif %}
-</section>
+</div>
+{% if plan_revisions|length > 1 %}
+<details class="plan-more">
+  <summary>{{ t('web.workspace.plan.older', count=plan_revisions|length - 1) }}</summary>
+  <div class="tbl-wrap"><table class="tbl tbl-stack">
+    <thead><tr><th>{{ t('web.workspace.plan.col_plan') }}</th><th>{{ t('web.workspace.plan.col_time') }}</th><th>{{ t('web.workspace.plan.col_summary') }}</th></tr></thead>
+    <tbody>
+      {% for revision in plan_revisions[1:] %}
+      <tr>
+        <td class="c-nw">{{ t('web.research.plan.run_version_label', run=revision.run_id, version=revision.version) }}</td>
+        <td class="c-nw" data-label="{{ t('web.workspace.plan.col_time') }}">{{ revision.created_at_label }}</td>
+        <td class="c-wide" data-label="{{ t('web.workspace.plan.col_summary') }}">{{ revision.summary }}
+          {% if revision.is_available and revision.sources %}
+          <details class="plan-sources"><summary>{{ t('web.workspace.plan.sources_count', count=revision.sources|length) }}</summary>
+            <dl>{% for source in revision.sources %}<dt>{{ source.label }}</dt><dd>{{ source.rationale }}</dd>{% endfor %}</dl>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</details>
+{% endif %}
+{% else %}
+<div class="empty research-empty"><b>{{ t('web.research.plan.empty_heading') }}</b>{{ t('web.research.plan.empty_body') }}</div>
+{% endif %}

@@ -1,52 +1,27 @@
-{% extends "base.html" %}
+{% extends "workspace_base.html" %}
+{% import "_admin_macros.html" as ui with context %}
+{% import "_research_macros.html" as rx with context %}
 {% block title %}{{ t('web.title.research_list', product=t('common.product_name')) }}{% endblock %}
-{% block body_class %}page-research{% endblock %}
-{% block brand_context %}<span class="brand-context">{{ t('web.nav.research') }}</span>{% endblock %}
+{% set current_chapter = "research" %}
+{% set toc_sections = [("1.1", t('web.workspace.list.active_heading'), "#active")] + ([("1.2", t('web.workspace.list.archived_heading'), "#archived")] if archived_rows else []) %}
 {% block content %}
-<main id="main-content" class="page-shell research-shell">
-  <header class="page-heading compact-heading research-list-heading">
-    <div>
-      <p class="eyebrow">{{ t('web.research.list.eyebrow') }}</p>
-      <h1>{{ t('web.research.list.heading') }}</h1>
-      <p class="page-lede">{{ t('web.research.list.lede') }}</p>
-    </div>
-    <a class="btn primary" href="/research/new">{{ t('web.research.list.new_session') }}</a>
-  </header>
+<div class="adm-head">
+  <div>
+    <h1>{{ t('web.research.list.heading') }}</h1>
+    <p class="adm-meta">{{ ui.units(t('web.workspace.list.meta', active=active_rows|length, archived=archived_rows|length, runs=run_total, failed=failed_run_total)) }}</p>
+  </div>
+  <div class="adm-actions"><a class="btn btn-primary" href="/research/new">{{ t('web.research.list.new_session') }}</a></div>
+</div>
 
-  <section class="admin-tab-panel" aria-labelledby="research-active-title">
-    <header class="admin-section-heading">
-      <div>
-        <h2 id="research-active-title">{{ t('web.research.list.active_heading') }}</h2>
-      </div>
-    </header>
-    {% if active_rows %}
-    <div class="channel-admin-list research-session-list" role="table" aria-label="{{ t('web.research.list.active_heading') }}">
-      {% for row in active_rows %}
-      {% include "_research_session_row.html" %}
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state">
-      <h3>{{ t('web.research.list.empty_heading') }}</h3>
-      <p>{{ t('web.research.list.empty_body') }}</p>
-      <a class="btn primary" href="/research/new">{{ t('web.research.list.new_session') }}</a>
-    </div>
-    {% endif %}
-  </section>
+<h2 id="active"><span class="no">1.1</span><span>{{ t('web.workspace.list.active_heading') }}</span></h2>
+{% if active_rows %}
+{{ rx.session_table(active_rows) }}
+{% else %}
+<div class="empty research-empty"><b>{{ t('web.research.list.empty_heading') }}</b>{{ t('web.research.list.empty_body') }}<div><a class="btn btn-primary" href="/research/new">{{ t('web.research.list.new_session') }}</a></div></div>
+{% endif %}
 
-  {% if archived_rows %}
-  <section class="admin-tab-panel" aria-labelledby="research-archived-title">
-    <header class="admin-section-heading">
-      <div>
-        <h2 id="research-archived-title">{{ t('web.research.list.archived_heading') }}</h2>
-      </div>
-    </header>
-    <div class="channel-admin-list research-session-list" role="table" aria-label="{{ t('web.research.list.archived_heading') }}">
-      {% for row in archived_rows %}
-      {% include "_research_session_row.html" %}
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-</main>
+{% if archived_rows %}
+<h2 id="archived"><span class="no">1.2</span><span>{{ t('web.workspace.list.archived_heading') }}</span></h2>
+{{ rx.session_table(archived_rows, muted=True) }}
+{% endif %}
 {% endblock %}

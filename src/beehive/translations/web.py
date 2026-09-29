@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from beehive.translations.web_admin import CATALOGS as _ADMIN_DATASHEET_CATALOGS
+from beehive.translations.web_workspace import CATALOGS as _WORKSPACE_CATALOGS
 
 CATALOGS = {
     "en": {
@@ -7343,6 +7344,10 @@ for _locale, _catalog in _ADMIN_SAFETY_CATALOGS.items():
 
 # The admin datasheet redesign keeps its copy in web_admin.py; it overrides a few older admin keys.
 for _locale, _catalog in _ADMIN_DATASHEET_CATALOGS.items():
+    CATALOGS[_locale].update(_catalog)
+
+# The workspace (research and watch list in the datasheet) keeps its copy in web_workspace.py.
+for _locale, _catalog in _WORKSPACE_CATALOGS.items():
     CATALOGS[_locale].update(_catalog)
 
 del _locale, _catalog

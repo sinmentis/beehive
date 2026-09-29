@@ -7,12 +7,14 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
@@ -22,7 +24,7 @@ from beehive.db.research_sessions import count_unread_completed_research_session
 from beehive.localization import load_localizer
 from beehive.web import admin, public, research
 from beehive.web.client_ip import parse_trusted_proxies
-from beehive.web.formatting import format_count
+from beehive.web.formatting import format_count, short_time_label
 from beehive.web.readiness import check_readiness
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -62,6 +64,14 @@ def _static_asset_version() -> str:
             digest.update(path.name.encode())
             digest.update(path.read_bytes())
     return digest.hexdigest()[:12]
+
+
+@pass_context
+def _short_time_filter(context, value: str | None) -> str:
+    """`{{ iso|short_time }}`: "Today 14:21" or "2026-10-02 10:02", in the host time zone."""
+    if not value:
+        return ""
+    return short_time_label(value, datetime.now(timezone.utc), context["localizer"])
 
 
 def _localization_context(request: Request) -> dict:
@@ -155,6 +165,7 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     )
     app.state.templates.env.globals["asset_version"] = _static_asset_version()
     app.state.templates.env.filters["count"] = format_count
+    app.state.templates.env.filters["short_time"] = _short_time_filter
     # The slim container image has no /etc/mime.types, and Python alone does not know .woff2, so
     # the admin's self-hosted font would go out as application/octet-stream.
     mimetypes.add_type("font/woff2", ".woff2")

@@ -125,12 +125,28 @@ def test_secondary_navigation_is_scoped_to_each_product_area():
     assert 'class="brand-context"' in archive
 
     # Admin has its own shell: a contents rail instead of the reading site's header and tabs.
+    # The rail and running head live in the shared datasheet document, which the admin and the
+    # Owner's workspace (research, watch list) each extend with their own contract and footer.
     assert '{% extends "admin_base.html" %}' in admin
     assert "{% block secondary_navigation %}" not in admin
     assert '{% include "_channel_shelf.html" %}' not in admin
-    admin_base = (_TEMPLATES_DIR / "admin_base.html").read_text()
-    assert 'class="toc"' in admin_base
-    assert "{% block shell %}" in admin_base
+    datasheet = (_TEMPLATES_DIR / "datasheet_base.html").read_text()
+    assert 'class="toc"' in datasheet
+    assert "{% block shell %}" in datasheet
+    assert "admin.css" in datasheet and "beehive.css" not in datasheet
+    for shell in ("admin_base.html", "workspace_base.html"):
+        assert '{% extends "datasheet_base.html" %}' in (_TEMPLATES_DIR / shell).read_text()
+
+    for template_name in (
+        "watchlist.html",
+        "research_list.html",
+        "research_detail.html",
+        "research_new.html",
+        "research_run_preview.html",
+        "research_source_form.html",
+    ):
+        workspace_page = (_TEMPLATES_DIR / template_name).read_text()
+        assert '{% extends "workspace_base.html" %}' in workspace_page, template_name
 
     for template_name in (
         "admin_login.html",
@@ -298,7 +314,9 @@ def test_htmx_helpers_restore_focus_and_announce_feedback():
     assert "htmx:afterSwap" in content
     assert ".focus()" in content
     assert "feedback-status" in content
-    assert "const message = feedbackMessage" in content
+    assert "announce(feedbackMessage)" in content
+    # Stopping a watch re-renders the list, so the focus target is remembered by id.
+    assert "fallbackFocusSelector" in content
 
 
 def test_channel_template_marks_english_count_and_reason_focus_target():

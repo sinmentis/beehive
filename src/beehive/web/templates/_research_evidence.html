@@ -1,0 +1,52 @@
+{#- 1.2 Evidence: every item in the latest sealed snapshot, a page at a time. Duplicate reports of
+    one story stay together under a group row. No internal passage viewer: only title, snippet,
+    publisher, quality, citation number, source link and the exclude or restore action. -#}
+<h2 id="evidence"><span class="no">1.2</span><span>{{ t('web.workspace.session.title_evidence') }}</span>{% if evidence.has_any_evidence %}<span class="tools">{{ t('web.workspace.session.evidence_tools', number=evidence.total_items|count(locale), page=evidence.page, pages=evidence.total_pages) }}</span>{% endif %}</h2>
+{% if evidence.all_excluded %}
+<div class="note note-caution"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.caution') }}</span><div class="note-body">{{ t('web.research.evidence.all_excluded_notice') }}</div></div></div>
+{% endif %}
+{% if evidence.clusters %}
+<div class="tbl-wrap"><table class="tbl tbl-stack">
+  <thead><tr><th class="c-num">{{ t('web.workspace.evidence.col_citation') }}</th><th>{{ t('web.workspace.evidence.col_title') }}</th><th>{{ t('web.workspace.evidence.col_publisher') }}</th><th>{{ t('web.workspace.evidence.col_quality') }}</th><th><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th></tr></thead>
+  <tbody>
+    {% for cluster in evidence.clusters %}
+    {% if cluster.is_duplicate_group %}
+    <tr class="grp"><td colspan="5">{{ t('web.research.evidence.duplicate_group_label', count=cluster.items|length) }}</td></tr>
+    {% endif %}
+    {% for item in cluster.items %}
+    <tr id="evidence-{{ item.id }}" class="{{ 'in-grp' if cluster.is_duplicate_group }}{{ ' is-excluded' if item.is_excluded }}">
+      <td class="c-num" data-label="{{ t('web.workspace.evidence.col_citation') }}">[{{ item.citation_number }}]</td>
+      <td class="c-name c-wide"><a href="{{ item.href }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>{% if item.snippet %}<span class="snip">{{ item.snippet }}</span>{% endif %}</td>
+      <td class="c-src" data-label="{{ t('web.workspace.evidence.col_publisher') }}">{{ item.publisher }}</td>
+      <td class="c-nw" data-label="{{ t('web.workspace.evidence.col_quality') }}">{{ item.quality_label }}{% if item.is_excluded %}<small><span class="st st-never">{{ t('web.research.evidence.excluded_state') }}</span></small>{% endif %}</td>
+      <td class="c-ops">
+        {% if can_mutate_evidence %}
+        <form method="post" action="{{ item.restore_url if item.is_excluded else item.exclude_url }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="return_to" value="evidence">
+          <input type="hidden" name="page" value="{{ evidence.page }}">
+          <button type="submit" class="lnk">{{ t('web.research.evidence.restore_action') if item.is_excluded else t('web.research.evidence.exclude_action') }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+  </tbody>
+</table></div>
+{% if evidence.total_pages > 1 %}
+<nav class="pager" aria-label="{{ t('web.research.evidence.pager_aria') }}">
+  {% if evidence.has_prev %}<a class="btn btn-sm" href="/research/{{ session_id }}?tab=evidence&amp;page={{ evidence.page - 1 }}">{{ t('web.pagination.previous') }}</a>{% else %}<span class="btn btn-sm" aria-disabled="true">{{ t('web.pagination.previous') }}</span>{% endif %}
+  <span>{{ t('web.research.evidence.pager_page_label', page=evidence.page, total=evidence.total_pages) }}</span>
+  {% if evidence.has_next %}<a class="btn btn-sm" href="/research/{{ session_id }}?tab=evidence&amp;page={{ evidence.page + 1 }}">{{ t('web.pagination.next') }}</a>{% else %}<span class="btn btn-sm" aria-disabled="true">{{ t('web.pagination.next') }}</span>{% endif %}
+  <form method="get" action="/research/{{ session_id }}">
+    <input type="hidden" name="tab" value="evidence">
+    <label for="research-evidence-page-input">{{ t('web.research.evidence.pager_jump_label') }}</label>
+    <input class="inp" type="number" id="research-evidence-page-input" name="page" min="1" max="{{ evidence.total_pages }}" value="{{ evidence.page }}">
+    <button type="submit" class="btn btn-sm">{{ t('web.research.evidence.pager_jump_submit') }}</button>
+  </form>
+</nav>
+{% endif %}
+{% else %}
+<div class="empty research-empty"><b>{{ t('web.research.evidence.empty_heading') }}</b>{{ t('web.research.evidence.empty_body') }}</div>
+{% endif %}

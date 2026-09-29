@@ -333,11 +333,13 @@ def _failed_run(error_detail: str | None) -> ResearchRun:
         completed_at=T0, error_code="synthesis_failed", error_detail=error_detail)
 
 
-def test_build_run_status_view_exposes_captured_error_detail_alongside_generic_message(t):
+def test_build_run_status_view_exposes_captured_error_detail_alongside_the_step_that_failed(t):
     run = _failed_run("StructuredResponseError: no fenced ```json block found in core response")
     view = research_view.build_run_status_view(run, t)
-    # The friendly, localized copy is unaffected -- error_detail is a separate, additive field.
-    assert view.error_message == t.text("web.research.run_error.generic")
+    # The friendly copy names the failed step from the closed error_code set; error_detail is a
+    # separate, additive field and never feeds the message.
+    assert view.error_message == t.text("web.research.run_error.synthesis_failed")
+    assert "StructuredResponseError" not in view.error_message
     assert view.error_detail == (
         "StructuredResponseError: no fenced ```json block found in core response")
 
@@ -347,5 +349,23 @@ def test_build_run_status_view_omits_error_detail_when_none_was_captured(t):
     # never a placeholder/empty string that would render an empty disclosure.
     run = _failed_run(None)
     view = research_view.build_run_status_view(run, t)
-    assert view.error_message == t.text("web.research.run_error.generic")
+    assert view.error_message == t.text("web.research.run_error.synthesis_failed")
     assert view.error_detail is None
+
+
+@pytest.mark.parametrize("error_code", [None, "RuntimeError", "synthesis_failed; DROP TABLE"])
+def test_run_error_reason_degrades_unknown_codes_to_the_generic_message(t, error_code):
+    # The worker stores an exception's type name as the code; none of those, nor anything
+    # malformed, may reach the page as-is.
+    assert research_view.run_error_reason(error_code, t) == t.text(
+        "web.research.run_error.generic")
+
+
+@pytest.mark.parametrize("error_code", [
+    "synthesis_failed", "deadline_exceeded", "no_evidence_collected",
+    "sealed_snapshot_missing_revision",
+])
+def test_run_error_reason_names_each_known_failure(t, error_code):
+    reason = research_view.run_error_reason(error_code, t)
+    assert reason == t.text(f"web.research.run_error.{error_code}")
+    assert reason != t.text("web.research.run_error.generic")

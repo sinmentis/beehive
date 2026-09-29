@@ -141,6 +141,7 @@ from beehive.web.formatting import (
     freshness_label,
     host_local_time_label,
     relative_time,
+    short_time_label,
 )
 from beehive.web.client_ip import resolve_client_ip
 from beehive.web.link_safety import safe_external_href
@@ -428,23 +429,6 @@ def _channel_fetch_schedule_label(channel: dict, t: Localizer) -> str:
     )
 
 
-def _short_time_label(value: str | datetime, now: datetime, t: Localizer) -> str:
-    """"Today 05:00", "Tomorrow 23:00" or "2026-10-02 09:00" in the host's time zone."""
-    moment = datetime.fromisoformat(value) if isinstance(value, str) else value
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    local = moment.astimezone(HOST_TZ)
-    clock = local.strftime("%H:%M")
-    days_away = (local.date() - now.astimezone(HOST_TZ).date()).days
-    if days_away == 0:
-        return t.text("web.admin.time.today", time=clock)
-    if days_away == 1:
-        return t.text("web.admin.time.tomorrow", time=clock)
-    if days_away == -1:
-        return t.text("web.admin.time.yesterday", time=clock)
-    return f"{local.date().isoformat()} {clock}"
-
-
 def _channel_schedule_short(channel: dict, t: Localizer) -> str:
     if (
         require_schedule_mode(channel["fetch_schedule_mode"]) is ScheduleMode.CALENDAR
@@ -460,7 +444,7 @@ def _channel_next_fetch_short(
     next_fetch_at = next_channel_fetch_at(
         sources, ChannelFetchSchedule.from_channel(channel), now
     )
-    return _short_time_label(next_fetch_at, now, t) if next_fetch_at else None
+    return short_time_label(next_fetch_at, now, t) if next_fetch_at else None
 
 
 def _channel_next_fetch_label(
@@ -760,6 +744,10 @@ def _admin_nav(request: Request, t: Localizer) -> dict:
         ),
     }
     return {
+        "home_href": "/admin/",
+        "label": t.text("web.nav.admin"),
+        "home_aria": t.text("web.admin.shell.home_aria", product=t.text("common.product_name")),
+        "toc_aria": t.text("web.admin.shell.toc_aria"),
         "chapters": [
             {
                 "key": key,
@@ -789,7 +777,7 @@ def _render_admin(
     return request.app.state.templates.TemplateResponse(
         request,
         template,
-        {**context, "admin_nav": _admin_nav(request, t)},
+        {**context, "shell_nav": _admin_nav(request, t)},
         status_code=status_code,
     )
 
@@ -906,7 +894,7 @@ def _build_admin_email_group_rows(
                     else None
                 ),
                 "last_sent_short": (
-                    _short_time_label(group["last_sent_at"], now, t) if group["last_sent_at"] else None
+                    short_time_label(group["last_sent_at"], now, t) if group["last_sent_at"] else None
                 ),
                 "last_error": group["last_error"],
                 "last_error_label": (
@@ -917,7 +905,7 @@ def _build_admin_email_group_rows(
                 "next_due_label": host_local_time_label(
                     next_email_group_due_at(group, now).isoformat()
                 ),
-                "next_due_short": _short_time_label(next_email_group_due_at(group, now), now, t),
+                "next_due_short": short_time_label(next_email_group_due_at(group, now), now, t),
             }
         )
     return groups
@@ -1190,7 +1178,7 @@ def _model_list_view(conn: sqlite3.Connection, t: Localizer, now: datetime) -> d
         "current_model": choice.model_id,
         "from_copilot": catalog is not None,
         "count": len(models),
-        "refreshed": _short_time_label(catalog.refreshed_at, now, t) if catalog else None,
+        "refreshed": short_time_label(catalog.refreshed_at, now, t) if catalog else None,
         "refreshed_exact": (
             host_local_time_label(catalog.refreshed_at.isoformat()) if catalog else None
         ),
@@ -1208,14 +1196,14 @@ def _model_list_view(conn: sqlite3.Connection, t: Localizer, now: datetime) -> d
     if state is None:
         return view
     if phase == "waiting":
-        view["requested"] = _short_time_label(state.requested_at, now, t)
+        view["requested"] = short_time_label(state.requested_at, now, t)
     elif phase == "failed":
         kind = (
             state.error.value
             if state.error is not None
             else "interrupted" if state.status is RefreshStatus.RUNNING else "failed"
         )
-        view["failed_at"] = _short_time_label(
+        view["failed_at"] = short_time_label(
             state.finished_at or state.started_at or now, now, t)
         view["error"] = t.text(f"web.admin.model.refresh_error.{kind}")
         view["error_detail"] = state.error_detail
@@ -2523,11 +2511,11 @@ def _render_edit_email_group_page(
             "schedule_label": _email_group_schedule_label(group, t),
             "schedule_short": _email_group_schedule_label(group, t, short=True),
             "last_sent_short": (
-                _short_time_label(group["last_sent_at"], datetime.now(timezone.utc), t)
+                short_time_label(group["last_sent_at"], datetime.now(timezone.utc), t)
                 if group["last_sent_at"]
                 else None
             ),
-            "next_due_short": _short_time_label(
+            "next_due_short": short_time_label(
                 next_email_group_due_at(group, datetime.now(timezone.utc)),
                 datetime.now(timezone.utc),
                 t,

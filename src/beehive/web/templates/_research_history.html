@@ -1,63 +1,33 @@
-<section class="research-tab-panel research-history" aria-labelledby="research-history-title">
-  <h2 id="research-history-title">{{ t('web.research.history.heading') }}</h2>
-  <p class="hint">{{ t('web.research.history.body') }}</p>
-
-  <h3>{{ t('web.research.history.runs_heading') }}</h3>
-  {% if history.runs %}
-  <div class="table-scroll" role="region" aria-labelledby="research-history-title" tabindex="0">
-    <table class="admin-table research-history-table">
-      <thead>
-        <tr>
-          <th>{{ t('web.research.history.run') }}</th>
-          <th>{{ t('web.research.history.kind') }}</th>
-          <th>{{ t('web.research.history.status') }}</th>
-          <th>{{ t('web.research.history.requested') }}</th>
-          <th>{{ t('web.research.history.duration_heading') }}</th>
-          <th>{{ t('web.research.history.work') }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for run in history.runs %}
-        <tr>
-          <td>#{{ run.id }}</td>
-          <td>{{ run.kind_label }}</td>
-          <td>{{ run.status_label }}</td>
-          <td>{{ run.requested_label }}</td>
-          <td>{{ run.duration_label }}</td>
-          <td>{{ t('web.research.history.work_detail', attempts=run.attempt_count, deep=run.deep_fetch_count, plans=run.plan_count) }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-
-  <div class="research-history-grid">
-    <section>
-      <h3>{{ t('web.research.history.snapshots_heading') }}</h3>
-      <ul class="source-list">
-        {% for snapshot in history.snapshots %}
-        <li class="source-row">
-          <span>{{ t('web.research.history.snapshot_detail', sequence=snapshot.sequence, run=snapshot.run_id, count=snapshot.item_count) }}</span>
-          <span class="hint">{{ snapshot.status_label }} · {{ snapshot.created_label }}</span>
-        </li>
-        {% else %}
-        <li class="hint">{{ t('web.research.history.none') }}</li>
-        {% endfor %}
-      </ul>
-    </section>
-    <section>
-      <h3>{{ t('web.research.history.syntheses_heading') }}</h3>
-      <ul class="source-list">
-        {% for synthesis_row in history.syntheses %}
-        <li class="source-row">
-          <span>{{ t('web.research.history.synthesis_detail', version=synthesis_row.version, run=synthesis_row.run_id) }}</span>
-          <span class="hint">{{ synthesis_row.sufficiency_label }} · {{ synthesis_row.model }} · {{ synthesis_row.created_label }}</span>
-        </li>
-        {% else %}
-        <li class="hint">{{ t('web.research.history.none') }}</li>
-        {% endfor %}
-      </ul>
-    </section>
-  </div>
-</section>
+{#- 1.4 Run history: one row per run with what it did and how it ended. A failed run says which
+    step failed in plain words; the stored technical detail stays folded underneath. -#}
+{% import "_admin_macros.html" as ui with context %}
+{% import "_research_macros.html" as rx with context %}
+<h2 id="runs"><span class="no">1.4</span><span>{{ t('web.workspace.session.title_history') }}</span>{% if history.runs %}<span class="tools">{{ t('web.workspace.session.fact_runs_value', count=history.runs|length, failed=summary.failed_run_count) }}</span>{% endif %}</h2>
+<p class="adm-lede">{{ t('web.workspace.runs.lede') }}</p>
+{% if history.runs %}
+<div class="tbl-wrap"><table class="tbl tbl-stack">
+  <thead><tr><th>{{ t('web.research.history.run') }}</th><th>{{ t('web.research.history.status') }}</th><th>{{ t('web.workspace.runs.col_started') }}</th><th>{{ t('web.research.history.duration_heading') }}</th><th>{{ t('web.research.history.work') }}</th><th>{{ t('web.workspace.runs.col_outcome') }}</th></tr></thead>
+  <tbody>
+    {% for run in history.runs %}
+    <tr>
+      <td class="c-nw"><b>#{{ run.id }}</b><small>{{ run.kind_label }}</small></td>
+      <td class="c-nw" data-label="{{ t('web.research.history.status') }}">{{ rx.run_mark(run.status, run.status_label) }}</td>
+      <td class="c-nw" data-label="{{ t('web.workspace.runs.col_started') }}">{{ run.requested_at|short_time }}</td>
+      <td class="c-nw" data-label="{{ t('web.research.history.duration_heading') }}">{{ run.duration_label }}</td>
+      <td class="c-nw" data-label="{{ t('web.research.history.work') }}">{{ t('web.workspace.runs.deep_reads', count=run.deep_fetch_count) }}<small>{{ t('web.workspace.runs.plans', count=run.plan_count) }}{% if run.attempt_count > 1 %} · {{ t('web.workspace.runs.attempts', count=run.attempt_count) }}{% endif %}</small></td>
+      <td class="c-wide" data-label="{{ t('web.workspace.runs.col_outcome') }}">
+        {% if run.error_reason %}<span class="reason">{{ run.error_reason }}</span>{% endif %}
+        {% if run.snapshot_sequence %}<span class="outcome">{{ t('web.workspace.runs.snapshot', sequence=run.snapshot_sequence, number=run.snapshot_item_count|count(locale)) }}</span>{% endif %}
+        {% if run.synthesis_version %}<span class="outcome">{{ t('web.workspace.runs.conclusion', version=run.synthesis_version) }} · {{ run.synthesis_sufficiency_label }}</span>{% endif %}
+        {% if run.error_detail %}{{ ui.raw_error(run.error_detail) }}{% endif %}
+        {% if not (run.error_reason or run.snapshot_sequence or run.synthesis_version) %}
+        <span class="muted">{{ t('web.workspace.runs.in_progress') if run.status in ('pending', 'processing') else t('web.workspace.runs.no_outcome') }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<div class="empty research-empty"><b>{{ t('web.workspace.runs.empty_heading') }}</b>{{ t('web.workspace.runs.empty_body') }}</div>
+{% endif %}

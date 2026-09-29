@@ -190,7 +190,7 @@ def test_a_saved_model_that_left_the_list_is_flagged(client, db_path):
     assert ("gpt-5.6-sol is no longer offered, so AI work uses the default, Claude Haiku 4.5, "
             "until you choose another model.") in row
     assert '<option value="claude-haiku-4.5" selected>' in row
-    assert re.search(r'<span>Global settings</span><span class="toc-count"', page)
+    assert re.search(r'<span>Global settings</span><span id="toc-count-settings"><span class="toc-count"', page)
 
 
 def test_a_model_from_the_refreshed_list_can_be_saved(client, db_path):
@@ -202,7 +202,7 @@ def test_a_model_from_the_refreshed_list_can_be_saved(client, db_path):
     assert _with_conn(db_path, lambda conn: choose_model(conn).saved) == "brand-new-9"
     page = client.get("/admin/?tab=settings").text
     assert '<option value="brand-new-9" selected>' in _model_row(page)
-    assert not re.search(r'<span>Global settings</span><span class="toc-count"', page)
+    assert not re.search(r'<span>Global settings</span><span id="toc-count-settings"><span class="toc-count"', page)
 
 
 def test_state_modifiers_restyle_the_sentence_marks_too():

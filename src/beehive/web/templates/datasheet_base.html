@@ -1,0 +1,61 @@
+{#- The datasheet document: one sheet on a darker desk with a contents rail. The admin and the
+    Owner's workspace (research, watch list) extend it with their own contract, rail and footer. -#}
+<!DOCTYPE html>
+<html lang="{{ locale }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0A0C0E">
+<link rel="icon" href="/static/favicon.svg?v={{ asset_version }}" type="image/svg+xml">
+<link rel="preload" href="/static/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/admin.css?v={{ asset_version }}">
+<title>{% block title %}{{ t('common.product_name') }}{% endblock %}</title>
+</head>
+<body class="adm {% block body_class %}page-admin{% endblock %}">
+{% block contract %}{% endblock %}
+<a class="skip-link" href="#main-content">{{ t('web.nav.skip_link') }}</a>
+{% block shell %}
+{% set current = shell_nav.chapters|selectattr('key', 'equalto', current_chapter)|first %}
+<div class="adm-shell">
+  <aside class="adm-toc">
+    <a class="adm-brand" href="{{ shell_nav.home_href }}" aria-label="{{ shell_nav.home_aria }}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span>{{ shell_nav.label }}</span>
+    </a>
+    <nav aria-label="{{ shell_nav.toc_aria }}">
+      <ol class="toc">
+        {% for chapter in shell_nav.chapters %}
+        <li><a href="{{ chapter.href }}"{% if chapter.key == current_chapter %} aria-current="{{ 'true' if current_section else 'page' }}"{% endif %}><span class="no">{{ chapter.number }}</span><span>{{ chapter.label }}</span><span id="toc-count-{{ chapter.key }}">
+          {%- if chapter.attention %}<span class="toc-count" title="{{ t('web.admin.shell.attention_count', count=chapter.attention) }}"><span aria-hidden="true">{{ chapter.attention }}</span><span class="sr-only">{{ t('web.admin.shell.attention_count', count=chapter.attention) }}</span></span>
+          {%- elif chapter.unread %}<span class="toc-count is-info" title="{{ t('web.research.unread_count', count=chapter.unread) }}"><span aria-hidden="true">{{ chapter.unread }}</span><span class="sr-only">{{ t('web.research.unread_count', count=chapter.unread) }}</span></span>{% endif %}</span></a></li>
+        {% if chapter.key == current_chapter and toc_sections %}
+        <li class="sub"><ol>
+          {% for number, label, anchor in toc_sections %}
+          <li><a href="{{ anchor }}"{% if anchor == current_section %} aria-current="page"{% endif %}><span class="no">{{ number }}</span><span>{{ label }}</span></a></li>
+          {% endfor %}
+        </ol></li>
+        {% endif %}
+        {% endfor %}
+      </ol>
+    </nav>
+    <div class="adm-toc-foot">{% block rail_foot %}{% endblock %}</div>
+  </aside>
+  <main id="main-content" class="adm-main">
+    <div class="adm-page">
+      <div class="adm-run">
+        <nav aria-label="{{ t('web.admin.shell.crumbs_aria') }}">
+          {% if crumbs %}<a href="{{ current.href }}">{{ current.number }} {{ current.label }}</a>{% else %}<span aria-current="page">{{ current.number }} {{ current.label }}</span>{% endif %}
+          {% for label, href in crumbs or [] %}<span class="sep" aria-hidden="true">›</span>{% if href %}<a href="{{ href }}">{{ label }}</a>{% else %}<span aria-current="page">{{ label }}</span>{% endif %}{% endfor %}
+        </nav>
+        <span>{{ shell_nav.clock }}</span>
+      </div>
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+{% endblock %}
+<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

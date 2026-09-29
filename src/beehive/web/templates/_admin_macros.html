@@ -18,11 +18,12 @@
 
 {#- A one-line value that wraps instead of hiding its end: URLs, queries, address lists.
     beehive.js keeps it one line (Enter submits, pasted line breaks are dropped). -#}
-{% macro line_field(id, name, value, placeholder='', inputmode='', autocomplete='off', literal=False, required=False, invalid=False, extra_class='') -%}
+{% macro line_field(id, name, value, placeholder='', inputmode='', autocomplete='off', literal=False, required=False, invalid=False, extra_class='', maxlength=None) -%}
 <textarea class="inp inp-line{{ ' ' ~ extra_class if extra_class }}" id="{{ id }}" name="{{ name }}" rows="1" data-single-line
   {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
   {%- if inputmode %} inputmode="{{ inputmode }}"{% endif %} autocomplete="{{ autocomplete }}"
   {%- if literal %} spellcheck="false" autocapitalize="off" autocorrect="off"{% endif %}
+  {%- if maxlength %} maxlength="{{ maxlength }}"{% endif %}
   {%- if required %} required{% endif %}{% if invalid %} aria-invalid="true"{% endif %}>{{ '' if value is none else value }}</textarea>
 {%- endmacro %}
 
@@ -61,14 +62,22 @@
 </div>
 {%- endmacro %}
 
-{% macro danger(id, title, body, button_label, action, confirmation_value, submit_label) -%}
+{#- A destructive row that opens in place. With a confirmation value the Owner types it before
+    the button works; without one the open row asks once in words. The hint says whether the
+    action can be undone, so pass one whenever the admin's seven-day undo does not apply. -#}
+{% macro danger(id, title, body, button_label, action, confirmation_value=None, submit_label='', hint=None, confirm_text=None) -%}
 <details class="note note-danger" id="{{ id }}">
-  <summary class="note-row"><span class="note-tag">{{ t('web.admin.note.danger') }}</span><span class="note-body"><b>{{ title }}</b> {{ body }}<small>{{ t('web.admin.danger.undo_hint') }}</small></span><span class="note-act"><span class="btn btn-danger btn-sm when-closed">{{ button_label }}</span><span class="btn btn-sm when-open">{{ t('web.admin.danger.cancel') }}</span></span></summary>
+  <summary class="note-row"><span class="note-tag">{{ t('web.admin.note.danger') }}</span><span class="note-body"><b>{{ title }}</b> {{ body }}<small>{{ hint if hint is not none else t('web.admin.danger.undo_hint') }}</small></span><span class="note-act"><span class="btn btn-danger btn-sm when-closed">{{ button_label }}</span><span class="btn btn-sm when-open">{{ t('web.admin.danger.cancel') }}</span></span></summary>
   <div class="confirm">
     <form method="post" action="{{ action }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if confirmation_value is not none %}
       <label class="confirm-label" for="{{ id }}-confirm">{{ t('web.admin.channel_edit.type_to_confirm', value=confirmation_value) }}</label>
       <div class="row"><input class="inp inp-grow" id="{{ id }}-confirm" type="text" name="confirmation" required autocomplete="off" spellcheck="false"><button class="btn btn-danger" type="submit">{{ submit_label }}</button></div>
+      {% else %}
+      <p class="confirm-label">{{ confirm_text }}</p>
+      <div class="row"><button class="btn btn-danger" type="submit">{{ submit_label }}</button></div>
+      {% endif %}
     </form>
   </div>
 </details>

@@ -157,6 +157,16 @@ def get_watched_item_ids(conn: sqlite3.Connection, item_ids: list[int]) -> set[i
     return {row["item_id"] for row in rows}
 
 
+def count_failed_tracker_reminders(conn: sqlite3.Connection) -> int:
+    """Watches whose last reminder attempt failed: a stored error with any text in it, whatever
+    the lot's state now. Stripped in Python, exactly like the Watch List's own "error" state, so
+    the rail count and the list always agree."""
+    rows = conn.execute(
+        "SELECT last_error FROM auction_watches WHERE last_error IS NOT NULL"
+    ).fetchall()
+    return sum(1 for row in rows if str(row[0]).strip())
+
+
 def list_tracker_watches(conn: sqlite3.Connection, now: datetime) -> list[dict]:
     utc_now = _require_aware(now)
     items = [_row_to_dict(row, utc_now) for row in _joined_rows(conn)]

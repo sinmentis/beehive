@@ -151,7 +151,7 @@ def test_email_group_without_a_recipient_is_flagged_where_it_is_counted(client, 
     home = client.get("/admin/").text
     groups = client.get("/admin/?tab=groups").text
 
-    assert '<span>Email groups</span><span class="toc-count"' in home
+    assert '<span>Email groups</span><span id="toc-count-groups"><span class="toc-count"' in home
     assert "Weekly has no recipient, so it cannot send." in groups
 
 

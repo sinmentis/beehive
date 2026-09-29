@@ -49,6 +49,23 @@ def host_local_time_label(iso_str: str) -> str:
     return _as_aware_utc(iso_str).astimezone(HOST_TZ).strftime("%Y-%m-%d %H:%M %Z")
 
 
+def short_time_label(value: str | datetime, now: datetime, t: Localizer) -> str:
+    """"Today 05:00", "Tomorrow 23:00" or "2026-10-02 09:00" in the host's time zone."""
+    moment = datetime.fromisoformat(value) if isinstance(value, str) else value
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    local = moment.astimezone(HOST_TZ)
+    clock = local.strftime("%H:%M")
+    days_away = (local.date() - now.astimezone(HOST_TZ).date()).days
+    if days_away == 0:
+        return t.text("web.admin.time.today", time=clock)
+    if days_away == 1:
+        return t.text("web.admin.time.tomorrow", time=clock)
+    if days_away == -1:
+        return t.text("web.admin.time.yesterday", time=clock)
+    return f"{local.date().isoformat()} {clock}"
+
+
 def freshness_label(sources: list[dict], t: Localizer) -> str:
     fetch_times = [s["last_fetch_at"] for s in sources if s["last_fetch_at"]]
     if not fetch_times:

@@ -1,0 +1,31 @@
+{#- Research parts shared by the workspace pages. Import with context:
+    {% import "_research_macros.html" as rx with context %} -#}
+
+{#- A citation number in AI text. It opens the source in a new tab; on a wide screen beehive.js
+    shows the cited item in the side column instead. The link text is the number only, and the
+    screen-reader text names the source. -#}
+{% macro cite(c) -%}
+<a class="cite" href="{{ c.href }}" target="_blank" rel="noopener noreferrer"{% if c.evidence_item_id %} data-cite="{{ c.evidence_item_id }}"{% endif %} title="{{ c.title }}: {{ c.quality_label }}"><span aria-hidden="true">[{{ c.citation_number }}]</span><span class="sr-only">[{{ c.citation_number }}] {{ c.title }}: {{ c.quality_label }} {{ t('web.item.opens_new_window') }}</span></a>
+{%- endmacro %}
+
+{% macro run_mark(status, label) -%}
+<span class="st{{ {'failed': ' st-error', 'cancelled': ' st-never', 'pending': ' st-busy', 'processing': ' st-busy'}.get(status, '') }}">{{ label }}</span>
+{%- endmacro %}
+
+{#- One Research Session list table: question, latest run, runs, evidence and conclusion. -#}
+{% macro session_table(rows, muted=False) -%}
+<div class="tbl-wrap"><table class="tbl tbl-stack">
+  <thead><tr><th>{{ t('web.workspace.list.col_question') }}</th><th>{{ t('web.workspace.list.col_last_run') }}</th><th>{{ t('web.workspace.list.col_runs') }}</th><th class="c-num">{{ t('web.workspace.list.col_evidence') }}</th><th>{{ t('web.workspace.list.col_conclusion') }}</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr{% if muted %} class="is-closed"{% endif %}>
+      <td class="c-name c-wide"><a href="{{ row.detail_url }}">{{ row.question }}</a>{% if row.is_unread %}<span class="unread-tag">{{ t('web.research.unread') }}</span>{% endif %}</td>
+      <td class="c-nw" data-label="{{ t('web.workspace.list.col_last_run') }}">{% if row.last_run_id %}{{ run_mark(row.last_run_status, t('web.workspace.list.last_run', run=row.last_run_id, status=row.last_run_status_label)) }}{% else %}<span class="muted">{{ t('web.workspace.list.no_run') }}</span>{% endif %}<small>{{ row.last_activity_label }}</small></td>
+      <td class="c-nw" data-label="{{ t('web.workspace.list.col_runs') }}">{{ t('web.workspace.list.runs', count=row.run_count) }}{% if row.failed_run_count %}<small>{{ t('web.workspace.list.failed_runs', count=row.failed_run_count) }}</small>{% endif %}</td>
+      <td class="c-num" data-label="{{ t('web.workspace.list.col_evidence') }}">{{ row.evidence_count|count(locale) }}</td>
+      <td class="c-nw" data-label="{{ t('web.workspace.list.col_conclusion') }}">{% if row.synthesis_version %}{{ t('web.workspace.version', version=row.synthesis_version) }}{% else %}<span class="muted">{{ t('web.workspace.list.no_conclusion') }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+{%- endmacro %}

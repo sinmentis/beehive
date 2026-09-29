@@ -97,6 +97,7 @@ from beehive.web.formatting import (
 from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.link_safety import safe_external_href
 from beehive.web.official_feed_labels import official_feed_label
+from beehive.web.workspace import render_workspace
 from beehive.tracker_reminders import send_tracker_reminder_for_item
 
 
@@ -765,9 +766,9 @@ def watchlist(
         params.pop("removed", None)
         return f"/watchlist?{urlencode(params)}"
 
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
+    return render_workspace(
         request,
+        t,
         "watchlist.html",
         {
             "page": watchlist_page,
@@ -775,7 +776,6 @@ def watchlist(
                 conn,
                 os.environ.get("DIGEST_EMAIL_TO"),
             ).address,
-            "is_admin": True,
             "csrf_token": session["csrf_token"],
             "retry_result": retry,
             "removed_count": removed,
@@ -876,6 +876,7 @@ def toggle_tracker_watch(
     request: Request,
     csrf_token: str = Form(...),
     origin: str = Form("channel"),
+    next_url: str | None = Form(None),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -895,9 +896,11 @@ def toggle_tracker_watch(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     actual_channel_id = _item_channel_id(conn, item)
+    if origin == "watchlist":
+        # The Watch List reloads the same view. htmx follows the redirect and swaps the list,
+        # counts and warnings from the fresh page, so nothing on it describes a removed lot.
+        return RedirectResponse(_safe_return_url(next_url, "/watchlist"), status_code=303)
     if request.headers.get("HX-Request") == "true":
-        if origin == "watchlist" and removed:
-            return HTMLResponse("")
         item_view = build_tracker_item_view(
             conn,
             item,
@@ -918,8 +921,6 @@ def toggle_tracker_watch(
             },
         )
 
-    if origin == "watchlist":
-        return RedirectResponse("/watchlist", status_code=303)
     if origin in {"channel", "folded"} and actual_channel_id is not None:
         return RedirectResponse(
             f"/channels/{actual_channel_id}",

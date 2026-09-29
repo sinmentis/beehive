@@ -1,0 +1,12 @@
+{#- The run control beside the session title: cancel while a run is queued or running, otherwise
+    refresh. The status poll swaps it out-of-band once a run ends. -#}
+<div id="research-status-actions"{% if status_fragment_only %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if run_status.is_pending and run_status.can_cancel and not status_fragment_only %}
+  <form method="post" action="/research/{{ session_id }}/cancel">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="btn">{{ t('web.research.status.cancel') }}</button>
+  </form>
+  {% elif can_refresh and not is_archived and not run_status.is_pending %}
+  <a class="btn btn-primary" href="/research/{{ session_id }}/refresh-preview">{{ t('web.workspace.session.refresh') }}</a>
+  {% endif %}
+</div>

@@ -725,7 +725,8 @@ def test_archived_session_remains_readable(authed_client, conn):
 def test_delete_cascades_every_related_row(authed_client, conn, db_path):
     _, c = conn
     session_id, source_id, run_id, snapshot_id, item_id = _create_session_with_evidence(c)
-    resp = authed_client.post(f"/research/{session_id}/delete", data={"csrf_token": "csrf1"})
+    resp = authed_client.post(
+        f"/research/{session_id}/delete", data={"csrf_token": "csrf1", "confirmation": "delete"})
     assert resp.status_code == 303
     assert resp.headers["location"] == "/research"
 

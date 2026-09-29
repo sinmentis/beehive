@@ -3299,7 +3299,7 @@ def test_watchlist_is_owner_only_and_orders_lots_by_closing_time(
     assert page.text.index(f"watchlist-item-{earlier_id}") < page.text.index(
         f"watchlist-item-{later_id}"
     )
-    assert 'href="/admin/?tab=delivery"' in page.text
+    assert 'href="/admin/?tab=groups#default-recipient"' in page.text
     assert f'hx-post="/items/{earlier_id}/watch"' in page.text
     assert "Active" in page.text
     assert "Remove selected" in page.text

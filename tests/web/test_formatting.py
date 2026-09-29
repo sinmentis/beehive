@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from beehive.localization import localizer_for
 from beehive.scheduling import ChannelFetchSchedule
-from beehive.web.formatting import fetch_stats_label, format_count, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time
+from beehive.web.formatting import fetch_stats_label, format_count, freshness_exact_time, freshness_label, host_local_time_label, next_fetch_countdown, relative_time, short_time_label
 
 EN = localizer_for("en")
 ZH = localizer_for("zh-CN")
@@ -151,3 +151,15 @@ def test_format_count_uses_the_locale_thousands_separator():
     assert format_count(1234567, "fr") == "1\u202f234\u202f567"
     assert format_count(12, "de") == "12"
     assert format_count(None, "en") == ""
+
+
+def test_short_time_label_names_nearby_days_and_dates_the_rest_in_auckland_time():
+    # 2026-09-29 13:00 NZDT; Auckland is UTC+13 in late September.
+    now = datetime(2026, 9, 29, 0, 0, tzinfo=timezone.utc)
+    assert short_time_label("2026-09-29T01:21:00+00:00", now, ZH) == ZH.text(
+        "web.admin.time.today", time="14:21")
+    assert short_time_label("2026-09-29T21:00:00+00:00", now, EN) == EN.text(
+        "web.admin.time.tomorrow", time="10:00")
+    assert short_time_label("2026-09-28T02:00:00+00:00", now, EN) == EN.text(
+        "web.admin.time.yesterday", time="15:00")
+    assert short_time_label("2026-10-01T21:02:00", now, EN) == "2026-10-02 10:02"

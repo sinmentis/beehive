@@ -1,16 +1,16 @@
-{# One Conversation Message -- accepts `message` (research_view.MessageView). Citation markers in
-   assistant content were already resolved into safe segments by build_message_view; malformed/
-   unrecognized markers arrive here as plain text, never a link. #}
-<article class="research-message research-message-{{ message.role }}" data-message-status="{{ message.status }}">
-  <p class="research-message-meta">
-    <span class="research-message-role">{{ t('web.research.conversation.role_owner') if message.role == 'owner' else t('web.research.conversation.role_assistant') }}</span>
-    <span class="research-message-time">{{ message.created_at_label }}</span>
-  </p>
-  {% if message.status == 'failed' %}
-  <p class="research-message-content research-message-unavailable">{{ t('web.research.conversation.reply_unavailable') }}</p>
-  {% elif message.status == 'pending' %}
-  <p class="research-message-content research-message-unavailable">{{ t('web.research.conversation.reply_pending') }}</p>
-  {% else %}
-  <p class="research-message-content">{% for segment in message.segments %}{% if segment.kind == 'citation' %}<a class="research-citation-chip" href="{{ segment.href }}" target="_blank" rel="noopener noreferrer" title="{{ segment.title }}: {{ segment.quality_label }}"><span aria-hidden="true">[{{ segment.citation_number }}]</span><span class="sr-only">[{{ segment.citation_number }}] {{ segment.title }}: {{ segment.quality_label }} {{ t('web.item.opens_new_window') }}</span></a>{% else %}{{ segment.text }}{% endif %}{% endfor %}</p>
-  {% endif %}
+{#- One follow-up turn -- accepts `message` (research_view.MessageView). Citation markers in a
+    reply were already resolved into safe segments by build_message_view; malformed or unknown
+    markers arrive here as plain text, never a link. -#}
+{% import "_research_macros.html" as rx with context %}
+<article class="turn{{ ' turn-owner' if message.role == 'owner' }}" data-message-status="{{ message.status }}">
+  <div class="turn-who">{{ t('web.research.conversation.role_owner') if message.role == 'owner' else t('web.workspace.session.role_reply') }}<small>{{ message.created_at|short_time }}</small></div>
+  <div class="turn-body read">
+    {% if message.status == 'failed' %}
+    <p class="hint">{{ t('web.research.conversation.reply_unavailable') }}</p>
+    {% elif message.status == 'pending' %}
+    <p class="hint">{{ t('web.research.conversation.reply_pending') }}</p>
+    {% else %}
+    <p class="msg">{% for segment in message.segments %}{% if segment.kind == 'citation' %}{{ rx.cite(segment) }}{% else %}{{ segment.text }}{% endif %}{% endfor %}</p>
+    {% endif %}
+  </div>
 </article>

@@ -1362,6 +1362,8 @@ class WatchlistItemView:
     is_closed: bool
     is_watched: bool
     is_watchable: bool
+    reminder_due_at: str | None = None
+    reminder_sent_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1372,6 +1374,8 @@ class WatchlistPage:
     active_count: int
     closed_count: int
     total_count: int
+    # Every watch whose reminder failed, whatever the filters, so the page can list them first.
+    failed_items: tuple[WatchlistItemView, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1447,6 +1451,8 @@ def _watchlist_item(row: Row, t: Localizer, now: datetime) -> WatchlistItemView:
         ),
         reminder_status=reminder_status,
         reminder_error=reminder_error,
+        reminder_due_at=reminder_due_at,
+        reminder_sent_at=reminder_sent_at,
         is_active=is_active,
         is_closed=_req_bool(row, "is_closed"),
         # Every row is an existing watch on an owner-only page, so removal is always offered even
@@ -1497,8 +1503,11 @@ def build_watchlist_page(
             or search in item.context.casefold()
         )
     ]
+    # Stopping the only watch on the last page must not leave an empty view of a page that no
+    # longer exists; show the new last page instead.
+    last_page = max(1, math.ceil(len(filtered) / selected_query.per_page))
     pagination = Pagination(
-        page=selected_query.page,
+        page=min(selected_query.page, last_page),
         per_page=selected_query.per_page,
         total=len(filtered),
     )
@@ -1510,6 +1519,7 @@ def build_watchlist_page(
         active_count=active_count,
         closed_count=closed_count,
         total_count=len(all_items),
+        failed_items=tuple(item for item in all_items if item.reminder_status == "error"),
     )
 
 

@@ -145,6 +145,60 @@ class SessionRowView:
     last_activity_label: str
     detail_url: str
     is_unread: bool = False
+    run_count: int = 0
+    failed_run_count: int = 0
+    last_run_id: int | None = None
+    last_run_status: str | None = None
+    last_run_status_label: str | None = None
+    evidence_count: int = 0
+    synthesis_version: int | None = None
+
+
+@dataclass(frozen=True)
+class SessionStats:
+    run_count: int = 0
+    failed_run_count: int = 0
+    last_run_id: int | None = None
+    last_run_status: str | None = None
+    evidence_count: int = 0
+    synthesis_version: int | None = None
+
+
+# Evidence is counted in the latest sealed snapshot, the same set the Evidence page lists.
+_SESSION_STATS_SQL = """
+SELECT s.id AS session_id,
+  (SELECT COUNT(*) FROM research_runs r WHERE r.session_id = s.id) AS run_count,
+  (SELECT COUNT(*) FROM research_runs r WHERE r.session_id = s.id AND r.status = 'failed')
+    AS failed_run_count,
+  (SELECT r.id FROM research_runs r WHERE r.session_id = s.id ORDER BY r.id DESC LIMIT 1)
+    AS last_run_id,
+  (SELECT r.status FROM research_runs r WHERE r.session_id = s.id ORDER BY r.id DESC LIMIT 1)
+    AS last_run_status,
+  (SELECT COUNT(*) FROM research_snapshot_items i WHERE i.snapshot_id = (
+     SELECT sn.id FROM research_snapshots sn WHERE sn.session_id = s.id AND sn.status = 'sealed'
+     ORDER BY sn.sequence_number DESC LIMIT 1)) AS evidence_count,
+  (SELECT MAX(y.version) FROM research_syntheses y WHERE y.session_id = s.id)
+    AS synthesis_version
+FROM research_sessions s
+"""
+
+
+def load_session_stats(conn, session_id: int | None = None) -> dict[int, SessionStats]:
+    """Run, evidence and conclusion counts per Research Session, in one query."""
+    sql, params = _SESSION_STATS_SQL, ()
+    if session_id is not None:
+        sql, params = _SESSION_STATS_SQL + " WHERE s.id = ?", (session_id,)
+    return {
+        row["session_id"]: SessionStats(
+            run_count=row["run_count"],
+            failed_run_count=row["failed_run_count"],
+            last_run_id=row["last_run_id"],
+            last_run_status=row["last_run_status"],
+            evidence_count=row["evidence_count"],
+            synthesis_version=row["synthesis_version"],
+        )
+        for row in conn.execute(sql, params).fetchall()
+    }
 
 
 def build_session_row(
@@ -152,7 +206,9 @@ def build_session_row(
     t: Localizer,
     *,
     is_unread: bool = False,
+    stats: SessionStats | None = None,
 ) -> SessionRowView:
+    stats = stats or SessionStats()
     return SessionRowView(
         id=session.id,
         question=_truncate(session.question, MAX_QUESTION_LENGTH),
@@ -161,6 +217,16 @@ def build_session_row(
         last_activity_label=relative_time(session.last_activity_at.isoformat(), t),
         detail_url=f"/research/{session.id}",
         is_unread=is_unread,
+        run_count=stats.run_count,
+        failed_run_count=stats.failed_run_count,
+        last_run_id=stats.last_run_id,
+        last_run_status=stats.last_run_status,
+        last_run_status_label=(
+            t.text(f"web.research.run_status.{stats.last_run_status}")
+            if stats.last_run_status else None
+        ),
+        evidence_count=stats.evidence_count,
+        synthesis_version=stats.synthesis_version,
     )
 
 
@@ -181,20 +247,28 @@ class RunStatusView:
     can_cancel: bool
     error_message: str | None
     error_detail: str | None
+    run_id: int | None = None
 
 
 _RUN_ERROR_KEYS = frozenset({
-    "planning_failed", "collection_failed", "synthesis_failed", "deadline_exceeded",
+    "synthesis_failed", "deadline_exceeded", "no_evidence_collected",
+    "sealed_snapshot_missing_revision",
 })
 
 
-def _run_error_message(run: ResearchRun, t: Localizer) -> str | None:
-    """Never reads run.error_detail (a raw internal string) -- only the safe, closed set of
+def run_error_reason(error_code: str | None, t: Localizer) -> str:
+    """Never reads a run's error_detail (a raw internal string) -- only the safe, closed set of
     error_code values maps to localized copy; anything else (including a missing/unrecognized
-    code) degrades to one generic unavailable message."""
+    code, such as the worker's exception type names) degrades to one generic message."""
+    if error_code in _RUN_ERROR_KEYS:
+        return t.text(f"web.research.run_error.{error_code}")
+    return t.text("web.research.run_error.generic")
+
+
+def _run_error_message(run: ResearchRun, t: Localizer) -> str | None:
     if run.status is not ResearchRunStatus.FAILED:
         return None
-    return t.text("web.research.run_error.generic")
+    return run_error_reason(run.error_code, t)
 
 
 def _run_error_detail(run: ResearchRun) -> str | None:
@@ -217,6 +291,7 @@ def build_run_status_view(run: ResearchRun | None, t: Localizer) -> RunStatusVie
             requested_at_label="", can_cancel=False, error_message=None, error_detail=None)
     is_pending = run.status in _NON_TERMINAL_RUN_STATUSES
     return RunStatusView(
+        run_id=run.id,
         has_run=True,
         is_pending=is_pending,
         status_label=run_status_label(run.status, t),
@@ -463,6 +538,39 @@ def build_evidence_tab_view(conn, session_id: int, t: Localizer, page: int = 1) 
         has_prev=safe_page > 1, has_next=safe_page < total_pages)
 
 
+def evidence_all_excluded(conn, session_id: int) -> bool:
+    """True when the latest sealed snapshot has items but the Owner excluded every one of them.
+    The same rule as build_evidence_tab_view, without loading a single Evidence Item."""
+    snapshot_id = _latest_sealed_snapshot_id(conn, session_id)
+    if snapshot_id is None or not list_snapshot_item_ids(conn, snapshot_id):
+        return False
+    revision = get_latest_evidence_state_revision(conn, session_id)
+    return revision is None or not revision.evidence_item_ids
+
+
+def build_cited_evidence(
+        conn, session_id: int, item_ids: list[int], t: Localizer) -> tuple[EvidenceItemView, ...]:
+    """The Evidence Items a conclusion or reply cites, for the side column's citation cards.
+    Excluded state comes from the same curation table the Evidence page reads."""
+    wanted = sorted(set(item_ids))
+    if not wanted:
+        return ()
+    items_by_id = get_evidence_items(conn, wanted)
+    curation = list_evidence_curation(conn, list(items_by_id))
+    sources_by_id = {
+        source.id: source
+        for source in list_research_sources(conn, session_id, include_inactive=True)
+    }
+    views = [
+        _build_evidence_item_view(
+            item, sources_by_id.get(item.research_source_id),
+            item_id in curation and curation[item_id].is_excluded, session_id, t)
+        for item_id, item in items_by_id.items()
+        if item.session_id == session_id
+    ]
+    return tuple(sorted(views, key=lambda view: view.citation_number))
+
+
 # ============================================================================
 # Synthesis tab: wraps beehive.research.synthesis.ResearchSynthesisDocument for rendering
 # ============================================================================
@@ -473,6 +581,7 @@ class CitationLinkView:
     title: str
     href: str
     quality_label: str
+    evidence_item_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -494,6 +603,7 @@ class SynthesisTabView:
     evidence_coverage: tuple[SynthesisFindingView, ...]
     model_knowledge: tuple[str, ...]
     created_at_label: str | None
+    created_at: str | None = None
 
 
 def _finding_view(finding, t: Localizer) -> SynthesisFindingView:
@@ -502,7 +612,8 @@ def _finding_view(finding, t: Localizer) -> SynthesisFindingView:
         citations=tuple(
             CitationLinkView(
                 citation_number=c.citation_number, title=c.title,
-                href=safe_external_href(c.url), quality_label=quality_label(c.quality, t))
+                href=safe_external_href(c.url), quality_label=quality_label(c.quality, t),
+                evidence_item_id=c.evidence_item_id)
             for c in finding.citations),
     )
 
@@ -526,6 +637,7 @@ def build_synthesis_tab_view(document: ResearchSynthesisDocument | None,
         evidence_coverage=tuple(_finding_view(f, t) for f in document.evidence_coverage),
         model_knowledge=tuple(note.text for note in document.model_knowledge),
         created_at_label=host_local_time_label(document.created_at.isoformat()),
+        created_at=document.created_at.isoformat(),
     )
 
 
@@ -548,6 +660,7 @@ class CitationSegment:
     href: str = "#"
     title: str = ""
     quality_label: str = ""
+    evidence_item_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -557,6 +670,7 @@ class MessageView:
     status: str  # "pending" | "ready" | "failed"
     segments: tuple[CitationSegment, ...]
     created_at_label: str
+    created_at: str = ""
 
 
 def _build_citation_segments(
@@ -579,7 +693,8 @@ def _build_citation_segments(
             segments.append(CitationSegment(kind="text", text=content[last_end:match.start()]))
         segments.append(CitationSegment(
             kind="citation", citation_number=number, href=safe_external_href(item.url),
-            title=item.title, quality_label=quality_label(item.quality, t)))
+            title=item.title, quality_label=quality_label(item.quality, t),
+            evidence_item_id=item.id or 0))
         last_end = match.end()
     if last_end < len(content):
         segments.append(CitationSegment(kind="text", text=content[last_end:]))
@@ -606,6 +721,7 @@ def build_message_view(conn, message: ConversationMessage, t: Localizer) -> Mess
         status=message.status.value,
         segments=segments,
         created_at_label=host_local_time_label(message.created_at.isoformat()),
+        created_at=message.created_at.isoformat(),
     )
 
 
@@ -660,6 +776,22 @@ def build_conversation_view(
         disabled_reason=disabled_reason, failure_message=failure_message)
 
 
+def has_pending_chat_request(conn, session_id: int) -> bool:
+    active_request = get_active_chat_request(conn, session_id)
+    return active_request is not None and active_request.status in (
+        ChatRequestStatus.PENDING, ChatRequestStatus.PROCESSING)
+
+
+def cited_evidence_ids(synthesis: SynthesisTabView, conversation: ConversationTabView) -> list[int]:
+    """Every Evidence Item the conclusion or a reply links to, in reading order."""
+    findings = (*synthesis.bottom_line, *synthesis.key_findings, *synthesis.source_agreements,
+                *synthesis.source_conflicts, *synthesis.unknowns, *synthesis.evidence_coverage)
+    ids = [c.evidence_item_id for finding in findings for c in finding.citations]
+    ids += [segment.evidence_item_id for message in conversation.messages
+            for segment in message.segments if segment.kind == "citation"]
+    return [item_id for item_id in ids if item_id]
+
+
 # ============================================================================
 # Safe error-message mapping (never renders a raw ValueError/exception message)
 # ============================================================================
@@ -673,6 +805,69 @@ def safe_session_error_message(t: Localizer, _exc: Exception) -> str:
     exception through this single function -- the exception's own message (which may legitimately
     reference internal ids) is intentionally discarded, never interpolated into the response."""
     return t.text(_SESSION_ACTION_ERROR_KEY)
+
+
+@dataclass(frozen=True)
+class SessionSummaryView:
+    source_count: int
+    evidence_count: int
+    run_count: int
+    failed_run_count: int
+    last_run_id: int | None
+    last_run_status: str | None
+    last_run_status_label: str | None
+    last_run_when_label: str | None
+    last_run_duration_label: str | None
+    synthesis_version: int | None
+    synthesis_sufficiency_label: str | None
+    synthesis_model: str | None
+
+
+def _duration_label(started_at: str | None, completed_at: str | None, t: Localizer) -> str:
+    if not started_at or not completed_at:
+        return t.text("web.research.history.duration_pending")
+    seconds = max(0, int(
+        (datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at)).total_seconds()))
+    return t.text("web.research.history.duration", minutes=seconds // 60, seconds=seconds % 60)
+
+
+def build_session_summary(
+        conn, session_id: int, source_count: int, t: Localizer) -> SessionSummaryView:
+    stats = load_session_stats(conn, session_id).get(session_id, SessionStats())
+    last_run = conn.execute(
+        "SELECT requested_at, started_at, completed_at FROM research_runs WHERE id = ?",
+        (stats.last_run_id,),
+    ).fetchone() if stats.last_run_id is not None else None
+    synthesis = conn.execute(
+        "SELECT version, sufficiency_state, model FROM research_syntheses WHERE session_id = ? "
+        "ORDER BY version DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    return SessionSummaryView(
+        source_count=source_count,
+        evidence_count=stats.evidence_count,
+        run_count=stats.run_count,
+        failed_run_count=stats.failed_run_count,
+        last_run_id=stats.last_run_id,
+        last_run_status=stats.last_run_status,
+        last_run_status_label=(
+            t.text(f"web.research.run_status.{stats.last_run_status}")
+            if stats.last_run_status else None
+        ),
+        last_run_when_label=(
+            relative_time(last_run["requested_at"], t) if last_run is not None else None
+        ),
+        last_run_duration_label=(
+            _duration_label(last_run["started_at"], last_run["completed_at"], t)
+            if last_run is not None and last_run["completed_at"] else None
+        ),
+        synthesis_version=synthesis["version"] if synthesis is not None else None,
+        synthesis_sufficiency_label=(
+            t.text(f"web.research.sufficiency.{synthesis['sufficiency_state']}")
+            if synthesis is not None else None
+        ),
+        synthesis_model=synthesis["model"] if synthesis is not None else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -703,6 +898,15 @@ class ResearchRunHistoryRowView:
     deep_fetch_count: int
     attempt_count: int
     plan_count: int
+    status: str = ""
+    kind: str = "full"
+    requested_at: str = ""
+    error_reason: str | None = None
+    error_detail: str | None = None
+    snapshot_sequence: int | None = None
+    snapshot_item_count: int | None = None
+    synthesis_version: int | None = None
+    synthesis_sufficiency_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -732,6 +936,11 @@ class ResearchHistoryView:
     syntheses: tuple[ResearchSynthesisHistoryRowView, ...]
 
 
+def _utc(value: str) -> datetime:
+    moment = datetime.fromisoformat(value)
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+
+
 def build_research_history_view(
     conn,
     session_id: int,
@@ -739,39 +948,28 @@ def build_research_history_view(
 ) -> ResearchHistoryView:
     run_rows = conn.execute(
         "SELECT r.id, r.run_kind, r.status, r.requested_at, r.started_at, "
-        "r.completed_at, r.attempt_count, r.deep_fetch_count, "
+        "r.completed_at, r.attempt_count, r.deep_fetch_count, r.error_code, r.error_detail, "
         "(SELECT COUNT(*) FROM research_plan_revisions p WHERE p.run_id = r.id) "
         "AS plan_count "
         "FROM research_runs r WHERE r.session_id = ? ORDER BY r.id DESC",
         (session_id,),
     ).fetchall()
-    runs: list[ResearchRunHistoryRowView] = []
-    for row in run_rows:
-        started_at = datetime.fromisoformat(row["started_at"]) if row["started_at"] else None
-        completed_at = (
-            datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
-        )
-        if started_at is not None and completed_at is not None:
-            seconds = max(0, int((completed_at - started_at).total_seconds()))
-            duration_label = t.text(
-                "web.research.history.duration",
-                minutes=seconds // 60,
-                seconds=seconds % 60,
-            )
-        else:
-            duration_label = t.text("web.research.history.duration_pending")
-        runs.append(
-            ResearchRunHistoryRowView(
-                id=row["id"],
-                kind_label=t.text(f"web.research.run_kind.{row['run_kind']}"),
-                status_label=t.text(f"web.research.run_status.{row['status']}"),
-                requested_label=host_local_time_label(row["requested_at"]),
-                duration_label=duration_label,
-                deep_fetch_count=row["deep_fetch_count"],
-                attempt_count=row["attempt_count"],
-                plan_count=row["plan_count"],
-            )
-        )
+    # A conclusion does not store the run that wrote it, and a synthesis-only retry reuses an
+    # older snapshot, so the snapshot cannot say either. A session's runs never overlap, so the
+    # writer is the last run that had started when the conclusion was created. Rows older than
+    # any started run fall back to their snapshot's run.
+    run_starts = sorted(
+        (_utc(row["started_at"]), row["id"]) for row in run_rows if row["started_at"])
+
+    def writer_run(created_at: str, snapshot_run_id: int) -> int:
+        created = _utc(created_at)
+        writer = snapshot_run_id
+        for started_at, run_id in run_starts:
+            if started_at > created:
+                break
+            writer = run_id
+        return writer
+
     snapshot_rows = conn.execute(
         "SELECT s.id, s.sequence_number AS sequence, s.run_id, s.status, s.created_at, "
         "(SELECT COUNT(*) FROM research_snapshot_items i WHERE i.snapshot_id = s.id) "
@@ -803,15 +1001,53 @@ def build_research_history_view(
         ResearchSynthesisHistoryRowView(
             id=row["id"],
             version=row["version"],
-            run_id=row["run_id"],
             sufficiency_label=t.text(
                 f"web.research.sufficiency.{row['sufficiency_state']}"
             ),
             model=row["model"],
             created_label=host_local_time_label(row["created_at"]),
+            run_id=writer_run(row["created_at"], row["run_id"]),
         )
         for row in synthesis_rows
     )
+    # Both lists are newest first, so the first match per run is its latest sealed snapshot and
+    # its latest conclusion.
+    sealed_snapshot_by_run = {}
+    for row, snapshot in zip(snapshot_rows, snapshots, strict=True):
+        if row["status"] == EvidenceSnapshotStatus.SEALED.value:
+            sealed_snapshot_by_run.setdefault(snapshot.run_id, snapshot)
+    synthesis_by_run = {}
+    for synthesis in syntheses:
+        synthesis_by_run.setdefault(synthesis.run_id, synthesis)
+
+    runs: list[ResearchRunHistoryRowView] = []
+    for row in run_rows:
+        snapshot = sealed_snapshot_by_run.get(row["id"])
+        synthesis = synthesis_by_run.get(row["id"])
+        failed = row["status"] == ResearchRunStatus.FAILED.value
+        runs.append(
+            ResearchRunHistoryRowView(
+                id=row["id"],
+                kind_label=t.text(f"web.research.run_kind.{row['run_kind']}"),
+                status_label=t.text(f"web.research.run_status.{row['status']}"),
+                requested_label=host_local_time_label(row["requested_at"]),
+                duration_label=_duration_label(row["started_at"], row["completed_at"], t),
+                deep_fetch_count=row["deep_fetch_count"],
+                attempt_count=row["attempt_count"],
+                plan_count=row["plan_count"],
+                status=row["status"],
+                kind=row["run_kind"],
+                requested_at=row["requested_at"],
+                error_reason=run_error_reason(row["error_code"], t) if failed else None,
+                error_detail=(row["error_detail"] or None) if failed else None,
+                snapshot_sequence=snapshot.sequence if snapshot is not None else None,
+                snapshot_item_count=snapshot.item_count if snapshot is not None else None,
+                synthesis_version=synthesis.version if synthesis is not None else None,
+                synthesis_sufficiency_label=(
+                    synthesis.sufficiency_label if synthesis is not None else None
+                ),
+            )
+        )
     return ResearchHistoryView(
         runs=tuple(runs),
         snapshots=snapshots,
