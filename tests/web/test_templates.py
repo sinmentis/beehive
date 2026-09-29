@@ -37,34 +37,18 @@ def test_base_template_uses_shared_design_system_and_brand_mark():
     assert "🐝" not in content
 
 
-def test_shared_stylesheet_defines_responsive_dense_dashboard():
+def test_shared_stylesheet_defines_the_reading_site_basics():
     content = (_STATIC_DIR / "beehive.css").read_text()
     assert "--accent:" in content
     assert "font-variant-numeric:tabular-nums" in content
-    assert "--dashboard-row-height:1.625rem" in content
-    assert ".signal-table" in content
-    assert ".dashboard-channel-teaser" not in content
     assert "@media (max-width:720px)" in content
     assert "grid-template-columns:1fr" in content
     assert ":focus-visible" in content
     assert ":lang(zh)" in content
     assert "--muted-2:#686e64" in content
-    non_link_cells = re.search(
-        r"\.signal-source,\.signal-engagement,\.signal-age\{([^}]*)\}",
-        content,
-    )
-    assert non_link_cells is not None
-    assert "display:" not in non_link_cells.group(1)
-    compact_search = re.search(
-        r'\.dashboard-search input\[type="search"\]\{([^}]*)\}',
-        content,
-    )
-    assert compact_search is not None
-    assert "min-height:0" in compact_search.group(1)
-    target = re.search(r"\.signal-comment summary\{([^}]*)\}", content)
-    assert target is not None
-    assert "width:1.5rem" in target.group(1)
-    assert "height:1.5rem" in target.group(1)
+    # The home page moved to the datasheet (admin.css); its old table rules are gone.
+    for gone in (".signal-table", ".signal-row", ".page-dashboard", ".dashboard-", "--dashboard-row-height"):
+        assert gone not in content, gone
 
 
 def test_home_is_the_channel_desk_in_the_reading_shell():
@@ -152,21 +136,12 @@ def test_secondary_navigation_is_scoped_to_each_product_area():
         assert '{% extends "admin_base.html" %}' in admin_flow
 
 
-def test_dashboard_typography_is_readable_at_default_zoom():
+def test_reading_site_typography_is_readable_at_default_zoom():
     css = (_STATIC_DIR / "beehive.css").read_text()
     assert "html{scroll-behavior:smooth;font-size:150%}" in css
-    expected_sizes = {
-        r"\.channel-shelf-link": ".72rem",
-        r'\.dashboard-search input\[type="search"\]': ".6875rem",
-        r"\.signal-table th": ".625rem",
-        r"\.signal-table td": ".8125rem",
-        r"(?m)^\.signal-summary": ".8125rem",
-        r"\.signal-statusbar": ".625rem",
-    }
-    for selector, font_size in expected_sizes.items():
-        declaration = re.search(rf"{selector}\{{([^}}]*)\}}", css)
-        assert declaration is not None
-        assert f"font-size:{font_size}" in declaration.group(1)
+    declaration = re.search(r"\.channel-shelf-link\{([^}]*)\}", css)
+    assert declaration is not None
+    assert "font-size:.72rem" in declaration.group(1)
 
 
 def test_editorial_channel_keeps_compact_readability_contract():
