@@ -1,5 +1,6 @@
-{#- The datasheet document: one sheet on a darker desk with a contents rail. The admin and the
-    Owner's workspace (research, watch list) extend it with their own contract, rail and footer. -#}
+{#- The datasheet document: one sheet on a darker desk with a contents rail. The admin, the
+    Owner's workspace (research, watch list) and the reading pages (the home page) extend it with
+    their own contract, rail and footer. -#}
 <!DOCTYPE html>
 <html lang="{{ locale }}">
 <head>
@@ -12,6 +13,7 @@
 <link rel="preload" href="/static/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/admin.css?v={{ asset_version }}">
 <title>{% block title %}{{ t('common.product_name') }}{% endblock %}</title>
+{% block head %}{% endblock %}
 </head>
 <body class="adm {% block body_class %}page-admin{% endblock %}">
 {% block contract %}{% endblock %}
@@ -28,7 +30,8 @@
         {% for chapter in shell_nav.chapters %}
         <li><a href="{{ chapter.href }}"{% if chapter.key == current_chapter %} aria-current="{{ 'true' if current_section else 'page' }}"{% endif %}><span class="no">{{ chapter.number }}</span><span>{{ chapter.label }}</span><span id="toc-count-{{ chapter.key }}">
           {%- if chapter.attention %}<span class="toc-count" title="{{ t('web.admin.shell.attention_count', count=chapter.attention) }}"><span aria-hidden="true">{{ chapter.attention }}</span><span class="sr-only">{{ t('web.admin.shell.attention_count', count=chapter.attention) }}</span></span>
-          {%- elif chapter.unread %}<span class="toc-count is-info" title="{{ t('web.research.unread_count', count=chapter.unread) }}"><span aria-hidden="true">{{ chapter.unread }}</span><span class="sr-only">{{ t('web.research.unread_count', count=chapter.unread) }}</span></span>{% endif %}</span></a></li>
+          {%- elif chapter.unread %}<span class="toc-count is-info" title="{{ t('web.research.unread_count', count=chapter.unread) }}"><span aria-hidden="true">{{ chapter.unread }}</span><span class="sr-only">{{ t('web.research.unread_count', count=chapter.unread) }}</span></span>
+          {%- elif chapter.tally %}<span class="toc-n" title="{{ chapter.tally_label }}"><span aria-hidden="true">{{ chapter.tally }}</span><span class="sr-only">{{ chapter.tally_label }}</span></span>{% endif %}</span></a></li>
         {% if chapter.key == current_chapter and toc_sections %}
         <li class="sub"><ol>
           {% for number, label, anchor in toc_sections %}

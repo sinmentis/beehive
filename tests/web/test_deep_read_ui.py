@@ -103,8 +103,9 @@ def test_shared_action_partial_is_wired_into_every_ranked_item_surface():
     assert '{% include "_deep_read_action.html" %}' in folded_item
     assert '{% include "_deep_read_action.html" %}' in archive
 
-    # Dashboard rows and folded Channel items are dense: the control must stay hidden at rest.
-    assert 'deep_read_variant = "dense"' in dashboard
+    # Folded Channel items are dense: the control stays hidden at rest. The home page is set in
+    # the datasheet, where the action is an ordinary link in its own column.
+    assert "deep_read_variant" not in dashboard
     assert 'deep_read_variant = "dense"' in folded_item
     # Highlighted Channel items keep the action visible beside the age; Archive rows use the side.
     assert 'deep_read_variant = "meta"' in item_card
@@ -228,13 +229,14 @@ def test_action_partial_hidden_fields_are_allowlisted_and_never_a_free_text_url(
 
 def test_dashboard_row_action_sits_outside_the_summary_link():
     template = (_TEMPLATES_DIR / "dashboard.html").read_text()
-    summary_cell = re.search(r'<td class="signal-summary-cell">(.*?)</td>', template, re.DOTALL)
+    summary_cell = re.search(r'<td class="c-sum">(.*?)</td>', template, re.DOTALL)
     assert summary_cell is not None
-    cell_body = summary_cell.group(1)
-    summary_link_end = cell_body.index("</a>")
-    action_include_index = cell_body.index('{% include "_deep_read_action.html" %}')
-    assert action_include_index > summary_link_end, (
+    assert "_deep_read_action.html" not in summary_cell.group(1), (
         "the deep-read action must be a sibling of the summary link, never nested inside it"
+    )
+    assert (
+        '<td class="c-ops">{% set item = story %}{% include "_deep_read_action.html" %}</td>'
+        in template
     )
 
 

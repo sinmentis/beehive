@@ -67,37 +67,25 @@ def test_shared_stylesheet_defines_responsive_dense_dashboard():
     assert "height:1.5rem" in target.group(1)
 
 
-def test_dashboard_matches_selected_a2_pixel_contract():
-    css = (_STATIC_DIR / "beehive.css").read_text()
+def test_home_is_the_channel_desk_in_the_reading_shell():
     template = (_TEMPLATES_DIR / "dashboard.html").read_text()
-    channel_shelf = (_TEMPLATES_DIR / "_channel_shelf.html").read_text()
+    reading = (_TEMPLATES_DIR / "reading_base.html").read_text()
+    css = (_STATIC_DIR / "admin.css").read_text()
 
-    assert "--header-height:5.65rem" in css
-    assert "--muted:#8b9085" in css
-    assert "--muted-2:#686e64" in css
-
-    toolbar = re.search(r"\.page-dashboard \.dashboard-toolbar\{([^}]*)\}", css)
-    assert toolbar is not None
-    assert "height:2.75rem" in toolbar.group(1)
-    assert "padding:0 .9rem" in toolbar.group(1)
-
-    table_heading = re.search(r"\.signal-table th\{([^}]*)\}", css)
-    assert table_heading is not None
-    assert "height:1.1875rem" in table_heading.group(1)
-
-    age_column = re.search(r"\.signal-age-col\{([^}]*)\}", css)
-    assert age_column is not None
-    assert "width:4.5rem" in age_column.group(1)
-
-    assert ".channel-strip{" not in css
-    assert ".signal-row.is-dim{opacity:" not in css
-    assert 'class="channel-strip"' not in template
-    assert '{% include "_channel_shelf.html" %}' in template
-    assert 'class="channel-shelf"' in channel_shelf
-    assert 'class="dashboard-channel-teaser"' not in channel_shelf
-    assert 'class="dashboard-search-shortcut"' in template
-    assert 'id="dashboard-selection-status"' in template
-    assert 'aria-live="polite"' in template
+    assert '{% extends "reading_base.html" %}' in template
+    assert '{% extends "datasheet_base.html" %}' in reading
+    # The direction contract ships in the page, as the first thing in the body.
+    assert "{% block contract %}\n<!-- Reading direction contract (impeccable seed ba4c87a4)" in reading
+    assert 'class="desk-sec"' in template
+    assert 'class="tbl tbl-feed"' in template
+    assert "data-kb-search" in template
+    assert 'id="kb-status"' in template and 'aria-live="polite"' in template
+    for rule in (".toc .toc-n{", ".rd{", ".score{", ".desk-state{", ".tbl .c-sum{", ".tbl-feed tr{"):
+        assert rule in css, rule
+    # Nothing on the desk is cut short: long text wraps, and a lot's auction context is not
+    # clamped the way the workspace clamps it.
+    assert "text-overflow:ellipsis" not in css.split("/* Reading:", 1)[1]
+    assert ".page-reading .lot-where{display:block;overflow:visible}" in css
 
 
 def test_secondary_navigation_is_scoped_to_each_product_area():
@@ -113,8 +101,10 @@ def test_secondary_navigation_is_scoped_to_each_product_area():
     archive = (_TEMPLATES_DIR / "archive.html").read_text()
     admin = (_TEMPLATES_DIR / "admin_settings.html").read_text()
 
-    assert "{% block secondary_navigation %}" in dashboard
-    assert '{% include "_channel_shelf.html" %}' in dashboard
+    # The home page lists its Channels as chapters in the datasheet rail, not as a tab shelf.
+    assert '{% extends "reading_base.html" %}' in dashboard
+    assert "{% block secondary_navigation %}" not in dashboard
+    assert '{% include "_channel_shelf.html" %}' not in dashboard
     for channel in channels:
         assert "{% block secondary_navigation %}" in channel
         assert '{% include "_channel_shelf.html" %}' in channel
@@ -124,8 +114,9 @@ def test_secondary_navigation_is_scoped_to_each_product_area():
     assert 'class="brand-context"' in archive
 
     # Admin has its own shell: a contents rail instead of the reading site's header and tabs.
-    # The rail and running head live in the shared datasheet document, which the admin and the
-    # Owner's workspace (research, watch list) each extend with their own contract and footer.
+    # The rail and running head live in the shared datasheet document, which the admin, the
+    # Owner's workspace (research, watch list) and the reading pages (the home page) each extend
+    # with their own contract and footer.
     assert '{% extends "admin_base.html" %}' in admin
     assert "{% block secondary_navigation %}" not in admin
     assert '{% include "_channel_shelf.html" %}' not in admin
@@ -133,7 +124,7 @@ def test_secondary_navigation_is_scoped_to_each_product_area():
     assert 'class="toc"' in datasheet
     assert "{% block shell %}" in datasheet
     assert "admin.css" in datasheet and "beehive.css" not in datasheet
-    for shell in ("admin_base.html", "workspace_base.html"):
+    for shell in ("admin_base.html", "workspace_base.html", "reading_base.html"):
         assert '{% extends "datasheet_base.html" %}' in (_TEMPLATES_DIR / shell).read_text()
 
     for template_name in (
@@ -254,32 +245,14 @@ def test_dashboard_script_implements_displayed_keyboard_shortcuts():
     content = (_STATIC_DIR / "beehive.js").read_text()
     assert 'key === "/" || key === "f"' in content
     assert 'key === "j" || key === "k"' in content
-    assert 'key === "enter" && selectedRowHasFocus' in content
+    # Enter opens a story only while its row itself has focus, so it still presses buttons.
+    assert '(key === "enter" && row && event.target === row)' in content
+    # After a read toggle re-renders a row, j and k move on from the row that holds focus.
+    assert 'document.activeElement?.closest?.("tr.kb-row")' in content
     assert "selectionStatus.textContent" in content
     assert "scrollIntoView" in content
     assert "/__(CHANNEL|SCORE|SUMMARY)__/g" in content
     assert '.replace("__CHANNEL__", channel)' not in content
-
-
-def test_featured_table_columns_support_pointer_and_keyboard_resizing():
-    template = (_TEMPLATES_DIR / "dashboard.html").read_text()
-    css = (_STATIC_DIR / "beehive.css").read_text()
-    script = (_STATIC_DIR / "beehive.js").read_text()
-
-    for key in ("state", "score", "channel", "source", "summary", "engagement", "time"):
-        assert f'data-column-key="{key}"' in template
-        assert f'data-column-header="{key}"' in template
-        assert f"resize_handle('{key}'" in template
-
-    assert 'role="separator"' in template
-    assert 'aria-orientation="vertical"' in template
-    assert ".signal-column-resizer{" in css
-    assert "cursor:col-resize" in css
-    assert "transition:background-color" in css
-    assert 'handle.addEventListener("pointerdown"' in script
-    assert 'handle.addEventListener("pointermove"' in script
-    assert '["ArrowLeft", "ArrowRight", "Home"]' in script
-    assert 'handle.addEventListener("dblclick"' in script
 
 
 def test_static_asset_version_changes_when_asset_bytes_change(tmp_path, monkeypatch):

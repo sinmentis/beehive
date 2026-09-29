@@ -713,13 +713,19 @@ def list_dashboard_highlights(
     published_from: str | None = None,
     published_to: str | None = None,
     read_state: str = "all",
+    channel_id: int | None = None,
+    unread_first: bool = False,
 ) -> list[dict]:
+    """Featured stories, highest AI score first. `channel_id` keeps one Channel's stories;
+    `unread_first` puts every unread story ahead of the read ones, each group still by score."""
     where, params = _dashboard_signal_filters(
         minimum_score=minimum_score,
         published_from=published_from,
         published_to=published_to,
         read_state=read_state,
+        channel_id=channel_id,
     )
+    read_order = "items.is_read ASC, " if unread_first else ""
     rows = conn.execute(
         "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
         "channels.name AS channel_name, channels.id AS item_channel_id, "
@@ -728,8 +734,128 @@ def list_dashboard_highlights(
         "JOIN channels ON channels.id = sources.channel_id "
         "LEFT JOIN votes ON votes.item_id = items.id "
         f"WHERE {' AND '.join(where)} "
-        "ORDER BY items.ai_score DESC, items.id ASC LIMIT ? OFFSET ?",
+        f"ORDER BY {read_order}items.ai_score DESC, items.id ASC LIMIT ? OFFSET ?",
         params + [limit, offset],
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def count_dashboard_signals_by_channel(
+    conn: sqlite3.Connection,
+    *,
+    published_from: str | None = None,
+    published_to: str | None = None,
+    high_score: float = 90,
+) -> dict[int, dict[str, int]]:
+    """Featured stories per Channel in one pass: {channel_id: {"all", "unread", "high"}}, where
+    "high" counts stories scoring at least `high_score`. The home page adds these up for its own
+    totals, so one scan of the window serves the whole page. A Channel with nothing featured is
+    absent, so callers default it to zero."""
+    where, params = _dashboard_signal_filters(
+        minimum_score=None,
+        published_from=published_from,
+        published_to=published_to,
+        read_state="all",
+    )
+    rows = conn.execute(
+        "SELECT channels.id AS channel_id, COUNT(*) AS total, "
+        "SUM(CASE WHEN items.is_read = 0 THEN 1 ELSE 0 END) AS unread, "
+        "SUM(CASE WHEN items.ai_score >= ? THEN 1 ELSE 0 END) AS high "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        "LEFT JOIN votes ON votes.item_id = items.id "
+        f"WHERE {' AND '.join(where)} "
+        "GROUP BY channels.id",
+        [high_score, *params],
+    ).fetchall()
+    return {
+        row["channel_id"]: {"all": row["total"], "unread": row["unread"], "high": row["high"]}
+        for row in rows
+    }
+
+
+# A score as the channel pages show, sort and filter it: Python's round(), half to even, of the
+# non-negative raw score (channels/views.py `_opt_score`). CAST truncates, which is floor here.
+# SQLite's own ROUND() rounds halves away from zero, so it would not match.
+_DISPLAY_SCORE = (
+    "(CASE WHEN items.ai_score - CAST(items.ai_score AS INTEGER) > 0.5 "
+    "THEN CAST(items.ai_score AS INTEGER) + 1 "
+    "WHEN items.ai_score - CAST(items.ai_score AS INTEGER) < 0.5 "
+    "THEN CAST(items.ai_score AS INTEGER) "
+    "ELSE CAST(items.ai_score AS INTEGER) + CAST(items.ai_score AS INTEGER) % 2 END)"
+)
+
+
+# A Monitor listing is live when it is still listed and in stock -- the channel page's Active
+# section (channels/views.py). Connectors store `available` as a JSON boolean, which
+# json_extract reads as 1 or 0. Unranked listings stay in, as they do on the channel page, and
+# a ranked one must reach its Channel's minimum score.
+_ACTIVE_MONITOR_LISTING = (
+    "items.superseded_at IS NULL AND items.inactive_at IS NULL "
+    "AND json_extract(items.raw_metadata, '$.available') = 1 "
+    "AND (items.ai_score IS NULL OR items.ai_score >= channels.minimum_score)"
+)
+
+
+def list_active_monitor_listings(
+    conn: sqlite3.Connection, channel_id: int, *, limit: int
+) -> list[dict]:
+    """A Monitor Channel's best live listings in the channel page's score order: highest
+    displayed score first, unranked last, then by id. The filter and the limit run in SQL, so a
+    short list never decodes the whole catalogue."""
+    rows = conn.execute(
+        "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
+        "channels.kind AS channel_kind, "
+        "votes.value AS vote_value, votes.reason AS vote_reason "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        "LEFT JOIN votes ON votes.item_id = items.id "
+        f"WHERE sources.channel_id = ? AND {_ACTIVE_MONITOR_LISTING} "
+        f"ORDER BY items.ai_score IS NULL, {_DISPLAY_SCORE} DESC, items.id ASC LIMIT ?",
+        (channel_id, limit),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def count_active_monitor_listings_by_channel(
+    conn: sqlite3.Connection, channel_ids: list[int]
+) -> dict[int, int]:
+    """Live listings per Monitor Channel in one grouped query: {channel_id: count}. A Channel
+    with none is absent, so callers default it to zero."""
+    if not channel_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in channel_ids)
+    rows = conn.execute(
+        "SELECT sources.channel_id AS channel_id, COUNT(*) AS total "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        f"WHERE sources.channel_id IN ({placeholders}) AND {_ACTIVE_MONITOR_LISTING} "
+        "GROUP BY sources.channel_id",
+        list(channel_ids),
+    ).fetchall()
+    return {row["channel_id"]: row["total"] for row in rows}
+
+
+def list_listed_lots_scoring(
+    conn: sqlite3.Connection, channel_id: int, *, minimum_score: int
+) -> list[dict]:
+    """A Tracker Channel's current, still-listed items that pass its own minimum score (on the
+    raw score, as the channel page applies it) and show at least `minimum_score` (on the
+    displayed score, as the channel page's score filter applies it), highest first. Lots can
+    only be open while they are listed, so this is the short candidate list the adapter's
+    deadline facts then narrow to the lots still open."""
+    rows = conn.execute(
+        "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
+        "channels.kind AS channel_kind, "
+        "votes.value AS vote_value, votes.reason AS vote_reason "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        "JOIN channels ON channels.id = sources.channel_id "
+        "LEFT JOIN votes ON votes.item_id = items.id "
+        "WHERE sources.channel_id = ? AND items.superseded_at IS NULL "
+        "AND items.inactive_at IS NULL AND items.ai_score >= channels.minimum_score "
+        f"AND {_DISPLAY_SCORE} >= ? "
+        "ORDER BY items.ai_score DESC, items.id ASC",
+        (channel_id, minimum_score),
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -767,12 +893,14 @@ def count_dashboard_signals(
     published_from: str | None = None,
     published_to: str | None = None,
     read_state: str = "all",
+    channel_id: int | None = None,
 ) -> int:
     where, params = _dashboard_signal_filters(
         minimum_score=minimum_score,
         published_from=published_from,
         published_to=published_to,
         read_state=read_state,
+        channel_id=channel_id,
     )
     return conn.execute(
         "SELECT COUNT(*) FROM items "
@@ -790,6 +918,7 @@ def _dashboard_signal_filters(
     published_from: str | None,
     published_to: str | None,
     read_state: str,
+    channel_id: int | None = None,
 ) -> tuple[list[str], list]:
     where = [
         "channels.kind = 'editorial'",
@@ -799,6 +928,9 @@ def _dashboard_signal_filters(
         "(votes.value IS NULL OR votes.value != -1)",
     ]
     params: list = []
+    if channel_id is not None:
+        where.append("channels.id = ?")
+        params.append(channel_id)
     if minimum_score is not None:
         where.append("items.ai_score >= ?")
         params.append(minimum_score)

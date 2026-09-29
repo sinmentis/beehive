@@ -56,7 +56,7 @@ from beehive.db.deep_reads import (
 )
 from beehive.db.items import (
     count_dashboard_signals,
-    count_unread_by_channel,
+    count_dashboard_signals_by_channel,
     get_item,
     list_archive,
     list_dashboard_highlights,
@@ -72,7 +72,6 @@ from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.featured import featured_utc_bounds, load_featured_window_days
 from beehive.domain.channels import ReadModel
 from beehive.localization import Localizer
-from beehive.scheduling import ChannelFetchSchedule
 from beehive.web.deep_read_view import (
     ALLOWED_ORIGINS,
     brief_url,
@@ -91,12 +90,13 @@ from beehive.web.formatting import (
     freshness_exact_time,
     freshness_label,
     host_local_time_label,
-    next_fetch_countdown,
     relative_time,
 )
 from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.link_safety import safe_external_href
 from beehive.web.official_feed_labels import official_feed_label
+from beehive.web.home import build_channel_desk, build_ranked_stories
+from beehive.web.reading import render_reading
 from beehive.web.workspace import render_workspace
 from beehive.tracker_reminders import send_tracker_reminder_for_item
 
@@ -332,17 +332,17 @@ def _time_label(iso_str: str) -> str:
     return datetime.fromisoformat(iso_str).strftime("%H:%M")
 
 
-def _dashboard_url(
+def _ranked_list_url(
     view: str, minimum_score: int | None, page: int = 1
 ) -> str:
-    params: dict[str, str | int] = {}
-    if view != "all":
-        params["view"] = view
+    """The home page's ranked list. It always carries `view`, which is what opens the list
+    instead of the channel desk."""
+    params: dict[str, str | int] = {"view": view}
     if minimum_score is not None:
         params["minimum_score"] = minimum_score
     if page != 1:
         params["page"] = page
-    return f"/?{urlencode(params)}" if params else "/"
+    return f"/?{urlencode(params)}"
 
 
 def _archive_page_url(
@@ -428,15 +428,18 @@ def _search_url(search: str, page: int = 1) -> str:
 @router.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
-    view: Literal["all", "unread", "read"] = Query(default="all"),
+    view: Literal["all", "unread", "read"] | None = Query(default=None),
     minimum_score: int | None = Query(default=None, ge=0, le=100),
-    page: int = Query(default=1, ge=1),
+    page: int | None = Query(default=None, ge=1),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
 ):
+    """The home page. By default it is the channel desk: one section per Channel. Any of
+    `view`, `minimum_score` or `page` opens the ranked list of every featured story instead,
+    which is where the head's counts lead and what older links to the home page expect."""
     is_admin = session is not None
-    effective_view = view if is_admin else "all"
+    csrf_token = session["csrf_token"] if is_admin else None
     now = datetime.now(timezone.utc)
     featured_window_days = load_featured_window_days(conn)
     published_from, published_to = featured_utc_bounds(now, featured_window_days)
@@ -444,104 +447,93 @@ def dashboard(
         "published_from": published_from,
         "published_to": published_to,
     }
-    signal_counts = {
-        state: count_dashboard_signals(conn, read_state=state, **day_filters)
-        for state in ("all", "unread", "read")
+    # One scan of the window serves every count on the page: the head's totals and each
+    # Channel's section.
+    story_counts = count_dashboard_signals_by_channel(conn, **day_filters)
+    all_signal_count = sum(counts["all"] for counts in story_counts.values())
+    unread_signal_count = sum(counts["unread"] for counts in story_counts.values())
+    channels = list_channels(conn)
+    context = {
+        "is_admin": is_admin,
+        "csrf_token": csrf_token,
+        "featured_window_days": featured_window_days,
+        "all_signal_count": all_signal_count,
+        "unread_signal_count": unread_signal_count,
+        "read_signal_count": all_signal_count - unread_signal_count,
+        "high_priority_count": sum(counts["high"] for counts in story_counts.values()),
+        "all_url": _ranked_list_url("all", None),
+        "unread_url": _ranked_list_url("unread", None),
+        "read_url": _ranked_list_url("read", None),
+        "high_priority_url": _ranked_list_url("all", 90),
+        "has_channels": bool(channels),
     }
-    pending_signal_count = count_dashboard_signals(
-        conn,
-        minimum_score=minimum_score,
-        read_state=effective_view,
-        **day_filters,
-    )
-    pagination = Pagination(
-        page=page,
-        per_page=DASHBOARD_SIGNAL_COUNT,
-        total=pending_signal_count,
-    )
-    highlights = list_dashboard_highlights(
-        conn,
-        limit=DASHBOARD_SIGNAL_COUNT,
-        offset=pagination.offset,
-        minimum_score=minimum_score,
-        published_from=published_from,
-        published_to=published_to,
-        read_state=effective_view,
-    )
-    for item in highlights:
-        _decorate_item(item, t)
-    channels = []
-    for channel in list_channels(conn):
-        definition = get_definition(require_channel_kind(channel["kind"]))
-        sources = list_sources(conn, channel["id"])
-        nav_channel = {
-            "id": channel["id"],
-            "name": channel["name"],
-            "freshness": freshness_label(sources, t),
-            "freshness_exact": freshness_exact_time(sources),
-            "next_fetch": next_fetch_countdown(
-                sources,
-                ChannelFetchSchedule.from_channel(channel),
-                now,
-                t,
+    if view is None and minimum_score is None and page is None:
+        context.update(
+            list_view=False,
+            desk=build_channel_desk(
+                conn,
+                channels,
+                t=t,
+                now=now,
+                is_owner=is_admin,
+                csrf_token=csrf_token,
+                story_counts=story_counts,
+                **day_filters,
             ),
-            "fetch_stats": fetch_stats_label(sources, t),
-        }
-        if is_admin and definition.read_model is ReadModel.TRACKED:
-            nav_channel["unread_count"] = count_unread_by_channel(
-                conn, channel["id"], channel["minimum_score"]
-            )
-        channels.append(nav_channel)
-
-    csrf_token = session["csrf_token"] if is_admin else None
-    deep_reads = get_deep_reads_for_items(conn, [i["id"] for i in highlights])
-    for item in highlights:
-        decorate_deep_read_state(
-            item, deep_reads.get(item["id"]), is_admin, "dashboard", None, csrf_token
+            return_url="/",
         )
-
-    templates = request.app.state.templates
-    return templates.TemplateResponse(
-        request,
-        "dashboard.html",
-        {
-            "channels": channels,
-            "highlights": highlights,
-            "has_more_signals": pagination.has_next,
-            "pagination": pagination,
-            "previous_url": (
-                _dashboard_url(effective_view, minimum_score, page - 1)
+    else:
+        effective_view = (view or "all") if is_admin else "all"
+        pending_signal_count = count_dashboard_signals(
+            conn,
+            minimum_score=minimum_score,
+            read_state=effective_view,
+            **day_filters,
+        )
+        # A page past the end (after marking the last unread page read, say) shows the last one.
+        page_count = -(-pending_signal_count // DASHBOARD_SIGNAL_COUNT)
+        pagination = Pagination(
+            page=min(page or 1, max(page_count, 1)),
+            per_page=DASHBOARD_SIGNAL_COUNT,
+            total=pending_signal_count,
+        )
+        rows = list_dashboard_highlights(
+            conn,
+            limit=DASHBOARD_SIGNAL_COUNT,
+            offset=pagination.offset,
+            minimum_score=minimum_score,
+            read_state=effective_view,
+            **day_filters,
+        )
+        context.update(
+            list_view=True,
+            view=effective_view,
+            minimum_score=minimum_score,
+            pagination=pagination,
+            pending_signal_count=pending_signal_count,
+            ranked=build_ranked_stories(
+                conn, rows, t=t, now=now, is_owner=is_admin, csrf_token=csrf_token
+            ),
+            previous_url=(
+                _ranked_list_url(effective_view, minimum_score, pagination.page - 1)
                 if pagination.has_previous
                 else None
             ),
-            "next_url": (
-                _dashboard_url(effective_view, minimum_score, page + 1)
+            next_url=(
+                _ranked_list_url(effective_view, minimum_score, pagination.page + 1)
                 if pagination.has_next
                 else None
             ),
-            "high_priority_count": count_dashboard_signals(
-                conn,
-                minimum_score=90,
-                read_state="all",
-                **day_filters,
-            ),
-            "pending_signal_count": pending_signal_count,
-            "all_signal_count": signal_counts["all"],
-            "unread_signal_count": signal_counts["unread"],
-            "read_signal_count": signal_counts["read"],
-            "dashboard_time": host_local_time_label(now.isoformat())[-5:],
-            "featured_window_days": featured_window_days,
-            "view": effective_view,
-            "minimum_score": minimum_score,
-            "all_url": _dashboard_url("all", None),
-            "unread_url": _dashboard_url("unread", None),
-            "read_url": _dashboard_url("read", None),
-            "high_priority_url": _dashboard_url("all", 90),
-            "total_unread": signal_counts["unread"],
-            "is_admin": is_admin,
-            "csrf_token": csrf_token,
-            "return_url": _dashboard_url(effective_view, minimum_score, page),
-        },
+            return_url=_ranked_list_url(effective_view, minimum_score, pagination.page),
+            filter_url=_ranked_list_url(effective_view, minimum_score),
+        )
+    return render_reading(
+        request,
+        t,
+        "dashboard.html",
+        context,
+        channels=channels,
+        featured_unread=unread_signal_count if is_admin else None,
     )
 
 

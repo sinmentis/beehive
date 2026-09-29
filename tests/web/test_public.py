@@ -209,7 +209,7 @@ def _create_auction_item(c, *, external_id="lot-1", closes_in_hours=2):
     ).fetchone()[0]
 
 
-def test_dashboard_channel_tab_has_no_secondary_popup_action(conn, authed_client):
+def test_home_desk_gives_each_channel_a_section_with_its_state(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(
@@ -223,17 +223,21 @@ def test_dashboard_channel_tab_has_no_secondary_popup_action(conn, authed_client
 
     resp = authed_client.get("/")
     assert resp.status_code == 200
-    assert "NZ Finance" in resp.text
+    assert f'<section class="desk-sec" id="desk-{channel_id}"' in resp.text
+    assert '<span class="no">1.1</span><span>NZ Finance</span>' in resp.text
+    assert '<span class="desk-state nw">1 in 3 days</span>' in resp.text
+    assert '<span class="desk-state nw">1 unread</span>' in resp.text
+    assert (
+        f'<a class="btn btn-sm" href="/channels/{channel_id}">Open channel'
+        '<span class="sr-only">: NZ Finance</span></a>'
+    ) in resp.text
     assert "RBNZ 降息" in resp.text
-    assert 'aria-label="NZ Finance, 1 new item"' in resp.text
-    assert 'class="dashboard-channel-teaser"' not in resp.text
-    assert "Open NZ Finance&#39;s latest signal" not in resp.text
 
 
 def test_dashboard_renders_fingerprinted_static_assets(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    match = re.search(r'href="/static/beehive\.css\?v=([0-9a-f]{12})"', resp.text)
+    match = re.search(r'href="/static/admin\.css\?v=([0-9a-f]{12})"', resp.text)
     assert match is not None
     assert f'src="/static/beehive.js?v={match.group(1)}"' in resp.text
 
@@ -253,14 +257,17 @@ def test_dashboard_shows_unread_count(conn, authed_client):
     update_ai_ranking(c, source_id, "t2", score=80, summary="B", rationale="r")
 
     resp = authed_client.get("/")
-    assert " · 2 new</span>" in resp.text
+    assert (
+        '<span class="toc-n" title="2 unread featured stories">'
+        '<span aria-hidden="true">2</span>'
+    ) in resp.text
 
 
 def test_dashboard_renders_with_no_channels(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert "Start with your first channel" in resp.text
-    assert " · 0 new</span>" not in resp.text
+    assert 'class="toc-n"' not in resp.text
 
 
 def test_create_app_bootstraps_schema_on_fresh_db(tmp_path):
@@ -350,8 +357,8 @@ def test_monitor_channel_accepts_newest_fetched_sort(conn, client):
 
 
 def test_monitor_channel_appears_in_dashboard_and_channel_nav(conn, client):
-    """Monitor Channels are reachable via the same channel-shelf nav as editorial Channels --
-    they are no longer a URL-only, unlinked page."""
+    """Monitor Channels are reachable from the home page like editorial Channels, as a chapter
+    in the rail and a section on the desk -- they are no longer a URL-only, unlinked page."""
     _, c = conn
     channel_id = create_channel(
         c, "Arcteryx Outlet", "watch for price drops", kind="monitor"
@@ -2067,15 +2074,17 @@ def test_archive_filters_by_search_query_param(conn, client):
 
 def test_dashboard_logo_links_to_home(client):
     resp = client.get("/")
-    assert 'class="brand"' in resp.text
-    assert 'class="brand-mark"' in resp.text
-    assert 'href="/" aria-current="page"' in resp.text
+    assert re.search(r'<a class="adm-brand" href="/" aria-label="[^"]+ home">', resp.text)
+    assert (
+        '<a href="/" aria-current="page"><span class="no">1</span><span>Featured</span>'
+        in resp.text
+    )
 
 
 def test_dashboard_exposes_accessible_navigation_and_skip_link(client):
     resp = client.get("/")
     assert '<a class="skip-link" href="#main-content">' in resp.text
-    assert '<nav class="site-nav" aria-label="Main navigation">' in resp.text
+    assert '<nav aria-label="Reading contents">' in resp.text
     assert '<main id="main-content"' in resp.text
 
 
@@ -2091,7 +2100,7 @@ def test_interaction_helper_is_served(client):
     assert resp.headers["content-type"].startswith("text/javascript")
 
 
-def test_dashboard_shows_ranked_signal_table(conn, authed_client):
+def test_home_desk_lists_a_channels_top_stories(conn, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(
@@ -2109,34 +2118,54 @@ def test_dashboard_shows_ranked_signal_table(conn, authed_client):
     update_ai_ranking(
         c, source_id, "t1", score=95, summary="RBNZ 大幅降息", rationale="r"
     )
+    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
 
     resp = authed_client.get("/")
     assert resp.status_code == 200
-    assert '<table class="signal-table">' in resp.text
-    assert '<th scope="col" data-column-header="score">Score' in resp.text
-    assert '<th scope="col" data-column-header="channel">Channel' in resp.text
+    assert '<table class="tbl tbl-feed">' in resp.text
+    assert '<th class="c-score">Score</th>' in resp.text
+    assert "<th>Summary</th>" in resp.text
+    assert "<th>Source</th>" in resp.text
+    assert "<th>Channel</th>" not in resp.text
+    assert '<tr class="kb-row" tabindex="-1" data-channel="NZ Finance">' in resp.text
+    assert '<span class="score is-high">95</span>' in resp.text
     assert (
-        '<th scope="col" class="signal-source-heading" data-column-header="source">Source'
-        in resp.text
-    )
-    assert '<th scope="col" data-column-header="summary">AI summary' in resp.text
-    assert 'class="signal-row is-unread"' in resp.text
-    assert f'class="signal-channel" href="/channels/{channel_id}"' in resp.text
-    item_id = c.execute("SELECT id FROM items WHERE external_id='t1'").fetchone()[0]
+        f'<a href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer" '
+        "data-kb-open>RBNZ 大幅降息"
+    ) in resp.text
+    assert "<small>Rates fall</small>" in resp.text
+    # A Reddit post with no votes or comments names only its subreddit.
+    assert '<td class="c-src" data-label="Source">r/PersonalFinanceNZ</td>' in resp.text
+
+    listed = authed_client.get("/?view=all")
+    assert "<th>Channel</th>" in listed.text
     assert (
-        f'class="signal-summary" href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer"'
-        in resp.text
-    )
-    assert "RBNZ 大幅降息" in resp.text
+        f'<td class="c-chan" data-label="Channel"><a href="/channels/{channel_id}">'
+        "NZ Finance</a></td>"
+    ) in listed.text
 
 
-def test_home_channel_shelf_labels_the_aggregate_view_featured(client):
+def test_home_rail_lists_featured_each_channel_and_the_archive(conn, client):
+    _, c = conn
+    first = create_channel(c, "NZ Finance", "economic news")
+    second = create_channel(c, "Outdoor gear", "deals", kind="monitor")
+
     response = client.get("/")
 
-    assert re.search(
-        r'class="channel-shelf-link active"[^>]*>\s*Featured\s*</a>',
-        response.text,
+    assert (
+        '<a href="/" aria-current="page"><span class="no">1</span><span>Featured</span>'
+        in response.text
     )
+    assert (
+        f'<a href="/channels/{first}"><span class="no">2</span><span>NZ Finance</span>'
+        in response.text
+    )
+    assert (
+        f'<a href="/channels/{second}"><span class="no">3</span><span>Outdoor gear</span>'
+        in response.text
+    )
+    assert '<a href="/archive"><span class="no">4</span><span>Archive</span>' in response.text
+    assert 'class="channel-shelf"' not in response.text
 
 
 def test_dashboard_default_featured_window_includes_three_calendar_days(
@@ -2418,7 +2447,10 @@ def test_dashboard_channel_tab_count_excludes_subthreshold_items(conn, authed_cl
 
     response = authed_client.get("/")
 
-    assert 'aria-label="Strict, 1 new item"' in response.text
+    assert '<span class="desk-state nw">1 in 3 days</span>' in response.text
+    assert '<span class="desk-state nw">1 unread</span>' in response.text
+    assert "visible summary" in response.text
+    assert "hidden summary" not in response.text
 
 
 def test_dashboard_filters_and_counts_read_state(conn, authed_client):
@@ -2447,19 +2479,20 @@ def test_dashboard_filters_and_counts_read_state(conn, authed_client):
     c.execute("UPDATE items SET is_read = 1 WHERE external_id = 'read'")
     c.commit()
 
-    all_response = authed_client.get("/")
+    all_response = authed_client.get("/?view=all")
     unread_response = authed_client.get("/?view=unread")
     read_response = authed_client.get("/?view=read")
 
-    assert "All 2" in all_response.text
-    assert "Unread 1" in all_response.text
-    assert "Read 1" in all_response.text
+    assert 'All <span class="n">2</span>' in all_response.text
+    assert 'Unread <span class="n">1</span>' in all_response.text
+    assert 'Read <span class="n">1</span>' in all_response.text
     assert "fresh item" in unread_response.text
     assert "seen item" not in unread_response.text
     assert "seen item" in read_response.text
     assert "fresh item" not in read_response.text
-    assert 'class="signal-row is-read' in all_response.text
-    assert 'class="signal-row is-unread' in all_response.text
+    assert '<tr class="kb-row is-read"' in all_response.text
+    assert '<tr class="kb-row" tabindex' in all_response.text
+    assert '<a href="/?view=unread" aria-current="page">Unread' in unread_response.text
 
 
 def test_anonymous_dashboard_does_not_expose_owner_read_state(conn, client):
@@ -2510,10 +2543,10 @@ def test_dashboard_never_shows_vote_controls(conn, client, authed_client):
         assert f'action="/items/{item_id}/vote"' not in response.text
 
 
-def test_dashboard_hides_signal_table_when_nothing_qualifies(client):
-    resp = client.get("/")
+def test_ranked_list_shows_an_empty_state_when_nothing_qualifies(client):
+    resp = client.get("/?view=all")
     assert resp.status_code == 200
-    assert '<table class="signal-table">' not in resp.text
+    assert '<table class="tbl tbl-feed">' not in resp.text
     assert "No signals match this view" in resp.text
 
 
@@ -2541,22 +2574,31 @@ def test_dashboard_requests_twenty_four_ranked_signals(conn, client):
             rationale="r",
         )
 
-    resp = client.get("/")
+    desk = client.get("/")
+    assert [story.ai_summary for story in desk.context["desk"][0].stories] == [
+        "摘要 24", "摘要 23", "摘要 22", "摘要 21",
+    ]
+    assert "摘要 20" not in desk.text
+
+    resp = client.get("/?view=all")
 
     assert resp.status_code == 200
-    assert len(resp.context["highlights"]) == 24
-    assert resp.context["has_more_signals"] is True
-    assert "<span>24</span>" in resp.text
-    assert "<b>24 / 25</b>" in resp.text
-    assert 'href="/?page=2"' in resp.text
+    assert len(resp.context["ranked"]) == 24
+    assert resp.context["pagination"].has_next is True
+    assert "Page 1 of 2" in resp.text
+    assert 'href="/?view=all&amp;page=2"' in resp.text
     assert "摘要 24" in resp.text
     assert "摘要 0" not in resp.text
 
-    second = client.get("/?page=2")
+    second = client.get("/?view=all&page=2")
     assert second.status_code == 200
-    assert len(second.context["highlights"]) == 1
+    assert len(second.context["ranked"]) == 1
     assert "摘要 0" in second.text
-    assert 'href="/"' in second.text
+    assert 'href="/?view=all"' in second.text
+
+    past_the_end = client.get("/?view=all&page=9")
+    assert past_the_end.context["pagination"].page == 2
+    assert "摘要 0" in past_the_end.text
 
 
 def test_dashboard_counts_all_pending_high_priority_signals(conn, client):
@@ -2584,11 +2626,12 @@ def test_dashboard_counts_all_pending_high_priority_signals(conn, client):
         )
 
     resp = client.get("/")
-
     assert resp.context["high_priority_count"] == 25
-    assert resp.context["pending_signal_count"] == 25
-    assert "≥90 25" in resp.text
-    assert "<b>24 / 25</b>" in resp.text
+    assert "25 at 90 or above" in resp.text
+
+    listed = client.get("/?minimum_score=90")
+    assert listed.context["pending_signal_count"] == 25
+    assert "Page 1 of 2" in listed.text
 
 
 def test_dashboard_high_priority_tab_filters_signals(conn, client):
@@ -2620,9 +2663,15 @@ def test_dashboard_high_priority_tab_filters_signals(conn, client):
     default_resp = client.get("/")
     filtered_resp = client.get("/?minimum_score=90")
 
-    assert '<a href="/?minimum_score=90">≥90 1</a>' in default_resp.text
-    assert '<strong aria-current="page">≥90 1</strong>' in filtered_resp.text
-    assert '<a href="/">All 2</a>' in filtered_resp.text
+    assert (
+        '<a class="meta-link nw" href="/?view=all&amp;minimum_score=90">1 at 90 or above</a>'
+        in default_resp.text
+    )
+    assert (
+        '<a href="/?view=all&amp;minimum_score=90" aria-current="page">'
+        'Score 90+ <span class="n">1</span></a>'
+    ) in filtered_resp.text
+    assert '<a href="/?view=all">All <span class="n">2</span></a>' in filtered_resp.text
     assert "高分摘要" in filtered_resp.text
     assert "低分摘要" not in filtered_resp.text
     assert filtered_resp.context["pending_signal_count"] == 1
@@ -3037,9 +3086,10 @@ def test_dashboard_signal_shows_best_comment_summary_when_present(conn, client):
     c.commit()
 
     resp = client.get("/")
-    assert '<details class="signal-comment">' in resp.text
-    assert '<summary aria-label="View best comment summary">“</summary>' in resp.text
-    assert "有人指出实际数字不同" in resp.text
+    assert (
+        '<details class="cmt"><summary>Top comment</summary><p>有人指出实际数字不同</p></details>'
+        in resp.text
+    )
 
 
 def test_dashboard_signal_shows_nothing_extra_when_best_comment_summary_is_absent(

@@ -1,158 +1,221 @@
-{% extends "base.html" %}
+{% extends "reading_base.html" %}
 {% block title %}{{ t('web.title.dashboard', product=t('common.product_name')) }}{% endblock %}
-{% block body_class %}page-dashboard{% endblock %}
-{% block header_status %}{% if is_admin %}<span class="dashboard-clock">{{ dashboard_time }} · {{ t('web.dashboard.unread_count', count=total_unread) }}</span>{% else %}<span class="dashboard-clock">{{ dashboard_time }}</span>{% endif %}{% endblock %}
-{% block secondary_navigation %}
-  {% set nav_channels = channels %}
-  {% set active_channel_id = none %}
-  {% set channel_navigation_all_active = true %}
-  {% include "_channel_shelf.html" %}
-{% endblock %}
-{% block content %}
-{% macro resize_handle(key, label, min_width) -%}
-<span class="signal-column-resizer" role="separator" tabindex="0"
-      aria-orientation="vertical" aria-label="{{ t('web.dashboard.resize_column_aria', column=label) }}"
-      aria-valuemin="{{ min_width }}" aria-valuemax="1600"
-      data-column-resizer="{{ key }}" data-min-width="{{ min_width }}"></span>
+{% set current_chapter = "featured" %}
+{% if list_view %}
+{% if minimum_score is not none %}{% set list_label = t('web.reading.list.at_least', score=minimum_score) %}
+{% elif view == 'unread' %}{% set list_label = t('web.dashboard.state_unread') %}
+{% elif view == 'read' %}{% set list_label = t('web.dashboard.state_read') %}
+{% else %}{% set list_label = t('web.dashboard.tab_all') %}{% endif %}
+{% set crumbs = [(list_label, none)] %}
+{% endif %}
+
+{#- A score is a tabular numeral: 90 and above in full ink, under 60 faint, unranked a dash. -#}
+{% macro score(value) -%}
+{%- if value is none %}<span class="score is-low">—</span>
+{%- else %}<span class="score{{ ' is-high' if value >= 90 else (' is-low' if value < 60 else '') }}">{{ value }}</span>{% endif -%}
 {%- endmacro %}
-<main id="main-content" class="page-shell dashboard-shell">
-  <header class="dashboard-toolbar">
-    <div class="dashboard-title">
-      <h1>{{ t('web.dashboard.heading') }}</h1>
-      <span>{{ highlights|length }}</span>
-    </div>
-    <nav class="dashboard-tabs" aria-label="{{ t('web.dashboard.tabs_aria') }}">
-      {% if view == "all" and minimum_score is none %}
-      <strong aria-current="page">{{ t('web.dashboard.tab_all_count', count=all_signal_count) }}</strong>
-      {% else %}
-      <a href="{{ all_url }}">{{ t('web.dashboard.tab_all_count', count=all_signal_count) }}</a>
-      {% endif %}
-      {% if is_admin and view == "unread" and minimum_score is none %}
-      <strong aria-current="page">{{ t('web.dashboard.tab_unread', count=unread_signal_count) }}</strong>
-      {% elif is_admin %}
-      <a href="{{ unread_url }}">{{ t('web.dashboard.tab_unread', count=unread_signal_count) }}</a>
-      {% endif %}
-      {% if is_admin and view == "read" and minimum_score is none %}
-      <strong aria-current="page">{{ t('web.dashboard.tab_read', count=read_signal_count) }}</strong>
-      {% elif is_admin %}
-      <a href="{{ read_url }}">{{ t('web.dashboard.tab_read', count=read_signal_count) }}</a>
-      {% endif %}
-      {% if minimum_score is not none %}
-      <strong aria-current="page">{{ t('web.dashboard.tab_minimum_score', score=minimum_score, count=pending_signal_count) }}</strong>
-      {% else %}
-      <a href="{{ high_priority_url }}">{{ t('web.dashboard.tab_high_priority', count=high_priority_count) }}</a>
-      {% endif %}
-    </nav>
-    <form class="dashboard-search" action="/search" method="get" role="search">
-      <label class="sr-only" for="dashboard-search">{{ t('web.dashboard.search_label') }}</label>
-      <input id="dashboard-search" type="search" name="q" placeholder="{{ t('web.dashboard.search_placeholder') }}">
-      <kbd class="dashboard-search-shortcut" aria-hidden="true">/</kbd>
+
+{#- One story row. The blue square is unread and is also the read toggle; `region` is the id of
+    the block the toggle re-renders in place. `channel` adds the ranked list's channel column. -#}
+{% macro story_row(story, region, oob, channel_name, channel_id=none) %}
+<tr class="kb-row{{ ' is-read' if is_admin and story.is_read }}" tabindex="-1" data-channel="{{ channel_name }}">
+  {% if is_admin %}
+  <td class="c-rd">
+    <form method="post" action="/items/{{ story.id }}/read-state">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="is_read" value="{{ 0 if story.is_read else 1 }}">
+      <input type="hidden" name="next_url" value="{{ return_url }}">
+      <button class="rd{{ ' is-read' if story.is_read }}" type="submit"
+              title="{{ t('web.item.mark_unread' if story.is_read else 'web.item.mark_read') }}"
+              aria-label="{{ t('web.item.mark_unread_aria' if story.is_read else 'web.item.mark_read_aria', title=story.title) }}"
+              hx-post="/items/{{ story.id }}/read-state" hx-target="#{{ region }}" hx-select="#{{ region }}" hx-swap="outerHTML"
+              hx-select-oob="{{ oob }}" data-feedback-message="{{ t('web.reading.marked_unread' if story.is_read else 'web.reading.marked_read') }}"></button>
+    </form>
+  </td>
+  {% endif %}
+  <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(story.ai_score) }}</td>
+  <td class="c-sum">
+    <a href="{{ story.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ story.ai_summary or story.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+    {%- if story.ai_summary %}<small>{{ story.title }}</small>{% endif %}
+    {%- if story.best_comment_summary %}
+    <details class="cmt"><summary>{{ t('web.reading.best_comment') }}</summary><p>{{ story.best_comment_summary }}</p></details>
+    {%- endif %}
+  </td>
+  {% if channel_id is not none %}<td class="c-chan" data-label="{{ t('web.dashboard.column_channel') }}"><a href="/channels/{{ channel_id }}">{{ channel_name }}</a></td>{% endif %}
+  <td class="c-src" data-label="{{ t('web.reading.col_source') }}">{{ story.byline|join(' · ') }}</td>
+  <td class="c-age" data-label="{{ t('web.dashboard.column_time') }}">{% if story.age %}<span title="{{ story.exact_time }}">{{ story.age }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+  <td class="c-ops">{% set item = story %}{% include "_deep_read_action.html" %}</td>
+</tr>
+{% endmacro %}
+
+{% macro story_head(with_channel=false) %}
+<thead><tr>
+  {% if is_admin %}<th class="c-rd"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span></th>{% endif %}
+  <th class="c-score">{{ t('web.dashboard.column_score') }}</th>
+  <th>{{ t('web.reading.col_summary') }}</th>
+  {% if with_channel %}<th>{{ t('web.dashboard.column_channel') }}</th>{% endif %}
+  <th>{{ t('web.reading.col_source') }}</th>
+  <th>{{ t('web.dashboard.column_time') }}</th>
+  <th class="c-ops"><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th>
+</tr></thead>
+{% endmacro %}
+
+{% macro count_link(text, href) -%}
+{%- if list_view %}<span class="nw">{{ text }}</span>{% else %}<a class="meta-link nw" href="{{ href }}">{{ text }}</a>{% endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="adm-head">
+  <div>
+    <h1>{{ t('web.dashboard.heading') }}</h1>
+    <p class="adm-meta" id="home-meta"><span class="nw">{{ t('web.reading.meta.window', count=featured_window_days) }}</span> · {{ count_link(t('web.reading.meta.stories', count=all_signal_count, number=all_signal_count|count(locale)), all_url) }}
+      {%- if is_admin %} · {{ count_link(t('web.reading.meta.unread', count=unread_signal_count, number=unread_signal_count|count(locale)), unread_url) }}{% endif %} · {{ count_link(t('web.reading.meta.high', count=high_priority_count, number=high_priority_count|count(locale)), high_priority_url) }}</p>
+  </div>
+  <div class="adm-actions">
+    <form class="head-search" action="/search" method="get" role="search">
+      <label class="sr-only" for="home-search">{{ t('web.dashboard.search_label') }}</label>
+      <input class="inp" id="home-search" type="search" name="q" placeholder="{{ t('web.reading.search_placeholder') }}" aria-keyshortcuts="/" data-kb-search>
+      <button class="btn" type="submit">{{ t('web.reading.search_submit') }}</button>
     </form>
     {% if is_admin and unread_signal_count %}
-    <form class="inline-form dashboard-mark-read" method="post" action="/dashboard/mark-all-read">
+    <form method="post" action="/dashboard/mark-all-read">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      {% if minimum_score is not none %}<input type="hidden" name="minimum_score" value="{{ minimum_score }}">{% endif %}
+      {% if list_view and minimum_score is not none %}<input type="hidden" name="minimum_score" value="{{ minimum_score }}">{% endif %}
       <input type="hidden" name="next_url" value="{{ return_url }}">
-      <button type="submit" class="mark-read-button">{{ t('web.channel.mark_all_read') }}</button>
+      <button class="btn" type="submit">{{ t('web.channel.mark_all_read') }}</button>
     </form>
     {% endif %}
-  </header>
+  </div>
+</div>
 
-  {% if not channels %}
-    <div class="empty-state dashboard-empty dashboard-channel-empty">
-      <span class="empty-mark" aria-hidden="true"></span>
-      <h3>{{ t('web.dashboard.empty_channels_heading') }}</h3>
-      <p>{{ t('web.dashboard.empty_channels_body') }}</p>
-      <a class="btn primary" href="/admin/channels/new">{{ t('web.dashboard.empty_channels_cta') }}</a>
-    </div>
-  {% endif %}
-
-  <section class="signal-workspace">
-    <h2 id="signals-title" class="sr-only">{{ t('web.dashboard.signals_title') }}</h2>
-    {% if highlights %}
-    <div class="signal-table-scroll" role="region" aria-labelledby="signals-title" tabindex="0">
-      <table class="signal-table">
-        <caption class="sr-only">{{ t('web.dashboard.table_caption', days=featured_window_days) }}</caption>
-        <colgroup>
-          {% if is_admin %}<col class="signal-state-col" data-column-key="state">{% endif %}
-          <col class="signal-score-col" data-column-key="score">
-          <col class="signal-channel-col" data-column-key="channel">
-          <col class="signal-source-col" data-column-key="source">
-          <col class="signal-summary-col" data-column-key="summary">
-          <col class="signal-engagement-col" data-column-key="engagement">
-          <col class="signal-age-col" data-column-key="time">
-        </colgroup>
-        <thead>
-          <tr>
-            {% if is_admin %}<th scope="col" data-column-header="state"><span class="sr-only">{{ t('web.dashboard.column_read_state') }}</span>{{ resize_handle('state', t('web.dashboard.column_read_state'), 11) }}</th>{% endif %}
-            <th scope="col" data-column-header="score">{{ t('web.dashboard.column_score') }}{{ resize_handle('score', t('web.dashboard.column_score'), 34) }}</th>
-            <th scope="col" data-column-header="channel">{{ t('web.dashboard.column_channel') }}{{ resize_handle('channel', t('web.dashboard.column_channel'), 64) }}</th>
-            <th scope="col" class="signal-source-heading" data-column-header="source">{{ t('web.dashboard.column_source') }}{{ resize_handle('source', t('web.dashboard.column_source'), 64) }}</th>
-            <th scope="col" data-column-header="summary">{{ t('web.dashboard.column_summary') }}{{ resize_handle('summary', t('web.dashboard.column_summary'), 160) }}</th>
-            <th scope="col" class="signal-engagement-heading" data-column-header="engagement">{{ t('web.dashboard.column_engagement') }}{{ resize_handle('engagement', t('web.dashboard.column_engagement'), 64) }}</th>
-            <th scope="col" data-column-header="time">{{ t('web.dashboard.column_time') }}{{ resize_handle('time', t('web.dashboard.column_time'), 64) }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in highlights %}
-          <tr class="signal-row{% if is_admin %} {{ 'is-read' if item.is_read else 'is-unread' }}{% endif %}{{ ' is-dim' if item.ai_score < 60 else '' }}" tabindex="-1">
-            {% if is_admin %}
-            <td class="signal-state">
-              <form class="dashboard-read-state-form" method="post" action="/items/{{ item.id }}/read-state">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="is_read" value="{{ 0 if item.is_read else 1 }}">
-                <input type="hidden" name="next_url" value="{{ return_url }}">
-                <button type="submit" aria-label="{{ t('web.item.mark_unread_aria' if item.is_read else 'web.item.mark_read_aria', title=item.title) }}">
-                  <span class="signal-unread-dot" aria-hidden="true"></span>
-                  <span class="sr-only">{{ t('web.dashboard.state_unread') if not item.is_read else t('web.dashboard.state_read') }}</span>
-                </button>
-              </form>
-            </td>
-            {% endif %}
-            <td class="signal-score">{{ item.ai_score|round|int }}</td>
-            <td><a class="signal-channel" href="/channels/{{ item.item_channel_id }}" title="{{ item.channel_name }}">{{ item.channel_name }}</a></td>
-            <td class="signal-source" title="{{ item.source_label }}">{{ item.source_label }}</td>
-            <td class="signal-summary-cell">
-              <a class="signal-summary" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer" title="{{ item.exact_time }}">{{ item.ai_summary }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
-              {% if item.best_comment_summary %}
-              <details class="signal-comment">
-                <summary aria-label="{{ t('web.dashboard.best_comment_aria') }}">“</summary>
-                <span class="signal-comment-content">{{ item.best_comment_summary }}</span>
-              </details>
-              {% endif %}
-              {% set deep_read_variant = "dense" %}
-              {% include "_deep_read_action.html" %}
-            </td>
-            <td class="signal-engagement">{{ item.engagement_label or "—" }}</td>
-            <td class="signal-age" title="{{ item.exact_time }}">{{ item.age or "—" }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <footer class="signal-statusbar">
-      <span><kbd>j/k</kbd> {{ t('web.dashboard.shortcut_move') }}</span>
-      <span><kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }}</span>
-      <span><kbd>f</kbd> {{ t('web.dashboard.shortcut_filter') }}</span>
-      <b>{{ highlights|length }} / {{ pending_signal_count }}</b>
-    </footer>
-    {% if pagination.page_count > 1 or pagination.page > 1 %}
-    <nav class="pager dashboard-pager" aria-label="{{ t('web.archive.pager_aria') }}">
-      {% if previous_url %}<a href="{{ previous_url }}">{{ t('web.archive.newer') }}</a>{% else %}<span class="disabled">{{ t('web.archive.newer') }}</span>{% endif %}
-      <span>{{ t('web.archive.page_label', page=pagination.page) }}</span>
-      {% if next_url %}<a href="{{ next_url }}">{{ t('web.archive.older') }}</a>{% else %}<span class="disabled">{{ t('web.archive.older') }}</span>{% endif %}
-    </nav>
+{% if list_view %}
+<div class="filters" id="home-seg">
+  <nav class="seg" aria-label="{{ t('web.dashboard.tabs_aria') }}">
+    <a href="/">{{ t('web.reading.list.desk') }}</a>
+    <a href="{{ all_url }}"{% if view == 'all' and minimum_score is none %} aria-current="page"{% endif %}>{{ t('web.dashboard.tab_all') }} <span class="n">{{ all_signal_count|count(locale) }}</span></a>
+    {% if is_admin %}
+    <a href="{{ unread_url }}"{% if view == 'unread' and minimum_score is none %} aria-current="page"{% endif %}>{{ t('web.dashboard.state_unread') }} <span class="n">{{ unread_signal_count|count(locale) }}</span></a>
+    <a href="{{ read_url }}"{% if view == 'read' and minimum_score is none %} aria-current="page"{% endif %}>{{ t('web.dashboard.state_read') }} <span class="n">{{ read_signal_count|count(locale) }}</span></a>
     {% endif %}
-    <p id="dashboard-selection-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+    {% if minimum_score is not none %}
+    <a href="{{ filter_url }}" aria-current="page">{{ t('web.reading.list.at_least', score=minimum_score) }} <span class="n">{{ pending_signal_count|count(locale) }}</span></a>
     {% else %}
-    <div class="dashboard-signals-empty">
-      <strong>{{ t('web.dashboard.empty_signals_heading') }}</strong>
-      <span>{{ t('web.dashboard.empty_signals_body', days=featured_window_days) }}</span>
-    </div>
+    <a href="{{ high_priority_url }}">{{ t('web.reading.list.at_least', score=90) }} <span class="n">{{ high_priority_count|count(locale) }}</span></a>
     {% endif %}
-  </section>
-</main>
+  </nav>
+</div>
+<div id="home-list" data-refocus-slot>
+  {% if ranked %}
+  <div class="tbl-wrap"><table class="tbl tbl-feed">
+    {{ story_head(with_channel=true) }}
+    <tbody>
+      {% for row in ranked %}{{ story_row(row.story, 'home-list', '#home-meta,#home-seg,#toc-count-featured', row.channel_name, row.channel_id) }}{% endfor %}
+    </tbody>
+  </table></div>
+  {% if pagination.page_count > 1 %}
+  <nav class="pager" aria-label="{{ t('web.reading.list.pager_aria') }}">
+    {% if previous_url %}<a class="btn btn-sm" href="{{ previous_url }}">{{ t('web.pagination.previous') }}</a>{% else %}<span class="btn btn-sm" aria-disabled="true">{{ t('web.pagination.previous') }}</span>{% endif %}
+    <span>{{ t('web.pagination.page_of', page=pagination.page, pages=pagination.page_count) }}</span>
+    {% if next_url %}<a class="btn btn-sm" href="{{ next_url }}">{{ t('web.pagination.next') }}</a>{% else %}<span class="btn btn-sm" aria-disabled="true">{{ t('web.pagination.next') }}</span>{% endif %}
+  </nav>
+  {% endif %}
+  {% else %}
+  <div class="empty home-empty" tabindex="-1" data-refocus-fallback><b>{{ t('web.dashboard.empty_signals_heading') }}</b>{{ t('web.dashboard.empty_signals_body', days=featured_window_days) }}</div>
+  {% endif %}
+</div>
+{% else %}
+{% if not has_channels %}
+<div class="empty home-empty"><b>{{ t('web.dashboard.empty_channels_heading') }}</b>{{ t('web.dashboard.empty_channels_body') }}{% if is_admin %}<div><a class="btn btn-primary" href="/admin/channels/new">{{ t('web.dashboard.empty_channels_cta') }}</a></div>{% endif %}</div>
+{% endif %}
+{% for section in desk %}
+<section class="desk-sec" id="{{ section.anchor }}" aria-labelledby="{{ section.anchor }}-h" data-refocus-slot>
+  <h2 id="{{ section.anchor }}-h"><span class="no">{{ section.number }}</span><span>{{ section.name }}</span>
+    <span class="tools">
+      {% if section.kind == 'editorial' %}
+      <span class="desk-state nw">{{ t('web.reading.desk.stories', count=featured_window_days, number=section.story_total|count(locale)) }}</span>
+      {% if is_admin %}<span class="desk-state nw">{{ t('web.reading.desk.unread', count=section.story_unread, number=section.story_unread|count(locale)) }}</span>{% endif %}
+      {% elif section.kind == 'monitor' %}
+      <span class="desk-state nw">{{ t('web.reading.desk.listings', count=section.listing_total, number=section.listing_total|count(locale)) }}</span>
+      {% else %}
+      <span class="desk-state nw">{{ t('web.reading.desk.lots', count=section.lot_total, number=section.lot_total|count(locale), score=section.lot_minimum_score) }}</span>
+      {% if section.watched_total is not none %}<span class="desk-state nw">{{ t('web.reading.desk.watched', count=section.watched_total, number=section.watched_total|count(locale)) }}</span>{% endif %}
+      {% endif %}
+      <span class="desk-state nw"{% if section.freshness_detail %} title="{{ section.freshness_detail }}"{% endif %}>{{ section.freshness }}</span>
+      <a class="btn btn-sm" href="{{ section.href }}">{{ t('web.reading.desk.open_channel') }}<span class="sr-only">: {{ section.name }}</span></a>
+    </span>
+  </h2>
+  {% if section.kind == 'editorial' %}
+  {% if section.stories %}
+  <div class="tbl-wrap"><table class="tbl tbl-feed">
+    {{ story_head() }}
+    <tbody>
+      {% for story in section.stories %}{{ story_row(story, section.anchor, '#home-meta,#toc-count-featured', section.name) }}{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">{{ t('web.reading.desk.no_stories') }}</p>
+  {% endif %}
+  {% elif section.kind == 'monitor' %}
+  {% if section.listings %}
+  <div class="tbl-wrap"><table class="tbl tbl-stack">
+    <thead><tr><th>{{ t('web.reading.col_listing') }}</th><th>{{ t('web.reading.col_price') }}</th><th>{{ t('web.reading.col_discount') }}</th><th class="c-score">{{ t('web.dashboard.column_score') }}</th></tr></thead>
+    <tbody>
+      {% for listing in section.listings %}
+      <tr>
+        <td class="c-lot c-wide"><div class="lot">
+          {% if listing.image_url %}<img class="lot-img" src="{{ listing.image_url }}" alt="" width="80" height="60" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif %}
+          <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer">{{ listing.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+          {% if listing.vendor %}<span class="lot-where">{{ listing.vendor }}</span>{% endif %}
+        </div></td>
+        <td class="c-price-now" data-label="{{ t('web.reading.col_price') }}">
+          {%- if listing.price_label %}<span class="price-now">{{ listing.price_label }}</span>{% else %}<span class="muted">—</span>{% endif %}
+          {%- if listing.discount_percent and listing.compare_at_price_label %}<small><span class="sr-only">{{ t('web.reading.was_price') }} </span><s class="price-was">{{ listing.compare_at_price_label }}</s></small>{% endif %}
+          {%- if listing.change and listing.change.event_type == 'price_drop' %}<small class="chg">{{ t('background.digest_event_price_drop') }}</small>
+          {%- elif listing.change and listing.change.event_type == 'back_in_stock' %}<small class="chg">{{ t('background.digest_event_back_in_stock') }}</small>{% endif -%}
+        </td>
+        <td class="c-nw" data-label="{{ t('web.reading.col_discount') }}">{% if listing.discount_percent %}<span class="price-off">−{{ listing.discount_percent }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(listing.ai_score) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">{{ t('web.reading.desk.no_listings') }}</p>
+  {% endif %}
+  {% else %}
+  {% if section.lots %}
+  <div class="tbl-wrap"><table class="tbl tbl-stack">
+    <thead><tr><th>{{ t('web.workspace.watch.col_lot') }}</th><th>{{ t('web.reading.col_closes') }}</th><th>{{ t('web.workspace.watch.col_price') }}</th><th class="c-score">{{ t('web.dashboard.column_score') }}</th></tr></thead>
+    <tbody>
+      {% for lot in section.lots %}
+      <tr>
+        <td class="c-lot c-wide"><div class="lot">
+          {% if lot.image_url %}<img class="lot-img" src="{{ lot.image_url }}" alt="" width="80" height="60" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif %}
+          <a class="lot-title" href="{{ lot.open_url }}" target="_blank" rel="noopener noreferrer">{{ lot.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+          {% if lot.context %}<span class="lot-where">{{ lot.context }}</span>{% endif %}
+        </div></td>
+        <td class="c-when c-words" data-label="{{ t('web.reading.col_closes') }}">
+          {%- if lot.deadline %}<span class="nw">{{ lot.deadline_relative_label }}</span><small class="nw">{{ lot.deadline|short_time }}</small>{% else %}<span class="muted">{{ t('web.tracker.no_deadline') }}</span>{% endif %}
+          {%- if lot.is_watched %}<span class="rem"><span class="st st-busy">{{ t('web.tracker.watching') }}</span></span>{% endif -%}
+        </td>
+        <td class="c-price" data-label="{{ t('web.workspace.watch.col_price') }}">{% if lot.pricing_facts %}<div class="kv">{% for fact in lot.pricing_facts %}<span>{{ fact }}</span>{% endfor %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(lot.ai_score) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="empty">{{ t('web.reading.desk.no_lots', score=section.lot_minimum_score) }}</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+{% endif %}
+
+<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
+<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+<p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}
-<script src="/static/beehive.js?v={{ asset_version }}" defer></script>
+{% if is_admin %}<script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>{% endif %}
 {% endblock %}

@@ -782,10 +782,14 @@ def test_dashboard_decorates_ranked_items_with_deep_read_state(conn, client):
 
     resp = client.get("/")
     assert resp.status_code == 200
-    highlights = resp.context["highlights"]
-    assert highlights
-    assert highlights[0]["deep_read"]["status"] == "pending"
-    assert highlights[0]["deep_read"]["can_start"] is False  # anonymous, never an owner action
+    stories = resp.context["desk"][0].stories
+    assert stories
+    assert stories[0].deep_read.status == "pending"
+    assert stories[0].deep_read.can_start is False
+    # The brief's back link returns to the home page, not to the Channel.
+    assert stories[0].deep_read.origin == "dashboard"
+    assert stories[0].deep_read.channel_id is None
+    assert stories[0].deep_read.brief_url == f"/items/{item_id}/brief?origin=dashboard"
 
 
 def test_dashboard_decorates_never_requested_item_for_owner(conn, authed_client):
@@ -794,10 +798,11 @@ def test_dashboard_decorates_never_requested_item_for_owner(conn, authed_client)
 
     resp = authed_client.get("/")
     assert resp.status_code == 200
-    highlights = resp.context["highlights"]
-    assert highlights[0]["deep_read"]["status"] == "not_requested"
-    assert highlights[0]["deep_read"]["can_start"] is True
-    assert highlights[0]["deep_read"]["csrf_token"] == "csrf1"
+    stories = resp.context["desk"][0].stories
+    assert stories[0].deep_read.status == "not_requested"
+    assert stories[0].deep_read.can_start is True
+    assert stories[0].deep_read.csrf_token == "csrf1"
+    assert '<input type="hidden" name="origin" value="dashboard">' in resp.text
 
 
 def test_channel_decorates_ranked_items_with_deep_read_state(conn, client):

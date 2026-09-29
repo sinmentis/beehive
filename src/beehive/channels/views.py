@@ -251,6 +251,19 @@ def _editorial_engagement_label(item: Row, t: Localizer) -> str:
     return ""
 
 
+def _editorial_byline(item: Row, source_label: str, engagement_label: str) -> tuple[str, ...]:
+    """Where a story came from, as a reader wants it. A news search names the outlet (its query
+    is an internal detail); a forum adds votes and comments only once there are some."""
+    source_type = _req_str(item, "source_type")
+    if source_type == "google_news_query":
+        return (engagement_label or source_label,)
+    if source_type in {"reddit_subreddit", "hackernews_stories", "hackernews_query"}:
+        metadata = _metadata(item)
+        engaged = any(_as_number(metadata.get(key)) for key in ("score", "num_comments"))
+        return (source_label, engagement_label) if engaged else (source_label,)
+    return (source_label, engagement_label) if engagement_label else (source_label,)
+
+
 def _discount_percent(price: float | None, compare_at_price: float | None, on_sale: bool) -> int | None:
     """Currency-agnostic percent-off, the only discount signal these storefront feeds expose
     (no feed carries a currency code)."""
@@ -327,7 +340,7 @@ class DeepReadActionView:
 
     status: str
     origin: str
-    channel_id: int
+    channel_id: int | None
     brief_url: str
     request_url: str
     csrf_token: str | None
@@ -345,13 +358,21 @@ def _deep_read_action(
     *,
     is_owner: bool,
     csrf_token: str | None,
+    origin: str = _DEEP_READ_ORIGIN,
 ) -> DeepReadActionView:
+    """`origin` is where the brief's back link returns: the Channel ("channel", the default) or
+    the home page ("dashboard"). Only a Channel origin carries the channel id."""
     status = deep_read.status if deep_read is not None else "not_requested"
-    query = urlencode({"origin": _DEEP_READ_ORIGIN, "channel_id": channel_id})
+    brief_channel_id = channel_id if origin == _DEEP_READ_ORIGIN else None
+    query = urlencode(
+        {"origin": origin, "channel_id": channel_id}
+        if brief_channel_id is not None
+        else {"origin": origin}
+    )
     return DeepReadActionView(
         status=status,
-        origin=_DEEP_READ_ORIGIN,
-        channel_id=channel_id,
+        origin=origin,
+        channel_id=brief_channel_id,
         brief_url=f"/items/{item_id}/brief?{query}",
         request_url=f"/items/{item_id}/deep-read",
         csrf_token=csrf_token if is_owner else None,
@@ -376,6 +397,7 @@ class EditorialItemView:
     title: str
     source_label: str
     engagement_label: str
+    byline: tuple[str, ...]
     age: str
     exact_time: str
     open_url: str
@@ -417,12 +439,15 @@ def _editorial_item(
     channel_id: int,
     deep_read: DeepRead | None,
     csrf_token: str | None,
+    deep_read_origin: str = _DEEP_READ_ORIGIN,
 ) -> EditorialItemView:
     item_id = _req_int(item, "id")
     url = _req_str(item, "url")
     safe_url = _safe_external_href(url)
     created_at = _opt_str(item, "created_at")
     ai_score = _opt_score(item, "ai_score")
+    source_label = _source_label(item, t)
+    engagement_label = _editorial_engagement_label(item, t)
     return EditorialItemView(
         id=item_id,
         is_read=bool(_req_int(item, "is_read")),
@@ -430,8 +455,9 @@ def _editorial_item(
         ai_summary=_clean_text(item.get("ai_summary")),
         ai_rationale=_clean_text(item.get("ai_rationale")),
         title=_req_str(item, "title"),
-        source_label=_source_label(item, t),
-        engagement_label=_editorial_engagement_label(item, t),
+        source_label=source_label,
+        engagement_label=engagement_label,
+        byline=_editorial_byline(item, source_label, engagement_label),
         age=_relative_time(created_at, t, now) if created_at else "",
         exact_time=_host_local_label(created_at) if created_at else "",
         open_url=_open_url(item_id, url),
@@ -444,11 +470,49 @@ def _editorial_item(
         # unranked item), matching web/deep_read_view.decorate_deep_read_state.
         deep_read=(
             _deep_read_action(
-                item_id, channel_id, deep_read, is_owner=is_owner, csrf_token=csrf_token
+                item_id,
+                channel_id,
+                deep_read,
+                is_owner=is_owner,
+                csrf_token=csrf_token,
+                origin=deep_read_origin,
             )
             if ai_score is not None
             else None
         ),
+    )
+
+
+def build_editorial_item_views(
+    conn: sqlite3.Connection,
+    items: list[Row],
+    *,
+    t: Localizer,
+    now: datetime,
+    is_owner: bool,
+    csrf_token: str | None,
+    deep_read_origin: str = _DEEP_READ_ORIGIN,
+) -> tuple[EditorialItemView, ...]:
+    """Views for an already-chosen list of Editorial rows, in the given order, with their Deep
+    Read states fetched in one query. Each row names its own Channel (`item_channel_id` from the
+    home page's cross-Channel queries, else the Source's `channel_id`)."""
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    deep_reads = get_deep_reads_for_items(conn, [_req_int(item, "id") for item in items])
+    return tuple(
+        _editorial_item(
+            item,
+            t,
+            now,
+            is_owner=is_owner,
+            channel_id=_req_int(
+                item, "item_channel_id" if "item_channel_id" in item else "channel_id"
+            ),
+            deep_read=deep_reads.get(_req_int(item, "id")),
+            csrf_token=csrf_token,
+            deep_read_origin=deep_read_origin,
+        )
+        for item in items
     )
 
 
@@ -1331,6 +1395,69 @@ def build_tracker_item_view(
         is_watched=watched,
         is_owner=is_owner,
     )
+
+
+# --------------------------------------------------------------------------------------------
+# Short lists: the home page shows a few rows per Channel, chosen in SQL, without building the
+# whole Channel page. These give those rows the same views the channel pages use.
+# --------------------------------------------------------------------------------------------
+def build_monitor_item_views(
+    conn: sqlite3.Connection, items: list[Row], *, t: Localizer
+) -> tuple[MonitorItemView, ...]:
+    """Views for an already-chosen list of Monitor rows, in the given order, each with its
+    latest change marker."""
+    events = latest_actionable_events_for_items(conn, [_req_int(item, "id") for item in items])
+    return tuple(_monitor_item(item, t, events.get(_req_int(item, "id"))) for item in items)
+
+
+def build_open_tracker_views(
+    conn: sqlite3.Connection,
+    items: list[Row],
+    *,
+    t: Localizer,
+    now: datetime,
+    is_owner: bool,
+    limit: int,
+) -> tuple[tuple[TrackerItemView, ...], int]:
+    """The first `limit` lots among `items` that are still open, soonest deadline first as on
+    the channel page, with the Owner's watch state, and how many are open in all.
+
+    Whether a lot is open is the adapter's call (its deadline and status fields belong to the
+    connector), so only the adapter's cheap lifecycle facts run over every candidate; the full
+    views -- display facts, labels, watch state -- are built for the lots shown."""
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    latest = datetime.max.replace(tzinfo=timezone.utc)
+    open_lots: list[tuple[datetime, int, Row]] = []
+    for item in items:
+        adapter = adapter_for_source(_req_str(item, "source_type"))
+        try:
+            facts = adapter.facts(
+                _metadata(item), is_present=_opt_str(item, "inactive_at") is None, now=now
+            )
+        except ValueError:
+            # Malformed lifecycle metadata counts as closed, as it does on the channel page.
+            continue
+        if facts.active:
+            open_lots.append((facts.deadline or latest, _req_int(item, "id"), item))
+    open_lots.sort(key=lambda lot: (lot[0], lot[1]))
+    shown = [item for _, _, item in open_lots[:limit]]
+    watched_ids = (
+        get_watched_item_ids(conn, [_req_int(item, "id") for item in shown])
+        if is_owner
+        else set()
+    )
+    views = tuple(
+        _tracker_item(
+            item,
+            t,
+            now,
+            is_watched=_req_int(item, "id") in watched_ids,
+            is_owner=is_owner,
+        )
+        for item in shown
+    )
+    return views, len(open_lots)
 
 
 # --------------------------------------------------------------------------------------------

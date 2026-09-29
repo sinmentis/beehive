@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from beehive.translations.web_admin import CATALOGS as _ADMIN_DATASHEET_CATALOGS
+from beehive.translations.web_reading import CATALOGS as _READING_CATALOGS
 from beehive.translations.web_workspace import CATALOGS as _WORKSPACE_CATALOGS
 
 CATALOGS = {
@@ -7348,6 +7349,10 @@ for _locale, _catalog in _ADMIN_DATASHEET_CATALOGS.items():
 
 # The workspace (research and watch list in the datasheet) keeps its copy in web_workspace.py.
 for _locale, _catalog in _WORKSPACE_CATALOGS.items():
+    CATALOGS[_locale].update(_catalog)
+
+# The reading pages in the datasheet (the home page's channel desk) keep theirs in web_reading.py.
+for _locale, _catalog in _READING_CATALOGS.items():
     CATALOGS[_locale].update(_catalog)
 
 del _locale, _catalog
