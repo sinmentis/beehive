@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collection and clustering, a conclusion-first citation-backed Research Synthesis, stable
   per-session citation numbers, owner evidence curation (exclude or annotate an Evidence Item),
   and a durable long-running chat with versioned Conversation Memory. See
-  [Research Sessions](README.md#research-sessions).
+  [Research a question](docs/user-guide.md#research-a-question).
 - An always-on durable Research worker and a periodic reconcile timer for Research Runs and
   Research Chat replies, deployed alongside the existing collector, digest, and deep-read
   workers. See [`deploy/README.md`](deploy/README.md#research-worker-adr-0009).

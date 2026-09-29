@@ -1,7 +1,7 @@
 [project]
 name = "beehive"
 version = "0.1.0"
-description = "A self-hosted AI news aggregator that ranks, summarizes, and digests feeds against your interests."
+description = "A self-hosted app that follows news, online stores and auctions for you, and uses AI to show you only what matters."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

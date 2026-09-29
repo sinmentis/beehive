@@ -120,6 +120,55 @@ deploy/release.sh promote rollback
 `prune` only untags and removes Beehive's own SHA-tagged images; it never runs a host-wide
 `podman image prune`, because other projects share the image store.
 
+## One-time upgrade tasks
+
+These only apply to a database from an older release. New installs never need them.
+
+### Rewrite existing unread summaries
+
+After upgrading from topic-description summaries, existing ranked and unread items can be rewritten
+to the conclusion-first format. The rewrite calls the AI, so run it in `beehive-research`, the
+always-on container that has the Copilot token. Snapshot the item high-water mark before
+deployment and keep it constant for every command in the run:
+
+```bash
+HIGH_WATER_ITEM_ID="$(
+  podman exec beehive-research python -c \
+    'import sqlite3; c=sqlite3.connect("/data/beehive.db"); print(c.execute("SELECT COALESCE(MAX(id), 0) FROM items").fetchone()[0])'
+)"
+RUN_ID="conclusion-first-v1"
+
+podman exec -it beehive-research python -m scripts.run_collector \
+  --mode rewrite-unread-summaries --db-path /data/beehive.db \
+  --high-water-item-id "$HIGH_WATER_ITEM_ID" --run-id "$RUN_ID" --dry-run
+
+podman exec -it beehive-research python -m scripts.run_collector \
+  --mode rewrite-unread-summaries --db-path /data/beehive.db \
+  --high-water-item-id "$HIGH_WATER_ITEM_ID" --run-id "$RUN_ID" \
+  --canary-limit 10 --confirm-rewrite
+
+podman exec -it beehive-research python -m scripts.run_collector \
+  --mode rewrite-unread-summaries --db-path /data/beehive.db \
+  --high-water-item-id "$HIGH_WATER_ITEM_ID" --run-id "$RUN_ID" --confirm-rewrite
+```
+
+The run is resumable and only updates items that are still unread. It prints progress as JSON and
+exits nonzero if any item fails, so rerunning the same command safely retries remaining candidates.
+To restore summaries changed by that run:
+
+```bash
+podman exec -it beehive-research python -m scripts.run_collector \
+  --mode rollback-unread-summaries --db-path /data/beehive.db \
+  --run-id "$RUN_ID" --confirm-rollback
+```
+
+On a local install, run the same commands with `.venv/bin/python` and your own `DB_PATH` instead of
+`podman exec -it beehive-research python` and `/data/beehive.db`, with `COPILOT_GITHUB_TOKEN` set.
+
+Rollback only restores a summary when that run's replacement is still live. If a later run or
+manual edit changed it, the rollback exits nonzero and retains the log entry so it can be retried
+after the later change is removed.
+
 ## Dashboard lifecycle contract
 
 The project-owned declaration is `../ops/dashboard/workload.declaration.json`. It names logical

@@ -1,365 +1,120 @@
+# Beehive
+
 <p align="center">
   <img src="docs/assets/github-social-preview.png" alt="Beehive: turn noisy feeds into a focused daily brief. A dark reading page with a channel's top stories, ranked and scored." width="100%">
 </p>
 
-<p align="center">
-  A self-hosted AI briefing system for people who follow more sources than they have time to read.
-</p>
+Beehive is a self-hosted app for people who follow more news, online stores and auctions than they
+have time to read. Tell it what you care about, and its AI picks the stories, sales and auction lots
+that match, with a one-line summary of each.
 
-<div align="center">
+You read them on one page or in email digests on your schedule. Beehive runs on your own computer
+or server, for one person, and uses your GitHub Copilot account for the AI.
 
-[Product tour](#product-tour) |
-[How it works](#how-it-works) |
-[Research Sessions](#research-sessions) |
-[Quick start](#quick-start) |
-[Deployment](#deployment)
+[What it does](#what-beehive-does) · [Quick start](#quick-start) · [Run it on a server](#run-it-on-a-server) · [Documentation](#documentation)
 
-</div>
+## What Beehive does
 
-<table>
-  <tr>
-    <td><strong>10 source families</strong><br><sub>News, communities, stores, and auctions</sub></td>
-    <td><strong>Self-hosted</strong><br><sub>Your data and schedule</sub></td>
-    <td><strong>SQLite</strong><br><sub>Simple operations</sub></td>
-    <td><strong>MIT</strong><br><sub>Open source</sub></td>
-  </tr>
-</table>
+- **Follow the news you care about.** Pull in stories from Reddit, Google News searches, Hacker
+  News and the official feeds of the Reserve Bank of New Zealand, the NZ Government and the US
+  Federal Reserve.
+- **See the best first.** The AI scores each new story from 0 to 100 against what you told it and
+  sums it up in one line. The home page shows each channel's top stories.
+- **Catch sales and restocks.** A store monitor watches Shopify stores, Land & Sea, THE OUTNET,
+  Mytheresa, END. and YOOX for new items, price drops and restocks.
+- **Never miss an auction.** An auction tracker follows lots on All About Auctions. Watch a lot and
+  Beehive emails you about an hour before it closes.
+- **Read long articles in brief.** Ask for a **Deep read** and get the bottom line, key findings
+  and figures of the full article.
+- **Get email digests on your schedule.** Put channels into email groups, each with its own
+  schedule.
+- **Research a one-off question.** A research session gathers evidence from the news sources and
+  writes an answer with numbered sources.
+- **Use your language.** Pages, emails and summaries in English, Simplified Chinese, Japanese,
+  Korean, Spanish, French or German.
 
-Beehive collects updates from the sources you care about, ranks each item against a channel-specific interest profile, and delivers conclusion-first summaries through a personal dashboard and email. When a headline needs more context, the owner can queue a structured AI brief of the full article.
+<img src="docs/assets/dashboard-product.png" alt="The Beehive home page: a section for each channel with its top stories, their scores and one-line summaries" width="100%">
 
-## Product tour
+<img src="docs/assets/channel-monitor.png" alt="A store monitor channel: live listings with price, discount, AI score and the reason each one matched" width="100%">
 
-Every page shares one dark reading design: a contents rail of numbered chapters, a sheet whose
-sections carry their state in the heading, and banded tables where nothing is cut short.
-
-### See what matters first
-
-Each channel ranks new items against your interests, then states the most useful supported conclusion in one sentence instead of merely describing the topic. The home page is a desk of every channel: each channel's state and its best few rows, with the top stories for news channels, the best live listings for store monitors, and the good auction lots still open. Stories come from a configurable Auckland calendar-day window, three days by default, falling back to fetch time when publication time is unavailable. The counts at the top open a ranked list of every featured story, filtered to all, unread, read, or 90 and above.
-
-<img src="docs/assets/dashboard-product.png" alt="Beehive home page: a desk of channels, each with its state and top synthetic stories" width="100%">
-
-> The previews use synthetic data and the default English interface. The global language setting also supports Simplified Chinese, Japanese, Korean, Spanish, French, and German.
-
-### Built for big screens
-
-The sheet fills the window at any size, from a phone to a 4K monitor. On a wide screen, channel sections sit side by side, and a long list such as an archive day, a search result, or a store catalogue sets its rows in newspaper columns, with each row's source, time, price, and actions under its title.
-
-<img src="docs/assets/wide-screen.png" alt="Beehive home page at 2560 pixels wide: six channel sections in two columns, with news stories, store listings, and auction lots" width="100%">
-
-### Read the evidence without leaving Beehive
-
-The owner can request an asynchronous AI deep read for any ranked item. Beehive safely fetches and extracts the stored article URL, then produces a cached 500–800 word brief with a bottom line, key findings, important figures, why it matters, and limitations. Partial or paywalled source material is labeled rather than presented as complete.
-
-<img src="docs/assets/deep-read-brief.png" alt="A deep-read brief: the bottom line, key findings, and why it matters, with important figures and the source beside the text" width="100%">
-
-### Control every signal
-
-Choose sources, cadence, the number of highlights, the minimum visible AI score, the global interface and AI output language, the LLM model used for future AI work, and the email destination for each channel.
-
-<img src="docs/assets/channel-configuration.png" alt="Beehive channel configuration with synthetic sources and email routing" width="100%">
-
-### Use the right workflow for each Channel
-
-The Channel workflow is selected at creation and remains immutable:
-
-| Workflow | Purpose | Panel behavior |
-| --- | --- | --- |
-| Editorial | Recurring news and information | Ranked reading queue with unread state, votes, Deep Read, Home, Archive, and regular email delivery |
-| Monitor | Mutable shopping catalogues | Image-led active inventory, price and availability changes, search and filters, plus permanent unavailable history |
-| Tracker | Time- or condition-bound listings | Watched, ending-soon, upcoming, and permanent-history sections with item-level follow-up reminders |
-
-Each connector explicitly declares which workflows it supports. The admin Source picker only shows
-compatible connectors, and persistence and collection reject incompatible combinations rather than
-silently treating every Channel the same.
-
-<img src="docs/assets/channel-monitor.png" alt="A store monitor channel: live listings with price, discount, AI score, and the reason each one matched" width="100%">
-
-## How it works
-
-```mermaid
-flowchart LR
-    Sources --> Collector
-    Collector --> SQLite
-    SQLite --> Ranker["AI ranker"]
-    Ranker --> Workflow["Channel workflow"]
-    Workflow --> Panels["Dedicated panels"]
-    Workflow --> Email["Events, alerts, and digests"]
-    Panels -->|"Owner requests deep read"| DeepRead["Article brief worker"]
-    DeepRead --> SQLite
-```
-
-Every source adapter returns a common `RawItem` model. The Channel definition then selects ranking,
-persistence, lifecycle, event, and presentation behavior. Editorial content uses read state; Monitor
-and Tracker listings refresh stable rows and retain inactive history. Email Groups may combine
-Channel workflows, while manually watched Tracker items use separate time-sensitive reminders.
-Article briefs use a queued worker, so fetching and AI synthesis never block the web request.
-
-## Supported sources
-
-| Source | Integration | Channel workflow |
-| --- | --- | --- |
-| Reddit | Public subreddit Atom feeds | Editorial |
-| Google News | Search-query RSS feeds | Editorial |
-| Hacker News | Official Firebase API | Editorial |
-| Reserve Bank of New Zealand | Official RSS | Editorial |
-| New Zealand Government | Official RSS | Editorial |
-| Federal Reserve | Official RSS | Editorial |
-| Shopify storefronts | Public collection JSON | Monitor |
-| Land & Sea | Public server-rendered listing data | Monitor |
-| International designer clearance | Official THE OUTNET, Mytheresa, END., and YOOX sale catalogues | Monitor |
-| All About Auctions | Public upcoming-auction and paginated lot data, including bids and RRP | Tracker |
-
-## Research Sessions
-
-Beside the recurring Channel model above, the Owner can open a Research Session for a one-time
-question that does not belong to any Channel. Every Research Session route, including read-only
-views, requires an authenticated Owner session (ADR-0008); there is no publicly reachable
-Research page.
-
-- **Research-approved connector coverage.** A Research Plan draws only from the credentialless
-  editorial connectors approved for Research: Reddit subreddit feeds, Google News search queries,
-  Hacker News stories and search, and the three fixed official RSS feeds (Reserve Bank of New
-  Zealand, New Zealand Government, Federal Reserve). Recurring retail and auction monitors remain
-  Channel-only sources (ADR-0007).
-- **Visible plan.** The AI proposes, and can later revise, a Research Plan listing the
-  source-specific queries it intends to run. The application validates every proposed connector
-  and configuration before anything executes, and the plan itself is shown to the Owner rather
-  than hidden.
-- **Owner-managed current Sources.** The Owner can add, edit, or remove the persisted Sources used
-  by the next full run. Removing a Source deactivates it instead of deleting it, so historical
-  evidence and citations remain intact. Prior AI plan proposals stay visible as immutable history.
-- **Bounded work preview.** New and refresh runs show their enforced ceilings before enqueueing:
-  20 minutes, eight planning rounds, 30 deep fetches, and 25 candidates per Source. Runs can stop
-  earlier when the evidence is sufficient.
-- **Durable, asynchronous evidence collection.** A Research Run collects, enriches, and clusters
-  evidence in the background across a fixed 20-minute budget per run, and survives worker
-  restarts or cancellation: completed steps are persisted before a snapshot is sealed (ADR-0009,
-  ADR-0010).
-- **Conclusion-first synthesis.** A Research Synthesis states a citation-backed answer to the
-  question instead of only listing sources, and is versioned as the Owner refreshes evidence or
-  revises the plan.
-- **Stable external citations.** Each Evidence Item is assigned one citation number the first
-  time it is collected; that number is never reassigned, so a synthesis or chat citation always
-  points at the same item.
-- **Evidence curation.** The Owner can exclude an Evidence Item from future synthesis and chat,
-  or restore it later, without deleting the underlying evidence.
-- **History and synthesis recovery.** The History tab retains every run, evidence snapshot, and
-  synthesis with duration and work counts. A synthesis-only retry reuses the latest active
-  evidence without collecting Sources again.
-- **Completion alerts.** Completed runs appear as unread in the Owner navigation until opened. The
-  digest worker also sends a localized completion email when a default recipient is configured.
-- **Durable long chat.** Conversation about a Research Session continues past the length of a
-  single AI context window using an AI-maintained, versioned Conversation Memory that a later
-  chat reply can pin.
-
-### Limitations and trust
-
-- **Existing provider coverage, not arbitrary web history.** A Research Plan can only add one of
-  the seven connector types above; it cannot browse an arbitrary URL or search the open web
-  outside these providers.
-- **The AI never executes connectors or tools.** The AI proposes plan sources and drafts
-  synthesis text; the application performs every connector call. Any AI call that reads
-  externally sourced evidence text runs with zero available tools, so an instruction hidden
-  inside fetched content has nothing to invoke.
-- **Model knowledge is labeled separately.** A Research Synthesis may include a clearly
-  separated, clearly labeled section of general model knowledge that supplements, but is never
-  mixed into, the citation-backed answer built from collected evidence.
-- **Full extracted text is stored locally.** Up to 30 Evidence Items per Research Run are deep
-  fetched, and their full extracted text is stored in the local SQLite database, not only a
-  snippet, until the session is hard-deleted; the remaining items keep only the connector's
-  snippet.
-- **Archiving keeps data; deleting removes it.** Archiving a Research Session preserves its
-  question, evidence, and conversation for later reference and blocks new runs or messages
-  against it until it is unarchived. Hard-deleting a session cascades the delete relationally
-  across every research table (sources, runs, plan revisions, evidence, snapshots, curation,
-  clusters, syntheses, messages, chat requests, and conversation memory) in one transaction. This
-  is not a forensic erasure: it does not securely overwrite freed SQLite pages or any prior copy
-  retained in the write-ahead log, which may remain recoverable on disk until the database file
-  is vacuumed or otherwise reclaimed.
-- **No public indexing or private routes.** Research Sessions are covered by the same
-  application-wide `X-Robots-Tag: noindex, nofollow` header described in
-  [Privacy and indexing](#privacy-and-indexing), and every route additionally requires an
-  authenticated Owner session, unlike the public Dashboard and Channel pages.
-
-See [ADR-0006](docs/adr/0006-separate-research-data-model.md) through
-[ADR-0010](docs/adr/0010-durably-stage-research-evidence.md) for the design decisions, and
-`src/beehive/research/` for the plan, collect, enrich, cluster, and assess pipeline a Research Run
-drives end to end. Operating the always-on Research worker and its reconcile timer is covered in
-[`deploy/README.md`](deploy/README.md#research-worker-adr-0009).
+The screenshots use made-up data.
 
 ## Quick start
 
-Requirements:
+You need:
+- Python 3.12 and git. Beehive is tested on Linux.
+- A GitHub account with Copilot, and a
+  [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new)
+  with the **Copilot Requests** permission. The AI runs on it.
+- Optional: Azure Communication Services, to send email. Without it, Beehive prints each email
+  instead.
 
-- Python 3.12
-- A GitHub Copilot token for AI ranking and article briefs
-- Azure Communication Services only if email delivery is enabled
+1. Get the code and install it:
 
-```bash
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -e ".[dev,ai,email]"
-.venv/bin/python -m pytest
+   ```bash
+   git clone https://github.com/sinmentis/beehive.git && cd beehive
+   python3.12 -m venv .venv
+   .venv/bin/pip install -e ".[ai]"
+   ```
 
-export DB_PATH="$PWD/beehive.db"
-export SESSION_SECRET="$(
-  .venv/bin/python -c 'import secrets; print(secrets.token_hex(32))'
-)"
-.venv/bin/python -m scripts.set_admin_password --db-path "$DB_PATH"
-.venv/bin/python -m scripts.run_web
-```
+2. Choose where the database goes, create a secret for sign-in cookies, and set your admin
+   password:
 
-Open `http://127.0.0.1:8000/`.
+   ```bash
+   export DB_PATH="$PWD/beehive.db" SESSION_SECRET="$(openssl rand -hex 32)"
+   .venv/bin/python -m scripts.set_admin_password
+   ```
 
-## Configuration
+3. Start Beehive:
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `DB_PATH` | No | SQLite path. Defaults to `/data/beehive.db`. |
-| `DB_SYNCHRONOUS` | No | SQLite `synchronous` mode: `OFF`, `NORMAL`, `FULL`, or `EXTRA`. Defaults to `NORMAL`, SQLite's recommended setting for WAL mode (a process crash loses nothing; a power loss can roll back the last few commits). |
-| `SESSION_SECRET` | Yes for admin access | Signs the owner session cookie. |
-| `COPILOT_GITHUB_TOKEN` | Yes for AI processing | Authenticates ranking, summary migration, article-brief, and Research worker AI calls. It is not required by the web process. |
-| `ACS_CONNECTION_STRING` | Only for email | Connects to Azure Communication Services Email. |
-| `DIGEST_EMAIL_TO` | Only for email | Default recipient; channels can override it. |
-| `DIGEST_EMAIL_FROM` | Only for email | Verified sender address. |
+   ```bash
+   .venv/bin/python -m scripts.run_web
+   ```
 
-Do not store credentials in the repository. The included Quadlet examples inject them through Podman secrets.
+   Beehive is now running at <http://127.0.0.1:8000>. It listens on all network interfaces, so
+   other devices on your network can open it too.
 
-The admin settings page stores one global platform language in SQLite. English is the default;
-the selected language applies to the web interface, email copy, alerts, AI summaries, rationales,
-comment summaries, and article briefs. Existing generated content is not translated automatically.
+4. Open <http://127.0.0.1:8000/admin> and sign in. Select **New channel**, keep the type
+   **Editorial**, describe what you care about under **What to focus on**, and select **Create
+   channel**. Then select **Add source** and add one, such as Hacker News.
 
-The same page also stores one global LLM model. `claude-haiku-4.5` preserves the default behavior;
-changing it applies to future rankings, comment summaries, summary rewrites, and article briefs.
-Previously generated content is not regenerated automatically.
+5. In a second terminal, in the `beehive` folder, fetch and score the first stories:
 
-### Admin operations
+   ```bash
+   export DB_PATH="$PWD/beehive.db" COPILOT_GITHUB_TOKEN="github_pat_..."
+   .venv/bin/python -m scripts.run_collector --mode fetch
+   ```
 
-The Owner admin includes an onboarding checklist for new Channels, bounded non-persisting Source
-test samples, recent owner activity, and a System Health view covering collection, email delivery,
-Tracker reminders, and Research workers. Deleting a Channel, Source, or Email Group, or clearing a
-Channel's collected data, stores a compressed recovery copy for seven days. Undo restores the
-original IDs and dependent rows in one transaction; an ID conflict fails without partially
-restoring data.
+   Open <http://127.0.0.1:8000/> again. The channel's top stories are there, with their scores
+   and one-line summaries.
 
-Each Channel picks its own fetch schedule: a fixed interval (every 3 or 6 hours) or a daily
-wall-clock time such as `05:00` in an IANA timezone like `Pacific/Auckland`. A daily schedule is
-anchored to its slot rather than to the last successful fetch, so a slow or late run never pushes
-the next day's fetch later, and a manual "fetch now" leaves the automatic schedule untouched.
+To keep Beehive current, run the fetch command on a schedule. Deep reads, research, email and
+reminders each have their own command; see [Configuration](docs/configuration.md#commands).
+Without the token, Beehive still collects stories but can't score or summarize them.
 
-Email Groups are scheduled separately and can run after a fixed interval or on selected weekdays at
-a local `HH:MM` time in an IANA timezone. The admin shows the last check, last send, next due time,
-and the latest delivery error. Preview and test-send actions use current pending events and Source
-warnings without marking them delivered. Editorial stories already delivered with the same
-publisher and exact headline are permanently suppressed if an upstream feed republishes them under
-a different item ID.
+## Run it on a server
 
-## Collect and digest
+[`deploy/`](deploy/README.md) has rootless Podman units that run the web app and every background
+job, plus a nightly backup.
 
-```bash
-export COPILOT_GITHUB_TOKEN="..."
-.venv/bin/python -m scripts.run_collector --mode fetch --db-path "$DB_PATH"
+> [!IMPORTANT]
+> Anyone who can reach Beehive can read its home, channel, archive and search pages, and finished
+> deep reads. The admin, research, the Watch List and every change need your password. If your
+> channels are private, keep Beehive on a private network or put access control in front of it.
 
-export ACS_CONNECTION_STRING="..."
-export DIGEST_EMAIL_TO="you@example.com"
-export DIGEST_EMAIL_FROM="beehive@example.com"
-.venv/bin/python -m scripts.run_collector --mode digest --db-path "$DB_PATH"
+## Documentation
 
-.venv/bin/python -m scripts.run_collector --mode auction-reminders --db-path "$DB_PATH"
-```
-
-The `auction-reminders` mode name is retained for deployment compatibility, but it runs the generic
-Tracker reminder worker. The current auction adapter sends one reminder about an hour before the
-latest known closing time and handles genuine auction extensions.
-
-Digest mode evaluates both Email Group schedules and pending Research completion notifications.
-The included deployment timer runs it every 15 minutes; each Email Group still decides whether it
-is due from its own interval or local calendar schedule.
-
-The admin interface creates an immutable Channel workflow, offers only compatible Sources,
-configures collection and email delivery, and can trigger an immediate collection cycle. The Owner
-can add watchable Tracker items to a private Watch List.
-
-An owner deep-read request is stored durably in SQLite. In the Quadlet deployment, a path unit starts
-the bounded article worker immediately and a timer reconciles any missed wakeup.
-
-A Research Run or chat reply is likewise stored durably in SQLite and only progresses once the
-Research worker is running. For local development, only `DB_PATH` and `COPILOT_GITHUB_TOKEN` are
-needed; every other knob has a default:
-
-```bash
-export COPILOT_GITHUB_TOKEN="..."
-.venv/bin/python -m scripts.run_research_worker --db-path "$DB_PATH"
-```
-
-Deployment, the pool-size and lease `RESEARCH_WORKER_*` environment overrides, the DB-enforced
-global caps, the reconcile timer, and rollout/rollback are covered in
-[`deploy/README.md`](deploy/README.md#research-worker-adr-0009).
-
-### Rewrite existing unread summaries
-
-After upgrading from topic-description summaries, existing ranked and unread items can be rewritten
-to the conclusion-first format. Snapshot the item high-water mark before deployment and keep it
-constant for every command in the run:
-
-```bash
-HIGH_WATER_ITEM_ID="$(
-  .venv/bin/python -c \
-    'import os, sqlite3; c=sqlite3.connect(os.environ["DB_PATH"]); print(c.execute("SELECT COALESCE(MAX(id), 0) FROM items").fetchone()[0])'
-)"
-RUN_ID="conclusion-first-v1"
-
-.venv/bin/python -m scripts.run_collector \
-  --mode rewrite-unread-summaries --db-path "$DB_PATH" \
-  --high-water-item-id "$HIGH_WATER_ITEM_ID" --run-id "$RUN_ID" --dry-run
-
-.venv/bin/python -m scripts.run_collector \
-  --mode rewrite-unread-summaries --db-path "$DB_PATH" \
-  --high-water-item-id "$HIGH_WATER_ITEM_ID" --run-id "$RUN_ID" \
-  --canary-limit 10 --confirm-rewrite
-
-.venv/bin/python -m scripts.run_collector \
-  --mode rewrite-unread-summaries --db-path "$DB_PATH" \
-  --high-water-item-id "$HIGH_WATER_ITEM_ID" --run-id "$RUN_ID" --confirm-rewrite
-```
-
-The run is resumable and only updates items that are still unread. It prints progress as JSON and
-exits nonzero if any item fails, so rerunning the same command safely retries remaining candidates.
-To restore summaries changed by that run:
-
-```bash
-.venv/bin/python -m scripts.run_collector \
-  --mode rollback-unread-summaries --db-path "$DB_PATH" \
-  --run-id "$RUN_ID" --confirm-rollback
-```
-
-Rollback only restores a summary when that run's replacement is still live. If a later run or
-manual edit changed it, the rollback exits nonzero and retains the log entry so it can be retried
-after the later change is removed.
-
-## Deployment
-
-`deploy/` contains rootless Podman Quadlet units for the web application, scheduled and manual
-collection, email digests, five-minute Tracker reminder checks, the queued article-brief worker,
-and the always-on Research worker with its reconcile timer. See
-[`deploy/README.md`](deploy/README.md).
-
-## Privacy and indexing
-
-Beehive is designed for a personal dashboard. It sends `X-Robots-Tag: noindex, nofollow` and matching HTML metadata by default. Authentication protects administration and write actions, but deployment-level access control is still recommended if the read surface contains private interests or summaries.
-
-Staying out of search results does not stop link previews: reading pages carry Open Graph and Twitter card tags, so a shared link shows its title, a short description, and the Beehive card. A deep-read brief's preview uses its bottom line.
-
-Every Research Session route additionally requires an authenticated Owner session, including
-read-only views, so there is no public or unauthenticated route to a Research Session at all.
-
-Before publishing a deployment, review the generated content, channel names, source configuration, and reverse-proxy policy.
+- [User guide](docs/user-guide.md): channels, sources, deep reads, the Watch List, email and research
+- [Configuration](docs/configuration.md): every setting, environment variable and command
+- [How it works](docs/how-it-works.md): the pipeline, research and privacy
+- [Deployment](deploy/README.md): the Podman units, secrets, backups and releases
+- [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Design decisions](docs/adr/) · [Glossary](CONTEXT.md)
 
 ## Project status
 
-`0.1.0` is an alpha release used in production by its maintainer. Database migrations and upgrade compatibility are not yet guaranteed.
+Beehive 0.1.0 is an alpha. Its maintainer uses it every day, but database upgrades between versions
+aren't guaranteed yet.
 
-[Architecture decisions](docs/adr/) |
-[Changelog](CHANGELOG.md) |
-[Contributing](CONTRIBUTING.md) |
-[Security](SECURITY.md) |
-[MIT license](LICENSE)
+## License
+
+[MIT](LICENSE)

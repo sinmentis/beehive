@@ -3,6 +3,9 @@
 Thanks for your interest in improving Beehive. This guide covers local setup,
 running tests, linting, and commit conventions.
 
+To see how Beehive fits together, read [How it works](docs/how-it-works.md), the
+[design decisions](docs/adr/) and the [glossary](CONTEXT.md).
+
 ## Local setup
 
 Beehive targets Python 3.12. Create a virtual environment and install the
