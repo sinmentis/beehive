@@ -1,5 +1,7 @@
 {% extends "reading_base.html" %}
 {% block title %}{{ t('web.title.deep_read_brief', product=t('common.product_name'), title=item.ai_summary or item.title) }}{% endblock %}
+{% block meta_description %}{{ (brief.bottom_line if status == 'ready' and brief else (item.ai_summary or item.title))|truncate(200, end='…') }}{% endblock %}
+{% block og_type %}article{% endblock %}
 {% set crumbs = [(t('web.deep_read.eyebrow'), none)] %}
 {% block content %}
 <div class="adm-head">

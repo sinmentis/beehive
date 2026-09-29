@@ -64,6 +64,7 @@ def test_base_template_uses_shared_design_system_and_brand_mark():
     assert "t('common.product_name')" in content
     assert 'href="/static/admin.css?v={{ asset_version }}"' in content
     assert 'href="/static/favicon.svg?v={{ asset_version }}"' in content
+    assert 'href="/static/apple-touch-icon.png?v={{ asset_version }}"' in content
     assert 'src="/static/beehive.js?v={{ asset_version }}"' in content
     assert 'class="skip-link"' in content
     assert '<a class="adm-brand" href="{{ shell_nav.home_href }}"' in content

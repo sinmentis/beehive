@@ -398,6 +398,29 @@ def test_brief_page_omits_empty_limitations_section(conn, client):
     assert '<h2 id="brief-why"><span class="no">1.3</span><span>Why it matters</span></h2>' in resp.text
 
 
+def test_a_shared_brief_previews_as_an_article_with_its_bottom_line(conn, client):
+    _, c = conn
+    _, item_id = _create_ranked_item(c)
+    request_deep_read(c, item_id, _NOW)
+    _complete_ready(c, item_id)
+
+    text = client.get(f"/items/{item_id}/brief").text
+
+    assert '<meta property="og:type" content="article">' in text
+    assert '<meta name="description" content="Rates fell by 25 basis points.">' in text
+    assert '<meta property="og:description" content="Rates fell by 25 basis points.">' in text
+
+
+def test_an_unfinished_brief_previews_with_the_story_summary(conn, client):
+    _, c = conn
+    _, item_id = _create_ranked_item(c)
+
+    text = client.get(f"/items/{item_id}/brief").text
+
+    assert '<meta property="og:type" content="article">' in text
+    assert '<meta property="og:description" content="s">' in text
+
+
 @pytest.mark.parametrize(
     ("query", "chapter"),
     [

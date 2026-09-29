@@ -2,6 +2,7 @@ import html
 import json
 import mimetypes
 import re
+import struct
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
@@ -1501,6 +1502,46 @@ def test_response_disallows_search_indexing(client):
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         in resp.text
     )
+
+
+def test_reading_pages_carry_share_metadata_for_link_previews(client):
+    """Out of search results, but a shared link still unfurls: the card image is an absolute URL
+    on the host the visitor used, with the scheme the TLS-terminating proxy reports."""
+    resp = client.get(
+    "/archive", headers={"x-forwarded-proto": "https", "host": "news.example.org"}
+    )
+
+    assert '<meta property="og:site_name" content="Beehive">' in resp.text
+    assert '<meta property="og:type" content="website">' in resp.text
+    assert (
+    '<meta property="og:description" content="Beehive turns scattered sources into a '
+    'handful of signals worth your attention.">'
+    ) in resp.text
+    assert re.search(
+    r'<meta property="og:image" content="https://news\.example\.org/static/social-card\.png'
+    r'\?v=[0-9a-f]{12}">',
+    resp.text,
+    )
+    assert '<meta name="twitter:card" content="summary_large_image">' in resp.text
+
+
+def test_share_image_takes_only_an_http_or_https_forwarded_scheme(client):
+    resp = client.get("/", headers={"x-forwarded-proto": "javascript"})
+    assert 'content="http://testserver/static/social-card.png?v=' in resp.text
+
+
+def test_share_card_and_touch_icon_are_served_at_their_declared_sizes(client):
+    page = client.get("/").text
+    assert '<link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=' in page
+    assert '<meta property="og:image:width" content="1200">' in page
+    assert '<meta property="og:image:height" content="630">' in page
+    sizes = {"/static/social-card.png": (1200, 630), "/static/apple-touch-icon.png": (180, 180)}
+    for path, size in sizes.items():
+        resp = client.get(path)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        # A PNG's IHDR chunk holds its width and height right after the signature.
+        assert struct.unpack(">II", resp.content[16:24]) == size, path
 
 
 def test_channel_drilldown_link_has_noopener_and_validated_scheme(conn, client):

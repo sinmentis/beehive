@@ -74,6 +74,15 @@ def _short_time_filter(context, value: str | None) -> str:
     return short_time_label(value, datetime.now(timezone.utc), context["localizer"])
 
 
+def _public_origin(request: Request) -> str:
+    """The site's origin as a visitor sees it, for absolute URLs in share metadata. The proxy in
+    front terminates TLS, so its X-Forwarded-Proto gives the scheme; only http or https is taken,
+    and a spoofed value only changes the sender's own response, which is never cached."""
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    scheme = forwarded if forwarded in {"http", "https"} else request.url.scheme
+    return f"{scheme}://{request.url.netloc}"
+
+
 def _localization_context(request: Request) -> dict:
     """Exposes t()/localizer/locale to every template via Jinja2Templates' context_processors.
     Matched routes populate request.state.localizer through the get_localizer dependency (over
@@ -83,8 +92,8 @@ def _localization_context(request: Request) -> dict:
     is_owner mirrors request.state.is_owner, stashed by deps.py's _get_valid_session on every
     request that depends on require_admin_session or get_optional_session (every page in the
     app except the unmatched-route 404 handler, which never runs dependencies at all -- hence
-    the getattr default of False there). base.html's top-level Research nav link is gated on
-    this single flag so it never appears for an anonymous visitor on any page."""
+    the getattr default of False there). The reading rail's footer is gated on this single flag,
+    so the Owner's links never appear for an anonymous visitor on any page."""
     localizer = request.state.localizer
     is_owner = getattr(request.state, "is_owner", False)
     research_unread_count = 0
@@ -96,6 +105,7 @@ def _localization_context(request: Request) -> dict:
         "is_owner": is_owner,
         "global_csrf_token": getattr(request.state, "csrf_token", None),
         "research_unread_count": research_unread_count,
+        "public_origin": _public_origin(request),
     }
 
 

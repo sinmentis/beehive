@@ -59,6 +59,7 @@ _EN = {
     "web.reading.brief.state_failed": "Failed",
     "web.reading.brief.state_not_started": "Not started",
     "web.reading.brief.state_unavailable": "Unavailable",
+    "web.meta.image_alt": "The {product} reading page: a channel's top stories, ranked and scored.",
 }
 
 _ZH = {
@@ -115,6 +116,7 @@ _ZH = {
     "web.reading.brief.state_failed": "生成失败",
     "web.reading.brief.state_not_started": "未开始",
     "web.reading.brief.state_unavailable": "不可用",
+    "web.meta.image_alt": '{product} 阅读页：一个频道的精选内容，按分数排列。',
 }
 
 _JA = {
@@ -171,6 +173,7 @@ _JA = {
     "web.reading.brief.state_failed": "失敗",
     "web.reading.brief.state_not_started": "未作成",
     "web.reading.brief.state_unavailable": "利用不可",
+    "web.meta.image_alt": '{product} の閲覧ページ：チャンネルの上位記事をスコア順に並べたもの。',
 }
 
 _KO = {
@@ -227,6 +230,7 @@ _KO = {
     "web.reading.brief.state_failed": "실패",
     "web.reading.brief.state_not_started": "시작 전",
     "web.reading.brief.state_unavailable": "사용 불가",
+    "web.meta.image_alt": '{product} 읽기 페이지: 채널의 주요 기사를 점수순으로 정리한 화면.',
 }
 
 _ES = {
@@ -283,6 +287,7 @@ _ES = {
     "web.reading.brief.state_failed": "Falló",
     "web.reading.brief.state_not_started": "Sin empezar",
     "web.reading.brief.state_unavailable": "No disponible",
+    "web.meta.image_alt": 'La página de lectura de {product}: las noticias principales de un canal, clasificadas y puntuadas.',
 }
 
 _FR = {
@@ -339,6 +344,7 @@ _FR = {
     "web.reading.brief.state_failed": "Échec",
     "web.reading.brief.state_not_started": "Pas commencé",
     "web.reading.brief.state_unavailable": "Indisponible",
+    "web.meta.image_alt": "La page de lecture de {product} : les meilleurs articles d'un canal, classés et notés.",
 }
 
 _DE = {
@@ -395,6 +401,7 @@ _DE = {
     "web.reading.brief.state_failed": "Fehlgeschlagen",
     "web.reading.brief.state_not_started": "Nicht begonnen",
     "web.reading.brief.state_unavailable": "Nicht verfügbar",
+    "web.meta.image_alt": 'Die Leseseite von {product}: die wichtigsten Beiträge eines Kanals, gerankt und bewertet.',
 }
 
 CATALOGS = {"en": _EN, "zh-CN": _ZH, "ja": _JA, "ko": _KO, "es": _ES, "fr": _FR, "de": _DE}
