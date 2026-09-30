@@ -278,7 +278,7 @@ def test_clear_without_env_uses_english_exception_with_translated_display_text()
     _email_error_message renders the display text in the caller's selected language."""
     from beehive.localization import localizer_for
     from beehive.email_routing import EmailConfigurationError
-    from beehive.web.admin import _EMAIL_ERROR_KEYS, _email_error_message
+    from beehive.web.admin.common import _EMAIL_ERROR_KEYS, _email_error_message
 
     english = "Cannot clear default recipient because DIGEST_EMAIL_TO is not configured"
     assert english.isascii()

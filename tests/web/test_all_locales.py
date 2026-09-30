@@ -26,7 +26,8 @@ from beehive.db.sessions import create_session
 from beehive.db.sources import create_source, record_fetch_success
 from beehive.localization import SUPPORTED_LANGUAGES, localizer_for, save_language
 from beehive.scheduling import ChannelFetchSchedule
-from beehive.web.admin import _fetch_interval_label, _source_type_options
+from beehive.web.admin.common import _fetch_interval_label
+from beehive.web.admin.sources import _source_type_options
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
 from beehive.web.formatting import (

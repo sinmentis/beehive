@@ -355,7 +355,7 @@ def test_a_first_monitor_fetch_is_footnoted_as_a_baseline(client, db_path):
 
 
 def test_a_failed_source_test_shows_no_preview_section(client, db_path, monkeypatch):
-    from beehive.web import admin as admin_routes
+    from beehive.web.admin import sources as admin_routes
 
     class Broken:
         def fetch(self, config):

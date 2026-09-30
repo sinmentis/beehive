@@ -20,7 +20,7 @@ from beehive.db.sources import (
 )
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
-from beehive.web import admin as admin_routes
+from beehive.web.admin import sources as admin_routes
 from scripts.set_admin_password import set_admin_password
 
 

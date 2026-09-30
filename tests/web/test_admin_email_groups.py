@@ -558,7 +558,7 @@ def test_preview_and_test_send_do_not_consume_pending_events(
 
     notifier = MagicMock()
     monkeypatch.setattr(
-        "beehive.web.admin.build_notifier",
+        "beehive.web.admin.email_groups.build_notifier",
         lambda *_args, **_kwargs: notifier,
     )
     sent = authed_client.post(
