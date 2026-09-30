@@ -17,21 +17,21 @@
 
 <div id="search-list" data-refocus-slot>
   {% if sections %}
-  <div class="cols">
+  <div class="cols lanes">
     {% for section in sections %}
     <section class="chan-sec" id="{{ section.anchor }}" aria-labelledby="{{ section.anchor }}-h">
       <h2 id="{{ section.anchor }}-h"><span class="no">{{ sec[section.anchor] }}</span><span>{{ section.name }}</span>
         <span class="tools"><span class="desk-state nw">{{ t('web.reading.results', count=section.total, number=section.total|count(locale)) }}</span>
           <a class="btn btn-sm" href="{{ section.href }}">{{ t('web.reading.desk.open_channel') }}<span class="sr-only">: {{ section.name }}</span></a></span></h2>
       {% if section.kind == 'editorial' %}
-      <div class="tbl-wrap"><table class="tbl tbl-feed">
+      <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
         {{ rd.story_head() }}
-        <tbody>{% for story in section.rows %}{{ rd.story_row(story, 'search-list', '#toc-count-featured', section.name, why=true, votes=true) }}{% endfor %}</tbody>
+        {% call(story) rd.lane_rows(section.rows) %}{{ rd.story_row(story, 'search-list', '#toc-count-featured', section.name, why=true, votes=true) }}{% endcall %}
       </table></div>
       {% elif section.kind == 'monitor' %}
-      {{ rd.listing_table(section.rows) }}
+      {{ rd.listing_table(section.rows, section.name) }}
       {% else %}
-      {{ rd.lot_table(section.rows) }}
+      {{ rd.lot_table(section.rows, section.name) }}
       {% endif %}
     </section>
     {% endfor %}
@@ -44,8 +44,7 @@
   {{ rd.pager(pagination, previous_url, next_url, t('web.reading.pager_aria', name=t('web.search.heading'))) }}
 </div>
 
-<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
-<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+{{ rd.kbd_hint(('read', 'relevance', 'watch')) }}
 <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}

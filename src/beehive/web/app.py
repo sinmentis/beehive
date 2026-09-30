@@ -25,6 +25,7 @@ from beehive.localization import load_localizer
 from beehive.web import admin, public, research
 from beehive.web.client_ip import parse_trusted_proxies
 from beehive.web.formatting import format_count, short_time_label
+from beehive.web.images import image_srcset, sized_image_url
 from beehive.web.readiness import check_readiness
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -176,6 +177,8 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     app.state.templates.env.globals["asset_version"] = _static_asset_version()
     app.state.templates.env.filters["count"] = format_count
     app.state.templates.env.filters["short_time"] = _short_time_filter
+    app.state.templates.env.filters["sized"] = sized_image_url
+    app.state.templates.env.filters["srcset"] = image_srcset
     # The slim container image has no /etc/mime.types, and Python alone does not know .woff2, so
     # the admin's self-hosted font would go out as application/octet-stream.
     mimetypes.add_type("font/woff2", ".woff2")

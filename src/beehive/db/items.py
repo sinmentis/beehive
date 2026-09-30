@@ -578,13 +578,16 @@ def mark_unread(conn: sqlite3.Connection, item_id: int) -> None:
     conn.commit()
 
 
-def mark_channel_read(conn: sqlite3.Connection, channel_id: int) -> None:
-    conn.execute(
+def mark_channel_read(conn: sqlite3.Connection, channel_id: int) -> list[int]:
+    """Marks every unread item in the Channel read and returns their ids, so the batch can be
+    taken back (db/read_batches.py)."""
+    rows = conn.execute(
         "UPDATE items SET is_read = 1 WHERE is_read = 0 AND source_id IN "
-        "(SELECT id FROM sources WHERE channel_id = ?)",
+        "(SELECT id FROM sources WHERE channel_id = ?) RETURNING id",
         (channel_id,),
-    )
+    ).fetchall()
     conn.commit()
+    return [row[0] for row in rows]
 
 
 def delete_by_channel(conn: sqlite3.Connection, channel_id: int) -> int:
@@ -610,6 +613,7 @@ def _archive_where(
     search: str | None = None,
     fetched_from: str | None = None,
     fetched_before: str | None = None,
+    keep_item_id: int | None = None,
 ) -> tuple[str, list]:
     # date(...) truncates fetched_at's full ISO-T timestamp to just its date part before
     # comparing, so a bare "YYYY-MM-DD" date_to/date_from correctly includes/excludes an
@@ -637,10 +641,14 @@ def _archive_where(
     if fetched_before is not None:
         where.append("datetime(items.fetched_at) < datetime(?)")
         params.append(fetched_before)
-    if read_state == "read":
-        where.append("items.is_read = 1")
-    elif read_state == "unread":
-        where.append("items.is_read = 0")
+    # A kept story stays whatever its read state: the Owner has just judged it, so it does not
+    # vanish from under its reason field.
+    read_filter = {"read": "items.is_read = 1", "unread": "items.is_read = 0"}.get(read_state or "")
+    if read_filter is not None and keep_item_id is None:
+        where.append(read_filter)
+    elif read_filter is not None:
+        where.append(f"({read_filter} OR items.id = ?)")
+        params.append(keep_item_id)
     if search:
         # falsy check (not `is not None`): an empty search string from a blank form field
         # must behave like "no search filter", not "match nothing"
@@ -663,9 +671,11 @@ def list_archive(
     page_size: int = 30,
     fetched_from: str | None = None,
     fetched_before: str | None = None,
+    keep_item_id: int | None = None,
 ) -> tuple[list[dict], int]:
     """`date_from`/`date_to` compare the stored (UTC) date; `fetched_from`/`fetched_before`
-    bound the fetch time itself, so a caller can filter by the host's local days."""
+    bound the fetch time itself, so a caller can filter by the host's local days.
+    `keep_item_id` lists that story whatever its read state."""
     where_clause, params = _archive_where(
         channel_id=channel_id,
         date_from=date_from,
@@ -674,6 +684,7 @@ def list_archive(
         search=search,
         fetched_from=fetched_from,
         fetched_before=fetched_before,
+        keep_item_id=keep_item_id,
     )
 
     total = conn.execute(
@@ -710,6 +721,7 @@ def count_archive_by_day(
     channel_id: int | None = None,
     read_state: str | None = None,
     search: str | None = None,
+    keep_item_id: int | None = None,
 ) -> dict[str, int]:
     """Archive stories per day under the same filters as `list_archive`, in one pass. Each day
     is (key, start, end): its UTC fetch-time bounds, start inclusive, so a caller can count the
@@ -722,6 +734,7 @@ def count_archive_by_day(
         search=search,
         fetched_from=min(start for _, start, _ in days),
         fetched_before=max(end for _, _, end in days),
+        keep_item_id=keep_item_id,
     )
     cases = " ".join(
         "WHEN datetime(items.fetched_at) >= datetime(?) "
@@ -812,15 +825,18 @@ def list_dashboard_highlights(
     read_state: str = "all",
     channel_id: int | None = None,
     unread_first: bool = False,
+    keep_item_id: int | None = None,
 ) -> list[dict]:
     """Featured stories, highest AI score first. `channel_id` keeps one Channel's stories;
-    `unread_first` puts every unread story ahead of the read ones, each group still by score."""
+    `unread_first` puts every unread story ahead of the read ones, each group still by score;
+    `keep_item_id` lists that story whatever its read state or vote."""
     where, params = _dashboard_signal_filters(
         minimum_score=minimum_score,
         published_from=published_from,
         published_to=published_to,
         read_state=read_state,
         channel_id=channel_id,
+        keep_item_id=keep_item_id,
     )
     read_order = "items.is_read ASC, " if unread_first else ""
     rows = conn.execute(
@@ -964,24 +980,25 @@ def mark_dashboard_signals_read(
     published_from: str | None = None,
     published_to: str | None = None,
     read_state: str = "all",
-) -> int:
+) -> list[int]:
+    """Marks the matching featured stories read and returns their ids."""
     where, params = _dashboard_signal_filters(
         minimum_score=minimum_score,
         published_from=published_from,
         published_to=published_to,
         read_state=read_state,
     )
-    cur = conn.execute(
-        "UPDATE items SET is_read = 1 WHERE id IN ("
+    rows = conn.execute(
+        "UPDATE items SET is_read = 1 WHERE is_read = 0 AND id IN ("
         "SELECT items.id FROM items "
         "JOIN sources ON sources.id = items.source_id "
         "JOIN channels ON channels.id = sources.channel_id "
         "LEFT JOIN votes ON votes.item_id = items.id "
-        f"WHERE {' AND '.join(where)})",
+        f"WHERE {' AND '.join(where)}) RETURNING id",
         params,
-    )
+    ).fetchall()
     conn.commit()
-    return cur.rowcount
+    return [row[0] for row in rows]
 
 
 def count_dashboard_signals(
@@ -991,6 +1008,7 @@ def count_dashboard_signals(
     published_to: str | None = None,
     read_state: str = "all",
     channel_id: int | None = None,
+    keep_item_id: int | None = None,
 ) -> int:
     where, params = _dashboard_signal_filters(
         minimum_score=minimum_score,
@@ -998,6 +1016,7 @@ def count_dashboard_signals(
         published_to=published_to,
         read_state=read_state,
         channel_id=channel_id,
+        keep_item_id=keep_item_id,
     )
     return conn.execute(
         "SELECT COUNT(*) FROM items "
@@ -1016,13 +1035,13 @@ def _dashboard_signal_filters(
     published_to: str | None,
     read_state: str,
     channel_id: int | None = None,
+    keep_item_id: int | None = None,
 ) -> tuple[list[str], list]:
     where = [
         "channels.kind = 'editorial'",
         "items.superseded_at IS NULL",
         "items.ai_summary IS NOT NULL",
         "items.ai_score >= channels.minimum_score",
-        "(votes.value IS NULL OR votes.value != -1)",
     ]
     params: list = []
     if channel_id is not None:
@@ -1040,8 +1059,17 @@ def _dashboard_signal_filters(
     if published_to is not None:
         where.append(f"{publication_time} < datetime(?)")
         params.append(published_to)
+    # What the Owner has dealt with drops out: a story judged not relevant, and a read or unread
+    # one outside the chosen state. A kept story stays for the render right after the Owner
+    # judged it, so it does not vanish from under its reason field.
+    state = ["(votes.value IS NULL OR votes.value != -1)"]
     if read_state == "read":
-        where.append("items.is_read = 1")
+        state.append("items.is_read = 1")
     elif read_state == "unread":
-        where.append("items.is_read = 0")
+        state.append("items.is_read = 0")
+    if keep_item_id is None:
+        where.extend(state)
+    else:
+        where.append(f"(({' AND '.join(state)}) OR items.id = ?)")
+        params.append(keep_item_id)
     return where, params

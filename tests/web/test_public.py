@@ -21,7 +21,7 @@ from beehive.connectors.base import RawItem
 from beehive.db import app_state
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
-from beehive.db.items import insert_new, update_ai_ranking
+from beehive.db.items import insert_new, mark_read, update_ai_ranking
 from beehive.db.sessions import create_session
 from beehive.db.sources import create_source, record_fetch_success
 from beehive.db.votes import upsert_vote
@@ -228,8 +228,9 @@ def _item_id(c, external_id):
 
 
 def _row(html, row_id):
-    """A listing or lot row, by its id (`listing-{id}` or `lot-{id}`)."""
-    match = re.search(rf'<tr id="{row_id}"[^>]*>.*?</tr>', html, re.DOTALL)
+    """A listing or lot by its id (`listing-{id}` or `lot-{id}`): a table row in list view, a
+    plate in the gallery."""
+    match = re.search(rf'<(tr|li)\b[^>]*\bid="{row_id}"[^>]*>.*?</\1>', html, re.DOTALL)
     assert match is not None, row_id
     return match.group(0)
 
@@ -478,12 +479,13 @@ def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(
         c, source_id, "p1:199.00", score=91, summary="On sale", rationale="r"
     )
 
-    resp = client.get(f"/channels/{channel_id}")
+    resp = client.get(f"/channels/{channel_id}", params={"view": "list"})
     assert resp.status_code == 200
-    assert "Sources: example.com/collections/outlet" in resp.text
+    # A store's collection reads as the store itself.
+    assert "Sources: example.com</p>" in resp.text
     byline = re.search(r'<span class="lot-where">([^<]*)</span>', resp.text)
     assert byline is not None
-    assert byline.group(1).startswith("Arc&#39;teryx · Jackets · example.com/collections/outlet")
+    assert byline.group(1) == "Arc&#39;teryx · Jackets · example.com"
     assert '<s class="price-was">299</s>' in resp.text
     assert '<span class="price-off">−33%</span>' in resp.text  # round((299-199)/299*100)
 
@@ -563,11 +565,11 @@ def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(
 
     resp = client.get(f"/channels/{channel_id}")
     assert resp.status_code == 200
-    assert "land-sea.co.nz/sale</p>" in resp.text
+    assert "land-sea.co.nz</p>" in resp.text
     byline = re.search(r'<span class="lot-where">([^<]*)</span>', resp.text)
     assert byline is not None
     assert byline.group(1).startswith("Teva · ")
-    assert byline.group(1).endswith("land-sea.co.nz/sale")
+    assert byline.group(1).endswith("land-sea.co.nz")
     assert '<s class="price-was">189</s>' in resp.text
     assert '<span class="price-off">−20%</span>' in resp.text  # round((189-152)/189*100)
 
@@ -1005,7 +1007,7 @@ def test_editorial_page_emptied_by_a_read_keeps_its_section_and_pager(conn, auth
     more = _section(response.text, "more")
     assert "Nothing is left on this page." in more
     assert '<tr class="kb-row' not in more
-    assert f'<a class="btn btn-sm" href="/channels/{channel_id}">Previous</a>' in _pager(more)
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}#more">Previous</a>' in _pager(more)
     assert '<a href="#more">' in response.text
 
 
@@ -1023,7 +1025,7 @@ def test_editorial_page_past_the_end_links_back_to_the_last_page_with_stories(co
     assert "Nothing is left on this page." in more
     pager = _pager(more)
     # "Previous" skips the empty pages in between, and the pager counts the pages there are.
-    assert f'<a class="btn btn-sm" href="/channels/{channel_id}?page=2">Previous</a>' in pager
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}?page=2#more">Previous</a>' in pager
     assert "<span>Page 5 of 2</span>" in pager
 
 
@@ -1778,7 +1780,7 @@ def test_vote_route_reason_update_keeps_polarity(conn, authed_client, db_path):
         data={"value": "-1", "reason": "too niche", "csrf_token": "csrf1"},
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/channels/{channel_id}"
+    assert resp.headers["location"] == f"/channels/{channel_id}?keep={item_id}"
 
     conn2 = connect(db_path)
     vote = conn2.execute("SELECT * FROM votes WHERE item_id=?", (item_id,)).fetchone()
@@ -1950,9 +1952,34 @@ def test_mark_all_read_route_marks_channel_and_redirects(conn, authed_client, db
         f"/channels/{channel_id}/mark-all-read", data={"csrf_token": "csrf1"}
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/channels/{channel_id}"
+    location = resp.headers["location"]
+    assert location.startswith(f"/channels/{channel_id}?read_batch=")
 
     conn2 = connect(db_path)
+    item = conn2.execute("SELECT is_read FROM items WHERE external_id='t1'").fetchone()
+    assert item["is_read"] == 1
+
+    # The page it returns to says what it did and offers to take it back.
+    page = authed_client.get(location).text
+    assert "Marked 1 story as read." in page
+    token = re.search(r'name="token" value="([^"]+)"', page).group(1)
+    assert f'name="next_url" value="/channels/{channel_id}"' in page
+
+    undone = authed_client.post(
+        "/read-batches/undo",
+        data={"csrf_token": "csrf1", "token": token, "next_url": f"/channels/{channel_id}"},
+    )
+    assert undone.status_code == 303
+    assert undone.headers["location"] == f"/channels/{channel_id}"
+    item = conn2.execute("SELECT is_read FROM items WHERE external_id='t1'").fetchone()
+    assert item["is_read"] == 0
+    # An undone batch is gone: the offer disappears and a second undo changes nothing.
+    assert "Marked 1 story as read." not in authed_client.get(location).text
+    mark_read(conn2, _item_id(conn2, "t1"))
+    authed_client.post(
+        "/read-batches/undo",
+        data={"csrf_token": "csrf1", "token": token, "next_url": f"/channels/{channel_id}"},
+    )
     item = conn2.execute("SELECT is_read FROM items WHERE external_id='t1'").fetchone()
     assert item["is_read"] == 1
 
@@ -2342,10 +2369,10 @@ def test_search_sorts_hits_into_numbered_channel_sections_in_rail_order(conn, cl
     assert _story_row(_section(html, f"channel-{hits.news}"), hits.story)
     assert _row(_section(html, f"channel-{hits.shop}"), f"listing-{hits.listing}")
     auctions = _section(html, f"channel-{hits.auctions}")
-    assert auctions.index(f'<tr id="lot-{hits.closed_lot}"') < auctions.index(
-        f'<tr id="lot-{hits.lot}"'
+    assert auctions.index(f'id="lot-{hits.closed_lot}"') < auctions.index(
+        f'id="lot-{hits.lot}"'
     )
-    assert 'class="is-closed"' in _row(auctions, f"lot-{hits.closed_lot}")
+    assert 'is-closed' in _row(auctions, f"lot-{hits.closed_lot}")
 
 
 def test_search_section_counts_its_channels_hits_on_every_page(conn, client):

@@ -316,9 +316,10 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .filters .inp{flex:1 1 200px;width:auto;min-width:0;max-width:40rem;min-height:32px}
 .filters select.inp{flex:0 1 200px}
 
-/* A watched lot: its photo, then the title, with the auction as a quiet second line. */
+/* A watched lot: its photo, then the title, with the auction as a quiet second line. The photo
+   sits whole in a square frame on the recessed field, never cropped. */
 .lot{display:grid;grid-template-columns:80px minmax(0,1fr);gap:2px 12px;align-items:start}
-.lot-img{grid-row:span 2;display:block;width:80px;height:60px;object-fit:cover;border:1px solid var(--rule);background:var(--field)}
+.lot-img{grid-row:span 2;display:block;width:80px;height:80px;object-fit:contain;border:1px solid var(--rule);background:var(--field)}
 .lot-title{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
 .lot-title:hover{color:var(--link-2);text-decoration:underline;text-underline-offset:3px}
 .lot-where{display:-webkit-box;overflow:hidden;color:var(--ink-3);font-size:.78rem;font-weight:400;
@@ -487,7 +488,7 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .price-now{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 .price-was{color:var(--ink-3);font-variant-numeric:tabular-nums}
 .price-off{font-weight:600;font-variant-numeric:tabular-nums}
-.tbl small.chg{margin-top:4px;color:var(--link);font-weight:600}
+small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-weight:600}
 .cmt{margin-top:6px;font-size:.78rem}
 .cmt>summary{width:max-content;max-width:100%;color:var(--link);cursor:pointer}
 .cmt>summary:hover{color:var(--link-2)}
@@ -501,10 +502,10 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .adm .deep-read-chip-pending{color:var(--ink-2);text-decoration-color:var(--rule-2)}
 .adm .deep-read-chip-retry{color:var(--danger);text-decoration-color:rgba(255,110,97,.4)}
 
-/* Keyboard reading: j and k select a row, o opens it. */
-.tbl tr.kb-row:focus{outline:none}
-.tbl tr.kb-row.is-selected{background:var(--band)}
-.tbl tr.kb-row.is-selected:focus-visible{outline:1.5px solid var(--link);outline-offset:-1.5px}
+/* Keyboard reading: j and k select a row or plate, o opens it. */
+.tbl tr.kb-row:focus,.plate.kb-row:focus{outline:none}
+.tbl tr.kb-row.is-selected,.plate.kb-row.is-selected{background:var(--band)}
+.tbl tr.kb-row.is-selected:focus-visible,.plate.kb-row.is-selected:focus-visible{outline:1.5px solid var(--link);outline-offset:-1.5px}
 .kbd-hint{margin-top:28px}
 .adm kbd{display:inline-block;min-width:1.6em;padding:0 4px;border:1px solid var(--rule-2);border-radius:2px;background:var(--field);
  color:var(--ink-2);font:600 .72rem/1.5 var(--sans);text-align:center}
@@ -520,6 +521,41 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .tbl small.why{margin-top:4px;color:var(--ink-2);font-size:.8125rem;line-height:1.55}
 .lot .why{grid-column:2}
 .lot-state{grid-column:2;margin-top:2px;font-size:.78rem}
+/* A listing or lot the Owner marked not relevant steps back; its toggles stay in full. */
+.tbl tr:has(.vote .is-neg[aria-pressed=true]) .lot,
+.plate:has(.vote .is-neg[aria-pressed=true]) :is(.plate-photo,.plate-price,.chg,.lot-title,.lot-where,.lot-state,.kv,.plate-when){opacity:.55}
+
+/* A store or auction page's display choices at the head's right: list or gallery, and rows per
+   page, each a segmented group of plain links. */
+.view-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.seg .seg-label{display:inline-flex;align-items:center;padding:0 10px;border-right:1px solid var(--rule-2);color:var(--ink-3);
+ font-size:.78rem;font-weight:600;white-space:nowrap}
+
+/* Gallery: a store's or auction's photos as a catalogue's plate page. Plates sit in a ruled grid,
+   as many to a row as fit at 15rem or more, each with the whole photo on the recessed field, then
+   its price or closing time, title and store or auction, with the score and the Owner's toggles
+   level along the foot of every plate in the row. */
+.plates{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(15rem,100%),1fr));margin:0;padding:0;list-style:none;
+ border-top:1.5px solid var(--rule-ink);border-left:1px solid var(--rule)}
+.plate{display:flex;flex-direction:column;gap:4px;min-width:0;padding:10px 12px 12px;border-right:1px solid var(--rule);
+ border-bottom:1px solid var(--rule);transition:background-color .15s ease-out}
+.plate:hover{background:var(--hover)}
+.plate-photo{display:block;margin-bottom:6px}
+.plate-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:contain;border:1px solid var(--rule);background:var(--field)}
+.plate-price{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin:0;font-size:1rem}
+.plate .price-was{font-size:.8125rem}
+.plate small.chg{margin-top:0}
+.plate .lot-title{font-size:.875rem;line-height:1.4}
+.plate .lot-state{margin-top:0}
+.plate .kv{margin-top:2px}
+.plate-when{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;margin:0;color:var(--ink);font-size:.875rem;font-weight:600}
+.plate-when small{color:var(--ink-2);font-size:.78rem;font-weight:400}
+.plate-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;margin-top:auto;padding-top:8px}
+.plate-score{color:var(--ink-3);font-size:.78rem;white-space:nowrap}
+.plate-foot .ops-stack{display:flex;flex-wrap:wrap;gap:6px}
+.plate-foot :is(.vote,.watch){margin:0}
+.plate.is-closed .plate-img{filter:grayscale(1);opacity:.65}
+.plate.is-closed :is(.lot-title,.price-now,.plate-when){color:var(--ink-2)}
 
 /* A two-state toggle: a word with a square that fills when it is on. The Owner's relevance and
    watch controls use it; the pressed state is read from aria-pressed, never from colour alone. */
@@ -613,37 +649,58 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
  /* Reading layouts: the text keeps its measure and the side column sits beside it. */
  .nb{grid-template-columns:minmax(0,960px) minmax(300px,440px);justify-content:start}
 }
-/* Wide tables: a reading table whose box fits two 56rem columns and their gap (115.5rem, 1848px)
-   sets its rows as entries in newspaper columns, like a printed catalogue. The order runs down
-   each column, so reading and keyboard order stay as listed, and a row's source, time, facts and
-   actions sit under its title instead of a screen away. Narrower boxes keep the table. */
+/* Lanes: on a wide sheet a long reading list reads as two lanes side by side, each fitting the
+   window below where it starts and scrolling on its own, so finishing one never moves the other.
+   A list renders as one table with two row groups: below the lane width they read as a single
+   table, and once the table's own box fits two 56rem lanes and their gap (115.5rem, 1848px) each
+   group becomes a lane. Reading and keyboard order stay as listed: down the first lane, then the
+   second. beehive.js fits each lane to the window; without it a lane stops 6rem short of it. A
+   window under 40rem tall keeps the table, as does print. */
 .page-reading .tbl-wrap{container:ledger/inline-size}
+@media screen and (min-height:40rem){
 @container ledger (min-width:115.5rem){
- .page-reading :is(.tbl-feed,.tbl-stack){display:block;columns:4 56rem;column-gap:3.5rem;column-rule:1px solid var(--rule)}
- .page-reading :is(.tbl-feed,.tbl-stack) thead{display:none}
- .page-reading :is(.tbl-feed,.tbl-stack) tbody{display:block}
- .page-reading :is(.tbl-feed,.tbl-stack) tr{break-inside:avoid;border-bottom:1px solid var(--rule)}
- .page-reading :is(.tbl-feed,.tbl-stack) td{width:auto;padding:0;border:0}
+ .page-reading .tbl-lanes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+ .page-reading .tbl-lanes thead{display:none}
+ .page-reading .tbl-lanes>tbody{--lane-h:calc(100dvh - 6rem);display:block;min-width:0;max-height:var(--lane-h);overflow-y:auto;
+  overscroll-behavior-y:contain;border-top:1.5px solid var(--rule-ink);scrollbar-width:thin;scrollbar-color:var(--rule-2) transparent}
+ /* The lanes' 3.5rem gutter, split by a hairline rule. */
+ .page-reading .tbl-lanes>tbody:first-of-type{padding-right:1.75rem}
+ .page-reading .tbl-lanes>tbody+tbody{padding-left:1.75rem;border-left:1px solid var(--rule)}
+ .page-reading .tbl-lanes tr{border-bottom:1px solid var(--rule)}
+ .page-reading .tbl-lanes td{width:auto;padding:0;border:0}
  /* A story: its read square and score in the lead, the summary, then its facts and actions. */
- .tbl-feed tr{--lead:calc(2.1rem + 12px);position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;
+ .tbl-feed.tbl-lanes tr{--lead:calc(2.1rem + 12px);position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;
   padding:11px 0 11px var(--lead)}
- .tbl-feed tr:has(.c-rd){--lead:calc(22px + 2.1rem + 24px)}
- .tbl-feed .c-rd{position:absolute;top:10px;left:0;width:22px}
- .tbl-feed .c-score{position:absolute;top:11px;left:0;width:2.1rem;text-align:left}
- .tbl-feed .c-rd+.c-score{left:34px}
- .tbl-feed .c-sum{flex:1 1 100%;min-width:0}
- .tbl-feed :is(.c-chan,.c-src,.c-age){min-width:0;color:var(--ink-2);font-size:.8125rem}
- .tbl-feed .c-ops{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-left:auto;font-size:.8125rem}
- .tbl-feed .c-ops>.vote,.tbl-feed .c-ops>.deep-read-action+.vote{margin:0}
+ .tbl-feed.tbl-lanes tr:has(.c-rd){--lead:calc(22px + 2.1rem + 24px)}
+ .tbl-feed.tbl-lanes .c-rd{position:absolute;top:10px;left:0;width:22px}
+ .tbl-feed.tbl-lanes .c-score{position:absolute;top:11px;left:0;width:2.1rem;text-align:left}
+ .tbl-feed.tbl-lanes .c-rd+.c-score{left:34px}
+ .tbl-feed.tbl-lanes .c-sum{flex:1 1 100%;min-width:0}
+ .tbl-feed.tbl-lanes :is(.c-chan,.c-src,.c-age){min-width:0;color:var(--ink-2);font-size:.8125rem}
+ .tbl-feed.tbl-lanes .c-ops{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-left:auto;font-size:.8125rem}
+ .tbl-feed.tbl-lanes .c-ops>.vote,.tbl-feed.tbl-lanes .c-ops>.deep-read-action+.vote{margin:0}
  /* A listing or lot: its photo and title, then its labelled facts and actions under the title. */
- .page-reading .tbl-stack tr{--lead:calc(80px + 12px);display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 22px;
+ .tbl-stack.tbl-lanes tr{--lead:calc(80px + 12px);display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 22px;
   padding:12px 0 12px var(--lead)}
- .page-reading .tbl-stack td.c-lot{flex:1 1 100%;margin-left:calc(-1 * var(--lead))}
- .page-reading .tbl-stack td[data-label]{display:flex;align-items:baseline;gap:8px;min-width:0}
- .page-reading .tbl-stack td[data-label]::before{content:attr(data-label);flex:none;color:var(--ink-3);font-size:.78rem}
- .page-reading .tbl-stack td[data-label] small{margin-top:0}
- .page-reading .tbl-stack .c-ops{margin-left:auto}
- .page-reading .tbl-stack .ops-stack{grid-auto-flow:column;align-items:center}
+ .tbl-stack.tbl-lanes td.c-lot{flex:1 1 100%;margin-left:calc(-1 * var(--lead))}
+ .tbl-stack.tbl-lanes td[data-label]{display:flex;align-items:baseline;gap:8px;min-width:0}
+ .tbl-stack.tbl-lanes td[data-label]::before{content:attr(data-label);flex:none;color:var(--ink-3);font-size:.78rem}
+ .tbl-stack.tbl-lanes td[data-label] small{margin-top:0}
+ .tbl-stack.tbl-lanes .c-ops{margin-left:auto}
+ .tbl-stack.tbl-lanes .ops-stack{grid-auto-flow:column;align-items:center}
+}
+/* Sections that stand side by side (.cols.lanes: a news Channel's top stories and the rest, an
+   auction's watched, ending and upcoming lots) become lanes the same way, each heading pinned
+   at the top of its lane and each pager at its foot. */
+.cols.lanes{container:cols/inline-size}
+@container cols (min-width:123rem){
+ .cols.lanes:has(>:nth-child(2))>*{--lane-h:calc(100dvh - 2rem);max-height:var(--lane-h);overflow-y:auto;overscroll-behavior-y:contain;
+  scrollbar-width:thin;scrollbar-color:var(--rule-2) transparent}
+ .cols.lanes:has(>:nth-child(2))>*>h2{position:sticky;top:0;z-index:2;margin-bottom:0;padding-bottom:10px;background:var(--sheet)}
+ /* A lane is one scroller: a table inside a section lane stays a table rather than splitting
+    into lanes of its own, however wide the section. */
+ .cols.lanes:has(>:nth-child(2)) .tbl-wrap{container-type:normal}
+}
 }
 
 /* Mid widths: let table cells wrap before anything is allowed to overflow. */
@@ -700,8 +757,9 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
  .turn{grid-template-columns:1fr}
  .turn-who{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px}
  .turn-who small{margin-top:0}
- .lot{grid-template-columns:88px minmax(0,1fr)}
- .lot-img{width:88px;height:66px}
+ .lot{grid-template-columns:80px minmax(0,1fr)}
+ .plates{grid-template-columns:repeat(auto-fill,minmax(min(10rem,100%),1fr))}
+ .plate{padding:8px 8px 10px}
  .tbl-stack td.c-lot{padding-right:28px}
  .filters form{flex-basis:100%}
  .session-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:14px 0 0;border:1px solid var(--ctl);border-radius:2px}
@@ -737,5 +795,12 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
  .fields{gap:10px}
  .fld-grow{flex-basis:100%;max-width:none}
  .ms>summary{max-width:none}
+}
+/* Touch screens: two-state toggles grow to a thumb's size and stand further apart, so a tap on
+   相关 never lands on 不相关. */
+@media (pointer:coarse){
+ .tg{min-height:40px;padding:0 12px}
+ .vote,.watch{gap:10px}
+ .ops-stack,.plate-foot .ops-stack{gap:10px}
 }
 @media (prefers-reduced-motion:reduce){.adm *{transition:none!important}.skel span{animation:none}}

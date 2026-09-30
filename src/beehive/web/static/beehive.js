@@ -543,21 +543,152 @@
   document.addEventListener("htmx:afterSettle", syncAllBulk);
   syncAllBulk();
 
-  // Keyboard reading on the reading pages: / or f focuses search, j and k select a story row, o
-  // or Enter opens it. Rows and the search field are looked up on every key press, since an htmx
+  // Lanes (see "Lanes" in admin.css): each fits the window below where it starts, leaving room
+  // for the pager under a split list, so reading one lane to its end never moves the page. A
+  // lane that starts further down fits the window once scrolled to. A lane is a scroller only
+  // on a wide sheet; anywhere else it keeps no height of its own.
+  const LANE = ".tbl-lanes > tbody[data-lane], .cols.lanes > *";
+  const fitLanes = () => {
+    const viewport = window.innerHeight;
+    document.querySelectorAll(LANE).forEach((lane) => {
+      if (getComputedStyle(lane).overflowY !== "auto") {
+        lane.style.removeProperty("--lane-h");
+        return;
+      }
+      const top = lane.getBoundingClientRect().top + window.scrollY;
+      const section = lane.closest("section") || lane;
+      const sectionTop = section.getBoundingClientRect().top + window.scrollY;
+      const after = lane.closest(".tbl-wrap")?.nextElementSibling;
+      const reserve = 24 + (after?.matches(".pager") ? after.offsetHeight + 10 : 0);
+      const start = sectionTop < viewport * 0.6 ? top : 16 + (top - sectionTop);
+      const height = Math.max(viewport * 0.5, viewport - start - reserve);
+      lane.style.setProperty("--lane-h", `${Math.round(height)}px`);
+    });
+  };
+  let fitQueued = false;
+  const queueFit = () => {
+    if (!fitQueued) {
+      fitQueued = true;
+      requestAnimationFrame(() => {
+        fitQueued = false;
+        fitLanes();
+      });
+    }
+  };
+  fitLanes();
+  window.addEventListener("resize", queueFit);
+  document.addEventListener("htmx:afterSettle", queueFit);
+  document.addEventListener("toggle", queueFit, true);
+  document.fonts?.ready.then(queueFit);
+
+  // A swap that re-renders a block of lanes (a read toggle re-renders its section) keeps each
+  // lane where it was scrolled to, rather than jumping back to its top.
+  let laneScroll = null;
+  const lanesIn = (region) => [
+    ...(region.matches(LANE) ? [region] : []),
+    ...region.querySelectorAll(LANE),
+  ];
+  document.addEventListener("htmx:beforeSwap", (event) => {
+    const target = event.detail.target;
+    laneScroll = target instanceof Element && target.id
+      ? { region: target.id, tops: lanesIn(target).map((lane) => lane.scrollTop) }
+      : null;
+  });
+  // Capture runs this before the refocus above, so focus lands in a lane already in place.
+  document.addEventListener("htmx:afterSwap", () => {
+    const region = laneScroll && document.getElementById(laneScroll.region);
+    if (region) {
+      fitLanes();
+      lanesIn(region).forEach((lane, index) => {
+        lane.scrollTop = laneScroll.tops[index] ?? 0;
+      });
+    }
+    laneScroll = null;
+  }, true);
+
+  // A photo its CDN will not serve becomes the empty frame shown for a listing without one,
+  // rather than the browser's broken-image mark.
+  const PHOTO = "img.lot-img, img.plate-img";
+  const toFrame = (img) => {
+    const frame = document.createElement("span");
+    frame.className = img.className;
+    frame.setAttribute("aria-hidden", "true");
+    img.replaceWith(frame);
+  };
+  document.addEventListener("error", (event) => {
+    if (event.target instanceof HTMLImageElement && event.target.matches(PHOTO)) {
+      toFrame(event.target);
+    }
+  }, true);
+  document.querySelectorAll(PHOTO).forEach((img) => {
+    if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) {
+      toFrame(img);
+    }
+  });
+
+  // Opening a story reads it: /items/{id}/open marks it read for the Owner on the way to the
+  // article, so its row takes the read state here in place while the article opens in another
+  // tab. The row stays put, and its read toggle now offers to mark it unread.
+  const readInPlace = (link) => {
+    const row = link.closest("tr.kb-row");
+    const toggle = row?.querySelector("button.rd:not(.is-read)");
+    if (!(toggle instanceof HTMLButtonElement)) {
+      return;
+    }
+    row.classList.add("is-read");
+    toggle.classList.add("is-read");
+    const state = toggle.form?.elements.namedItem("is_read");
+    if (state instanceof HTMLInputElement) {
+      state.value = "0";
+    }
+    if (toggle.dataset.readTitle) {
+      toggle.title = toggle.dataset.readTitle;
+    }
+    if (toggle.dataset.readAria) {
+      toggle.setAttribute("aria-label", toggle.dataset.readAria);
+    }
+    if (toggle.dataset.readFeedback) {
+      toggle.dataset.feedbackMessage = toggle.dataset.readFeedback;
+    }
+  };
+  const openedLink = (event) => (
+    event.target instanceof Element ? event.target.closest("a[data-kb-open]") : null
+  );
+  document.addEventListener("click", (event) => {
+    const link = openedLink(event);
+    if (link) {
+      readInPlace(link);
+    }
+  });
+  document.addEventListener("auxclick", (event) => {
+    const link = event.button === 1 ? openedLink(event) : null;
+    if (link) {
+      readInPlace(link);
+    }
+  });
+
+  // Keyboard reading on the reading pages: / or f focuses search, j and k select a row (a
+  // story, listing or lot, or a gallery plate), o or Enter opens it. The Owner's keys press the
+  // selected row's own controls: m marks it read or unread, + and - rate it relevant or not, w
+  // watches a lot. Rows and the search field are looked up on every key press, since an htmx
   // swap can replace them.
   const findSearch = () => document.querySelector("[data-kb-search]");
   const selectionStatus = document.getElementById("kb-status");
   let selectedRow = null;
 
-  // The row keyboard reading moves from: the selected one, or, once a read toggle has
-  // re-rendered it, the row that now holds focus in the same slot.
+  // Only rows on screen take part: a closed history disclosure keeps its rows out of reach.
+  const isShown = (row) => (
+    row.isConnected && !row.closest("details:not([open])") && row.getClientRects().length > 0
+  );
+
+  // The row keyboard reading moves from: the selected one, or, once a swap has re-rendered it,
+  // the row that now holds focus in the same slot.
   const currentRow = () => {
-    if (selectedRow?.isConnected) {
+    if (selectedRow && isShown(selectedRow)) {
       return selectedRow;
     }
-    const focused = document.activeElement?.closest?.("tr.kb-row");
-    return focused instanceof HTMLTableRowElement ? focused : null;
+    const focused = document.activeElement?.closest?.(".kb-row");
+    return focused instanceof HTMLElement && isShown(focused) ? focused : null;
   };
 
   if (!(findSearch() instanceof HTMLInputElement)) {
@@ -572,10 +703,10 @@
     )
   );
 
-  const storyRows = () => [...document.querySelectorAll("tr.kb-row")];
+  const kbRows = () => [...document.querySelectorAll(".kb-row")].filter(isShown);
 
   const selectRow = (row) => {
-    storyRows().forEach((other) => {
+    kbRows().forEach((other) => {
       other.classList.toggle("is-selected", other === row);
       other.tabIndex = other === row ? 0 : -1;
     });
@@ -599,6 +730,25 @@
     }
   };
 
+  // A swap re-renders the row a key acted on; the one that took its place keeps the selection.
+  document.addEventListener("htmx:afterSettle", () => {
+    if (selectedRow && !selectedRow.isConnected) {
+      const row = document.activeElement?.closest?.(".kb-row");
+      if (row instanceof HTMLElement) {
+        row.classList.add("is-selected");
+        selectedRow = row;
+      }
+    }
+  });
+
+  const ROW_KEYS = {
+    m: "button.rd",
+    "+": ".vote button[value='1']",
+    "=": ".vote button[value='1']",
+    "-": ".vote button[value='-1']",
+    w: "button.tg-watch",
+  };
+
   document.addEventListener("keydown", (event) => {
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
       return;
@@ -618,7 +768,7 @@
     }
 
     if (key === "j" || key === "k") {
-      const rows = storyRows();
+      const rows = kbRows();
       if (rows.length === 0) {
         return;
       }
@@ -632,10 +782,18 @@
     }
 
     const row = currentRow();
+    const control = row && ROW_KEYS[key] ? row.querySelector(ROW_KEYS[key]) : null;
+    if (control instanceof HTMLButtonElement) {
+      event.preventDefault();
+      control.click();
+      return;
+    }
+
     if ((key === "o" && row) || (key === "enter" && row && event.target === row)) {
       const link = row.querySelector("[data-kb-open]");
       if (link instanceof HTMLAnchorElement) {
         event.preventDefault();
+        readInPlace(link);
         window.open(link.href, "_blank", "noopener,noreferrer");
       }
     }

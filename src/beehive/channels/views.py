@@ -166,7 +166,7 @@ def _host_local_label(iso_str: str) -> str:
 
 def _source_label(item: Row, t: Localizer) -> str:
     config = source_labels.parse_source_config(item.get("source_config"))
-    return source_labels.source_label(_req_str(item, "source_type"), config, t)
+    return source_labels.reading_source_label(_req_str(item, "source_type"), config, t)
 
 
 def _editorial_engagement_label(item: Row, t: Localizer) -> str:
@@ -361,6 +361,9 @@ class EditorialQuery:
     page: int = 1
     per_page: int = DEFAULT_PER_PAGE
     search: str | None = None
+    # A story the Owner has just marked read by judging it (not relevant) stays listed for this
+    # one render, so it does not vanish from under the reason field it just opened.
+    keep_item_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,7 +486,9 @@ def _build_editorial_page(
     unread_count = sum(1 for item in items if not bool(_req_int(item, "is_read")))
     read_count = len(items) - unread_count
     visible_rows = items if show_read else [
-        item for item in items if not bool(_req_int(item, "is_read"))
+        item
+        for item in items
+        if not bool(_req_int(item, "is_read")) or _req_int(item, "id") == query.keep_item_id
     ]
     filtered_rows = [
         item

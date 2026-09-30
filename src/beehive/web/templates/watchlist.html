@@ -77,7 +77,7 @@
     <tr class="watchlist-item{{ ' is-closed' if item.is_closed or not item.is_active }}" id="watchlist-item-{{ item.id }}">
       <td class="c-check"><input type="checkbox" name="item_ids" value="{{ item.id }}" form="watchlist-bulk-form" aria-label="{{ t('web.watchlist.select_item', title=item.title) }}"></td>
       <td class="c-lot c-wide"><div class="lot">
-        {% if item.image_url %}<img class="lot-img" src="{{ item.image_url }}" alt="" width="80" height="60" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif %}
+        {% if item.image_url %}<img class="lot-img" src="{{ item.image_url|sized(240) }}" alt="" width="80" height="80" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif %}
         <a class="lot-title" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
         {% if item.context %}<span class="lot-where">{{ item.context }}</span>{% endif %}
       </div></td>

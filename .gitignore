@@ -20,3 +20,4 @@ venv/
 
 # Impeccable review captures (regenerated per review)
 .impeccable/review/
+.impeccable/critique/

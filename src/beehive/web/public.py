@@ -11,7 +11,7 @@ import os
 import sqlite3
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, unquote_plus, urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -68,13 +68,14 @@ from beehive.db.items import (
     mark_read,
     mark_unread,
 )
+from beehive.db.read_batches import get_read_batch, record_read_batch, undo_read_batch
 from beehive.db.sources import get_source, list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.featured import featured_utc_bounds, load_featured_window_days
 from beehive.domain.channels import ReadModel
 from beehive.localization import Localizer
 from beehive.scheduling import HOST_TZ
-from beehive.source_labels import parse_source_config, source_label
+from beehive.source_labels import parse_source_config, reading_source_label
 from beehive.web.deep_read_view import (
     ALLOWED_ORIGINS,
     brief_url,
@@ -97,6 +98,13 @@ from beehive.web.formatting import (
 from beehive.web.link_safety import safe_external_href
 from beehive.web.home import build_channel_desk, build_ranked_stories
 from beehive.web.reading import channel_chapter_number, number_sections, render_reading
+from beehive.web.reading_prefs import (
+    DEFAULT_PER_PAGE as DEFAULT_LISTING_PER_PAGE,
+    PER_PAGE_CHOICES,
+    ListingPrefs,
+    ListingView,
+    resolve_listing_prefs,
+)
 from beehive.web.workspace import render_workspace
 from beehive.tracker_reminders import send_tracker_reminder_for_item
 
@@ -131,11 +139,32 @@ def _require_editorial_item(item: dict) -> None:
         )
 
 
+# Query parameters that belong to one render: a story kept in place after a vote, and the
+# batch a "mark all as read" can take back. Links and forms a page builds never carry them on.
+_ONE_RENDER_KEYS = frozenset({"keep", "read_batch"})
+# SQLite stores integers in 64 bits; a larger id could never match and would not bind.
+_MAX_SQL_INTEGER = 2**63 - 1
+
+
+def _url_without(request: Request, keys: frozenset[str]) -> str:
+    """The page's own address, path and query as the browser sent them, without `keys`."""
+    kept = [
+        pair
+        for pair in request.url.query.split("&")
+        if pair and unquote_plus(pair.partition("=")[0]) not in keys
+    ]
+    return f"{request.url.path}?{'&'.join(kept)}" if kept else request.url.path
+
+
 def _source_summary(sources: list[dict], t: Localizer) -> str:
-    """The Channel page's "Sources: r/PersonalFinanceNZ, ..." line, one shared label per Source."""
-    return t.text("web.channel.source_list_separator").join(
-        source_label(s["type"], parse_source_config(s["config"]), t) for s in sources
-    )
+    """The Channel page's "Sources: r/PersonalFinanceNZ, ..." line: the Owner's name for each
+    Source, else its reader-facing label, each store named once."""
+    labels = [
+        str(s.get("name") or "").strip()
+        or reading_source_label(s["type"], parse_source_config(s["config"]), t)
+        for s in sources
+    ]
+    return t.text("web.channel.source_list_separator").join(dict.fromkeys(labels))
 
 
 def _monitor_page_url(
@@ -143,6 +172,8 @@ def _monitor_page_url(
     *,
     active_page: int | None = None,
     history_page: int | None = None,
+    display: tuple[tuple[str, str], ...] = (),
+    anchor: str = "",
 ) -> str:
     params: list[tuple[str, str]] = [("sort", page.sort.value)]
     active_page = active_page if active_page is not None else page.pagination.page
@@ -164,7 +195,9 @@ def _monitor_page_url(
         params.append(("q", page.search))
     if page.criteria.showing_below_threshold:
         params.append(("show_below", "1"))
-    return f"/channels/{page.channel_id}?{urlencode(params)}"
+    params.extend(display)
+    fragment = f"#{anchor}" if anchor else ""
+    return f"/channels/{page.channel_id}?{urlencode(params)}{fragment}"
 
 
 def _tracker_page_url(
@@ -173,6 +206,8 @@ def _tracker_page_url(
     ending_page: int | None = None,
     upcoming_page: int | None = None,
     history_page: int | None = None,
+    display: tuple[tuple[str, str], ...] = (),
+    anchor: str = "",
 ) -> str:
     pages = {
         "ending_page": (
@@ -204,8 +239,69 @@ def _tracker_page_url(
         params["max_price"] = str(page.maximum_price)
     if page.criteria.showing_below_threshold:
         params["show_below"] = "1"
+    params.update(display)
     query = urlencode(params)
-    return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
+    fragment = f"#{anchor}" if anchor else ""
+    base = f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
+    return f"{base}{fragment}"
+
+
+def _display_params(prefs: ListingPrefs) -> tuple[tuple[str, str], ...]:
+    """The view and page size a store or auction page's own links carry, so they hold even
+    without the remembering cookie. Defaults are left out."""
+    params: list[tuple[str, str]] = []
+    if prefs.view is not prefs.default_view:
+        params.append(("view", prefs.view.value))
+    if prefs.per_page != DEFAULT_LISTING_PER_PAGE:
+        params.append(("per_page", str(prefs.per_page)))
+    return tuple(params)
+
+
+def _current_url_with(
+    request: Request, updates: dict[str, str], drop: frozenset[str] = frozenset()
+) -> str:
+    """The page's own address with `updates` set and `drop` removed, other filters kept."""
+    params = [
+        (key, value)
+        for key, value in request.query_params.multi_items()
+        if key not in updates and key not in drop
+    ]
+    params.extend(updates.items())
+    query = urlencode(params)
+    return f"{request.url.path}?{query}" if query else request.url.path
+
+
+def _read_batch_context(
+    request: Request, conn: sqlite3.Connection, token: str | None, now: datetime
+) -> dict:
+    """The undo offer after "mark all as read", while that batch can still be taken back."""
+    return {
+        "read_batch": get_read_batch(conn, token, now),
+        "read_batch_next_url": _url_without(request, _ONE_RENDER_KEYS),
+    }
+
+
+# Changing the page size starts every list on the page over.
+_PAGE_KEYS = frozenset({"page", "ending_page", "upcoming_page", "history_page", *_ONE_RENDER_KEYS})
+
+
+def _listing_display_links(request: Request, prefs: ListingPrefs) -> dict:
+    """The head's view switch and page-size choice for a store or auction page."""
+    return {
+        "listing_view": prefs.view.value,
+        "per_page": prefs.per_page,
+        "view_links": [
+            (
+                choice.value,
+                _current_url_with(request, {"view": choice.value}, _ONE_RENDER_KEYS),
+            )
+            for choice in ListingView
+        ],
+        "per_page_links": [
+            (size, _current_url_with(request, {"per_page": str(size)}, _PAGE_KEYS))
+            for size in PER_PAGE_CHOICES
+        ],
+    }
 
 
 def _local_day_bounds(
@@ -318,6 +414,7 @@ def _editorial_page_url(
     page_number: int,
     *,
     include_read_filter: bool,
+    anchor: str = "",
 ) -> str:
     params: dict[str, str | int] = {}
     if include_read_filter and page.show_read:
@@ -329,7 +426,9 @@ def _editorial_page_url(
     if page_number != 1:
         params["page"] = page_number
     query = urlencode(params)
-    return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
+    fragment = f"#{anchor}" if anchor else ""
+    base = f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
+    return f"{base}{fragment}"
 
 
 def _editorial_clear_search_url(page: EditorialPage) -> str:
@@ -359,7 +458,9 @@ def _safe_return_url(value: str | None, fallback: str) -> str:
 
 
 def _criteria_toggle_url(request: Request, *, showing_below: bool) -> str:
-    reset_keys = {"page", "ending_page", "upcoming_page", "history_page", "show_below"}
+    reset_keys = {
+        "page", "ending_page", "upcoming_page", "history_page", "show_below", *_ONE_RENDER_KEYS
+    }
     params = [
         (key, value)
         for key, value in request.query_params.multi_items()
@@ -384,6 +485,8 @@ def dashboard(
     view: Literal["all", "unread", "read"] | None = Query(default=None),
     minimum_score: int | None = Query(default=None, ge=0, le=100),
     page: int | None = Query(default=None, ge=1),
+    keep: int | None = Query(default=None, ge=1, le=_MAX_SQL_INTEGER),
+    read_batch: str | None = Query(default=None, max_length=64),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -419,6 +522,7 @@ def dashboard(
         "read_url": _ranked_list_url("read", None),
         "high_priority_url": _ranked_list_url("all", 90),
         "has_channels": bool(channels),
+        **_read_batch_context(request, conn, read_batch if is_admin else None, now),
     }
     if view is None and minimum_score is None and page is None:
         context.update(
@@ -443,12 +547,25 @@ def dashboard(
             read_state=effective_view,
             **day_filters,
         )
+        kept = keep if is_admin else None
+        # The pager counts a story kept after a vote, so it stays on the page it sat on.
+        listed_total = (
+            pending_signal_count
+            if kept is None
+            else count_dashboard_signals(
+                conn,
+                minimum_score=minimum_score,
+                read_state=effective_view,
+                keep_item_id=kept,
+                **day_filters,
+            )
+        )
         # A page past the end (after marking the last unread page read, say) shows the last one.
-        page_count = -(-pending_signal_count // DASHBOARD_SIGNAL_COUNT)
+        page_count = -(-listed_total // DASHBOARD_SIGNAL_COUNT)
         pagination = Pagination(
             page=min(page or 1, max(page_count, 1)),
             per_page=DASHBOARD_SIGNAL_COUNT,
-            total=pending_signal_count,
+            total=listed_total,
         )
         rows = list_dashboard_highlights(
             conn,
@@ -456,6 +573,7 @@ def dashboard(
             offset=pagination.offset,
             minimum_score=minimum_score,
             read_state=effective_view,
+            keep_item_id=kept,
             **day_filters,
         )
         context.update(
@@ -535,6 +653,10 @@ def channel_drilldown(
     ending_page: int = Query(1, ge=1),
     upcoming_page: int = Query(1, ge=1),
     history_page: int = Query(1, ge=1),
+    view: str | None = None,
+    per_page: int | None = None,
+    keep: int | None = Query(None, ge=1, le=_MAX_SQL_INTEGER),
+    read_batch: str | None = Query(None, max_length=64),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -545,6 +667,16 @@ def channel_drilldown(
     is_admin = session is not None
     csrf_token = session["csrf_token"] if is_admin else None
     now = datetime.now(timezone.utc)
+    # A store or auction Channel remembers its list or gallery view and its page size.
+    prefs = (
+        resolve_listing_prefs(
+            request, channel_id=channel_id, kind=channel["kind"], view=view, per_page=per_page
+        )
+        if channel["kind"] in {"monitor", "tracker"}
+        else None
+    )
+    listing_per_page = prefs.per_page if prefs is not None else DEFAULT_LISTING_PER_PAGE
+    display = _display_params(prefs) if prefs is not None else ()
     page = build_channel_page(
         conn,
         channel,
@@ -554,10 +686,15 @@ def channel_drilldown(
         csrf_token=csrf_token,
         show_read=bool(show_read) if is_admin else True,
         show_below_score=is_admin and show_below,
-        editorial_query=EditorialQuery(page=page_number, search=q),
+        # A story just marked not relevant stays in place until the next load, so its reason
+        # field is still there to fill in.
+        editorial_query=EditorialQuery(
+            page=page_number, search=q, keep_item_id=keep if is_admin else None
+        ),
         monitor_query=MonitorQuery(
             page=page_number,
             history_page=history_page,
+            per_page=listing_per_page,
             sort=sort,
             on_sale_only=on_sale,
             vendors=tuple(vendor or ()),
@@ -569,6 +706,7 @@ def channel_drilldown(
             ending_page=ending_page,
             upcoming_page=upcoming_page,
             history_page=history_page,
+            per_page=listing_per_page,
             search=q,
             source=next(
                 (value for value in (source or ()) if value.strip()),
@@ -604,12 +742,12 @@ def channel_drilldown(
         "tracker_upcoming_next_url": None,
         "tracker_history_previous_url": None,
         "tracker_history_next_url": None,
-        "return_url": str(request.url.path)
-        + (f"?{request.url.query}" if request.url.query else ""),
+        "return_url": _url_without(request, _ONE_RENDER_KEYS),
         "criteria_toggle_url": _criteria_toggle_url(
             request,
             showing_below=page.criteria.showing_below_threshold,
         ),
+        **_read_batch_context(request, conn, read_batch if is_admin else None, now),
     }
     sections: list[tuple[str, str, str]] = []
     if isinstance(page, EditorialPage):
@@ -624,12 +762,14 @@ def channel_drilldown(
                 page,
                 page.folded_pagination.previous_page,
                 include_read_filter=is_admin,
+                anchor="more",
             )
         if page.folded_pagination.has_next:
             context["editorial_next_url"] = _editorial_page_url(
                 page,
                 page.folded_pagination.page + 1,
                 include_read_filter=is_admin,
+                anchor="more",
             )
         context["editorial_show_read_url"] = _editorial_show_read_url(page)
         context["editorial_unread_url"] = _editorial_page_url(
@@ -654,19 +794,31 @@ def channel_drilldown(
         ]
         if page.pagination.has_previous:
             context["monitor_previous_url"] = _monitor_page_url(
-                page, active_page=page.pagination.previous_page
+                page,
+                active_page=page.pagination.previous_page,
+                display=display,
+                anchor="available",
             )
         if page.pagination.has_next:
             context["monitor_next_url"] = _monitor_page_url(
-                page, active_page=page.pagination.page + 1
+                page,
+                active_page=page.pagination.page + 1,
+                display=display,
+                anchor="available",
             )
         if page.history_pagination.has_previous:
             context["monitor_history_previous_url"] = _monitor_page_url(
-                page, history_page=page.history_pagination.previous_page
+                page,
+                history_page=page.history_pagination.previous_page,
+                display=display,
+                anchor="history",
             )
         if page.history_pagination.has_next:
             context["monitor_history_next_url"] = _monitor_page_url(
-                page, history_page=page.history_pagination.page + 1
+                page,
+                history_page=page.history_pagination.page + 1,
+                display=display,
+                anchor="history",
             )
     if isinstance(page, TrackerPage):
         if page.watched:
@@ -682,27 +834,45 @@ def channel_drilldown(
         )
         if page.ending_pagination.has_previous:
             context["tracker_ending_previous_url"] = _tracker_page_url(
-                page, ending_page=page.ending_pagination.previous_page
+                page,
+                ending_page=page.ending_pagination.previous_page,
+                display=display,
+                anchor="ending",
             )
         if page.ending_pagination.has_next:
             context["tracker_ending_next_url"] = _tracker_page_url(
-                page, ending_page=page.ending_pagination.page + 1
+                page,
+                ending_page=page.ending_pagination.page + 1,
+                display=display,
+                anchor="ending",
             )
         if page.upcoming_pagination.has_previous:
             context["tracker_upcoming_previous_url"] = _tracker_page_url(
-                page, upcoming_page=page.upcoming_pagination.previous_page
+                page,
+                upcoming_page=page.upcoming_pagination.previous_page,
+                display=display,
+                anchor="upcoming",
             )
         if page.upcoming_pagination.has_next:
             context["tracker_upcoming_next_url"] = _tracker_page_url(
-                page, upcoming_page=page.upcoming_pagination.page + 1
+                page,
+                upcoming_page=page.upcoming_pagination.page + 1,
+                display=display,
+                anchor="upcoming",
             )
         if page.history_pagination.has_previous:
             context["tracker_history_previous_url"] = _tracker_page_url(
-                page, history_page=page.history_pagination.previous_page
+                page,
+                history_page=page.history_pagination.previous_page,
+                display=display,
+                anchor="history",
             )
         if page.history_pagination.has_next:
             context["tracker_history_next_url"] = _tracker_page_url(
-                page, history_page=page.history_pagination.page + 1
+                page,
+                history_page=page.history_pagination.page + 1,
+                display=display,
+                anchor="history",
             )
     toc_sections, section_numbers = number_sections(
         channel_chapter_number(channels, channel_id), sections
@@ -712,9 +882,12 @@ def channel_drilldown(
         toc_sections=toc_sections,
         sec=section_numbers,
     )
-    return render_reading(
+    if prefs is not None:
+        context.update(_listing_display_links(request, prefs))
+    response = render_reading(
         request, t, page.template_name, context, is_owner=is_admin, channels=channels
     )
+    return prefs.remember(response) if prefs is not None else response
 
 
 @router.get("/watchlist", response_class=HTMLResponse)
@@ -934,8 +1107,10 @@ def vote_on_item(
     conn: sqlite3.Connection = Depends(get_db),
 ):
     """The Owner's relevance vote on an Editorial story. Voting the same way again clears it; a
-    reason keeps the down vote and saves the note. The response redirects back to the page, and
-    htmx swaps the story's row in place from it."""
+    reason keeps the down vote and saves the note. Judging a story not relevant also reads it,
+    and taking that judgement back (clearing it, or switching to relevant) makes it unread
+    again. The response redirects back to the page, where htmx swaps the story's row from; a
+    vote that read the story asks the page to keep it listed for that render."""
     verify_csrf(session, csrf_token)
     if value not in (1, -1):
         raise HTTPException(status_code=422, detail="value must be 1 or -1")
@@ -946,16 +1121,36 @@ def vote_on_item(
     _require_editorial_item(item)
 
     existing = get_vote(conn, item_id)
-    if reason is not None:
-        upsert_vote(conn, item_id, value, reason)
-    elif existing is not None and existing["value"] == value:
+    clearing = reason is None and existing is not None and existing["value"] == value
+    if clearing:
         delete_vote(conn, item_id)
     else:
-        upsert_vote(conn, item_id, value, None)
+        upsert_vote(conn, item_id, value, reason)
+    judged_not_relevant = value == -1 and not clearing
+    if judged_not_relevant:
+        mark_read(conn, item_id)
+    elif existing is not None and existing["value"] == -1:
+        mark_unread(conn, item_id)
 
     channel_id = _item_channel_id(conn, item)
     fallback = f"/channels/{channel_id}" if channel_id is not None else "/"
-    return RedirectResponse(_safe_return_url(next_url, fallback), status_code=303)
+    target = _safe_return_url(next_url, fallback)
+    if judged_not_relevant:
+        target = _url_with_param(target, "keep", str(item_id))
+    return RedirectResponse(target, status_code=303)
+
+
+def _url_with_param(url: str, key: str, value: str) -> str:
+    """`url` with its `key` parameter set to `value`, anything else kept."""
+    address, _, fragment = url.partition("#")
+    path, _, query = address.partition("?")
+    params = [
+        (name, current)
+        for name, current in parse_qsl(query, keep_blank_values=True)
+        if name != key
+    ]
+    params.append((key, value))
+    return f"{path}?{urlencode(params)}" + (f"#{fragment}" if fragment else "")
 
 
 @router.post("/items/{item_id}/relevance", response_class=HTMLResponse)
@@ -1045,13 +1240,38 @@ def mark_dashboard_read_route(
     published_from, published_to = featured_utc_bounds(
         now, load_featured_window_days(conn)
     )
-    mark_dashboard_signals_read(
+    marked = mark_dashboard_signals_read(
         conn,
         minimum_score=minimum_score,
         published_from=published_from,
         published_to=published_to,
         read_state="unread",
     )
+    return _redirect_after_read_batch(
+        conn, marked, _safe_return_url(next_url, "/"), now
+    )
+
+
+def _redirect_after_read_batch(
+    conn: sqlite3.Connection, marked: list[int], target: str, now: datetime
+) -> RedirectResponse:
+    """Back to the page, which offers to undo the batch for a few minutes."""
+    batch = record_read_batch(conn, marked, now)
+    if batch is not None:
+        target = _url_with_param(target, "read_batch", batch.token)
+    return RedirectResponse(target, status_code=303)
+
+
+@router.post("/read-batches/undo")
+def undo_read_batch_route(
+    csrf_token: str = Form(...),
+    token: str = Form(..., max_length=64),
+    next_url: str | None = Form(None),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    undo_read_batch(conn, token, datetime.now(timezone.utc))
     return RedirectResponse(_safe_return_url(next_url, "/"), status_code=303)
 
 
@@ -1073,10 +1293,12 @@ def mark_all_read_route(
             status_code=422,
             detail="This Channel does not use read state",
         )
-    mark_channel_read(conn, channel_id)
-    return RedirectResponse(
+    marked = mark_channel_read(conn, channel_id)
+    return _redirect_after_read_batch(
+        conn,
+        marked,
         _safe_return_url(next_url, f"/channels/{channel_id}"),
-        status_code=303,
+        datetime.now(timezone.utc),
     )
 
 
@@ -1170,6 +1392,7 @@ def archive(
     read_state: str | None = None,
     q: str | None = None,
     page: int = Query(1, ge=1),
+    keep: int | None = Query(None, ge=1, le=_MAX_SQL_INTEGER),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -1202,6 +1425,8 @@ def archive(
         search=q,
         page=page,
         page_size=_ARCHIVE_PAGE_SIZE,
+        # A story just judged not relevant stays under an unread filter for this render.
+        keep_item_id=keep if is_admin else None,
     )
     csrf_token = session["csrf_token"] if is_admin else None
     stories = build_editorial_item_views(
@@ -1220,6 +1445,7 @@ def archive(
         channel_id=channel_id,
         read_state=effective_read_state,
         search=q,
+        keep_item_id=keep if is_admin else None,
     )
     days = _archive_days(groups, day_totals, t)
     channels = list_channels(conn)

@@ -33,11 +33,9 @@
   {% for day in days %}
   <section class="chan-sec" id="{{ day.anchor }}" aria-labelledby="{{ day.anchor }}-h">
     <h2 id="{{ day.anchor }}-h"><span class="no">{{ sec[day.key] }}</span><span><time datetime="{{ day.key }}">{{ day.key }}</time> {{ day.label }}</span><span class="tools"><span class="desk-state nw">{{ t('web.reading.meta.stories', count=day.total, number=day.total|count(locale)) }}</span></span></h2>
-    <div class="tbl-wrap"><table class="tbl tbl-feed">
+    <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
       {{ rd.story_head(with_channel=true) }}
-      <tbody>
-        {% for row in day.rows %}{{ rd.story_row(row.story, 'archive-list', '#archive-meta,#toc-count-featured', row.channel_name, row.channel_id, votes=true, when=row.time, when_title=row.exact) }}{% endfor %}
-      </tbody>
+      {% call(row) rd.lane_rows(day.rows) %}{{ rd.story_row(row.story, 'archive-list', '#archive-meta,#toc-count-featured', row.channel_name, row.channel_id, votes=true, when=row.time, when_title=row.exact) }}{% endcall %}
     </table></div>
   </section>
   {% else %}
@@ -50,8 +48,7 @@
   {{ rd.pager(pagination, previous_url, next_url, t('web.archive.pager_aria')) }}
 </div>
 
-<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
-<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+{{ rd.kbd_hint(('read', 'relevance')) }}
 <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}

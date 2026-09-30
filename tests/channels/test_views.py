@@ -416,7 +416,7 @@ def test_monitor_active_history_split_and_price_presentation(conn):
     assert active.is_present is True
     assert active.is_available is True
     assert active.image_url == "https://cdn/x.jpg"
-    assert active.source_label == "example.com/collections/outlet"
+    assert active.source_label == "example.com"
 
     gone = page.history[0]
     assert gone.discount_percent is None
@@ -668,18 +668,16 @@ def test_monitor_search_source_filter_and_options(conn):
         now=_NOW,
         monitor_query=MonitorQuery(
             search="waterproof",
-            sources=("example.com/collections/outlet",),
+            sources=("example.com",),
         ),
     )
 
     assert [item.title for item in page.items] == ["Beta Jacket"]
     assert page.search == "waterproof"
-    assert page.sources == ("example.com/collections/outlet",)
+    assert page.sources == ("example.com",)
     assert page.vendor_options == ("Arc'teryx", "Teva")
-    assert page.source_options == (
-        "example.com/collections/outlet",
-        "land-sea.example/sale",
-    )
+    # A store's collection is named by the store, so the filter picks a store.
+    assert page.source_options == ("example.com", "land-sea.example")
 
 
 def test_monitor_uses_the_retailer_name_for_international_clearance_sources(conn):

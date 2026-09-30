@@ -115,7 +115,9 @@ def test_home_is_the_channel_desk_in_the_reading_shell():
     assert 'class="desk-sec"' in template
     assert 'class="tbl tbl-feed"' in template
     assert "data-kb-search" in template
-    assert 'id="kb-status"' in template and 'aria-live="polite"' in template
+    assert "rd.kbd_hint(" in template
+    macros = (_TEMPLATES_DIR / "_reading_macros.html").read_text()
+    assert 'id="kb-status"' in macros and 'aria-live="polite"' in macros
     for rule in (".toc .toc-n{", ".rd{", ".score{", ".desk-state{", ".tbl .c-sum{", ".tbl-feed tr{"):
         assert rule in css, rule
     # Nothing on the desk is cut short: long text wraps, and a lot's auction context is not
@@ -206,13 +208,13 @@ def test_editorial_channel_keeps_compact_readability_contract():
     # Both sections sit in the region a read toggle re-renders, side by side on a wide sheet.
     assert (
         template.index('<div id="chan-stories" data-refocus-slot>')
-        < template.index('<div class="cols">')
+        < template.index('<div class="cols lanes">')
         < template.index('<section class="chan-sec" id="top"')
         < template.index('<section class="chan-sec" id="more"')
     )
     assert '<span class="no">{{ sec.top }}</span>' in template
     assert '<span class="no">{{ sec.more }}</span>' in template
-    assert template.count('<table class="tbl tbl-feed">') == 2
+    assert template.count('<table class="tbl tbl-feed tbl-lanes">') == 2
     assert template.count("rd.story_row(story, 'chan-stories', oob, page.channel_name") == 2
     assert "channel.kind" not in template
 
@@ -243,14 +245,22 @@ def test_monitor_and_tracker_have_dedicated_typed_templates():
 
     # Each kind renders its own rows: listings with prices, lots with deadlines. The rows are
     # shared macros, so search shows a Channel's hits in the same rows as its page.
-    assert "{% macro listing_row(listing) %}" in macros
-    assert '<tr id="listing-{{ listing.id }}"' in macros
-    assert "{% macro lot_row(lot) %}" in macros
-    assert '<tr id="lot-{{ lot.id }}"' in macros
-    assert '{% include "_tracker_watch_control.html" %}' in macros
-    assert macros.count('{% include "_listing_feedback_control.html" %}') == 2
-    assert "rd.listing_table(page.items)" in monitor
-    assert "rd.lot_table(lots)" in tracker
+    assert "{% macro listing_row(listing, channel_name='') %}" in macros
+    assert 'id="listing-{{ listing.id }}" tabindex="-1"' in macros
+    assert "{% macro lot_row(lot, channel_name='') %}" in macros
+    assert 'id="lot-{{ lot.id }}" tabindex="-1"' in macros
+    # The same listing or lot as a gallery plate, with the same controls.
+    assert "{% macro listing_plate(listing, channel_name='') %}" in macros
+    assert "{% macro lot_plate(lot, channel_name='') %}" in macros
+    assert macros.count('{% include "_tracker_watch_control.html" %}') == 2
+    assert macros.count('{% include "_listing_feedback_control.html" %}') == 4
+    assert "rd.listing_table(page.items, page.channel_name)" in monitor
+    assert "rd.listing_plates(page.items, page.channel_name)" in monitor
+    assert "rd.lot_table(lots, page.channel_name)" in tracker
+    assert "rd.lot_plates(lots, page.channel_name)" in tracker
+    for content in (monitor, tracker):
+        assert "rd.view_controls()" in content
+        assert "data-kb-search" in content
     for content in (monitor, tracker):
         assert '{% import "_reading_macros.html" as rd with context %}' in content
     for content in (monitor, tracker, macros, watch_control, feedback_control):
@@ -277,7 +287,18 @@ def test_dashboard_script_implements_displayed_keyboard_shortcuts():
     # Enter opens a story only while its row itself has focus, so it still presses buttons.
     assert '(key === "enter" && row && event.target === row)' in content
     # After a read toggle re-renders a row, j and k move on from the row that holds focus.
-    assert 'document.activeElement?.closest?.("tr.kb-row")' in content
+    assert 'document.activeElement?.closest?.(".kb-row")' in content
+    # Rows under a closed history disclosure are out of reach of j, k and the Owner's keys.
+    assert '!row.closest("details:not([open])")' in content
+    assert 'const kbRows = () => [...document.querySelectorAll(".kb-row")].filter(isShown);' in content
+    # The Owner's keys press the selected row's own controls.
+    for line in (
+        'm: "button.rd",',
+        '"+": ".vote button[value=\'1\']",',
+        '"-": ".vote button[value=\'-1\']",',
+        'w: "button.tg-watch",',
+    ):
+        assert line in content, line
     assert "selectionStatus.textContent" in content
     assert "scrollIntoView" in content
     assert "/__(CHANNEL|SCORE|SUMMARY)__/g" in content
@@ -343,22 +364,38 @@ def test_keyboard_search_finds_the_search_field_on_each_key_press():
     assert keydown.index("const search = findSearch();") < keydown.index("search.focus();")
 
 
-def test_wide_reading_tables_set_their_rows_in_newspaper_columns():
+def test_wide_reading_lists_split_into_lanes_that_scroll_on_their_own():
     css = (_STATIC_DIR / "admin.css").read_text()
+    macros = (_TEMPLATES_DIR / "_reading_macros.html").read_text()
+    # A long list renders as one table with two row groups, one for each lane.
+    assert "{% macro lane_rows(rows) -%}" in macros
+    assert macros.count("<tbody data-lane>") == 2
     # Each reading table's box is the container, so the table's own width, not the screen's,
-    # decides when its rows flow into columns.
+    # decides when its row groups become lanes.
     assert "container:ledger/inline-size" in _css_rule(css, ".page-reading .tbl-wrap")
     query = re.search(r"@container ledger \(min-width:([\d.]+)rem\)", css)
     assert query is not None
     ledger = _css_block(css, query.group(0))
-    column = re.search(r"columns:4 ([\d.]+)rem", ledger)
-    gap = re.search(r"column-gap:([\d.]+)rem", ledger)
-    assert column is not None and gap is not None
-    # The rows switch to columns exactly when two full columns and the gap between them fit.
-    assert float(query.group(1)) == 2 * float(column.group(1)) + float(gap.group(1))
-    assert ".page-reading :is(.tbl-feed,.tbl-stack) thead{display:none}" in ledger
-    # A row never splits across two columns.
-    assert "break-inside:avoid" in ledger
+    gutter = re.findall(r"padding-(?:right|left):([\d.]+)rem", ledger.split("/* A story:")[0])
+    assert len(gutter) == 2
+    # The rows turn into lanes exactly when two 56rem lanes and the gutter between them fit.
+    assert float(query.group(1)) == 2 * 56 + sum(float(width) for width in gutter)
+    assert ".page-reading .tbl-lanes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in ledger
+    assert ".page-reading .tbl-lanes thead{display:none}" in ledger
+    # Each lane scrolls on its own and never hands its scroll on to the page.
+    assert "--lane-h:calc(100dvh - 6rem)" in ledger
+    assert "max-height:var(--lane-h);overflow-y:auto" in ledger
+    assert "overscroll-behavior-y:contain" in ledger
+    # Sections side by side scroll on their own too, each heading pinned at the lane's top.
+    sections = _css_block(css, "@container cols (min-width:123rem)")
+    assert ".cols.lanes:has(>:nth-child(2))>*{--lane-h:calc(100dvh - 2rem);max-height:var(--lane-h)" in sections
+    assert "position:sticky;top:0" in sections
+    # A table inside a section lane never splits into lanes of its own.
+    assert ".cols.lanes:has(>:nth-child(2)) .tbl-wrap{container-type:normal}" in sections
+    # The script fits each lane to the window and keeps its scroll through an htmx swap.
+    script = (_STATIC_DIR / "beehive.js").read_text()
+    assert 'lane.style.setProperty("--lane-h"' in script
+    assert "laneScroll" in script
 
 
 def test_channel_template_translates_its_counts_and_marks_the_reason_focus_target():

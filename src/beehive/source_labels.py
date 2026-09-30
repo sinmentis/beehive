@@ -71,6 +71,17 @@ def url_host_label(url: str) -> str:
     return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
 
 
+# The reading pages name a store's collection by the store alone. The admin keeps the path, so
+# two collections from one store stay apart there.
+_STORE_SOURCE_TYPES = frozenset({"shopify_collection", "land_sea_collection"})
+
+
+def store_host_label(url: str) -> str:
+    """A store's address as its host without "www.", e.g. "bivouac.co.nz"."""
+    host = urlparse(url).netloc
+    return host.removeprefix("www.") if host else url
+
+
 def source_label(source_type: str, config: Mapping[str, object], t: Localizer) -> str:
     """The reader-facing label built from a Source's type and config. Falls back to the type
     itself for anything it does not recognise, never an error."""
@@ -90,6 +101,14 @@ def source_label(source_type: str, config: Mapping[str, object], t: Localizer) -
         return official
     hackernews = hackernews_source_label(source_type, config, t)
     return hackernews if hackernews is not None else source_type
+
+
+def reading_source_label(source_type: str, config: Mapping[str, object], t: Localizer) -> str:
+    """The label a reader sees: a store collection is named by its store, anything else as in
+    `source_label`."""
+    if source_type in _STORE_SOURCE_TYPES:
+        return store_host_label(source_url(source_type, config))
+    return source_label(source_type, config, t)
 
 
 def parse_source_config(raw: object) -> Mapping[str, object]:

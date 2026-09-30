@@ -30,6 +30,7 @@
     {%- endif %}</div>
   </div>
 </div>
+{{ rd.read_batch_note() }}
 {{ rd.criteria(page, criteria_toggle_url) }}
 {% if is_admin or page.search %}
 <div class="filters" id="chan-seg">
@@ -44,14 +45,14 @@
 {% endif %}
 
 <div id="chan-stories" data-refocus-slot>
-<div class="cols">
+<div class="cols lanes">
   {% if sec.top %}
   <section class="chan-sec" id="top" aria-labelledby="top-h">
     <h2 id="top-h"><span class="no">{{ sec.top }}</span><span>{{ t('web.channel.priority_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.highlighted|length) }}</span></span></h2>
     {% if page.highlighted %}
-    <div class="tbl-wrap"><table class="tbl tbl-feed">
+    <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
       {{ rd.story_head() }}
-      <tbody>{% for story in page.highlighted %}{{ rd.story_row(story, 'chan-stories', oob, page.channel_name, why=true, votes=true) }}{% endfor %}</tbody>
+      {% call(story) rd.lane_rows(page.highlighted) %}{{ rd.story_row(story, 'chan-stories', oob, page.channel_name, why=true, votes=true) }}{% endcall %}
     </table></div>
     {% else %}
     <div class="empty" tabindex="-1" data-refocus-fallback><b>{{ t('web.channel.empty_priority_heading') }}</b>{{ t('web.channel.empty_priority_body') }}</div>
@@ -62,9 +63,9 @@
   <section class="chan-sec" id="more" aria-labelledby="more-h">
     <h2 id="more-h"><span class="no">{{ sec.more }}</span><span>{{ t('web.channel.folded_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.folded_pagination.total) }}</span></span></h2>
     {% if page.folded %}
-    <div class="tbl-wrap"><table class="tbl tbl-feed">
+    <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
       {{ rd.story_head() }}
-      <tbody>{% for story in page.folded %}{{ rd.story_row(story, 'chan-stories', oob, page.channel_name, votes=true) }}{% endfor %}</tbody>
+      {% call(story) rd.lane_rows(page.folded) %}{{ rd.story_row(story, 'chan-stories', oob, page.channel_name, votes=true) }}{% endcall %}
     </table></div>
     {% else %}
     {{ rd.past_end() }}
@@ -75,8 +76,7 @@
 </div>
 </div>
 
-<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
-<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+{{ rd.kbd_hint(('read', 'relevance')) }}
 <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}

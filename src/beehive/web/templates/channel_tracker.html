@@ -7,7 +7,7 @@
 <section class="chan-sec" id="{{ key }}" aria-labelledby="{{ key }}-h">
   <h2 id="{{ key }}-h"><span class="no">{{ sec[key] }}</span><span>{{ heading }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=total) }}</span></span></h2>
   <p class="adm-lede">{{ body }}</p>
-  {% if lots %}{{ rd.lot_table(lots) }}{% else %}{{ rd.past_end() }}{% endif %}
+  {% if not lots %}{{ rd.past_end() }}{% elif listing_view == 'gallery' %}{{ rd.lot_plates(lots, page.channel_name) }}{% else %}{{ rd.lot_table(lots, page.channel_name) }}{% endif %}
   {% if pagination is not none %}{{ rd.pager(pagination, previous_url, next_url, t('web.reading.pager_aria', name=heading)) }}{% endif %}
 </section>
 {% endmacro %}
@@ -20,13 +20,13 @@
       {%- if fetch_stats %} · <span>{{ fetch_stats }}</span>{% endif %}</p>
     <p class="adm-meta chan-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
   </div>
-  {% if is_admin %}<div class="adm-actions"><a class="btn" href="/watchlist">{{ t('web.nav.watchlist') }}</a></div>{% endif %}
+  <div class="adm-actions">{{ rd.view_controls() }}{% if is_admin %}<a class="btn" href="/watchlist">{{ t('web.nav.watchlist') }}</a>{% endif %}</div>
 </div>
 {{ rd.criteria(page, criteria_toggle_url) }}
 
 <form class="fields" method="get" action="/channels/{{ page.channel_id }}" role="search" aria-label="{{ t('web.reading.filters_aria') }}">
   {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
-  <label class="fld fld-grow"><span>{{ t('web.monitor.search_label') }}</span><input class="inp" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}"></label>
+  <label class="fld fld-grow"><span>{{ t('web.monitor.search_label') }}</span><input class="inp" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}" aria-keyshortcuts="/" data-kb-search></label>
   <label class="fld"><span>{{ t('web.tracker.source_label') }}</span>
     <select class="inp" name="source"><option value="">{{ t('web.tracker.all_sources') }}</option>{% for option in page.source_options %}<option value="{{ option }}"{% if page.source == option %} selected{% endif %}>{{ option }}</option>{% endfor %}</select></label>
   <label class="fld"><span>{{ t('web.tracker.category_label') }}</span>
@@ -41,7 +41,7 @@
 </form>
 
 {% if sec.watched or sec.ending or sec.upcoming %}
-<div class="cols">
+<div class="cols lanes">
   {% if sec.watched %}{{ lot_section('watched', t('web.tracker.watched_heading'), t('web.tracker.watched_body'), page.watched, page.watched|length) }}{% endif %}
   {% if sec.ending %}{{ lot_section('ending', t('web.tracker.ending_heading'), t('web.tracker.ending_body'), page.ending_soon, page.ending_pagination.total, page.ending_pagination, tracker_ending_previous_url, tracker_ending_next_url) }}{% endif %}
   {% if sec.upcoming %}{{ lot_section('upcoming', t('web.tracker.upcoming_heading'), t('web.tracker.upcoming_body'), page.upcoming, page.upcoming_pagination.total, page.upcoming_pagination, tracker_upcoming_previous_url, tracker_upcoming_next_url) }}{% endif %}
@@ -56,11 +56,12 @@
   <details class="more"{% if page.history_pagination.page > 1 %} open{% endif %}>
     <summary>{{ t('web.reading.channel.show_history', count=page.history_pagination.total, number=page.history_pagination.total|count(locale)) }}</summary>
     <p class="hint">{{ t('web.tracker.history_body') }}</p>
-    {% if page.history %}{{ rd.lot_table(page.history) }}{% else %}{{ rd.past_end() }}{% endif %}
+    {% if not page.history %}{{ rd.past_end() }}{% elif listing_view == 'gallery' %}{{ rd.lot_plates(page.history, page.channel_name) }}{% else %}{{ rd.lot_table(page.history, page.channel_name) }}{% endif %}
     {{ rd.pager(page.history_pagination, tracker_history_previous_url, tracker_history_next_url, t('web.reading.pager_aria', name=t('web.tracker.history_heading'))) }}
   </details>
 </section>
 {% endif %}
+{{ rd.kbd_hint(('watch', 'relevance')) }}
 <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}

@@ -792,7 +792,7 @@ def test_mark_dashboard_signals_read_uses_visibility_filters(conn, source_id):
         row["external_id"]: row["is_read"]
         for row in conn.execute("SELECT external_id, is_read FROM items")
     }
-    assert changed == 1
+    assert len(changed) == 1
     assert rows == {"high": 1, "low": 0}
 
 

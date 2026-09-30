@@ -37,6 +37,7 @@
     {% endif %}
   </div>
 </div>
+{{ rd.read_batch_note() }}
 
 {% if list_view %}
 <div class="filters" id="home-seg">
@@ -56,11 +57,9 @@
 </div>
 <div id="home-list" data-refocus-slot>
   {% if ranked %}
-  <div class="tbl-wrap"><table class="tbl tbl-feed">
+  <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
     {{ rd.story_head(with_channel=true) }}
-    <tbody>
-      {% for row in ranked %}{{ rd.story_row(row.story, 'home-list', '#home-meta,#home-seg,#toc-count-featured', row.channel_name, row.channel_id) }}{% endfor %}
-    </tbody>
+    {% call(row) rd.lane_rows(ranked) %}{{ rd.story_row(row.story, 'home-list', '#home-meta,#home-seg,#toc-count-featured', row.channel_name, row.channel_id, votes=true) }}{% endcall %}
   </table></div>
   {% if pagination.page_count > 1 %}
   <nav class="pager" aria-label="{{ t('web.reading.list.pager_aria') }}">
@@ -114,7 +113,7 @@
       {% for listing in section.listings %}
       <tr>
         <td class="c-lot c-wide"><div class="lot">
-          {% if listing.image_url %}<img class="lot-img" src="{{ listing.image_url }}" alt="" width="80" height="60" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif %}
+          {{ rd.thumb(listing.image_url) }}
           <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer">{{ listing.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
           {% if listing.vendor %}<span class="lot-where">{{ listing.vendor }}</span>{% endif %}
         </div></td>
@@ -141,7 +140,7 @@
       {% for lot in section.lots %}
       <tr>
         <td class="c-lot c-wide"><div class="lot">
-          {% if lot.image_url %}<img class="lot-img" src="{{ lot.image_url }}" alt="" width="80" height="60" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif %}
+          {{ rd.thumb(lot.image_url) }}
           <a class="lot-title" href="{{ lot.open_url }}" target="_blank" rel="noopener noreferrer">{{ lot.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
           {% if lot.context %}<span class="lot-where">{{ lot.context }}</span>{% endif %}
         </div></td>
@@ -164,8 +163,7 @@
 </div>
 {% endif %}
 
-<p class="hint kbd-hint"><kbd>j</kbd> <kbd>k</kbd> {{ t('web.dashboard.shortcut_move') }} · <kbd>o</kbd> {{ t('web.dashboard.shortcut_open') }} · <kbd>/</kbd> {{ t('web.reading.search_submit') }}</p>
-<p id="kb-status" class="sr-only" aria-live="polite" aria-atomic="true" data-selection-template="{{ t('web.dashboard.selection_announcement', channel='__CHANNEL__', score='__SCORE__', summary='__SUMMARY__') }}"></p>
+{{ rd.kbd_hint(('read', 'relevance') if list_view else ('read',)) }}
 <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}

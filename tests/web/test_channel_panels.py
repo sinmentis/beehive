@@ -111,7 +111,8 @@ def _section(html, key):
 
 
 def _row(html, row_id):
-    match = re.search(rf'<tr id="{row_id}"[^>]*>.*?</tr>', html, re.DOTALL)
+    """A listing or lot by id: a table row in list view, a plate in the gallery."""
+    match = re.search(rf'<(tr|li)\b[^>]*\bid="{row_id}"[^>]*>.*?</\1>', html, re.DOTALL)
     assert match is not None, row_id
     return match.group(0)
 
@@ -167,10 +168,11 @@ def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client
         f"/channels/{channel_id}",
         params={
             "q": "jacket",
-            "source": "example.com/collections/sale",
+            "source": "example.com",
             "vendor": "Arc'teryx",
             "on_sale": "true",
             "sort": "discount",
+            "view": "list",
         },
     )
 
@@ -187,7 +189,7 @@ def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client
     assert '<s class="price-was">100</s>' in jacket
     assert '<span class="price-off">−20%</span>' in jacket
     assert (
-        '<span class="lot-where">Arc&#39;teryx · Footwear · example.com/collections/sale</span>'
+        '<span class="lot-where">Arc&#39;teryx · Footwear · example.com</span>'
         in jacket
     )
     assert "shopify_collection" not in response.text
@@ -231,7 +233,7 @@ def test_monitor_listing_change_tags_name_what_changed(conn, client):
     record_or_coalesce_event(connection, restocked, "back_in_stock", {}, observed_at)
     record_or_coalesce_event(connection, fresh, "discovered", {}, observed_at)
 
-    response = client.get(f"/channels/{channel_id}")
+    response = client.get(f"/channels/{channel_id}", params={"view": "list"})
 
     assert response.status_code == 200
     available = _section(response.text, "available")
@@ -308,8 +310,8 @@ def test_monitor_panel_accepts_multiple_vendor_and_source_filters(conn, client):
         params=[
             ("vendor", "Arc'teryx"),
             ("vendor", "Patagonia"),
-            ("source", "first.example/collections/sale"),
-            ("source", "second.example/collections/sale"),
+            ("source", "first.example"),
+            ("source", "second.example"),
         ],
     )
 
@@ -319,10 +321,7 @@ def test_monitor_panel_accepts_multiple_vendor_and_source_filters(conn, client):
         "Selected Patagonia Fleece",
     ]
     assert response.context["page"].vendors == ("Arc'teryx", "Patagonia")
-    assert response.context["page"].sources == (
-        "first.example/collections/sale",
-        "second.example/collections/sale",
-    )
+    assert response.context["page"].sources == ("first.example", "second.example")
     assert 'type="checkbox" name="vendor"' in response.text
     assert 'type="checkbox" name="source"' in response.text
     assert "Unselected Teva Shoe" not in response.text
@@ -441,11 +440,12 @@ def test_monitor_section_past_the_end_says_so_above_its_pager(conn, client, page
     assert response.status_code == 200
     past_end = _section(response.text, section)
     assert "Nothing is left on this page." in past_end
-    assert '<tr id="listing-' not in past_end
+    assert 'id="listing-' not in past_end
     # "Previous" leads back to the last page with listings, the first, and the pager counts the
     # one page there is.
     assert (
-        f'<a class="btn btn-sm" href="/channels/{channel_id}?sort=score">Previous</a>' in past_end
+        f'<a class="btn btn-sm" href="/channels/{channel_id}?sort=score#{section}">Previous</a>'
+        in past_end
     )
     assert "<span>Page 5 of 1</span>" in past_end
 
@@ -476,7 +476,7 @@ def test_tracker_section_past_the_end_says_so_above_its_pager(
     assert "Cordless drill" not in response.text
     # "Previous" leads back to the last page with lots, the first, and the pager counts the one
     # page there is.
-    assert f'<a class="btn btn-sm" href="/channels/{channel_id}">Previous</a>' in past_end
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}#{section}">Previous</a>' in past_end
     assert "<span>Page 5 of 1</span>" in past_end
 
 
@@ -548,14 +548,14 @@ def test_tracker_panel_groups_watched_deadlines_and_history_without_duplicates(
         item.id for item in (*page.ending_soon, *page.upcoming, *page.history)
     }
     # The watched lot is listed once, in its own section, with its watch toggle pressed.
-    assert response.text.count(f'<tr id="lot-{watched_id}"') == 1
+    assert response.text.count(f'id="lot-{watched_id}"') == 1
     watched = _row(_section(response.text, "watched"), f"lot-{watched_id}")
     assert "Current bid: NZD 50" in watched
     assert f'hx-post="/items/{watched_id}/watch"' in watched
     assert '<button class="tg tg-watch" type="submit" aria-pressed="true"' in watched
     history = _section(response.text, "history")
     assert "Closed grinder" in history
-    assert '<tr id="lot-' in history and 'class="is-closed"' in history
+    assert 'id="lot-' in history and 'is-closed' in history
     assert 'referrerpolicy="no-referrer"' in response.text
     # Lots take relevance feedback, never the Editorial vote, and have no deep read.
     assert not re.search(r'action="/items/\d+/vote"', response.text)

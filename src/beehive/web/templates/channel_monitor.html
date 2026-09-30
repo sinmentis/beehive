@@ -29,12 +29,13 @@
       {%- if fetch_stats %} · <span>{{ fetch_stats }}</span>{% endif %}</p>
     <p class="adm-meta chan-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
   </div>
+  <div class="adm-actions">{{ rd.view_controls() }}</div>
 </div>
 {{ rd.criteria(page, criteria_toggle_url) }}
 
 <form class="fields" method="get" action="/channels/{{ page.channel_id }}" role="search" aria-label="{{ t('web.reading.filters_aria') }}">
   {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
-  <label class="fld fld-grow"><span>{{ t('web.monitor.search_label') }}</span><input class="inp" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}"></label>
+  <label class="fld fld-grow"><span>{{ t('web.monitor.search_label') }}</span><input class="inp" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}" aria-keyshortcuts="/" data-kb-search></label>
   {{ multiselect('source', t('web.monitor.source_label'), source_choices, t('web.monitor.all_sources')) }}
   {{ multiselect('vendor', t('web.monitor.vendor_label'), vendor_choices, t('web.monitor.all_vendors')) }}
   {{ multiselect('gender', t('web.monitor.gender_label'), gender_choices, t('web.monitor.all_genders')) }}
@@ -51,7 +52,7 @@
 <section class="chan-sec" id="available" aria-labelledby="available-h">
   <h2 id="available-h"><span class="no">{{ sec.available }}</span><span>{{ t('web.monitor.available_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.reading.desk.listings', count=page.pagination.total, number=page.pagination.total|count(locale)) }}</span></span></h2>
   {% if page.items %}
-  {{ rd.listing_table(page.items) }}
+  {% if listing_view == 'gallery' %}{{ rd.listing_plates(page.items, page.channel_name) }}{% else %}{{ rd.listing_table(page.items, page.channel_name) }}{% endif %}
   {{ rd.pager(page.pagination, monitor_previous_url, monitor_next_url, t('web.monitor.pagination_aria')) }}
   {% elif page.pagination.page > 1 and page.pagination.total %}
   {{ rd.past_end() }}
@@ -69,11 +70,12 @@
   <details class="more"{% if page.history_pagination.page > 1 %} open{% endif %}>
     <summary>{{ t('web.reading.channel.show_history', count=page.history_pagination.total, number=page.history_pagination.total|count(locale)) }}</summary>
     <p class="hint">{{ t('web.monitor.unavailable_body') }}</p>
-    {% if page.history %}{{ rd.listing_table(page.history) }}{% else %}{{ rd.past_end() }}{% endif %}
+    {% if not page.history %}{{ rd.past_end() }}{% elif listing_view == 'gallery' %}{{ rd.listing_plates(page.history, page.channel_name) }}{% else %}{{ rd.listing_table(page.history, page.channel_name) }}{% endif %}
     {{ rd.pager(page.history_pagination, monitor_history_previous_url, monitor_history_next_url, t('web.reading.pager_aria', name=t('web.monitor.unavailable_heading'))) }}
   </details>
 </section>
 {% endif %}
+{{ rd.kbd_hint(('relevance',)) }}
 <p id="feedback-status" class="sr-only" role="status" aria-live="polite"></p>
 {% endblock %}
 {% block scripts %}
