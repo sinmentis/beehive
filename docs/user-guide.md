@@ -31,8 +31,8 @@ The channel's admin page shows **Finish setting up this Channel** with the steps
 | Type | Use it for | What you get |
 | --- | --- | --- |
 | **Editorial** | News and discussion | Scored stories with one-line summaries, unread markers, votes and deep reads, on the home page, the channel page, the archive and in email |
-| **Monitor** | Online store catalogues | Live listings with photos, prices and discounts; new items, price drops and restocks; search and filters; a history of listings that sold out or were removed |
-| **Tracker** | Auctions and other listings with an end time | Lots ending soon and coming up, the lots you watch, and a reminder before a watched lot closes |
+| **Monitor** | Online store catalogues | Live listings with photos, prices and discounts; new items, price drops and restocks; search and filters; a history of listings that sold out or were removed. The best live listings show on the home page, and changes can go out by email |
+| **Tracker** | Auctions and other listings with an end time | Lots ending soon and coming up, and the lots you watch. Good open lots show on the home page, new lots can go out by email, and a watched lot gets a reminder before it closes |
 
 ## Add sources
 
