@@ -300,8 +300,32 @@ def _canonical_lot_title(title: str) -> str:
     return _normalize_text(re.sub(r"\s*&\s*", " and ", title)).casefold()
 
 
+# An auction's housekeeping posted as lots, e.g. "TERMS AND CONDITIONS *please read",
+# "LOCATION: RAMARAMA AUCKLAND", "VIEWING & COLLECTIONS" or "COLLECTIONS THURSDAY 10TH". Real lots
+# that merely start with such a word ("COLLECTION ASSORTED CLEANING TOOLS") never match.
+_NOTICE_WORD = r"(?:terms and conditions|location|viewing|collections?|payment|pick ?ups?)"
+_NOTICE_ONLY_RE = re.compile(
+    rf"{_NOTICE_WORD}(?:\s*(?:and|/|,)\s*{_NOTICE_WORD})*[\s.!*]*"
+)
+_NOTICE_DETAIL_RE = re.compile(
+    rf"{_NOTICE_WORD}(?:\s*(?:and|/|,)\s*{_NOTICE_WORD})*\s*[:\-–—]"
+)
+_NOTICE_DAY_RE = re.compile(
+    rf"{_NOTICE_WORD}\s+(?:on\s+)?(?:mon|tues|wednes|thurs|fri|satur|sun)day\b"
+)
+
+
 def _is_ignored_lot_title(title: str) -> bool:
-    return _canonical_lot_title(title) == "terms and conditions"
+    """A lot that is really a notice: the auction's terms, location, viewing, payment or
+    collection details."""
+    canonical = _canonical_lot_title(title)
+    return (
+        "please read" in canonical
+        or "terms and conditions" in canonical
+        or _NOTICE_ONLY_RE.fullmatch(canonical) is not None
+        or _NOTICE_DETAIL_RE.match(canonical) is not None
+        or _NOTICE_DAY_RE.match(canonical) is not None
+    )
 
 
 def _bid_amount(record: dict[str, Any]) -> float | None:

@@ -14,6 +14,7 @@ from beehive.connectors.all_about_auctions import (
     _UPCOMING_AUCTIONS_URL,
     _default_fetch_text,
     _extract_rrp,
+    _is_ignored_lot_title,
     _lot_page_url,
 )
 
@@ -535,6 +536,39 @@ def test_fetch_raises_when_upcoming_auctions_have_no_usable_lots():
 
     with pytest.raises(RuntimeError, match="no usable lots"):
         connector.fetch({})
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "TERMS AND CONDITIONS *please read",
+        "TERMS & CONDITIONS",
+        "**THIS AUCTION IS IN TAURANGA** TERMS & CONDITIONS",
+        "LOCATION & VIEWING*please read",
+        "PAYMENT * please read",
+        "COLLECTIONS",
+        "VIEWING & COLLECTIONS",
+        "LOCATION: RAMARAMA AUCKLAND",
+        "LOCATION - ALBANY AUCKLAND",
+        "COLLECTIONS THURSDAY 10TH & FRIDAY 11TH SEPTEMBER",
+    ],
+)
+def test_auction_notices_posted_as_lots_are_skipped(title):
+    assert _is_ignored_lot_title(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "COLLECTION ASSORTED CLEANING TOOLS",
+        "COLLECTION OF AUTOMOTIVE MAINTENANCE FLUIDS",
+        "**LOCATION TBA** SHOWROOM DISPLAY- FAGOR IKORE COMMERCIAL COMBI OVEN",
+        "2X RECOLLECTIONS TABLE LAMPS",
+        "POKEMON BINDER COLLECTION (unknown if genuine)",
+    ],
+)
+def test_real_lots_that_mention_a_notice_word_are_kept(title):
+    assert not _is_ignored_lot_title(title)
 
 
 def test_default_text_fetch_uses_ajax_headers_and_timeout():
