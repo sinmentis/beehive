@@ -5,7 +5,7 @@
 {% set toc_sections = {
   "channels": [("1.1", t('web.admin.channels.attention_heading'), "#attention"), ("1.2", t('web.admin.channels.list_heading'), "#channel-list")],
   "groups": [("2.1", t('web.admin.groups.default_heading'), "#default-recipient"), ("2.2", t('web.admin.groups.list_heading'), "#group-list")],
-  "settings": [("3.1", t('web.admin.global.interface_heading'), "#interface-ai"), ("3.2", t('web.admin.global.home_heading'), "#home-page")],
+  "settings": [("3.1", t('web.admin.global.interface_heading'), "#interface-ai"), ("3.2", t('web.admin.global.home_heading'), "#home-page"), ("3.3", t('web.admin.global.reading_heading'), "#reading-access")],
   "system": [("4.1", t('web.admin.health.heading'), "#health"), ("4.2", t('web.admin.activity.heading'), "#activity")],
 }[active_tab] %}
 {% block content %}
@@ -232,8 +232,8 @@
   <form method="post" action="/admin/reading-access">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% set reading_note %}<p>{{ t('web.admin.reading.hint') }}</p>{% endset %}
-    {% call ui.param(t('web.admin.reading.heading'), for_id="reading-access", note=reading_note, track=False) %}
-    <div class="row"><select class="inp inp-mid" id="reading-access" name="reading_access">
+    {% call ui.param(t('web.admin.reading.heading'), for_id="reading-access-choice", note=reading_note, track=False) %}
+    <div class="row"><select class="inp inp-mid" id="reading-access-choice" name="reading_access">
       <option value="public"{{ " selected" if not reading_private }}>{{ t('web.admin.reading.public') }}</option>
       <option value="private"{{ " selected" if reading_private }}>{{ t('web.admin.reading.private') }}</option>
     </select><button class="btn" type="submit">{{ t('web.admin.reading.save') }}</button></div>

@@ -136,3 +136,15 @@ def test_reading_access_needs_a_valid_choice_and_csrf(owner, db_path):
     conn = connect(db_path)
     assert reading_is_private(conn) is False
     conn.close()
+
+
+@pytest.mark.parametrize("tab", ["channels", "groups", "settings", "system"])
+def test_every_admin_chapter_has_unique_element_ids(owner, tab):
+    """A label points at its control by id, so a repeated id silently breaks the link. The
+    reading-access heading and its select once shared one."""
+    import collections
+    import re
+
+    page = owner.get(f"/admin/?tab={tab}").text
+    ids = collections.Counter(re.findall(r'\sid="([^"]+)"', page))
+    assert [name for name, count in ids.items() if count > 1] == []
