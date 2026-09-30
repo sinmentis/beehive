@@ -6,20 +6,18 @@ still require an authenticated session and CSRF validation.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sqlite3
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BeforeValidator, Field
 
 from beehive.channels import get_definition, require_channel_kind
-from beehive.channels.tracker import adapter_for_source
 from beehive.channels.views import (
     EditorialItemView,
     EditorialPage,
@@ -77,6 +75,7 @@ from beehive.featured import featured_utc_bounds, load_featured_window_days
 from beehive.domain.channels import ReadModel
 from beehive.localization import Localizer
 from beehive.scheduling import HOST_TZ
+from beehive.source_labels import parse_source_config, source_label
 from beehive.web.deep_read_view import (
     ALLOWED_ORIGINS,
     brief_url,
@@ -94,11 +93,8 @@ from beehive.web.formatting import (
     freshness_exact_time,
     freshness_label,
     host_local_time_label,
-    relative_time,
 )
-from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.link_safety import safe_external_href
-from beehive.web.official_feed_labels import official_feed_label
 from beehive.web.home import build_channel_desk, build_ranked_stories
 from beehive.web.reading import channel_chapter_number, number_sections, render_reading
 from beehive.web.workspace import render_workspace
@@ -125,87 +121,6 @@ _OptionalPriceQuery = Annotated[
 ]
 
 
-def _source_label(item: dict, t: Localizer) -> str:
-    config = json.loads(item["source_config"])
-    if item["source_type"] == "reddit_subreddit":
-        return f"r/{config['subreddit']}"
-    if item["source_type"] == "google_news_query":
-        return f'"{config["query"]}"'
-    if item["source_type"] == "all_about_auctions":
-        return "All About Auctions"
-    if item["source_type"] in {"shopify_collection", "land_sea_collection"}:
-        # Both connectors store the same {"collection_url": ...} config shape.
-        url = config.get("collection_url", "")
-        parsed = urlparse(url)
-        return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
-    official_label = official_feed_label(item["source_type"])
-    if official_label is not None:
-        return official_label
-    hackernews_label = hackernews_source_label(item["source_type"], config, t)
-    return hackernews_label if hackernews_label is not None else item["source_type"]
-
-
-def _engagement_label(item: dict, t: Localizer) -> str:
-    if item["source_type"] == "reddit_subreddit":
-        return t.text(
-            "web.engagement.reddit",
-            score=item["raw_metadata"].get("score", 0),
-            comments=item["raw_metadata"].get("num_comments", 0),
-        )
-    if item["source_type"] == "google_news_query":
-        return item["raw_metadata"].get("source_name", "")
-    if item["source_type"] in {"hackernews_stories", "hackernews_query"}:
-        return t.text(
-            "web.engagement.hackernews",
-            score=item["raw_metadata"].get("score", 0),
-            comments=item["raw_metadata"].get("num_comments", 0),
-        )
-    if item["source_type"] in {
-        "rbnz_news",
-        "nz_government_news",
-        "federal_reserve_news",
-    }:
-        return item["raw_metadata"].get("category", "")
-    if item["source_type"] in {"shopify_collection", "land_sea_collection"}:
-        metadata = item["raw_metadata"]
-        price = metadata.get("price")
-        compare_at_price = metadata.get("compare_at_price")
-        # Neither connector's product data exposes a currency code (confirmed against real
-        # stores), so this never hardcodes a currency symbol -- a percent-off figure is
-        # the only currency-agnostic discount signal available.
-        if metadata.get("on_sale") and compare_at_price and price is not None:
-            percent_off = round((compare_at_price - price) / compare_at_price * 100)
-            return t.text("web.engagement.shopify_discount", percent=percent_off)
-        return metadata.get("vendor") or ""
-    if item["source_type"] == "all_about_auctions":
-        return adapter_for_source(item["source_type"]).display_facts(
-            item["raw_metadata"], t
-        ).context
-    return ""
-
-
-def _auction_pricing_facts(item: dict, t: Localizer) -> list[str]:
-    if item["source_type"] != "all_about_auctions":
-        return []
-    return list(
-        adapter_for_source(item["source_type"])
-        .display_facts(item["raw_metadata"], t)
-        .details
-    )
-
-
-def _decorate_item(item: dict, t: Localizer) -> None:
-    item["source_label"] = _source_label(item, t)
-    item["engagement_label"] = _engagement_label(item, t)
-    item["auction_pricing_facts"] = _auction_pricing_facts(item, t)
-    item["age"] = relative_time(item["created_at"], t) if item["created_at"] else ""
-    item["exact_time"] = (
-        host_local_time_label(item["created_at"]) if item["created_at"] else ""
-    )
-    item["safe_url"] = safe_external_href(item["url"])
-    item["open_url"] = f"/items/{item['id']}/open" if item["safe_url"] != "#" else "#"
-
-
 def _require_editorial_item(item: dict) -> None:
     definition = get_definition(require_channel_kind(item["channel_kind"]))
     if definition.read_model is not ReadModel.TRACKED:
@@ -216,33 +131,10 @@ def _require_editorial_item(item: dict) -> None:
 
 
 def _source_summary(sources: list[dict], t: Localizer) -> str:
-    """Channel drill-down's page-sub line lists every Source feeding the Channel, e.g.
-    "Sources: r/PersonalFinanceNZ". Mirrors _source_label's reddit_subreddit convention, but over
-    raw `sources` rows (type/config), not the source_type/source_config aliases
-    list_by_channel's item-join produces."""
-    labels = []
-    for s in sources:
-        config = json.loads(s["config"])
-        if s["type"] == "reddit_subreddit":
-            labels.append(f"r/{config['subreddit']}")
-        elif s["type"] == "google_news_query":
-            labels.append(f'"{config["query"]}"')
-        elif s["type"] == "all_about_auctions":
-            labels.append("All About Auctions")
-        elif s["type"] in {"shopify_collection", "land_sea_collection"}:
-            collection_url = config.get("collection_url", "")
-            parsed = urlparse(collection_url)
-            labels.append(
-                f"{parsed.netloc}{parsed.path}" if parsed.netloc else collection_url
-            )
-        elif official_feed_label(s["type"]) is not None:
-            labels.append(official_feed_label(s["type"]))
-        else:
-            hackernews_label = hackernews_source_label(s["type"], config, t)
-            labels.append(
-                hackernews_label if hackernews_label is not None else s["type"]
-            )
-    return t.text("web.channel.source_list_separator").join(labels)
+    """The Channel page's "Sources: r/PersonalFinanceNZ, ..." line, one shared label per Source."""
+    return t.text("web.channel.source_list_separator").join(
+        source_label(s["type"], parse_source_config(s["config"]), t) for s in sources
+    )
 
 
 def _monitor_page_url(
@@ -1413,6 +1305,25 @@ def _resolve_brief_origin(
     return origin, channel_id, channel["name"]
 
 
+def _brief_item(
+    conn: sqlite3.Connection,
+    item: dict,
+    t: Localizer,
+    *,
+    is_owner: bool,
+    csrf_token: str | None,
+) -> EditorialItemView:
+    """The same typed view the Channel pages show, so a brief labels its story the same way."""
+    return build_editorial_item_views(
+        conn,
+        [item],
+        t=t,
+        now=datetime.now(timezone.utc),
+        is_owner=is_owner,
+        csrf_token=csrf_token,
+    )[0]
+
+
 def _brief_chapter(
     channels: list[dict], origin: str | None, channel_id: int | None
 ) -> tuple[str, int]:
@@ -1515,21 +1426,21 @@ def deep_read_brief(
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     _require_editorial_item(item)
-    _decorate_item(item, t)
 
     is_owner = session is not None
+    csrf_token = session["csrf_token"] if is_owner else None
     resolved_origin, resolved_channel_id, channel_name = _resolve_brief_origin(
         conn, item, origin, channel_id
     )
     deep_read = get_deep_read(conn, item_id)
     context = build_brief_context(
-        item=item,
+        item=_brief_item(conn, item, t, is_owner=is_owner, csrf_token=csrf_token),
         deep_read=deep_read,
         is_owner=is_owner,
         origin=resolved_origin,
         channel_id=resolved_channel_id,
         channel_name=channel_name,
-        csrf_token=session["csrf_token"] if is_owner else None,
+        csrf_token=csrf_token,
         t=t,
     )
 
@@ -1559,18 +1470,19 @@ def deep_read_brief_status(
     _require_editorial_item(item)
 
     is_owner = session is not None
+    csrf_token = session["csrf_token"] if is_owner else None
     resolved_origin, resolved_channel_id, channel_name = _resolve_brief_origin(
         conn, item, origin, channel_id
     )
     deep_read = get_deep_read(conn, item_id)
     context = build_brief_context(
-        item=item,
+        item=_brief_item(conn, item, t, is_owner=is_owner, csrf_token=csrf_token),
         deep_read=deep_read,
         is_owner=is_owner,
         origin=resolved_origin,
         channel_id=resolved_channel_id,
         channel_name=channel_name,
-        csrf_token=session["csrf_token"] if is_owner else None,
+        csrf_token=csrf_token,
         t=t,
     )
 

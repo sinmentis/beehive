@@ -9,14 +9,10 @@ watch state) is normalized here into typed fields.
 
 Layering: this module belongs to the same lower layers as `channels/tracker.py`, so -- like that
 module -- it does all presentation through `beehive.localization` directly and never imports
-`beehive.web`. The few pure helpers it needs (safe external href, host-local time formatting) and
-the small Source-label maps that `web/` also owns are reproduced here rather than imported upward;
-when a route is finally wired to this seam those duplicated maps should be unified into one shared
-lower-layer home.
+`beehive.web`. Source labels come from `beehive.source_labels`, the one home every layer shares.
 """
 from __future__ import annotations
 
-import json
 import math
 import re
 import sqlite3
@@ -24,12 +20,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Mapping
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
+from beehive import source_labels
 from beehive.auction import format_auction_amount
 from beehive.channels.definitions import ChannelDefinition, get_definition, require_channel_kind
 from beehive.channels.tracker import adapter_for_source
-from beehive.connectors.international_clearance import RETAILER_LABELS
 from beehive.db.deep_reads import DeepRead, get_deep_reads_for_items
 from beehive.db.item_events import latest_actionable_events_for_items
 from beehive.db.items import list_by_channel
@@ -51,23 +47,7 @@ ENDING_SOON_WINDOW = timedelta(hours=24)
 
 _DEEP_READ_ORIGIN = "channel"
 
-# Reproduced from web/official_feed_labels.py and web/hackernews_labels.py (which web/ keeps as
-# its single source of truth). Duplicated here only because a lower layer must not import web/;
-# unify when a route is wired to this seam.
-_OFFICIAL_FEED_LABELS = {
-    "rbnz_news": "RBNZ News",
-    "nz_government_news": "NZ Government",
-    "federal_reserve_news": "Federal Reserve",
-}
-_OFFICIAL_FEED_CATEGORY_SOURCES = frozenset(_OFFICIAL_FEED_LABELS)
-_HN_FEED_KEYS = {
-    "top": "web.hn.feed.top",
-    "best": "web.hn.feed.best",
-    "new": "web.hn.feed.new",
-    "ask": "web.hn.feed.ask",
-    "show": "web.hn.feed.show",
-    "job": "web.hn.feed.job",
-}
+_OFFICIAL_FEED_CATEGORY_SOURCES = frozenset(source_labels.OFFICIAL_FEED_LABELS)
 
 
 # --------------------------------------------------------------------------------------------
@@ -123,17 +103,6 @@ def _metadata(item: Row) -> Mapping[str, object]:
     if not isinstance(value, dict):
         raise TypeError("items row is missing decoded raw_metadata dict")
     return value
-
-
-def _source_config(item: Row) -> Mapping[str, object]:
-    raw = item.get("source_config")
-    if not isinstance(raw, str):
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except (TypeError, ValueError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
 
 
 def _as_number(value: object) -> float | None:
@@ -195,38 +164,9 @@ def _host_local_label(iso_str: str) -> str:
     return dt.astimezone(HOST_TZ).strftime("%Y-%m-%d %H:%M %Z")
 
 
-def _collection_host_label(config: Mapping[str, object]) -> str:
-    url = config.get("collection_url")
-    url = url if isinstance(url, str) else ""
-    parsed = urlparse(url)
-    return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
-
-
 def _source_label(item: Row, t: Localizer) -> str:
-    source_type = _req_str(item, "source_type")
-    config = _source_config(item)
-    if source_type == "reddit_subreddit":
-        return f"r/{config.get('subreddit', '')}"
-    if source_type == "google_news_query":
-        return f'"{config.get("query", "")}"'
-    if source_type == "all_about_auctions":
-        return "All About Auctions"
-    if source_type in {"shopify_collection", "land_sea_collection"}:
-        return _collection_host_label(config)
-    if source_type == "international_clearance":
-        retailer = config.get("retailer")
-        return RETAILER_LABELS.get(retailer, str(retailer or source_type))
-    official = _OFFICIAL_FEED_LABELS.get(source_type)
-    if official is not None:
-        return official
-    if source_type == "hackernews_stories":
-        feed = config.get("feed", "")
-        feed = feed if isinstance(feed, str) else ""
-        feed_label = t.text(_HN_FEED_KEYS[feed]) if feed in _HN_FEED_KEYS else feed
-        return t.text("web.hn.stories_label", feed=feed_label)
-    if source_type == "hackernews_query":
-        return t.text("web.hn.query_label", query=config.get("query", ""))
-    return source_type
+    config = source_labels.parse_source_config(item.get("source_config"))
+    return source_labels.source_label(_req_str(item, "source_type"), config, t)
 
 
 def _editorial_engagement_label(item: Row, t: Localizer) -> str:

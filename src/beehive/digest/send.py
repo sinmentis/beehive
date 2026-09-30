@@ -62,7 +62,7 @@ from beehive.scheduling import (
     email_group_send_period,
 )
 from beehive.source_health import is_stale
-from beehive.web.source_labels import source_display_name
+from beehive.source_labels import source_display_name
 
 _LOGGER = logging.getLogger(__name__)
 

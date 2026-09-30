@@ -145,7 +145,7 @@ from beehive.web.formatting import (
 )
 from beehive.web.client_ip import resolve_client_ip
 from beehive.web.link_safety import safe_external_href
-from beehive.web.source_labels import derived_source_label, source_display_name
+from beehive.source_labels import derived_source_label, source_display_name
 
 router = APIRouter(prefix="/admin")
 

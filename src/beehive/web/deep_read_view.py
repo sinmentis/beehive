@@ -21,6 +21,7 @@ import json
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit
 
+from beehive.channels.views import EditorialItemView
 from beehive.db.deep_reads import DeepRead
 from beehive.localization import SUPPORTED_LANGUAGES, Localizer
 from beehive.web.formatting import host_local_time_label
@@ -240,7 +241,7 @@ def back_link(t: Localizer, origin: str | None, channel_id: int | None,
     return {"href": "/", "label": t.text("web.deep_read.back_default")}
 
 
-def build_brief_context(*, item: dict, deep_read: DeepRead | None, is_owner: bool,
+def build_brief_context(*, item: EditorialItemView, deep_read: DeepRead | None, is_owner: bool,
                          origin: str | None, channel_id: int | None,
                          channel_name: str | None, csrf_token: str | None,
                          t: Localizer) -> dict:
@@ -256,17 +257,17 @@ def build_brief_context(*, item: dict, deep_read: DeepRead | None, is_owner: boo
 
     if raw_status == "ready" and deep_read is not None and deep_read.result_json is not None:
         try:
-            brief = parse_deep_read_result(deep_read.result_json, item["id"])
+            brief = parse_deep_read_result(deep_read.result_json, item.id)
         except DeepReadCacheError:
             status = "failed"
-            failure = failure_explanation(t, "unavailable", item["url"])
+            failure = failure_explanation(t, "unavailable", item.safe_url)
         else:
             if deep_read.warning_code == "stored_source_content":
                 warning_text = t.text("web.deep_read.stored_source_warning")
             elif deep_read.warning_code == "content_incomplete":
                 warning_text = t.text("web.deep_read.incomplete_warning")
     elif raw_status == "failed" and deep_read is not None:
-        failure = failure_explanation(t, deep_read.error_code, item["url"])
+        failure = failure_explanation(t, deep_read.error_code, item.safe_url)
 
     return {
         "item": item,
@@ -292,9 +293,9 @@ def build_brief_context(*, item: dict, deep_read: DeepRead | None, is_owner: boo
         "form_origin": origin if origin in ALLOWED_ORIGINS else "dashboard",
         "channel_id": channel_id if origin == "channel" else None,
         "back_link": back_link(t, origin, channel_id, channel_name),
-        "request_url": f"/items/{item['id']}/deep-read",
-        "status_url": status_url(item["id"], origin, channel_id),
-        "brief_url": brief_url(item["id"], origin, channel_id),
+        "request_url": f"/items/{item.id}/deep-read",
+        "status_url": status_url(item.id, origin, channel_id),
+        "brief_url": brief_url(item.id, origin, channel_id),
         "can_start": is_owner and status == "not_requested",
         "can_regenerate": is_owner and status in ("ready", "failed"),
         "is_pending": status in ("pending", "processing"),

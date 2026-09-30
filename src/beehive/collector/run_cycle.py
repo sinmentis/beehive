@@ -49,7 +49,7 @@ from beehive.localization import Localizer
 from beehive.notify import Notifier, format_llm_failure
 from beehive.scheduling import ChannelFetchSchedule, source_is_due
 from beehive.source_health import classify_fetch_error, retry_backoff
-from beehive.web.source_labels import source_display_name
+from beehive.source_labels import source_display_name
 
 _COMMENT_FETCH_COUNT = 3
 _COMMENT_FETCH_DELAY_SECONDS = 2

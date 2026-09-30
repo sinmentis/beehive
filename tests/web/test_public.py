@@ -3908,38 +3908,33 @@ def test_archive_shows_nothing_extra_when_best_comment_summary_is_absent(conn, c
 
 def test_official_source_label_uses_fixed_public_label():
     from beehive.localization import localizer_for
-    from beehive.web.public import _source_label
+    from beehive.source_labels import source_label
 
-    item = {
-        "source_type": "rbnz_news",
-        "source_config": "{}",
-        "raw_metadata": {"publisher": "RBNZ News"},
-    }
-    assert _source_label(item, localizer_for("en")) == "RBNZ News"
+    assert source_label("rbnz_news", {}, localizer_for("en")) == "RBNZ News"
 
 
 def test_federal_reserve_category_is_the_secondary_label():
     from beehive.localization import localizer_for
-    from beehive.web.public import _engagement_label
+    from beehive.channels.views import _editorial_engagement_label
 
     item = {
         "source_type": "federal_reserve_news",
         "source_config": "{}",
         "raw_metadata": {"publisher": "Federal Reserve", "category": "Monetary Policy"},
     }
-    assert _engagement_label(item, localizer_for("en")) == "Monetary Policy"
+    assert _editorial_engagement_label(item, localizer_for("en")) == "Monetary Policy"
 
 
 def test_official_feed_without_category_has_no_secondary_label():
     from beehive.localization import localizer_for
-    from beehive.web.public import _engagement_label
+    from beehive.channels.views import _editorial_engagement_label
 
     item = {
         "source_type": "nz_government_news",
         "source_config": "{}",
         "raw_metadata": {"publisher": "NZ Government"},
     }
-    assert _engagement_label(item, localizer_for("en")) == ""
+    assert _editorial_engagement_label(item, localizer_for("en")) == ""
 
 
 def test_official_source_summary_uses_public_label():

@@ -35,8 +35,9 @@ from beehive.web.formatting import (
     next_fetch_countdown,
     relative_time,
 )
-from beehive.web.hackernews_labels import hackernews_source_label
-from beehive.web.public import _auction_pricing_facts, _engagement_label, _source_label
+from beehive.source_labels import hackernews_source_label
+from beehive.channels.tracker import adapter_for_source
+from beehive.channels.views import _editorial_engagement_label, _source_label
 from scripts.set_admin_password import set_admin_password
 
 LANGUAGE_CODES = [language.code for language in SUPPORTED_LANGUAGES]
@@ -221,24 +222,21 @@ def test_empty_watchlist_renders_in_every_supported_language(
 
 @pytest.mark.parametrize("language_code", LANGUAGE_CODES)
 def test_auction_pricing_facts_render_in_every_supported_language(language_code):
-    facts = _auction_pricing_facts(
+    facts = adapter_for_source("all_about_auctions").display_facts(
         {
-            "source_type": "all_about_auctions",
-            "raw_metadata": {
-                "currency_code": "NZD",
-                "current_bid": 500.0,
-                "buyer_premium_rate": 0.17,
-                "estimated_cost": 585.0,
-                "rrp": 1040.0,
-                "rrp_excludes_gst": True,
-                "starting_price": 100.0,
-                "estimate_low": 700.0,
-                "estimate_high": 900.0,
-                "sold_price": 850.0,
-            },
+            "currency_code": "NZD",
+            "current_bid": 500.0,
+            "buyer_premium_rate": 0.17,
+            "estimated_cost": 585.0,
+            "rrp": 1040.0,
+            "rrp_excludes_gst": True,
+            "starting_price": 100.0,
+            "estimate_low": 700.0,
+            "estimate_high": 900.0,
+            "sold_price": 850.0,
         },
         localizer_for(language_code),
-    )
+    ).details
 
     assert len(facts) == 6
     assert all(fact for fact in facts)
@@ -447,7 +445,7 @@ def test_formatting_and_label_helpers_produce_text_in_every_supported_language(
         "raw_metadata": {"score": 5, "num_comments": 1},
     }
     assert _source_label(hn_item, t)
-    assert _engagement_label(hn_item, t)
+    assert _editorial_engagement_label(hn_item, t)
     assert hackernews_source_label("hackernews_stories", {"feed": "top"}, t)
 
     reddit_item = {
@@ -456,4 +454,4 @@ def test_formatting_and_label_helpers_produce_text_in_every_supported_language(
         "raw_metadata": {"score": 5, "num_comments": 1},
     }
     assert _source_label(reddit_item, t)
-    assert _engagement_label(reddit_item, t)
+    assert _editorial_engagement_label(reddit_item, t)

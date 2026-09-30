@@ -52,10 +52,9 @@ from beehive.domain.research import (ConversationMessage, ConversationRole, Evid
                                       ResearchSessionStatus, ResearchSource)
 from beehive.localization import Localizer
 from beehive.research.synthesis import ResearchSynthesisDocument, build_document
+from beehive.source_labels import source_label
 from beehive.web.formatting import host_local_time_label, relative_time
-from beehive.web.hackernews_labels import hackernews_source_label
 from beehive.web.link_safety import safe_external_href
-from beehive.web.official_feed_labels import official_feed_label
 
 # Evidence snippet display bound: independent of research.limits' prompt-projection bounds --
 # this only ever trims what the Owner is shown in the Evidence tab, never what is stored or fed
@@ -102,20 +101,10 @@ def _truncate(text: str, max_chars: int) -> str:
 
 
 def _connector_label(connector_type: str, config: dict, t: Localizer) -> str:
-    """Mirrors web/public.py's `_source_label`/channel `_source_summary` convention for the same
-    seven connector types, adapted to a Research Source's own (connector_type, config) shape
-    (never an item-joined row)."""
-    if connector_type == "reddit_subreddit":
-        return f"r/{config.get('subreddit', '')}"
+    """The shared Source label, except a news search, which research names as a search."""
     if connector_type == "google_news_query":
         return t.text("web.research.connector.google_news_query", query=config.get("query", ""))
-    official_label = official_feed_label(connector_type)
-    if official_label is not None:
-        return official_label
-    hackernews_label = hackernews_source_label(connector_type, config, t)
-    if hackernews_label is not None:
-        return hackernews_label
-    return connector_type
+    return source_label(connector_type, config, t)
 
 
 def _publisher_label(source: ResearchSource | None, item: EvidenceItem, t: Localizer) -> str:

@@ -557,7 +557,7 @@ def list_new_since(
 def get_item(conn: sqlite3.Connection, item_id: int) -> dict | None:
     row = conn.execute(
         "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
-        "channels.kind AS channel_kind, "
+        "sources.channel_id AS channel_id, channels.kind AS channel_kind, "
         "votes.value AS vote_value, votes.reason AS vote_reason "
         "FROM items JOIN sources ON sources.id = items.source_id "
         "JOIN channels ON channels.id = sources.channel_id "

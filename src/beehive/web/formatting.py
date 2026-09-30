@@ -78,7 +78,7 @@ def freshness_exact_time(sources: list[dict]) -> str:
     title="" tooltip. Mirrors freshness_label's own "most recent fetch across all of a
     Channel's Sources" convention exactly, so the tooltip always describes the same moment
     the headline text is relative to. Empty string (no tooltip) when nothing has been fetched
-    yet, matching how _decorate_item's per-item exact_time handles a missing timestamp."""
+    yet, matching how an item view's exact_time handles a missing timestamp."""
     fetch_times = [s["last_fetch_at"] for s in sources if s["last_fetch_at"]]
     return host_local_time_label(max(fetch_times)) if fetch_times else ""
 
