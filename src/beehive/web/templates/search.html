@@ -17,12 +17,13 @@
 
 <div id="search-list" data-refocus-slot>
   {% if sections %}
+  {% for section in sections if section.anchor in lanes.hidden %}{{ rd.lane_stub(section.anchor, section.name, t('web.reading.results', count=section.total, number=section.total|count(locale))) }}{% endfor %}
   <div class="cols lanes">
-    {% for section in sections %}
+    {% for section in sections if section.anchor not in lanes.hidden %}
     <section class="chan-sec" id="{{ section.anchor }}" aria-labelledby="{{ section.anchor }}-h">
       <h2 id="{{ section.anchor }}-h"><span class="no">{{ sec[section.anchor] }}</span><span>{{ section.name }}</span>
         <span class="tools"><span class="desk-state nw">{{ t('web.reading.results', count=section.total, number=section.total|count(locale)) }}</span>
-          <a class="btn btn-sm" href="{{ section.href }}">{{ t('web.reading.desk.open_channel') }}<span class="sr-only">: {{ section.name }}</span></a></span></h2>
+          <a class="btn btn-sm" href="{{ section.href }}">{{ t('web.reading.desk.open_channel') }}<span class="sr-only">: {{ section.name }}</span></a>{{ rd.lane_toggle(section.anchor, section.name) }}</span></h2>
       {% if section.kind == 'editorial' %}
       <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
         {{ rd.story_head() }}

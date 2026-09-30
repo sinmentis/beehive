@@ -515,6 +515,10 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 .chan-criteria{margin-top:18px}
 .adm-head+.filters,.chan-criteria+.filters{margin-top:18px}
 .chan-sec>.adm-lede{margin-top:0}
+/* A section the reader hid: its numbered heading alone, in secondary ink over a hairline, above
+   the sections still shown, with its state and the switch that shows it again. */
+.lane-stub>h2{margin:18px 0 0;padding-bottom:10px;border-bottom:1px solid var(--rule);color:var(--ink-2)}
+.lane-stub+.lane-stub>h2{margin-top:6px}
 /* A slot htmx swaps on its own adds no box, so an empty one leaves no gap in its row. */
 .swap-slot{display:contents}
 .chan-empty{margin-top:24px}
@@ -533,8 +537,8 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 
 /* Gallery: a store's or auction's photos as a catalogue's plate page. Plates sit in a ruled grid,
    as many to a row as fit at 15rem or more, each with the whole photo on the recessed field, then
-   its price or closing time, title and store or auction, with the score and the Owner's toggles
-   level along the foot of every plate in the row. */
+   its name, its price, and the store, or the auction and closing time in quiet captions, with the
+   score and the Owner's toggles level along the foot of every plate in the row. */
 .plates{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(15rem,100%),1fr));margin:0;padding:0;list-style:none;
  border-top:1.5px solid var(--rule-ink);border-left:1px solid var(--rule)}
 .plate{display:flex;flex-direction:column;gap:4px;min-width:0;padding:10px 12px 12px;border-right:1px solid var(--rule);
@@ -542,14 +546,14 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 .plate:hover{background:var(--hover)}
 .plate-photo{display:block;margin-bottom:6px}
 .plate-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:contain;border:1px solid var(--rule);background:var(--field)}
-.plate-price{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin:0;font-size:1rem}
+.plate-price{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin:0;font-size:.9375rem}
 .plate .price-was{font-size:.8125rem}
 .plate small.chg{margin-top:0}
-.plate .lot-title{font-size:.875rem;line-height:1.4}
+.plate .lot-title{font-size:.9375rem;line-height:1.4}
 .plate .lot-state{margin-top:0}
 .plate .kv{margin-top:2px}
-.plate-when{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;margin:0;color:var(--ink);font-size:.875rem;font-weight:600}
-.plate-when small{color:var(--ink-2);font-size:.78rem;font-weight:400}
+.plate-when{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;margin:0;color:var(--ink-2);font-size:.78rem;font-weight:400}
+.plate-when small{color:var(--ink-3);font-size:inherit}
 .plate-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;margin-top:auto;padding-top:8px}
 .plate-score{color:var(--ink-3);font-size:.78rem;white-space:nowrap}
 .plate-foot .ops-stack{display:flex;flex-wrap:wrap;gap:6px}

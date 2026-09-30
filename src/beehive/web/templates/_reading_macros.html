@@ -192,19 +192,19 @@
 </table></div>
 {% endmacro %}
 
-{#- A Monitor listing as a gallery plate: the whole photo, then its price, what changed, the title
+{#- A Monitor listing as a gallery plate: the whole photo, then its name, its price, what changed
     and the store, with its score and the Owner's relevance toggles at the foot. -#}
 {% macro listing_plate(listing, channel_name='') %}
 {%- set closed = not (listing.is_present and listing.is_available) %}
 <li class="plate kb-row{{ ' is-closed' if closed }}" id="listing-{{ listing.id }}" tabindex="-1" data-channel="{{ channel_name }}">
   <a class="plate-photo" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">{{ plate_img(listing.image_url) }}</a>
+  <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ listing.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   <p class="plate-price">
     {%- if listing.price_label %}<span class="price-now">{{ listing.price_label }}</span>{% else %}<span class="muted">{{ t('web.monitor.price_unavailable') }}</span>{% endif %}
     {%- if listing.discount_percent and listing.compare_at_price_label %} <span class="sr-only">{{ t('web.reading.was_price') }} </span><s class="price-was">{{ listing.compare_at_price_label }}</s>{% endif %}
     {%- if listing.discount_percent %} <span class="price-off">−{{ listing.discount_percent }}%</span>{% endif -%}
   </p>
   {{- change_line(listing) }}
-  <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ listing.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   <span class="lot-where">{{ [listing.vendor, listing.source_label]|select|join(' · ') }}</span>
   {%- if closed %}<span class="lot-state"><span class="st st-never">{{ t('web.monitor.status_out_of_stock') if listing.is_present else t('web.monitor.status_removed') }}</span></span>{% endif %}
   <div class="plate-foot">{{ plate_score(listing.ai_score) }}{% if is_admin %}<div class="ops-stack">{% set item = listing %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div>{% endif %}</div>
@@ -238,14 +238,15 @@
 </table></div>
 {% endmacro %}
 
-{#- A Tracker lot as a gallery plate: the whole photo, when it closes, the title, its price facts
-    and its auction, with its score and the Owner's watch and relevance toggles at the foot. -#}
+{#- A Tracker lot as a gallery plate: the whole photo, then its name, its price facts, when it
+    closes and its auction, with its score and the Owner's watch and relevance toggles at the
+    foot. The name leads; the closing time is a quiet caption under the price. -#}
 {% macro lot_plate(lot, channel_name='') %}
 <li class="plate kb-row{{ ' is-closed' if not lot.is_active }}" id="lot-{{ lot.id }}" tabindex="-1" data-channel="{{ channel_name }}">
   <a class="plate-photo" href="{{ lot.open_url }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">{{ plate_img(lot.image_url) }}</a>
-  <p class="plate-when">{{ lot_when(lot) }}</p>
   <a class="lot-title" href="{{ lot.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ lot.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   {% if lot.pricing_facts %}<div class="kv">{% for fact in lot.pricing_facts %}<span>{{ fact }}</span>{% endfor %}</div>{% endif %}
+  <p class="plate-when">{{ lot_when(lot) }}</p>
   {% if lot.context %}<span class="lot-where">{{ lot.context }}</span>{% endif %}
   <div class="plate-foot">{{ plate_score(lot.ai_score) }}{% if is_admin %}<div class="ops-stack">{% set item = lot %}{% set watch_origin = 'channel' %}{% include "_tracker_watch_control.html" %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div>{% endif %}</div>
 </li>
@@ -254,6 +255,23 @@
 {% macro lot_plates(lots, channel_name='') %}
 <ul class="plates" role="list">{% for lot in lots %}{{ lot_plate(lot, channel_name) }}{% endfor %}</ul>
 {% endmacro %}
+
+{#- A section's switch where sections sit side by side: hide it, so the rest take the width, or
+    show it again. It is a plain link the page remembers, and the last section shown has none,
+    so a page never hides everything. -#}
+{% macro lane_toggle(key, heading) -%}
+{%- if lanes and key in lanes.links and (key in lanes.hidden or lanes.can_hide) -%}
+<a class="btn btn-sm lane-toggle" href="{{ lanes.links[key] }}">{{ t('web.reading.lanes.show' if key in lanes.hidden else 'web.reading.lanes.hide') }}<span class="sr-only">: {{ heading }}</span></a>
+{%- endif -%}
+{%- endmacro %}
+
+{#- A hidden section: its numbered heading and state on one line above the sections still
+    shown, with the switch that shows it again. It keeps its id, so the rail still leads to it. -#}
+{% macro lane_stub(key, heading, state) -%}
+<section class="chan-sec lane-stub" id="{{ key }}" aria-labelledby="{{ key }}-h">
+  <h2 id="{{ key }}-h"><span class="no">{{ sec[key] }}</span><span>{{ heading }}</span><span class="tools"><span class="desk-state nw">{{ state }}</span>{{ lane_toggle(key, heading) }}</span></h2>
+</section>
+{%- endmacro %}
 
 {#- A store or auction page's display choices: list or gallery, and rows per page. They are
     plain links, so they work without JavaScript, and the page remembers each choice. -#}

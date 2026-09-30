@@ -5,7 +5,7 @@
 
 {% macro lot_section(key, heading, body, lots, total, pagination=none, previous_url=none, next_url=none) %}
 <section class="chan-sec" id="{{ key }}" aria-labelledby="{{ key }}-h">
-  <h2 id="{{ key }}-h"><span class="no">{{ sec[key] }}</span><span>{{ heading }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=total) }}</span></span></h2>
+  <h2 id="{{ key }}-h"><span class="no">{{ sec[key] }}</span><span>{{ heading }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=total) }}</span>{{ rd.lane_toggle(key, heading) }}</span></h2>
   <p class="adm-lede">{{ body }}</p>
   {% if not lots %}{{ rd.past_end() }}{% elif listing_view == 'gallery' %}{{ rd.lot_plates(lots, page.channel_name) }}{% else %}{{ rd.lot_table(lots, page.channel_name) }}{% endif %}
   {% if pagination is not none %}{{ rd.pager(pagination, previous_url, next_url, t('web.reading.pager_aria', name=heading)) }}{% endif %}
@@ -41,10 +41,13 @@
 </form>
 
 {% if sec.watched or sec.ending or sec.upcoming %}
+{% if sec.watched and 'watched' in lanes.hidden %}{{ rd.lane_stub('watched', t('web.tracker.watched_heading'), t('web.channel.folded_count', count=page.watched|length)) }}{% endif %}
+{% if sec.ending and 'ending' in lanes.hidden %}{{ rd.lane_stub('ending', t('web.tracker.ending_heading'), t('web.channel.folded_count', count=page.ending_pagination.total)) }}{% endif %}
+{% if sec.upcoming and 'upcoming' in lanes.hidden %}{{ rd.lane_stub('upcoming', t('web.tracker.upcoming_heading'), t('web.channel.folded_count', count=page.upcoming_pagination.total)) }}{% endif %}
 <div class="cols lanes">
-  {% if sec.watched %}{{ lot_section('watched', t('web.tracker.watched_heading'), t('web.tracker.watched_body'), page.watched, page.watched|length) }}{% endif %}
-  {% if sec.ending %}{{ lot_section('ending', t('web.tracker.ending_heading'), t('web.tracker.ending_body'), page.ending_soon, page.ending_pagination.total, page.ending_pagination, tracker_ending_previous_url, tracker_ending_next_url) }}{% endif %}
-  {% if sec.upcoming %}{{ lot_section('upcoming', t('web.tracker.upcoming_heading'), t('web.tracker.upcoming_body'), page.upcoming, page.upcoming_pagination.total, page.upcoming_pagination, tracker_upcoming_previous_url, tracker_upcoming_next_url) }}{% endif %}
+  {% if sec.watched and 'watched' not in lanes.hidden %}{{ lot_section('watched', t('web.tracker.watched_heading'), t('web.tracker.watched_body'), page.watched, page.watched|length) }}{% endif %}
+  {% if sec.ending and 'ending' not in lanes.hidden %}{{ lot_section('ending', t('web.tracker.ending_heading'), t('web.tracker.ending_body'), page.ending_soon, page.ending_pagination.total, page.ending_pagination, tracker_ending_previous_url, tracker_ending_next_url) }}{% endif %}
+  {% if sec.upcoming and 'upcoming' not in lanes.hidden %}{{ lot_section('upcoming', t('web.tracker.upcoming_heading'), t('web.tracker.upcoming_body'), page.upcoming, page.upcoming_pagination.total, page.upcoming_pagination, tracker_upcoming_previous_url, tracker_upcoming_next_url) }}{% endif %}
 </div>
 {% else %}
 <div class="empty chan-empty"><b>{{ t('web.tracker.empty_heading') }}</b>{{ t('web.tracker.empty_body') }}</div>

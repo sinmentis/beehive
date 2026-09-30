@@ -101,8 +101,10 @@ from beehive.web.reading import channel_chapter_number, number_sections, render_
 from beehive.web.reading_prefs import (
     DEFAULT_PER_PAGE as DEFAULT_LISTING_PER_PAGE,
     PER_PAGE_CHOICES,
+    HiddenSections,
     ListingPrefs,
     ListingView,
+    resolve_hidden_sections,
     resolve_listing_prefs,
 )
 from beehive.web.workspace import render_workspace
@@ -139,9 +141,10 @@ def _require_editorial_item(item: dict) -> None:
         )
 
 
-# Query parameters that belong to one render: a story kept in place after a vote, and the
-# batch a "mark all as read" can take back. Links and forms a page builds never carry them on.
-_ONE_RENDER_KEYS = frozenset({"keep", "read_batch"})
+# Query parameters that act once or belong to one render: a story kept in place after a vote,
+# the batch a "mark all as read" can take back, and a section hidden or shown. Links and forms a
+# page builds never carry them on.
+_ONE_RENDER_KEYS = frozenset({"keep", "read_batch", "hide", "show"})
 # SQLite stores integers in 64 bits; a larger id could never match and would not bind.
 _MAX_SQL_INTEGER = 2**63 - 1
 
@@ -264,6 +267,29 @@ def _current_url_with(
     params.extend(updates.items())
     query = urlencode(params)
     return f"{request.url.path}?{query}" if query else request.url.path
+
+
+def _lane_context(
+    request: Request, present: list[str], lanes: HiddenSections
+) -> dict:
+    """What a page whose sections sit side by side needs to hide one, so the rest take the
+    width, or show it again: the hidden keys, each section's switch, and whether more than one
+    section is shown (the last one shown has no switch)."""
+    if len(present) < 2:
+        return {"lanes": {"hidden": (), "links": {}, "can_hide": False}}
+    links = {
+        key: _current_url_with(
+            request, {"show" if key in lanes.hidden else "hide": key}, _ONE_RENDER_KEYS
+        )
+        for key in present
+    }
+    return {
+        "lanes": {
+            "hidden": lanes.hidden,
+            "links": links,
+            "can_hide": len(present) - len(lanes.hidden) > 1,
+        }
+    }
 
 
 def _read_batch_context(
@@ -649,6 +675,8 @@ def channel_drilldown(
     per_page: int | None = None,
     keep: int | None = Query(None, ge=1, le=_MAX_SQL_INTEGER),
     read_batch: str | None = Query(None, max_length=64),
+    hide: str | None = Query(None, max_length=40),
+    show: str | None = Query(None, max_length=40),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -864,10 +892,23 @@ def channel_drilldown(
     )
     if prefs is not None:
         context.update(_listing_display_links(request, prefs))
+    # A news Channel's two parts and a tracker's open lots sit side by side on a wide sheet, and
+    # the reader can hide any but the last so the rest take the width.
+    present = [
+        key
+        for key, _label, _anchor in sections
+        if isinstance(page, (EditorialPage, TrackerPage)) and key != "history"
+    ]
+    lanes = resolve_hidden_sections(
+        request, page=str(channel_id), present=present, hide=hide, show=show
+    )
+    context.update(_lane_context(request, present, lanes))
     response = render_reading(
         request, t, page.template_name, context, is_owner=is_admin, channels=channels
     )
-    return prefs.remember(response) if prefs is not None else response
+    if prefs is not None:
+        prefs.remember(response)
+    return lanes.remember(response)
 
 
 @router.get("/watchlist", response_class=HTMLResponse)
@@ -1291,6 +1332,8 @@ def search(
     request: Request,
     q: str = "",
     page: int = Query(1, ge=1),
+    hide: str | None = Query(None, max_length=40),
+    show: str | None = Query(None, max_length=40),
     session: dict | None = Depends(get_optional_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -1341,11 +1384,15 @@ def search(
     pagination = Pagination(page=page, per_page=_SEARCH_PAGE_SIZE, total=total)
     previous_url = _search_url(q, pagination.previous_page) if pagination.has_previous else None
     next_url = _search_url(q, page + 1) if pagination.has_next else None
-    return render_reading(
+    # Each Channel's hits sit side by side on a wide sheet; the reader can hide a Channel's.
+    present = [section["anchor"] for section in sections]
+    lanes = resolve_hidden_sections(request, page="search", present=present, hide=hide, show=show)
+    response = render_reading(
         request,
         t,
         "search.html",
         {
+            **_lane_context(request, present, lanes),
             "sections": sections,
             "sec": section_numbers,
             "toc_sections": toc_sections,
@@ -1361,6 +1408,7 @@ def search(
         is_owner=is_admin,
         channels=channels,
     )
+    return lanes.remember(response)
 
 
 @router.get("/archive", response_class=HTMLResponse)

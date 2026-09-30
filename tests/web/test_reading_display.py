@@ -438,3 +438,109 @@ def test_a_malformed_batch_token_is_ignored(conn):
     assert page.status_code == 200 and "read-undo" not in page.text
     assert undo.status_code == 303
     assert connection.execute("SELECT COUNT(*) FROM items WHERE is_read = 0").fetchone()[0] == 0
+
+
+def _stub(page, key):
+    return re.search(rf'<section class="chan-sec lane-stub" id="{key}".*?</section>', page, re.DOTALL)
+
+
+def test_a_side_by_side_section_can_be_hidden_so_the_rest_take_the_width(conn):
+    path, connection = conn
+    channel_id = create_channel(connection, "News", "news", highlight_count=1)
+    source_id = create_source(connection, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for n in range(3):
+        _add(connection, source_id, f"s{n}", f"Story {n}", score=90 - n)
+    reader = _client(path)
+
+    page = reader.get(f"/channels/{channel_id}").text
+    assert f'href="/channels/{channel_id}?hide=top"' in page
+    assert f'href="/channels/{channel_id}?hide=more"' in page
+
+    hidden = reader.get(f"/channels/{channel_id}", params={"hide": "top"})
+    # The hidden part keeps its numbered heading, count and rail entry, and a switch back.
+    stub = _stub(hidden.text, "top")
+    assert stub is not None and "1 item" in stub.group(0)
+    assert f'href="/channels/{channel_id}?show=top"' in stub.group(0)
+    assert 'href="#top"' in hidden.text
+    assert '<section class="chan-sec" id="top"' not in hidden.text
+    # The last part shown has no switch, so the page never hides everything.
+    assert "?hide=more" not in hidden.text
+    assert _cookie(hidden, "reading_hidden") == f"{channel_id}:top"
+
+    # The choice holds on the next visit, and switching it back clears it.
+    assert _stub(reader.get(f"/channels/{channel_id}").text, "top") is not None
+    shown = reader.get(f"/channels/{channel_id}", params={"show": "top"})
+    assert _stub(shown.text, "top") is None
+    # With nothing hidden anywhere the cookie goes.
+    assert "reading_hidden" not in reader.cookies
+    assert re.search(r"reading_hidden=[^;]*;.*Max-Age=0", shown.headers["set-cookie"], re.IGNORECASE)
+
+
+def test_hiding_the_last_section_shown_does_nothing(conn):
+    path, connection = conn
+    channel_id = create_channel(connection, "News", "news", highlight_count=1)
+    source_id = create_source(connection, channel_id, "reddit_subreddit", {"subreddit": "x"})
+    for n in range(3):
+        _add(connection, source_id, f"s{n}", f"Story {n}", score=90 - n)
+    reader = _client(path)
+    reader.get(f"/channels/{channel_id}", params={"hide": "top"})
+
+    response = reader.get(f"/channels/{channel_id}", params={"hide": "more"})
+
+    assert _stub(response.text, "more") is None
+    assert '<section class="chan-sec" id="more"' in response.text
+    assert _cookie(response, "reading_hidden") is None
+
+
+def test_hide_and_show_links_never_carry_on_into_the_pages_own_links(conn):
+    path, connection = conn
+    channel_id, _, _ = _news(connection)
+    owner = _client(path, owner=True)
+
+    page = owner.get(f"/channels/{channel_id}", params={"hide": "top", "show": "more"}).text
+
+    assert "hide=top&amp;" not in page and "show=more" not in page
+    assert f'name="next_url" value="/channels/{channel_id}"' in page
+
+
+def test_an_auction_can_hide_a_lot_section_and_search_a_channel(conn):
+    path, connection = conn
+    channel_id = create_channel(connection, "Auctions", "tools", kind="tracker")
+    source_id = create_source(connection, channel_id, "all_about_auctions", {})
+    for external_id, hours in (("soon", 3), ("later", 72)):
+        closes = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+        _add(connection, source_id, external_id, f"Drill {external_id}", {"closing_at": closes})
+    store_id, _ = _store(connection)
+    reader = _client(path)
+
+    auction = reader.get(f"/channels/{channel_id}", params={"hide": "ending"}).text
+    assert _stub(auction, "ending") is not None
+    assert '<section class="chan-sec" id="upcoming"' in auction
+
+    # "e" finds a store listing (Jacket) and a lot (Drill later), so two Channels sit side by side.
+    found = reader.get("/search", params={"q": "e", "hide": f"channel-{store_id}"})
+    assert _stub(found.text, f"channel-{store_id}") is not None
+    assert _cookie(found, "reading_hidden") == f"{channel_id}:ending.search:channel-{store_id}"
+
+
+def test_a_store_page_has_no_section_switches(conn):
+    path, connection = conn
+    channel_id, _ = _store(connection)
+
+    page = _client(path).get(f"/channels/{channel_id}", params={"hide": "available"})
+
+    assert "lane-toggle" not in page.text and "lane-stub" not in page.text
+    assert _cookie(page, "reading_hidden") is None
+
+
+def test_a_plate_leads_with_the_name(conn):
+    path, connection = conn
+    store_id, (listing_id,) = _store(connection)
+    auction_id, lot_id = _auctions(connection)
+    reader = _client(path)
+
+    plate = re.search(rf'<li class="plate kb-row" id="listing-{listing_id}".*?</li>', reader.get(f"/channels/{store_id}").text, re.DOTALL).group(0)
+    assert plate.index('class="lot-title"') < plate.index('class="plate-price"')
+    lot = reader.get(f"/channels/{auction_id}", params={"view": "gallery"}).text
+    lot_plate = re.search(rf'<li class="plate kb-row" id="lot-{lot_id}".*?</li>', lot, re.DOTALL).group(0)
+    assert lot_plate.index('class="lot-title"') < lot_plate.index('class="plate-when"')

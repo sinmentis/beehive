@@ -45,10 +45,12 @@
 {% endif %}
 
 <div id="chan-stories" data-refocus-slot>
+{% if sec.top and 'top' in lanes.hidden %}{{ rd.lane_stub('top', t('web.channel.priority_heading'), t('web.channel.folded_count', count=page.highlighted|length)) }}{% endif %}
+{% if sec.more and 'more' in lanes.hidden %}{{ rd.lane_stub('more', t('web.channel.folded_heading'), t('web.channel.folded_count', count=page.folded_pagination.total)) }}{% endif %}
 <div class="cols lanes">
-  {% if sec.top %}
+  {% if sec.top and 'top' not in lanes.hidden %}
   <section class="chan-sec" id="top" aria-labelledby="top-h">
-    <h2 id="top-h"><span class="no">{{ sec.top }}</span><span>{{ t('web.channel.priority_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.highlighted|length) }}</span></span></h2>
+    <h2 id="top-h"><span class="no">{{ sec.top }}</span><span>{{ t('web.channel.priority_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.highlighted|length) }}</span>{{ rd.lane_toggle('top', t('web.channel.priority_heading')) }}</span></h2>
     {% if page.highlighted %}
     <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
       {{ rd.story_head() }}
@@ -59,9 +61,9 @@
     {% endif %}
   </section>
   {% endif %}
-  {% if sec.more %}
+  {% if sec.more and 'more' not in lanes.hidden %}
   <section class="chan-sec" id="more" aria-labelledby="more-h">
-    <h2 id="more-h"><span class="no">{{ sec.more }}</span><span>{{ t('web.channel.folded_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.folded_pagination.total) }}</span></span></h2>
+    <h2 id="more-h"><span class="no">{{ sec.more }}</span><span>{{ t('web.channel.folded_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.folded_pagination.total) }}</span>{{ rd.lane_toggle('more', t('web.channel.folded_heading')) }}</span></h2>
     {% if page.folded %}
     <div class="tbl-wrap"><table class="tbl tbl-feed tbl-lanes">
       {{ rd.story_head() }}
