@@ -86,6 +86,7 @@ from beehive.web.deps import (
     get_localizer,
     get_optional_session,
     require_admin_session,
+    require_reader,
     verify_csrf,
 )
 from beehive.web.formatting import (
@@ -101,7 +102,8 @@ from beehive.web.workspace import render_workspace
 from beehive.tracker_reminders import send_tracker_reminder_for_item
 
 
-router = APIRouter()
+# Every reading page and action passes the reading-access gate first (ADR-0011).
+router = APIRouter(dependencies=[Depends(require_reader)])
 _LOGGER = logging.getLogger(__name__)
 
 DASHBOARD_SIGNAL_COUNT = 24

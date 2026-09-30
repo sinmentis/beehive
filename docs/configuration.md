@@ -34,6 +34,9 @@ Keep credentials out of the repository. The server setup passes them in as Podma
   worker does the loading, so it has to be running. Old work isn't redone with the new model.
 - **Featured window**: how many days of stories the home page shows, 1 to 30. The default is 3.
   Days follow Auckland time, and a story without a publish time counts from when it was fetched.
+- **Who can read**: **Anyone with the link** (the default) or **Only you, after signing in**. It
+  covers the home page, channels, the archive, search and deep reads. Links in emails still work;
+  they open after you sign in.
 
 **Email groups**: the **Default email address**, and for each group its channels, recipient and
 **Delivery schedule**. A schedule is either a fixed interval, or selected weekdays at a local

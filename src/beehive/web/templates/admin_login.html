@@ -8,7 +8,7 @@
     <div class="adm-run"><span class="adm-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span>{{ t('web.nav.admin') }}</span></span></div>
     <h1 id="login-title">{{ t('web.admin.login.heading') }}</h1>
     <p class="adm-meta">{{ t('web.admin.login.lede') }}</p>
-    {% if expired %}{{ ui.flash(t('web.admin.login.expired'), 'info') }}{% endif %}
+    {% if expired %}{{ ui.flash(t('web.admin.login.expired'), 'info') }}{% elif reading_private and for_reading %}{{ ui.flash(t('web.admin.login.private_reading'), 'info') }}{% endif %}
     <form method="post" action="/admin/login">
       <input type="hidden" name="next" value="{{ next_path }}">
       <div class="params">
@@ -22,7 +22,7 @@
     </form>
     <div class="fn">
       {% if last_login %}<p>{{ t('web.admin.login.last_login', time=last_login.time, ip=last_login.ip, country=last_login.country, result=(t('web.admin.login.result_success') if last_login.success else t('web.admin.login.result_failure'))) }}</p>{% endif %}
-      <p><a class="lnk" href="/">{{ t('web.admin.login.back_home') }}</a></p>
+      {% if not reading_private %}<p><a class="lnk" href="/">{{ t('web.admin.login.back_home') }}</a></p>{% endif %}
     </div>
   </section>
 </main>

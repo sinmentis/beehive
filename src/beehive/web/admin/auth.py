@@ -14,6 +14,7 @@ from beehive.auth.tokens import generate_session_id, sign_session_id
 from beehive.db import app_state
 from beehive.db.admin_login_attempts import get_most_recent_attempt, record_attempt
 from beehive.db.sessions import create_session, delete_session
+from beehive.reading_access import reading_is_private
 from beehive.localization import (
     Localizer,
 )
@@ -83,6 +84,10 @@ def _render_login_page(
             "last_login": last_login,
             "next_path": _safe_return_path(next_path),
             "expired": expired,
+            # A signed-out reader of a private site lands here from a reading page, so say why;
+            # the link back to reading would only return them to this form.
+            "reading_private": reading_is_private(conn),
+            "for_reading": not _safe_return_path(next_path).startswith("/admin"),
         },
         status_code=status_code,
     )

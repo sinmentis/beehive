@@ -178,6 +178,7 @@
 {% if model_saved %}{{ ui.flash(t('web.admin.model.saved')) }}{% endif %}
 {% if model_refreshed and model_list.phase == "done" %}{{ ui.flash(t('web.admin.model.refreshed', count=model_list.count, added=model_list.added, removed=model_list.removed) if model_list.added or model_list.removed else t('web.admin.model.refreshed_unchanged', count=model_list.count)) }}{% endif %}
 {% if featured_saved %}{{ ui.flash(t('web.admin.featured.saved')) }}{% endif %}
+{% if reading_saved %}{{ ui.flash(t('web.admin.reading.saved')) }}{% endif %}
 
 <h2 id="interface-ai"><span class="no">3.1</span><span>{{ t('web.admin.global.interface_heading') }}</span></h2>
 <div class="params">
@@ -222,6 +223,20 @@
       value="{{ featured_window_days }}" min="1" max="30" required{% if featured_error %} aria-invalid="true"{% endif %}>
       <span class="unit">{{ t('web.admin.global.days_unit') }}</span>
       <button class="btn" type="submit">{{ t('web.admin.featured.save') }}</button></div>
+    {% endcall %}
+  </form>
+</div>
+
+<h2 id="reading-access"><span class="no">3.3</span><span>{{ t('web.admin.global.reading_heading') }}</span></h2>
+<div class="params">
+  <form method="post" action="/admin/reading-access">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% set reading_note %}<p>{{ t('web.admin.reading.hint') }}</p>{% endset %}
+    {% call ui.param(t('web.admin.reading.heading'), for_id="reading-access", note=reading_note, track=False) %}
+    <div class="row"><select class="inp inp-mid" id="reading-access" name="reading_access">
+      <option value="public"{{ " selected" if not reading_private }}>{{ t('web.admin.reading.public') }}</option>
+      <option value="private"{{ " selected" if reading_private }}>{{ t('web.admin.reading.private') }}</option>
+    </select><button class="btn" type="submit">{{ t('web.admin.reading.save') }}</button></div>
     {% endcall %}
   </form>
 </div>

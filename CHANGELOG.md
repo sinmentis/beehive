@@ -70,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Any RSS or Atom feed can be an Editorial source. Paste the feed or just the site's address:
   Beehive finds the site's feed and names the source after it. Feed URLs are fetched with the
   same DNS pinning and redirect checks as deep reads.
+- **Who can read** in Global settings: keep the reading pages open to anyone with the link, or make
+  them private so that only the signed-in Owner can read them. Signed-out visitors go to the sign-in
+  page and come back to the page they asked for. See
+  [ADR-0011](docs/adr/0011-optional-private-reading.md).
 
 ### Changed
 
@@ -138,6 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `international_clearance`.
 - An official feed description ending in an unfinished `&` sequence, such as "R&D", no longer
   loses its last paragraph.
+- The sign-in return path refuses `/\host` and paths with tabs or newlines, which browsers turn
+  into a link to another site.
 
 ## [0.1.0] - 2026-07-14
 

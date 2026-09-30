@@ -110,7 +110,12 @@ def _email_error_message(error: EmailConfigurationError, t: Localizer) -> str:
 
 
 def _safe_return_path(value: str | None, fallback: str = "/admin/") -> str:
+    """`value` when it is a path on this site, else `fallback`. Browsers read a backslash as a
+    slash and drop tabs and newlines, so "/\\evil.example" or "/<tab>/evil.example" would reach
+    another site as "//evil.example"; both are refused along with any other control character."""
     if not value or not value.startswith("/") or value.startswith("//"):
+        return fallback
+    if "\\" in value or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
         return fallback
     parsed = urlparse(value)
     if parsed.scheme or parsed.netloc:

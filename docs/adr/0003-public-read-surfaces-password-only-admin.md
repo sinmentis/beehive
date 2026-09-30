@@ -13,3 +13,4 @@ UI only surfaces the latest by default.
 
 This is a conscious, content-based choice: the read surfaces stay open while the app itself gates
 every mutation behind the password login. ADR-0005 extends the same gate to Votes and read-state.
+ADR-0011 keeps this as the default and lets the Owner make the read surfaces private too.

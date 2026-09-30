@@ -85,11 +85,13 @@ worker is covered in [deploy/README.md](../deploy/README.md#research-worker-adr-
 
 ## Privacy and indexing
 
-Beehive is built for one person. Its reading pages (home, channel pages, archive, search and
-finished deep reads) are public by design, and only the admin, research, the Watch List and every
+Beehive is built for one person. By default its reading pages (home, channel pages, archive,
+search and finished deep reads) are public, and only the admin, research, the Watch List and every
 change need the owner's password ([ADR-0003](adr/0003-public-read-surfaces-password-only-admin.md),
 [ADR-0005](adr/0005-vote-writes-require-owner-session.md)). If your channels reveal private
-interests, put access control in front of the whole site.
+interests, set **Who can read** to **Only you, after signing in**. Then anyone signed out goes to
+the sign-in page first and comes back to the page they asked for
+([ADR-0011](adr/0011-optional-private-reading.md)).
 
 Every response sends `X-Robots-Tag: noindex, nofollow`, and every page carries the matching
 `robots` meta tag, so search engines leave it out. Link previews still work: reading pages carry

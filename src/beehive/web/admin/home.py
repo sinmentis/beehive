@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -53,6 +54,7 @@ from beehive.email_routing import (
     set_stored_default_email,
     validate_email,
 )
+from beehive.reading_access import reading_is_private, set_reading_private
 from beehive.featured import (
     InvalidFeaturedWindowError,
     load_featured_window_days,
@@ -377,6 +379,7 @@ def _render_admin_home_page(
     featured_saved: bool = False,
     featured_error: str | None = None,
     submitted_featured_window_days: int | None = None,
+    reading_saved: bool = False,
     active_tab: str = "channels",
     triggered_count: int | None = None,
     bulk_error: str | None = None,
@@ -436,6 +439,8 @@ def _render_admin_home_page(
             ),
             "featured_saved": featured_saved,
             "featured_error": featured_error,
+            "reading_private": reading_is_private(conn),
+            "reading_saved": reading_saved,
             "active_tab": chapter,
             "triggered_count": triggered_count,
             "bulk_error": bulk_error,
@@ -461,6 +466,7 @@ def admin_settings(
     model_saved: int | None = None,
     model_refreshed: int | None = None,
     featured_saved: int | None = None,
+    reading_saved: int | None = None,
     action: int | None = None,
     undone: int | None = None,
     session: dict = Depends(require_admin_session),
@@ -479,6 +485,7 @@ def admin_settings(
         model_saved=model_saved == 1,
         model_refreshed=model_refreshed == 1,
         featured_saved=featured_saved == 1,
+        reading_saved=reading_saved == 1,
         action_id=action,
         undone=undone == 1,
         active_tab=tab,
@@ -675,3 +682,23 @@ def save_featured_window_submit(
         "/admin/?tab=settings&featured_saved=1",
         status_code=303,
     )
+
+
+@router.post("/reading-access")
+def save_reading_access_submit(
+    reading_access: Literal["public", "private"] = Form(...),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    private = reading_access == "private"
+    set_reading_private(conn, private)
+    record_admin_action(
+        conn,
+        action_type="reading_made_private" if private else "reading_made_public",
+        target_type="settings",
+        target_id=None,
+        target_label="",
+    )
+    return RedirectResponse("/admin/?tab=settings&reading_saved=1", status_code=303)

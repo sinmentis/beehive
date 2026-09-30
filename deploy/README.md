@@ -11,8 +11,9 @@ process selects its role through a Quadlet unit's `Exec=`:
 - an always-on durable Research worker (Research Runs + Research Chat replies, ADR-0009), backed
   by a periodic reconciliation timer.
 
-The public read surfaces are served directly; `/admin/*` and all write actions are gated by the
-app's own password login (ADR-0003, ADR-0005), so no host-level identity gateway is required. If
+The read surfaces are served directly and are public unless the Owner sets **Who can read** to
+private (ADR-0011); `/admin/*` and all write actions are always gated by the app's own password
+login (ADR-0003, ADR-0005), so no host-level identity gateway is required. If
 you want to expose Beehive beyond localhost, put any reverse proxy or tunnel (nginx, Caddy,
 cloudflared, etc.) in front of the web container's published port. The examples below use
 placeholder values; replace them with your own.

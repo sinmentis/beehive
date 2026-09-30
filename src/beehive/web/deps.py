@@ -31,6 +31,7 @@ from beehive.auth.tokens import verify_signed_session_id
 from beehive.db.connection import connect
 from beehive.db.sessions import get_session
 from beehive.localization import Localizer, load_localizer
+from beehive.reading_access import reading_is_private
 
 SESSION_COOKIE_NAME = "admin_session"
 
@@ -105,6 +106,23 @@ def require_admin_session(request: Request,
 def get_optional_session(request: Request,
                           conn: sqlite3.Connection = Depends(get_db)) -> dict | None:
     return _get_valid_session(request, conn)
+
+
+def require_reader(request: Request, conn: sqlite3.Connection = Depends(get_db)) -> None:
+    """The gate on every reading page (ADR-0011). Open to anyone unless the Owner made reading
+    private; then a signed-out browser is sent to sign in and brought back to the same page. An
+    htmx request gets 401 with HX-Redirect so the whole page moves to the sign-in form."""
+    if not reading_is_private(conn) or _get_valid_session(request, conn) is not None:
+        return
+    target = request.url.path
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    login = f"/admin/login?{urlencode({'next': target})}"
+    if request.headers.get("hx-request") == "true":
+        raise HTTPException(status_code=401, headers={"HX-Redirect": login})
+    if request.method in ("GET", "HEAD"):
+        raise HTTPException(status_code=303, headers={"Location": login})
+    raise HTTPException(status_code=401)
 
 
 def verify_csrf(session: dict, csrf_token: str) -> None:

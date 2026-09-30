@@ -98,9 +98,10 @@ Without the token, Beehive still collects stories but can't score or summarize t
 job, plus a nightly backup.
 
 > [!IMPORTANT]
-> Anyone who can reach Beehive can read its home, channel, archive and search pages, and finished
-> deep reads. The admin, research, the Watch List and every change need your password. If your
-> channels are private, keep Beehive on a private network or put access control in front of it.
+> By default anyone who can reach Beehive can read its home, channel, archive and search pages,
+> and finished deep reads. The admin, research, the Watch List and every change need your
+> password. To keep your reading private too, set **Who can read** in **Global settings** to
+> **Only you, after signing in**.
 
 ## Documentation
 
