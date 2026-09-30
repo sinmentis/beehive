@@ -606,6 +606,45 @@
     laneScroll = null;
   }, true);
 
+  // Paging a section returns to it. A pager link remembers its section for the next page, which
+  // brings that section into view only when it starts in the lower half of the window. On a
+  // wide sheet, or on a short page, the section is already in view, so the page stays put.
+  const REVEAL_KEY = "beehive:reveal-section";
+  document.addEventListener("click", (event) => {
+    const plain = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+    const link = plain && event.target instanceof Element ? event.target.closest(".pager a[href]") : null;
+    const section = link?.closest("section[id]");
+    if (!section) {
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(REVEAL_KEY, JSON.stringify({
+        path: new URL(link.href, window.location.href).pathname,
+        id: section.id,
+        at: Date.now(),
+      }));
+    } catch (error) {
+      console.warn("Could not remember the paged section", error);
+    }
+  });
+  try {
+    const pending = JSON.parse(window.sessionStorage.getItem(REVEAL_KEY) || "null");
+    window.sessionStorage.removeItem(REVEAL_KEY);
+    const arrival = performance.getEntriesByType?.("navigation")?.[0]?.type;
+    const fresh = pending
+      && pending.path === window.location.pathname
+      && Date.now() - pending.at < 20000
+      && arrival !== "back_forward"
+      && arrival !== "reload"
+      && !window.location.hash;
+    const section = fresh ? document.getElementById(pending.id) : null;
+    if (section && section.getBoundingClientRect().top > window.innerHeight / 2) {
+      section.scrollIntoView({ block: "start" });
+    }
+  } catch (error) {
+    console.warn("Could not return to the paged section", error);
+  }
+
   // A photo its CDN will not serve becomes the empty frame shown for a listing without one,
   // rather than the browser's broken-image mark.
   const PHOTO = "img.lot-img, img.plate-img";

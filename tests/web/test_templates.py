@@ -305,6 +305,17 @@ def test_dashboard_script_implements_displayed_keyboard_shortcuts():
     assert '.replace("__CHANNEL__", channel)' not in content
 
 
+def test_a_paged_section_comes_into_view_only_when_it_starts_below_the_middle():
+    content = (_STATIC_DIR / "beehive.js").read_text()
+    # Pager links carry no fragment, which would scroll even a section already in view (a wide
+    # sheet's lanes). The script remembers the pager's section for the next page and brings it
+    # into view only when it starts in the lower half of the window, on a fresh visit.
+    assert 'event.target.closest(".pager a[href]")' in content
+    assert 'const section = link?.closest("section[id]");' in content
+    assert "section.getBoundingClientRect().top > window.innerHeight / 2" in content
+    assert 'arrival !== "back_forward"' in content and 'arrival !== "reload"' in content
+
+
 def test_static_asset_version_changes_when_asset_bytes_change(tmp_path, monkeypatch):
     asset = tmp_path / "asset.css"
     asset.write_text("first")
@@ -382,13 +393,22 @@ def test_wide_reading_lists_split_into_lanes_that_scroll_on_their_own():
     assert float(query.group(1)) == 2 * 56 + sum(float(width) for width in gutter)
     assert ".page-reading .tbl-lanes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in ledger
     assert ".page-reading .tbl-lanes thead{display:none}" in ledger
-    # Each lane scrolls on its own and never hands its scroll on to the page.
-    assert "--lane-h:calc(100dvh - 6rem)" in ledger
-    assert "max-height:var(--lane-h);overflow-y:auto" in ledger
-    assert "overscroll-behavior-y:contain" in ledger
+    # Each lane scrolls on its own and never hands its scroll on to the page. It is positioned,
+    # so screen-reader text inside it clips with it rather than stretching the table or page.
+    lane = _css_rule(ledger, " .page-reading .tbl-lanes>tbody")
+    for declaration in (
+        "--lane-h:calc(100dvh - 6rem)",
+        "position:relative",
+        "max-height:var(--lane-h)",
+        "overflow-y:auto",
+        "overscroll-behavior-y:contain",
+    ):
+        assert declaration in lane, declaration
     # Sections side by side scroll on their own too, each heading pinned at the lane's top.
     sections = _css_block(css, "@container cols (min-width:123rem)")
-    assert ".cols.lanes:has(>:nth-child(2))>*{--lane-h:calc(100dvh - 2rem);max-height:var(--lane-h)" in sections
+    section_lane = _css_rule(sections, " .cols.lanes:has(>:nth-child(2))>*")
+    for declaration in ("--lane-h:calc(100dvh - 2rem)", "position:relative", "max-height:var(--lane-h)"):
+        assert declaration in section_lane, declaration
     assert "position:sticky;top:0" in sections
     # A table inside a section lane never splits into lanes of its own.
     assert ".cols.lanes:has(>:nth-child(2)) .tbl-wrap{container-type:normal}" in sections

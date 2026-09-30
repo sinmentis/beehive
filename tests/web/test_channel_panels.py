@@ -444,8 +444,7 @@ def test_monitor_section_past_the_end_says_so_above_its_pager(conn, client, page
     # "Previous" leads back to the last page with listings, the first, and the pager counts the
     # one page there is.
     assert (
-        f'<a class="btn btn-sm" href="/channels/{channel_id}?sort=score#{section}">Previous</a>'
-        in past_end
+        f'<a class="btn btn-sm" href="/channels/{channel_id}?sort=score">Previous</a>' in past_end
     )
     assert "<span>Page 5 of 1</span>" in past_end
 
@@ -476,7 +475,7 @@ def test_tracker_section_past_the_end_says_so_above_its_pager(
     assert "Cordless drill" not in response.text
     # "Previous" leads back to the last page with lots, the first, and the pager counts the one
     # page there is.
-    assert f'<a class="btn btn-sm" href="/channels/{channel_id}#{section}">Previous</a>' in past_end
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}">Previous</a>' in past_end
     assert "<span>Page 5 of 1</span>" in past_end
 
 

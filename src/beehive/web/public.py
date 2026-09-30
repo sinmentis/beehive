@@ -173,7 +173,6 @@ def _monitor_page_url(
     active_page: int | None = None,
     history_page: int | None = None,
     display: tuple[tuple[str, str], ...] = (),
-    anchor: str = "",
 ) -> str:
     params: list[tuple[str, str]] = [("sort", page.sort.value)]
     active_page = active_page if active_page is not None else page.pagination.page
@@ -196,8 +195,7 @@ def _monitor_page_url(
     if page.criteria.showing_below_threshold:
         params.append(("show_below", "1"))
     params.extend(display)
-    fragment = f"#{anchor}" if anchor else ""
-    return f"/channels/{page.channel_id}?{urlencode(params)}{fragment}"
+    return f"/channels/{page.channel_id}?{urlencode(params)}"
 
 
 def _tracker_page_url(
@@ -207,7 +205,6 @@ def _tracker_page_url(
     upcoming_page: int | None = None,
     history_page: int | None = None,
     display: tuple[tuple[str, str], ...] = (),
-    anchor: str = "",
 ) -> str:
     pages = {
         "ending_page": (
@@ -241,9 +238,7 @@ def _tracker_page_url(
         params["show_below"] = "1"
     params.update(display)
     query = urlencode(params)
-    fragment = f"#{anchor}" if anchor else ""
-    base = f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
-    return f"{base}{fragment}"
+    return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
 
 
 def _display_params(prefs: ListingPrefs) -> tuple[tuple[str, str], ...]:
@@ -414,7 +409,6 @@ def _editorial_page_url(
     page_number: int,
     *,
     include_read_filter: bool,
-    anchor: str = "",
 ) -> str:
     params: dict[str, str | int] = {}
     if include_read_filter and page.show_read:
@@ -426,9 +420,7 @@ def _editorial_page_url(
     if page_number != 1:
         params["page"] = page_number
     query = urlencode(params)
-    fragment = f"#{anchor}" if anchor else ""
-    base = f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
-    return f"{base}{fragment}"
+    return f"/channels/{page.channel_id}?{query}" if query else f"/channels/{page.channel_id}"
 
 
 def _editorial_clear_search_url(page: EditorialPage) -> str:
@@ -762,14 +754,12 @@ def channel_drilldown(
                 page,
                 page.folded_pagination.previous_page,
                 include_read_filter=is_admin,
-                anchor="more",
             )
         if page.folded_pagination.has_next:
             context["editorial_next_url"] = _editorial_page_url(
                 page,
                 page.folded_pagination.page + 1,
                 include_read_filter=is_admin,
-                anchor="more",
             )
         context["editorial_show_read_url"] = _editorial_show_read_url(page)
         context["editorial_unread_url"] = _editorial_page_url(
@@ -797,28 +787,24 @@ def channel_drilldown(
                 page,
                 active_page=page.pagination.previous_page,
                 display=display,
-                anchor="available",
             )
         if page.pagination.has_next:
             context["monitor_next_url"] = _monitor_page_url(
                 page,
                 active_page=page.pagination.page + 1,
                 display=display,
-                anchor="available",
             )
         if page.history_pagination.has_previous:
             context["monitor_history_previous_url"] = _monitor_page_url(
                 page,
                 history_page=page.history_pagination.previous_page,
                 display=display,
-                anchor="history",
             )
         if page.history_pagination.has_next:
             context["monitor_history_next_url"] = _monitor_page_url(
                 page,
                 history_page=page.history_pagination.page + 1,
                 display=display,
-                anchor="history",
             )
     if isinstance(page, TrackerPage):
         if page.watched:
@@ -837,42 +823,36 @@ def channel_drilldown(
                 page,
                 ending_page=page.ending_pagination.previous_page,
                 display=display,
-                anchor="ending",
             )
         if page.ending_pagination.has_next:
             context["tracker_ending_next_url"] = _tracker_page_url(
                 page,
                 ending_page=page.ending_pagination.page + 1,
                 display=display,
-                anchor="ending",
             )
         if page.upcoming_pagination.has_previous:
             context["tracker_upcoming_previous_url"] = _tracker_page_url(
                 page,
                 upcoming_page=page.upcoming_pagination.previous_page,
                 display=display,
-                anchor="upcoming",
             )
         if page.upcoming_pagination.has_next:
             context["tracker_upcoming_next_url"] = _tracker_page_url(
                 page,
                 upcoming_page=page.upcoming_pagination.page + 1,
                 display=display,
-                anchor="upcoming",
             )
         if page.history_pagination.has_previous:
             context["tracker_history_previous_url"] = _tracker_page_url(
                 page,
                 history_page=page.history_pagination.previous_page,
                 display=display,
-                anchor="history",
             )
         if page.history_pagination.has_next:
             context["tracker_history_next_url"] = _tracker_page_url(
                 page,
                 history_page=page.history_pagination.page + 1,
                 display=display,
-                anchor="history",
             )
     toc_sections, section_numbers = number_sections(
         channel_chapter_number(channels, channel_id), sections

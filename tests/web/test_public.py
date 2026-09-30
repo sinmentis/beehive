@@ -1007,7 +1007,7 @@ def test_editorial_page_emptied_by_a_read_keeps_its_section_and_pager(conn, auth
     more = _section(response.text, "more")
     assert "Nothing is left on this page." in more
     assert '<tr class="kb-row' not in more
-    assert f'<a class="btn btn-sm" href="/channels/{channel_id}#more">Previous</a>' in _pager(more)
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}">Previous</a>' in _pager(more)
     assert '<a href="#more">' in response.text
 
 
@@ -1025,7 +1025,7 @@ def test_editorial_page_past_the_end_links_back_to_the_last_page_with_stories(co
     assert "Nothing is left on this page." in more
     pager = _pager(more)
     # "Previous" skips the empty pages in between, and the pager counts the pages there are.
-    assert f'<a class="btn btn-sm" href="/channels/{channel_id}?page=2#more">Previous</a>' in pager
+    assert f'<a class="btn btn-sm" href="/channels/{channel_id}?page=2">Previous</a>' in pager
     assert "<span>Page 5 of 2</span>" in pager
 
 

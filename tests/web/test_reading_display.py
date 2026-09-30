@@ -164,15 +164,15 @@ def test_page_size_is_a_remembered_choice_that_starts_lists_over(conn):
     assert odd.text.count('class="plate kb-row"') == 30
 
 
-def test_pager_returns_to_its_section_and_keeps_a_chosen_view(conn):
+def test_pager_keeps_a_chosen_view(conn):
     path, connection = conn
     channel_id, _ = _store(connection, listings=30)
 
     page = _client(path).get(f"/channels/{channel_id}", params={"view": "list"}).text
 
     assert (
-        f'<a class="btn btn-sm" href="/channels/{channel_id}?sort=score&amp;page=2&amp;view=list'
-        '#available">Next</a>'
+        f'<a class="btn btn-sm" href="/channels/{channel_id}?sort=score&amp;page=2&amp;view=list">'
+        "Next</a>"
     ) in page
 
 

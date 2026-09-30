@@ -661,8 +661,11 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 @container ledger (min-width:115.5rem){
  .page-reading .tbl-lanes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
  .page-reading .tbl-lanes thead{display:none}
- .page-reading .tbl-lanes>tbody{--lane-h:calc(100dvh - 6rem);display:block;min-width:0;max-height:var(--lane-h);overflow-y:auto;
-  overscroll-behavior-y:contain;border-top:1.5px solid var(--rule-ink);scrollbar-width:thin;scrollbar-color:var(--rule-2) transparent}
+ /* A lane is positioned, so what sits absolutely inside it (screen-reader text) scrolls and clips
+    with it instead of stretching the table or the page below. */
+ .page-reading .tbl-lanes>tbody{--lane-h:calc(100dvh - 6rem);position:relative;display:block;min-width:0;max-height:var(--lane-h);
+  overflow-y:auto;overscroll-behavior-y:contain;border-top:1.5px solid var(--rule-ink);scrollbar-width:thin;
+  scrollbar-color:var(--rule-2) transparent}
  /* The lanes' 3.5rem gutter, split by a hairline rule. */
  .page-reading .tbl-lanes>tbody:first-of-type{padding-right:1.75rem}
  .page-reading .tbl-lanes>tbody+tbody{padding-left:1.75rem;border-left:1px solid var(--rule)}
@@ -694,8 +697,8 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
    at the top of its lane and each pager at its foot. */
 .cols.lanes{container:cols/inline-size}
 @container cols (min-width:123rem){
- .cols.lanes:has(>:nth-child(2))>*{--lane-h:calc(100dvh - 2rem);max-height:var(--lane-h);overflow-y:auto;overscroll-behavior-y:contain;
-  scrollbar-width:thin;scrollbar-color:var(--rule-2) transparent}
+ .cols.lanes:has(>:nth-child(2))>*{--lane-h:calc(100dvh - 2rem);position:relative;max-height:var(--lane-h);overflow-y:auto;
+  overscroll-behavior-y:contain;scrollbar-width:thin;scrollbar-color:var(--rule-2) transparent}
  .cols.lanes:has(>:nth-child(2))>*>h2{position:sticky;top:0;z-index:2;margin-bottom:0;padding-bottom:10px;background:var(--sheet)}
  /* A lane is one scroller: a table inside a section lane stays a table rather than splitting
     into lanes of its own, however wide the section. */
