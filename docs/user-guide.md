@@ -66,13 +66,22 @@ tracker. It shows stories from the last three days. To change that, go to **Glob
 set the **Featured window**. The counts at the top open a ranked list of every featured story, which
 you can filter to unread, read, or a score of 90 and above.
 
-- A blue square marks a story you haven't read. Select the square to mark it read.
+- A blue square marks a story you haven't read. Select the square to mark it read. Opening a
+  story marks it read too.
 - **Relevant** and **Not relevant** tell the AI what you like. It takes your votes into account
-  when it scores new stories.
-- Press `j` and `k` to move between stories, `o` to open one and `/` to search.
+  when it scores new stories. **Not relevant** also marks the story read and opens a field for an
+  optional reason.
+- **Mark all as read** can be undone for 10 minutes from the note it leaves at the top of the page.
+- Press `j` and `k` to move between stories, listings and lots, `o` to open one and `/` to search.
+  When you're signed in, `m` marks a story read or unread, `+` and `-` rate it, and `w` watches a
+  lot.
+- A store channel opens as a gallery of photos, and an auction channel as a list. Switch between
+  **List** and **Gallery** at the top right, and pick 24, 48 or 96 items a page. Beehive remembers
+  both choices.
 - The archive keeps every story, day by day. Search covers stories, listings and lots.
 
-On a wide screen, channel sections sit side by side, and long lists flow into columns.
+On a wide screen, channel sections sit side by side, and a long list splits into two columns. Each
+column scrolls on its own, so you never scroll back up to reach the next one.
 
 <img src="assets/wide-screen.png" alt="The home page at 2560 pixels wide: six channel sections in two columns, with news stories, store listings and auction lots" width="100%">
 
