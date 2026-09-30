@@ -3,13 +3,14 @@
 Beehive runs on a single rootless-Podman host as one shared image (`../Containerfile`). Each
 process selects its role through a Quadlet unit's `Exec=`:
 
-- an always-on public web app (Dashboard, Channel drill-down, and `/admin/*`),
-- a timer-triggered fetch/AI-rank cycle,
-- a 15-minute Email Group schedule and Research-completion notification job,
-- a five-minute Tracker reminder job, currently backed by the auction adapter,
-- a queued, owner-triggered article deep-read worker, and
-- an always-on durable Research worker (Research Runs + Research Chat replies, ADR-0009), backed
-  by a periodic reconciliation timer.
+- an always-on web app (the reading pages and `/admin/*`),
+- an always-on jobs worker (ADR-0012) that runs every Channel's scheduled fetch and AI ranking,
+  "Fetch now", article deep reads, Email Group digests with Research-completion emails, and
+  Tracker reminders, and
+- an always-on durable Research worker (Research Runs + Research Chat replies, ADR-0009).
+
+Apart from the host's nightly backup timer there are no timers or path units: each worker polls
+its own queues and schedules in SQLite.
 
 The read surfaces are served directly and are public unless the Owner sets **Who can read** to
 private (ADR-0011); `/admin/*` and all write actions are always gated by the app's own password
@@ -29,13 +30,8 @@ the reverse proxy.
 | `../Containerfile` | Single shared image for every role; `ENTRYPOINT` is bare `python`, each unit supplies its own `-m scripts...` invocation |
 | `quadlet/beehive-data.volume` | Named Podman volume backing `/data` (the SQLite DB), shared by all containers below |
 | `quadlet/beehive-web.container` | Always-on web app — `PublishPort=127.0.0.1:8095:8000`, `Restart=always` |
-| `quadlet/beehive-fetch.container` + `.timer` | Fetch → dedup → AI-rank cycle; the timer wakes every 15 minutes and each Channel's own interval or daily calendar schedule decides whether it runs |
-| `quadlet/beehive-fetch-manual.container` + `.path` | Manual per-Channel trigger — started only when the admin UI writes a trigger marker, never on a timer |
-| `quadlet/beehive-digest.container` + `.timer` | Evaluates Email Group interval/calendar schedules and pending Research-completion emails every 15 minutes |
-| `quadlet/beehive-auction-reminders.container` + `.timer` | Runs the generic Tracker reminder worker every 5 minutes; the current auction adapter claims watched lots inside the one-hour closing window |
-| `quadlet/beehive-deep-read.container` + `.path` + `.timer` | Bounded article brief worker; the path provides low-latency wakeup and the timer reconciles missed wakeups |
+| `quadlet/beehive-jobs.container` | Always-on jobs worker (ADR-0012) — scheduled fetching, "Fetch now", deep reads, digests and reminders, `Restart=always` |
 | `quadlet/beehive-research.container` | Always-on durable Research worker — bounded Research Run + Research Chat pools (ADR-0009), `Restart=always` |
-| `quadlet/beehive-research-reconcile.container` + `.timer` | Oneshot expired-lease recovery sweep, hourly — backstops the always-on worker (which reconciles every minute itself) after a crash/restart; claims/executes nothing |
 | `systemd/beehive-backup.service` + `.timer`, `backup/` | Nightly host-side SQLite backup with a restore drill on every run (see [Backups](#backups)) |
 
 The web container publishes to `127.0.0.1` only, so the app is reachable from the host's loopback
@@ -50,8 +46,9 @@ once, through the unit itself. With Podman's default `journald` log driver an at
 which keeps Podman's own container lifecycle events (create, start, died, remove) out of the
 journal. Those added about 7 lines per container start, roughly 9,000 lines a day, and pushed the
 user journal past its size cap until it only reached back about a day. The events stay available
-through `podman events`. Read a job's output with `journalctl --user -u beehive-fetch.service`;
-`podman logs` does not apply to passthrough containers.
+through `podman events`. Read the jobs worker's output with
+`journalctl --user -u beehive-jobs.service`; `podman logs` does not apply to passthrough
+containers.
 
 ## Backups
 
@@ -77,7 +74,7 @@ systemctl --user start beehive-backup.service   # take one now; see journalctl -
 
 Restore:
 
-1. Pause Beehive (the dashboard's pause, or stop the timers, path units, `beehive-web.service`
+1. Pause Beehive (the dashboard's pause, or stop `beehive-web.service`, `beehive-jobs.service`
    and `beehive-research.service`).
 2. Move the current database aside, keeping its WAL files with it:
 
@@ -123,7 +120,39 @@ deploy/release.sh promote rollback
 
 ## One-time upgrade tasks
 
-These only apply to a database from an older release. New installs never need them.
+These only apply to an install from an older release. New installs never need them.
+
+### Move to the jobs worker (ADR-0012)
+
+Releases before the jobs worker ran each job as a oneshot container started by a timer or a path
+unit. After building and migrating the new image, and before `promote`, swap the units. Keep the
+values your old units had: copy `DIGEST_EMAIL_TO`, `DIGEST_EMAIL_FROM` and the two `Secret=`
+names from your installed `beehive-digest.container` into `beehive-jobs.container` first.
+
+```bash
+OLD="fetch digest auction-reminders deep-read research-reconcile"
+for name in $OLD; do systemctl --user disable --now "beehive-$name.timer"; done
+systemctl --user disable --now beehive-fetch-manual.path beehive-deep-read.path
+# Let a job that is already running finish, then remove the old units.
+for name in $OLD fetch-manual; do
+  while systemctl --user is-active --quiet "beehive-$name.service"; do sleep 5; done
+  rm -f ~/.config/containers/systemd/beehive-$name.container \
+        ~/.config/systemd/user/beehive-$name.timer ~/.config/systemd/user/beehive-$name.path
+done
+cp deploy/quadlet/beehive-jobs.container ~/.config/containers/systemd/
+systemctl --user daemon-reload
+rm -f ~/.local/share/containers/storage/volumes/beehive-data/_data/*_trigger*
+```
+
+Then run `deploy/release.sh promote <tag>`, which starts `beehive-jobs.service` with the other
+two. A "Fetch now" request or deep read queued under the old units is not lost: deep reads were
+already SQLite rows, and the admin simply offers "Fetch now" again. If a dashboard or other tool
+starts and stops Beehive's units by name, point it at `beehive-web`, `beehive-research` and
+`beehive-jobs` (see [Dashboard lifecycle contract](#dashboard-lifecycle-contract)).
+
+To roll back past this release, `promote rollback` alone is not enough, because the old image has
+no `scripts/run_jobs.py`: stop and remove `beehive-jobs.container`, then reinstall the old
+release's units with `git checkout <old-tag> -- deploy/quadlet` and the install steps below.
 
 ### Rewrite existing unread summaries
 
@@ -173,44 +202,31 @@ after the later change is removed.
 ## Dashboard lifecycle contract
 
 The project-owned declaration is `../ops/dashboard/workload.declaration.json`. It names logical
-roles only — nine actionable ones (`web`, `research-worker`, and the five timers plus two path
-units) and six wait-only drain roles (the one-shot jobs behind those timers and paths). Concrete
-unit names, the host port, and the authority to act on any of it stay in the dashboard
-repository's trusted binding, which also owns the persistent pause gate. Nothing here grants
-itself permission; this file only describes what exists.
+roles only: `web`, `research-worker` and `jobs-worker`, under lifecycle version 1, because
+nothing is a wait-only one-shot any more. Concrete unit names, the host port, and the authority to
+act on any of it stay in the dashboard repository's trusted binding, which also owns the
+persistent pause gate. Nothing here grants itself permission; this file only describes what
+exists.
 
 Readiness is `/readyz` on the container's port 8000 (`GET`, expect `200`, 5s budget). It opens the
 SQLite database through the app's own connection seam, checks the core tables are present, and
 reads one row back, so a mounted-but-empty volume answers 503 instead of passing.
 
-**Pause** stops things in dependency order, newest work first:
+**Pause** stops `beehive-web.service` first, so nothing new is queued, then both workers. Each
+worker drains itself on SIGTERM: it stops taking work, gives running jobs 30 seconds, and hands
+back whatever claim is still held, within its `TimeoutStopSec=60`.
 
-1. the five timers (`fetch`, `digest`, `auction-reminders`, `deep-read`, `research-reconcile`), so
-   no new scheduled run can begin;
-2. the two path units (`fetch-manual`, `deep-read`), so a trigger marker written a second ago no
-   longer starts a job;
-3. `beehive-web.service`, which is what writes those markers and enqueues research work;
-4. `beehive-research.service`, last, so it drains with its own graceful shutdown
-   (`TimeoutStopSec=60`) after nothing upstream can hand it more work.
+**Resume** goes back the other way: both workers, then `beehive-web.service`.
 
-The six one-shot jobs are **wait-only**. The dashboard never sends them a stop. A fetch cycle, a
-deep-read brief, a digest send or a reminder claim is mid-transaction against the shared SQLite
-file, and killing one buys nothing that waiting does not. Pause reports success only once every
-actionable unit is stopped *and* every in-flight one-shot has exited on its own.
+Nothing queued is lost across a pause. Every piece of work is a committed SQLite row (a "Fetch
+now" request, a pending `deep_reads` job, a `research_runs`/`research_chat_requests` entry, a
+Channel's due-time, an Email Group's watermark), not in-memory state. On resume each worker picks
+its queues back up and reconciles any lease that expired while it was down.
 
-**Resume** goes back the other way: `beehive-research.service`, then `beehive-web.service`, then
-the two path units, then the timers.
-
-Nothing queued is lost across a pause. Every trigger is a committed SQLite row (a pending
-`deep_reads` job, a `research_runs`/`research_chat_requests` entry, a Channel's due-time, an Email
-Group's watermark), not in-memory state, and the wakeup markers on disk outlive the pause too. On
-resume the worker picks its queue back up and reconciles any lease that expired while it was down.
-
-Expect a burst right after resume: all five timers are `Persistent=true`, so systemd runs one
-catch-up pass for the ticks missed during the pause rather than silently skipping them. That is a
-single run per timer, not one per missed interval, and each job re-derives what is actually due
-(per-Channel schedules for fetch, watermarks for digest, the closing window for reminders), so the
-catch-up costs one cycle rather than a backlog replay.
+Expect a burst right after resume: the jobs worker runs one fetch sweep, one digest check and one
+reminder check as it starts, rather than waiting for the next quarter hour. Each re-derives what
+is actually due (per-Channel schedules for fetch, watermarks for digest, the closing window for
+reminders), so the catch-up costs one cycle rather than a backlog replay.
 
 ## Secrets (never in the image or git)
 
@@ -234,15 +250,14 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
   app **refuses to start** without it, or with a value under 32 characters. An empty secret is not
   a degraded mode: `sign_session_id` HMACs with an empty key, so anyone could mint a valid-looking
   admin cookie.
-- `beehive-copilot-github-token` → `COPILOT_GITHUB_TOKEN` (the fetch container's AI ranking call,
-  the deep-read container's article brief generation, and the always-on Research worker's plan/
-  sufficiency/synthesis/chat AI calls and LLM model-list refresh, all via `ai/llm_client.py`).
-  The web container and the Research reconcile-sweep container do not receive this secret —
-  reconciliation only recovers expired leases, it never calls the AI.
-- `beehive-acs-connection` → `ACS_CONNECTION_STRING` (Email Group, Research-completion, and
-  Tracker-reminder delivery, paired with the `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM`
-  `Environment=` values on those containers). Omit this secret to log delivery instead. The **web**
-  container needs it too: the admin UI's Email Group "Test send" goes through the same notifier.
+- `beehive-copilot-github-token` → `COPILOT_GITHUB_TOKEN` (the jobs worker's AI ranking and
+  deep-read briefs, and the Research worker's plan/sufficiency/synthesis/chat AI calls and LLM
+  model-list refresh, all via `ai/llm_client.py`). The web container does not receive it.
+- `beehive-acs-connection` → `ACS_CONNECTION_STRING` (Email Group digests, Research-completion
+  emails, Tracker reminders and failure alerts from the jobs worker, paired with the
+  `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM` `Environment=` values on that container). Omit this secret
+  to log delivery instead. The **web** container needs it too: the admin UI's Email Group "Test
+  send" goes through the same notifier.
 
 ## Reverse proxy and client addresses
 
@@ -261,7 +276,7 @@ podman inspect beehive-web --format '{{.NetworkSettings.Gateway}}'
 Leaving it unset is safe; it just means every remote client is attributed to that one gateway
 address, so the per-IP limit behaves like a global one.
 
-No Reddit credential is needed: the fetch container's Reddit connector reads Reddit's public,
+No Reddit credential is needed: the jobs worker's Reddit connector reads Reddit's public,
 unauthenticated Atom RSS feed (`https://www.reddit.com/r/<subreddit>/hot/.rss`), not the OAuth
 Data API — see `src/beehive/connectors/reddit.py`'s module docstring.
 
@@ -277,63 +292,76 @@ podman exec -it beehive-web python -m scripts.set_admin_password --db-path /data
 ## Install / update the Quadlet units
 
 `.container`/`.volume` files are Quadlet units (Podman's generator turns them into systemd
-services) and belong in `~/.config/containers/systemd/`. Plain `.timer`/`.path` files are NOT a
-Quadlet unit type — Quadlet ignores them there — so they go straight into the standard systemd
-user unit directory instead:
+services) and belong in `~/.config/containers/systemd/`:
 
 ```bash
 cp deploy/quadlet/beehive-data.volume deploy/quadlet/beehive-*.container ~/.config/containers/systemd/
-cp deploy/quadlet/beehive-*.timer deploy/quadlet/beehive-*.path ~/.config/systemd/user/
 systemctl --user daemon-reload
-# Quadlet-generated units (.container/.volume) are auto-wanted by their [Install] section the
-# moment the generator runs them at daemon-reload -- `systemctl --user enable` on one of these
-# fails with "Unit ... is transient or generated", so only `start` is needed, and the generator
-# re-creates the want automatically on every future boot.
-systemctl --user start beehive-web.service
-# Plain systemd units (.timer/.path) are NOT auto-wanted -- they need an explicit `enable` to
-# persist across reboots, same as any regular unit file.
-systemctl --user enable --now beehive-fetch.timer
-systemctl --user enable --now beehive-digest.timer
-systemctl --user enable --now beehive-auction-reminders.timer
-systemctl --user enable --now beehive-fetch-manual.path
-systemctl --user enable --now beehive-deep-read.path
-systemctl --user enable --now beehive-deep-read.timer
-systemctl --user start beehive-research.service
-systemctl --user enable --now beehive-research-reconcile.timer
+# Quadlet-generated units are auto-wanted by their [Install] section the moment the generator
+# runs them at daemon-reload -- `systemctl --user enable` on one of these fails with "Unit ... is
+# transient or generated", so only `start` is needed, and the generator re-creates the want
+# automatically on every future boot.
+systemctl --user start beehive-web.service beehive-research.service beehive-jobs.service
 ```
-
-When the owner requests a brief, the web process commits a pending SQLite job before writing the
-wakeup marker. The marker is only a latency hint: `beehive-deep-read.timer` starts the same bounded
-worker every 30 minutes so queued work is not stranded if the path event is missed.
 
 ## Email schedule operations
 
-`beehive-digest.timer` runs every 15 minutes. Each Email Group independently uses either a fixed
-interval or selected weekdays plus a local time and IANA timezone. The job records every check,
-successful send, and delivery error. It also sends pending Research completion notifications to
-the configured default recipient before evaluating Email Groups.
+The jobs worker checks Email Groups every 15 minutes. Each Email Group independently uses either a
+fixed interval or selected weekdays plus a local time and IANA timezone. The check records every
+send and delivery error. It also sends pending Research completion notifications to the
+configured default recipient before evaluating Email Groups.
 
 The Owner can inspect next-due times and delivery failures in Admin, preview current pending
 content, and send a test copy without consuming events. System Health summarizes missing
 recipients and recent delivery errors.
 
 ```bash
-systemctl --user status beehive-digest.timer
-systemctl --user list-timers beehive-digest.timer --no-pager
-journalctl --user -u beehive-digest.service -n 100 --no-pager
+journalctl --user -u beehive-jobs.service -n 200 --no-pager | grep -i -e digest -e email
 ```
+
+## Jobs worker (ADR-0012)
+
+`beehive-jobs.container` runs `scripts/run_jobs.py`, one process with five lanes. Each lane runs
+one job at a time on its own thread:
+
+| Lane | What it runs | When |
+|------|--------------|------|
+| Fetch now | The Channels the admin queued, forced past their schedules | Within 5 seconds of the request |
+| Scheduled fetching | Every Channel in turn; each Source's schedule decides whether it is due | At start-up and every quarter hour |
+| Deep reads | The oldest queued article brief | Within 5 seconds of the request |
+| Email | Research-completion emails and due Email Group digests | At start-up and every 15 minutes |
+| Reminders | Due Tracker reminders | At start-up and every 5 minutes |
+
+The two fetch lanes never work on the same Channel at once, and only one process runs jobs at a
+time: the worker holds an flock on `beehive.db.jobs.lock` beside the database until it exits, and a
+second worker started against the same database waits until the first stops. A job that
+fails is logged and its lane moves on; the Channel's Sources show the error in the admin. A job
+that runs past its lane's limit (60 minutes for a fetch, 30 for a deep read or an email pass, 15
+for reminders) makes the worker hand back its claims and exit, and systemd restarts it. The stuck
+job's own claim counts as a failed try: a "Fetch now" request is dropped after three tries, and
+a deep read is marked failed so it can be retried from its page. The admin's **System** chapter
+shows when the worker last checked in, what is waiting, and any lane that has been busy for too
+long.
+
+A Channel whose AI ranking keeps failing sends its **Failure alert email** at most once every six
+hours, however many cycles fail in between.
+
+```bash
+systemctl --user status beehive-jobs.service
+journalctl --user -u beehive-jobs.service -n 200 --no-pager
+```
+
+After fixing a Source, select **Fetch now** in the admin; the worker runs it within seconds. The
+`scripts.run_collector` job modes refuse to run while the worker is active, so a Channel is never
+fetched by two processes at once.
 
 ## Research worker (ADR-0009)
 
 `beehive-research.container` is the one durable process for both Research Runs and Research Chat
 replies: two independent, database-enforced bounded pools (3 concurrent Research Runs, 3
 concurrent chat replies by default) so a handful of long research runs can never starve a chat
-reply. It polls `research_runs`/`research_chat_requests` directly — no path/wakeup marker is
-needed, unlike the deep-read worker — and reconciles expired leases itself on startup and
-periodically while running. `beehive-research-reconcile.container` + `.timer` is a separate,
-lightweight, oneshot backstop: it only recovers already-expired leases (idempotent, claims/
-executes nothing) in case the always-on worker itself crashed or was mid-restart when a lease
-expired. Because the worker already sweeps every minute, the backstop runs hourly.
+reply. It polls `research_runs`/`research_chat_requests` directly and reconciles expired leases
+itself on startup and every minute while running, so it needs no separate backstop timer.
 
 The worker also keeps the admin's LLM model list current, because it is the only always-on
 process with the Copilot token. The "Refresh list" button in Global settings stores a request in
@@ -368,10 +396,6 @@ startup instead of running with a broken configuration.
 systemctl --user status beehive-research.service
 journalctl --user -u beehive-research.service -n 200 --no-pager
 
-# Did the last reconcile sweep run, and did it recover anything?
-systemctl --user status beehive-research-reconcile.service
-journalctl --user -u beehive-research-reconcile.service -n 50 --no-pager
-
 # Run one reconcile sweep by hand (safe at any time — idempotent, recovers only expired leases):
 podman exec -it beehive-research python -m scripts.run_research_worker --reconcile-once
 ```
@@ -393,4 +417,4 @@ systemctl --user restart beehive-research.service
 SIGKILL. After the grace period, in-flight Research Runs and chat replies are requeued without
 setting the Owner cancellation flag. A replacement worker resumes the existing staged snapshot,
 and stale worker writes remain claim-fenced. Any claim that still does not resolve before a hard
-kill is recovered by the next reconcile sweep once its lease expires.
+kill is recovered by the worker's next reconcile sweep once its lease expires.

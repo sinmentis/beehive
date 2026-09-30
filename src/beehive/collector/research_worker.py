@@ -110,12 +110,12 @@ import asyncio
 import contextlib
 import functools
 import sqlite3
-import threading
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from beehive.ai.llm_client import tool_free_client
+from beehive.collector.threads import run_in_thread
 from beehive.ai.model_catalog import (LIST_TIMEOUT_SECONDS, ListedModel, RefreshClaim,
                                       RefreshError, RefreshStatus, claim_refresh,
                                       complete_refresh, fail_refresh, requeue_refresh)
@@ -257,45 +257,9 @@ def load_worker_config(env: Mapping[str, str], db_path: str) -> ResearchWorkerCo
             env, _ENV_PREFIX + "SHUTDOWN_GRACE_SECONDS", defaults.shutdown_grace_seconds))
 
 
-# ============================================================================
-# The narrow executor seam: bridges one blocking callable to a daemon thread + this coroutine's
-# event loop, without ever touching concurrent.futures.ThreadPoolExecutor (its worker threads are
-# joined by its own atexit hook, which would make a graceful shutdown hang on a still-running
-# research task instead of returning promptly once its grace period has elapsed).
-# ============================================================================
-
-def _settle_result(fut: asyncio.Future, result: object) -> None:
-    if not fut.done():
-        fut.set_result(result)
-
-
-def _settle_exception(fut: asyncio.Future, exc: BaseException) -> None:
-    if not fut.done():
-        fut.set_exception(exc)
-
-
-async def _run_in_thread(func: Callable[[], object]) -> object:
-    """Runs `func` (a synchronous, blocking callable) on a brand-new daemon thread, and awaits
-    its result on the CALLING coroutine's own event loop. `daemon=True` is what lets a research
-    task straggling past a graceful shutdown's grace period never itself keep the process alive;
-    it is simply left to finish (or be stopped by an eventual SIGKILL) in the background."""
-    loop = asyncio.get_running_loop()
-    fut: asyncio.Future = loop.create_future()
-
-    def _runner() -> None:
-        try:
-            result = func()
-        except BaseException as exc:  # noqa: BLE001 -- forwarded to the awaiting coroutine
-            settle = functools.partial(_settle_exception, fut, exc)
-        else:
-            settle = functools.partial(_settle_result, fut, result)
-        try:
-            loop.call_soon_threadsafe(settle)
-        except RuntimeError:
-            pass  # the event loop is already closed (process shutting down); nothing to notify
-
-    threading.Thread(target=_runner, daemon=True, name="research-run-worker").start()
-    return await fut
+# The narrow executor seam: one blocking research run on its own daemon thread, awaited from this
+# worker's loop (see collector/threads.py, which the jobs worker shares).
+_run_in_thread = functools.partial(run_in_thread, name="research-run-worker")
 
 
 def _default_research_task_runner(

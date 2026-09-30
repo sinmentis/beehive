@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from beehive.collector.deep_read_trigger import MARKER_NAME
 from beehive.collector.deep_read_worker import process_deep_read_queue
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
@@ -114,7 +113,6 @@ async def test_worker_completes_queued_deep_read_in_current_language(queued_db):
 
     result = await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         extractor=_complete_extraction,
         generator=generator,
@@ -148,7 +146,6 @@ async def test_worker_marks_partial_content_with_warning(queued_db):
 
     await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         extractor=_partial_extraction,
         generator=generator,
@@ -174,7 +171,6 @@ async def test_worker_persists_fetch_failure_without_calling_llm(queued_db):
 
     result = await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         generator=generator,
         now_factory=lambda: _NOW,
@@ -205,7 +201,6 @@ async def test_worker_classifies_publisher_404_without_calling_llm(queued_db):
 
     await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         generator=generator,
         now_factory=lambda: _NOW,
@@ -235,7 +230,6 @@ async def test_worker_persists_unusable_extraction_failure(queued_db):
 
     await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         extractor=lambda *_args, **_kwargs: unusable,
         generator=AsyncMock(),
@@ -267,7 +261,6 @@ async def test_worker_classifies_google_news_wrapper_without_calling_llm(queued_
 
     await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         extractor=lambda *_args, **_kwargs: unusable,
         generator=generator,
@@ -304,7 +297,6 @@ async def test_worker_uses_stored_reddit_body_when_fetch_is_blocked(tmp_path):
 
     result = await process_deep_read_queue(
         conn,
-        str(tmp_path),
         fetcher_factory=lambda: fetcher,
         generator=generator,
         now_factory=lambda: _NOW,
@@ -350,7 +342,6 @@ async def test_worker_uses_stored_reddit_body_when_live_html_is_unusable(tmp_pat
 
     result = await process_deep_read_queue(
         conn,
-        str(tmp_path),
         fetcher_factory=lambda: fetcher,
         extractor=lambda *_args, **_kwargs: unusable,
         generator=generator,
@@ -383,7 +374,6 @@ async def test_worker_keeps_fetch_failure_when_reddit_body_is_empty(tmp_path):
 
     result = await process_deep_read_queue(
         conn,
-        str(tmp_path),
         fetcher_factory=lambda: fetcher,
         generator=generator,
         now_factory=lambda: _NOW,
@@ -412,7 +402,6 @@ async def test_worker_classifies_extractor_exception_as_extraction_failure(queue
 
     await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         extractor=bad_extractor,
         generator=AsyncMock(),
@@ -438,7 +427,6 @@ async def test_worker_isolates_llm_failure(queued_db):
 
     await process_deep_read_queue(
         conn,
-        str(data_dir),
         fetcher_factory=lambda: fetcher,
         extractor=_complete_extraction,
         generator=AsyncMock(side_effect=RuntimeError("Copilot unavailable")),
@@ -452,7 +440,7 @@ async def test_worker_isolates_llm_failure(queued_db):
 
 
 @pytest.mark.asyncio
-async def test_worker_processes_bounded_jobs_and_rearms_remaining_work(tmp_path):
+async def test_worker_processes_bounded_jobs_and_reports_remaining_work(tmp_path):
     conn = connect(str(tmp_path / "worker.db"))
     init_schema(conn)
     first = _create_ranked_item(conn, title="First")
@@ -469,8 +457,6 @@ async def test_worker_processes_bounded_jobs_and_rearms_remaining_work(tmp_path)
     update_ai_ranking_by_id(conn, second, 90, "Existing", "Relevant")
     request_deep_read(conn, first, _NOW)
     request_deep_read(conn, second, _NOW + timedelta(seconds=1))
-    inflight = tmp_path / f"{MARKER_NAME}.inflight"
-    inflight.write_text("pending\n")
     fetcher = _FakeFetcher(FetchedArticle(
         url="https://example.com/article",
         status_code=200,
@@ -481,7 +467,6 @@ async def test_worker_processes_bounded_jobs_and_rearms_remaining_work(tmp_path)
 
     result = await process_deep_read_queue(
         conn,
-        str(tmp_path),
         fetcher_factory=lambda: fetcher,
         extractor=_complete_extraction,
         generator=AsyncMock(side_effect=lambda **kwargs: _result(kwargs["item_id"])),
@@ -491,8 +476,6 @@ async def test_worker_processes_bounded_jobs_and_rearms_remaining_work(tmp_path)
 
     assert result.processed == 1
     assert result.remaining == 1
-    assert not inflight.exists()
-    assert (tmp_path / MARKER_NAME).exists()
 
 
 @pytest.mark.asyncio
@@ -509,8 +492,7 @@ async def test_worker_requeues_claim_when_cancelled(queued_db):
     with pytest.raises(asyncio.CancelledError):
         await process_deep_read_queue(
             conn,
-            str(data_dir),
-            fetcher_factory=lambda: fetcher,
+                fetcher_factory=lambda: fetcher,
             extractor=_complete_extraction,
             generator=AsyncMock(side_effect=asyncio.CancelledError),
             now_factory=lambda: _NOW,

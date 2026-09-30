@@ -713,3 +713,18 @@ CREATE TABLE IF NOT EXISTS research_conversation_memory (
     covers_through_message_id INTEGER REFERENCES research_messages(id) ON DELETE SET NULL,
     updated_at TEXT NOT NULL
 );
+
+-- "Fetch now" requests waiting for, or held by, the worker's fetch lane: at most one per Channel.
+-- No claim means queued; a claim with a live lease means running; a claim whose lease ran out
+-- means the worker holding it stopped, and the next poll hands it out again. `rerun` records a
+-- request made while the fetch was already running, so it runs once more when this one ends.
+CREATE TABLE IF NOT EXISTS fetch_requests (
+    channel_id INTEGER PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+    requested_at TEXT NOT NULL,
+    claim_token TEXT,
+    started_at TEXT,
+    lease_expires_at TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    rerun INTEGER NOT NULL DEFAULT 0 CHECK (rerun IN (0, 1)),
+    CHECK ((claim_token IS NULL) = (lease_expires_at IS NULL))
+);

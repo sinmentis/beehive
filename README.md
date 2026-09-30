@@ -78,19 +78,21 @@ You need:
    **Editorial**, describe what you care about under **What to focus on**, and select **Create
    channel**. Then select **Add source** and add one, such as Hacker News.
 
-5. In a second terminal, in the `beehive` folder, fetch and score the first stories:
+5. In a second terminal, in the `beehive` folder, start the jobs worker. It fetches and scores
+   the first stories right away:
 
    ```bash
    export DB_PATH="$PWD/beehive.db" COPILOT_GITHUB_TOKEN="github_pat_..."
-   .venv/bin/python -m scripts.run_collector --mode fetch
+   .venv/bin/python -m scripts.run_jobs
    ```
 
-   Open <http://127.0.0.1:8000/> again. The channel's top stories are there, with their scores
-   and one-line summaries.
+   Open <http://127.0.0.1:8000/> again after a minute. The channel's top stories are there, with
+   their scores and one-line summaries.
 
-To keep Beehive current, run the fetch command on a schedule. Deep reads, research, email and
-reminders each have their own command; see [Configuration](docs/configuration.md#commands).
-Without the token, Beehive still collects stories but can't score or summarize them.
+Leave the jobs worker running: it keeps every channel current and handles **Fetch now**, deep
+reads, email and reminders. Research has its own worker; see
+[Configuration](docs/configuration.md#commands). Without the token, Beehive still collects
+stories but can't score or summarize them.
 
 ## Run it on a server
 

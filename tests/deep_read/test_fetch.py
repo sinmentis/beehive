@@ -607,3 +607,133 @@ def test_declared_charset_is_reported_separately_from_the_default():
     result = fetcher.fetch("http://example.com/")
     assert isinstance(result, FetchedArticle)
     assert result.declared_charset == "iso-8859-1"
+
+
+def test_the_time_budget_holds_off_the_main_thread_against_a_trickling_server(monkeypatch):
+    """A server that sends one header byte at a time keeps every read inside the read timeout.
+    SIGALRM cannot interrupt it off the main thread, where the jobs worker fetches, so the
+    watchdog shuts the socket down when the budget runs out."""
+    import socket
+    import threading
+
+    import beehive.deep_read.fetch as fetch_module
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+    stop = threading.Event()
+
+    def trickle():
+        conn, _ = server.accept()
+        conn.recv(4096)
+        with conn:
+            for byte in b"HTTP/1.1 200 OK\r\nX-Slow: " + b"a" * 200:
+                if stop.is_set():
+                    return
+                try:
+                    conn.sendall(bytes([byte]))
+                except OSError:
+                    return
+                time.sleep(0.05)
+
+    threading.Thread(target=trickle, daemon=True).start()
+    monkeypatch.setattr(fetch_module, "_ALLOWED_PORTS", frozenset({port}))
+    monkeypatch.setattr(fetch_module, "_is_prohibited_address", lambda ip: False)
+    fetcher = ArticleFetcher(resolve_host=lambda host: ["127.0.0.1"], total_timeout=0.5)
+    result = {}
+
+    def run():
+        started = time.monotonic()
+        result["outcome"] = fetcher.fetch(f"http://trickle.example:{port}/")
+        result["elapsed"] = time.monotonic() - started
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    worker.join(timeout=10)
+    stop.set()
+    server.close()
+    fetcher.close()
+
+    assert isinstance(result["outcome"], FetchFailure)
+    assert result["outcome"].reason == FetchFailureReason.TIMEOUT
+    assert result["elapsed"] < 2
+
+
+def _off_main_thread(func):
+    import threading
+
+    result = {}
+
+    def run():
+        started = time.monotonic()
+        result["outcome"] = func()
+        result["elapsed"] = time.monotonic() - started
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    worker.join(timeout=10)
+    return result["outcome"], result["elapsed"]
+
+
+def test_a_slow_resolver_cannot_outlast_the_budget_off_the_main_thread():
+    def slow_resolver(host):
+        time.sleep(1)
+        return ["93.184.216.34"]
+
+    fetcher = _fetcher(slow_resolver, _unreachable_handler, total_timeout=0.2)
+    outcome, elapsed = _off_main_thread(lambda: fetcher.fetch("http://slow-dns.example/"))
+
+    assert isinstance(outcome, FetchFailure)
+    assert outcome.reason == FetchFailureReason.TIMEOUT
+    assert elapsed < 0.8
+
+
+def test_every_fetch_on_one_fetcher_keeps_its_budget(monkeypatch):
+    """The second fetch must not reuse the first one's connection, which the budget watchdog
+    would know nothing about."""
+    import socket
+    import threading
+
+    import beehive.deep_read.fetch as fetch_module
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(2)
+    port = server.getsockname()[1]
+    connections = []
+
+    def serve():
+        first, _ = server.accept()
+        connections.append(first)
+        first.recv(4096)
+        first.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\n<p>fast</p>")
+        try:
+            second, _ = server.accept()
+        except OSError:
+            return
+        connections.append(second)
+        second.recv(4096)
+        for byte in b"HTTP/1.1 200 OK\r\nX-Slow: " + b"a" * 200:
+            try:
+                second.sendall(bytes([byte]))
+            except OSError:
+                return
+            time.sleep(0.05)
+
+    threading.Thread(target=serve, daemon=True).start()
+    monkeypatch.setattr(fetch_module, "_ALLOWED_PORTS", frozenset({port}))
+    monkeypatch.setattr(fetch_module, "_is_prohibited_address", lambda ip: False)
+    fetcher = ArticleFetcher(resolve_host=lambda host: ["127.0.0.1"], total_timeout=0.5)
+    url = f"http://pooled.example:{port}/"
+
+    first, _ = _off_main_thread(lambda: fetcher.fetch(url))
+    second, elapsed = _off_main_thread(lambda: fetcher.fetch(url))
+    fetcher.close()
+    server.close()
+
+    assert isinstance(first, FetchedArticle)
+    assert len(connections) == 2
+    assert isinstance(second, FetchFailure)
+    assert second.reason == FetchFailureReason.TIMEOUT
+    assert elapsed < 2

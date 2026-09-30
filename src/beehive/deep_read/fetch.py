@@ -24,9 +24,14 @@ fetch. The design follows defense in depth:
    address is rejected exactly like a direct request would be.
 5. Redirect count, total wall-clock time, raw response bytes, and *decompressed* bytes are
    all capped, the last one specifically to bound zip-bomb-style compression ratios rather
-   than trusting `Content-Length`.
-6. Only HTML-compatible content types are accepted, checked from the response headers before
-   any body is read.
+   than trusting `Content-Length`. The time cap holds on any thread, which matters because the
+   workers fetch from their own threads, where SIGALRM does not work: DNS resolution runs on a
+   helper thread the fetch stops waiting for, and when the budget runs out a timer shuts down
+   the socket the fetch is blocked on (a server can otherwise trickle one header byte at a
+   time, each inside the read timeout). Connections are never kept alive between requests, so
+   every request's socket is a new one the timer knows about.
+6. Only HTML-compatible content types are accepted by default, checked from the response
+   headers before any body is read; a caller such as the RSS connector widens the list.
 7. Every failure is a typed `FetchFailure(reason, detail)` -- callers branch on
    `FetchFailureReason`, never on parsing exception strings.
 
@@ -211,7 +216,34 @@ class _Endpoint:
     path_and_query: str
 
 
-def _validate_and_resolve(url: str, resolve_host) -> _Endpoint | FetchFailure:
+class _ResolveTimeout(Exception):
+    pass
+
+
+def _resolve_within(resolve_host, hostname: str, seconds: float) -> list[str]:
+    """`resolve_host(hostname)` on a helper thread, given up on after `seconds`. getaddrinfo
+    cannot be interrupted, and the SIGALRM limit only works on the main thread; an abandoned
+    lookup finishes on its own daemon thread in the background."""
+    result: dict[str, object] = {}
+    done = threading.Event()
+
+    def run() -> None:
+        try:
+            result["addresses"] = resolve_host(hostname)
+        except BaseException as exc:  # noqa: BLE001 -- re-raised on the fetching thread
+            result["error"] = exc
+        finally:
+            done.set()
+
+    threading.Thread(target=run, daemon=True, name="fetch-dns").start()
+    if not done.wait(max(seconds, 0.0)):
+        raise _ResolveTimeout
+    if "error" in result:
+        raise result["error"]
+    return result["addresses"]
+
+
+def _validate_and_resolve(url: str, resolve_host, deadline: float) -> _Endpoint | FetchFailure:
     parts = urlsplit(url)
 
     if not parts.scheme or not parts.hostname:
@@ -228,7 +260,10 @@ def _validate_and_resolve(url: str, resolve_host) -> _Endpoint | FetchFailure:
 
     hostname = parts.hostname
     try:
-        addresses = resolve_host(hostname)
+        addresses = _resolve_within(resolve_host, hostname, deadline - time.monotonic())
+    except _ResolveTimeout:
+        return FetchFailure(
+            FetchFailureReason.TIMEOUT, f"resolving {hostname!r} took longer than the budget")
     except DnsResolutionError as exc:
         return FetchFailure(FetchFailureReason.DNS_RESOLUTION_FAILED, str(exc))
 
@@ -361,6 +396,58 @@ def _read_capped_body(
     return _RawBody(text=text, truncated=truncated, raw=body)
 
 
+def _budget_exceeded() -> FetchFailure:
+    return FetchFailure(FetchFailureReason.TIMEOUT, "overall fetch time budget exceeded")
+
+
+class _SocketWatchdog:
+    """Enforces a fetch's time budget from outside the thread doing the fetch. It learns every
+    socket the fetch opens from httpcore's `trace` extension and shuts them all down when the
+    budget runs out, which wakes a read blocked on a trickling server with an error."""
+
+    _SOCKET_EVENTS = frozenset({"connection.connect_tcp.complete", "connection.start_tls.complete"})
+
+    def __init__(self, seconds: float) -> None:
+        self._lock = threading.Lock()
+        self._sockets: list[socket.socket] = []
+        self.fired = False
+        self._timer = threading.Timer(max(seconds, 0.0), self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def trace(self, event_name: str, info: dict) -> None:
+        if event_name not in self._SOCKET_EVENTS:
+            return
+        stream = info.get("return_value")
+        sock = stream.get_extra_info("socket") if stream is not None else None
+        if sock is None:
+            return
+        with self._lock:
+            if not self.fired:
+                self._sockets.append(sock)
+                return
+        _shut_down(sock)
+
+    def _fire(self) -> None:
+        with self._lock:
+            self.fired = True
+            sockets, self._sockets = self._sockets, []
+        for sock in sockets:
+            _shut_down(sock)
+
+    def cancel(self) -> None:
+        self._timer.cancel()
+
+
+def _shut_down(sock: socket.socket) -> None:
+    # socket.socket.shutdown, not the SSLSocket override, which would drop the TLS object out
+    # from under a read in progress on the other thread.
+    try:
+        socket.socket.shutdown(sock, socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
 class ArticleFetcher:
     """Injectable, SSRF-safe fetcher for one trusted stored URL. `resolve_host` and
     `transport` are the two test seams: inject a fake resolver to simulate DNS
@@ -396,6 +483,9 @@ class ArticleFetcher:
         self._client = httpx.Client(
             transport=transport,
             trust_env=False,  # never honour HTTP(S)_PROXY / NO_PROXY / .netrc from the environment
+            # No keep-alive: the time-budget watchdog learns sockets as connections open, so a
+            # pooled connection would leave it nothing to shut down.
+            limits=httpx.Limits(max_keepalive_connections=0),
             follow_redirects=False,  # every redirect is revalidated manually, see module docstring
             verify=True,
             timeout=httpx.Timeout(connect_timeout),
@@ -412,17 +502,30 @@ class ArticleFetcher:
 
     def fetch(self, url: str) -> FetchOutcome:
         deadline = time.monotonic() + self._total_timeout
+        watchdog = _SocketWatchdog(self._total_timeout)
         try:
             with _absolute_fetch_timeout(self._total_timeout):
-                return self._fetch_until_deadline(url, deadline)
+                outcome = self._fetch_until_deadline(url, deadline, watchdog)
         except _AbsoluteFetchTimeout:
-            return FetchFailure(FetchFailureReason.TIMEOUT, "overall fetch time budget exceeded")
+            return _budget_exceeded()
+        except Exception:
+            # A socket the watchdog shut down surfaces as whatever error the read hit.
+            if watchdog.fired:
+                return _budget_exceeded()
+            raise
+        finally:
+            watchdog.cancel()
+        if watchdog.fired and isinstance(outcome, FetchFailure):
+            return _budget_exceeded()
+        return outcome
 
-    def _fetch_until_deadline(self, url: str, deadline: float) -> FetchOutcome:
+    def _fetch_until_deadline(
+        self, url: str, deadline: float, watchdog: _SocketWatchdog
+    ) -> FetchOutcome:
         current_url = url
 
         for hop in range(self._max_redirects + 1):
-            endpoint = _validate_and_resolve(current_url, self._resolve_host)
+            endpoint = _validate_and_resolve(current_url, self._resolve_host, deadline)
             if isinstance(endpoint, FetchFailure):
                 return endpoint
 
@@ -430,7 +533,8 @@ class ArticleFetcher:
             if remaining <= 0:
                 return FetchFailure(FetchFailureReason.TIMEOUT, "overall fetch time budget exceeded")
 
-            outcome = self._request_once(endpoint, timeout=min(self._connect_timeout, remaining))
+            outcome = self._request_once(
+                endpoint, timeout=min(self._connect_timeout, remaining), watchdog=watchdog)
             if isinstance(outcome, FetchFailure):
                 return outcome
 
@@ -484,7 +588,7 @@ class ArticleFetcher:
         return FetchFailure(FetchFailureReason.TOO_MANY_REDIRECTS, f"exceeded {self._max_redirects} redirects")
 
     def _request_once(
-        self, endpoint: _Endpoint, timeout: float,
+        self, endpoint: _Endpoint, timeout: float, watchdog: _SocketWatchdog,
     ) -> tuple[int, httpx.Headers, httpx.Response] | FetchFailure:
         ip_for_url = f"[{endpoint.ip}]" if ":" in endpoint.ip else endpoint.ip
         url = httpx.URL(f"{endpoint.scheme}://{ip_for_url}:{endpoint.port}{endpoint.path_and_query}")
@@ -495,7 +599,8 @@ class ArticleFetcher:
                 "User-Agent": self._user_agent,
                 "Accept": self._accept,
             },
-            extensions={"sni_hostname": endpoint.sni_hostname, "timeout": {"connect": timeout, "read": timeout,
+            extensions={"sni_hostname": endpoint.sni_hostname, "trace": watchdog.trace,
+                        "timeout": {"connect": timeout, "read": timeout,
                                                                             "write": timeout, "pool": timeout}},
         )
         try:

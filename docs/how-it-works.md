@@ -27,7 +27,13 @@ watched auction lots get their own time-sensitive reminders.
 
 A fetch failure in one source doesn't stop the others, and an AI failure only skips that channel's
 ranking ([ADR-0002](adr/0002-per-source-per-channel-failure-isolation.md)). Unscored items are
-retried on the next fetch. When it scores news stories, the AI reads your **Relevant** and **Not
+retried on the next fetch, and a channel whose ranking keeps failing sends at most one failure
+alert every six hours.
+
+Two always-on workers do everything that doesn't answer a web request. The jobs worker fetches
+every channel on its schedule, runs **Fetch now** and deep reads, and sends email and reminders;
+the research worker runs research sessions. Both poll their queues in SQLite, so a restart loses
+nothing and local runs behave like a server ([ADR-0012](adr/0012-one-jobs-worker.md)). When it scores news stories, the AI reads your **Relevant** and **Not
 relevant** votes as examples ([ADR-0001](adr/0001-vote-feedback-as-fewshot-prompt-context.md)).
 
 ## Channel types
@@ -39,8 +45,8 @@ mismatch instead of treating every channel the same.
 ## Deep reads
 
 A deep-read request is stored in SQLite before anything else happens, so the web request never
-waits on fetching or the AI. On a server, a path unit starts the bounded worker at once, and a
-timer runs it every 30 minutes in case a wakeup was missed. The worker fetches the article safely,
+waits on fetching or the AI. The jobs worker picks it up within a few seconds
+([ADR-0012](adr/0012-one-jobs-worker.md)). It fetches the article safely,
 extracts its text and caches the brief. When the source text is partial or paywalled, the brief
 says so instead of presenting it as complete. Reddit blocks automated page access, so a Reddit
 brief falls back to the stored post text and says what may be missing.

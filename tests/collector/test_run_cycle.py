@@ -789,6 +789,33 @@ async def test_llm_failure_sends_alert_and_leaves_items_unscored(conn, channel):
 
 
 @pytest.mark.asyncio
+async def test_a_channel_that_keeps_failing_alerts_once_per_six_hours(conn, channel):
+    register(
+        _StubConnector(
+            items=[RawItem(external_id="t1", title="Rates fall", url="https://x")]
+        )
+    )
+    create_source(conn, channel["id"], "stub_test_source", {})
+    notifier = LogNotifier()
+    start = datetime(2026, 9, 30, 0, 0, tzinfo=timezone.utc)
+
+    with (
+        patch(
+            "beehive.collector.run_cycle.rank_channel",
+            new=AsyncMock(side_effect=RuntimeError("token expired")),
+        ),
+        patch.object(notifier, "send") as mock_send,
+    ):
+        for minutes in (0, 15, 30, 6 * 60 - 1, 6 * 60):
+            await run_channel_cycle(
+                conn, channel, notifier, localizer=_EN_LOCALIZER,
+                now=start + timedelta(minutes=minutes),
+            )
+
+    assert mock_send.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_llm_failure_alert_is_rendered_in_the_selected_non_english_language(
     conn, channel
 ):

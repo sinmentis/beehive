@@ -258,15 +258,15 @@ def test_deep_read_route_creates_pending_row_and_redirects_to_brief(
     assert deep_read.request_version == 1
 
 
-def test_deep_read_route_writes_wakeup_marker_after_commit(conn, authed_client, db_path):
+def test_deep_read_route_writes_no_marker_file(conn, authed_client, db_path):
     _, c = conn
     _, item_id = _create_ranked_item(c)
 
     authed_client.post(f"/items/{item_id}/deep-read",
                         data={"csrf_token": "csrf1", "origin": "dashboard"})
 
-    marker_path = os.path.join(os.path.dirname(db_path), "deep_read_trigger")
-    assert os.path.exists(marker_path)
+    assert get_deep_read(c, item_id).status == "pending"
+    assert not os.path.exists(os.path.join(os.path.dirname(db_path), "deep_read_trigger"))
 
 
 def test_deep_read_route_cache_reuse_returns_ready_without_regenerate(conn, authed_client):
@@ -362,29 +362,6 @@ def test_deep_read_route_without_regenerate_keeps_stale_failure(conn, authed_cli
     deep_read = get_deep_read(c, item_id)
     assert deep_read.status == "failed"
     assert deep_read.request_version == 1
-
-
-def test_deep_read_route_marker_write_failure_is_logged_and_request_still_succeeds(
-    conn, authed_client, monkeypatch, capsys,
-):
-    _, c = conn
-    _, item_id = _create_ranked_item(c)
-
-    def _boom(data_dir):
-        raise OSError("disk full")
-
-    monkeypatch.setattr("beehive.web.public.request_deep_read_worker", _boom)
-
-    resp = authed_client.post(f"/items/{item_id}/deep-read",
-                               data={"csrf_token": "csrf1", "origin": "dashboard"})
-    assert resp.status_code == 303
-
-    deep_read = get_deep_read(c, item_id)
-    assert deep_read.status == "pending"  # DB commit already happened before the marker attempt
-
-    captured = capsys.readouterr()
-    assert "deep-read" in captured.out
-    assert "disk full" in captured.out
 
 
 # ============================================================================

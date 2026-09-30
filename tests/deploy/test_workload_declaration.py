@@ -44,25 +44,7 @@ FORBIDDEN = (
     "/data",
 )
 
-ACTIONABLE_ROLES = [
-    "deep-read-path",
-    "deep-read-timer",
-    "digest-timer",
-    "fetch-manual-path",
-    "fetch-timer",
-    "reconcile-timer",
-    "reminders-timer",
-    "research-worker",
-    "web",
-]
-DRAIN_ROLES = [
-    "deep-read-job",
-    "digest-job",
-    "fetch-job",
-    "fetch-manual-job",
-    "reconcile-job",
-    "reminders-job",
-]
+ACTIONABLE_ROLES = ["jobs-worker", "research-worker", "web"]
 
 
 def _declaration() -> dict:
@@ -97,48 +79,31 @@ def test_the_declaration_identifies_this_workload():
     assert document["metadata"] == {"name": "news", "displayName": "News Center"}
 
 
-def test_the_declaration_uses_lifecycle_v2_for_wait_only_drains():
-    """v1 would give the dashboard permission to *stop* the one-shot jobs. Half of them hold an
-    open SQLite write transaction (a fetch cycle, a deep-read brief, a digest send), so the
-    right pause behaviour is to block new work and wait, which is exactly what v2 adds."""
+def test_the_declaration_uses_lifecycle_v1_because_nothing_is_wait_only():
+    """Lifecycle v2 exists for one-shot jobs the dashboard must wait for rather than stop. Since
+    ADR-0012 every job runs inside an always-on worker that drains itself on SIGTERM (it finishes
+    or hands back its claims), so a plain stop is the right pause and v1 is enough."""
     lifecycle = _declaration()["spec"]["capabilities"]["core.lifecycle"]
-    assert lifecycle["version"] == 2
+    assert lifecycle == {"version": 1, "roles": ["web", "research-worker", "jobs-worker"]}
 
 
 def test_the_declaration_names_every_process_the_dashboard_must_stop():
-    """Two always-on containers, five timers, and two path units. A role left out keeps firing
-    through a pause -- a fetch timer would still wake the collector, and the dashboard would
-    report a workload that is quietly still doing work."""
+    """The web app and the two workers. A role left out keeps working through a pause -- the
+    jobs worker would still fetch into a database the web app has already released, and the
+    dashboard would report a workload that is quietly still doing work."""
     lifecycle = _declaration()["spec"]["capabilities"]["core.lifecycle"]
     assert sorted(lifecycle["roles"]) == ACTIONABLE_ROLES
 
 
-def test_the_declaration_lists_the_one_shot_jobs_as_wait_only_drains():
-    """These are the units that must finish naturally. They are never started or stopped by the
-    dashboard, only waited on, so they belong in `drainRoles` and nowhere else."""
+def test_every_role_has_one_always_on_unit_and_nothing_else_needs_control():
+    """The count is the check: three always-on containers in `deploy/quadlet/` and no timers,
+    path units or one-shot containers. Adding a fourth unit without a role is the drift this
+    catches."""
+    containers = list(_QUADLET_DIR.glob("*.container"))
+    assert all(_has_install(path) for path in containers)
+    assert not list(_QUADLET_DIR.glob("*.timer")) and not list(_QUADLET_DIR.glob("*.path"))
     lifecycle = _declaration()["spec"]["capabilities"]["core.lifecycle"]
-    assert sorted(lifecycle["drainRoles"]) == DRAIN_ROLES
-
-
-def test_actionable_and_drain_roles_are_disjoint():
-    """The compiler rejects an overlap, and it would mean the dashboard both waits for a job to
-    end and sends it a stop -- the interruption `drainRoles` exists to prevent."""
-    lifecycle = _declaration()["spec"]["capabilities"]["core.lifecycle"]
-    assert not set(lifecycle["roles"]) & set(lifecycle["drainRoles"])
-
-
-def test_every_actionable_role_has_one_unit_and_every_drain_role_one_job():
-    """The count is the check: nine controllable units in `deploy/quadlet/` (two always-on
-    containers, five timers, two paths) and six one-shot services behind the timers and paths.
-    Adding a tenth unit without a role is the drift this catches."""
-    always_on = {path.stem for path in _QUADLET_DIR.glob("*.container") if _has_install(path)}
-    one_shots = {path.stem for path in _QUADLET_DIR.glob("*.container")} - always_on
-    timers = set(_QUADLET_DIR.glob("*.timer"))
-    paths = set(_QUADLET_DIR.glob("*.path"))
-
-    lifecycle = _declaration()["spec"]["capabilities"]["core.lifecycle"]
-    assert len(lifecycle["roles"]) == len(always_on) + len(timers) + len(paths)
-    assert len(lifecycle["drainRoles"]) == len(one_shots)
+    assert len(lifecycle["roles"]) == len(containers)
 
 
 def test_the_declaration_asks_for_the_readiness_check_the_app_serves():

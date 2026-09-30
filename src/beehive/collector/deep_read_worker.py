@@ -1,4 +1,6 @@
-"""Drain queued deep-read jobs through fetch, extraction, and tool-free LLM synthesis."""
+"""Deep-read jobs: fetch the article, extract its text and write the brief with a tool-free LLM
+call. The worker claims one job at a time (claim_next_deep_read) and runs it on its own thread
+(process_claimed_deep_read); `--mode deep-read` drains a few in one pass."""
 from __future__ import annotations
 
 import asyncio
@@ -6,15 +8,13 @@ import json
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Awaitable, Callable
 from urllib.parse import urlsplit
 
 from beehive.ai.model_selection import load_model
-from beehive.collector.deep_read_trigger import (
-    consume_deep_read_wakeup,
-    request_deep_read_worker,
-)
 from beehive.db.deep_reads import (
+    DeepRead,
     claim_deep_read,
     complete_deep_read_success,
     fail_deep_read,
@@ -39,7 +39,7 @@ from beehive.deep_read.summarize import (
 )
 from beehive.localization import load_localizer
 
-_LEASE_SECONDS = 1500
+LEASE_SECONDS = 1500
 _MAX_JOBS_PER_RUN = 1
 _ERROR_DETAIL_CAP = 1000
 _STORED_SOURCE_MAX_CHARS = 20_000
@@ -138,9 +138,150 @@ def _fail_claim(
     )
 
 
+class DeepReadOutcome(str, Enum):
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    LOST = "lost"  # the claim expired or was taken over before this run could finish it
+
+
+def claim_next_deep_read(
+    conn: sqlite3.Connection, now: datetime, *, lease_seconds: int = LEASE_SECONDS
+) -> DeepRead | None:
+    """Claims the oldest pending deep read, or returns None when none is waiting."""
+    for queued in list_pending_deep_reads(conn, limit=5):
+        claimed = claim_deep_read(conn, queued.item_id, now, lease_seconds=lease_seconds)
+        if claimed is not None and claimed.claim_token is not None:
+            return claimed
+    return None
+
+
+async def process_claimed_deep_read(
+    conn: sqlite3.Connection,
+    claimed: DeepRead,
+    *,
+    fetcher: ArticleFetcher,
+    extractor: Extractor = extract_article_text,
+    generator: Generator = generate_deep_read,
+    now_factory: NowFactory = _utc_now,
+) -> DeepReadOutcome:
+    """Fetches, extracts and writes the brief for one claimed deep read. A problem with the
+    article is recorded on the deep read as a failure; an infrastructure error requeues the
+    claim and re-raises."""
+    item_id = claimed.item_id
+    request_version = claimed.request_version
+    claim_token = claimed.claim_token
+
+    def fail(error_code: str, detail: str) -> DeepReadOutcome:
+        _fail_claim(
+            conn,
+            item_id=item_id,
+            request_version=request_version,
+            claim_token=claim_token,
+            error_code=error_code,
+            detail=detail,
+            now_factory=now_factory,
+        )
+        return DeepReadOutcome.FAILED
+
+    try:
+        item = get_item(conn, item_id)
+        if item is None:
+            return fail("unavailable", "Item no longer exists")
+        if item["ai_score"] is None:
+            return fail("unavailable", "Item has not been AI-ranked")
+
+        localizer = load_localizer(conn)
+        model = load_model(conn)
+        fetched_url = item["url"]
+        try:
+            fetched = fetcher.fetch(item["url"])
+        except Exception as exc:
+            print(f"[deep-read] fetch failed for item {item_id}: {type(exc).__name__}: {exc}")
+            return fail("fetch", f"{type(exc).__name__}: {exc}")
+        if isinstance(fetched, FetchFailure):
+            extraction = _stored_reddit_body(item)
+            if extraction is None:
+                return fail(
+                    _fetch_error_code(fetched), f"{fetched.reason.value}: {fetched.detail}")
+        else:
+            fetched_url = fetched.url
+            try:
+                extraction = extractor(fetched.html, transport_truncated=fetched.truncated)
+            except Exception as exc:
+                print(
+                    f"[deep-read] extraction failed for item {item_id}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                return fail("extraction", f"{type(exc).__name__}: {exc}")
+            if extraction.quality is ExtractionQuality.UNUSABLE:
+                stored_extraction = _stored_reddit_body(item)
+                if stored_extraction is None:
+                    return fail(
+                        _unusable_extraction_error_code(fetched.url),
+                        "Article extraction produced no usable text",
+                    )
+                extraction = stored_extraction
+                fetched_url = item["url"]
+
+        if not heartbeat_deep_read(
+            conn,
+            item_id,
+            request_version,
+            claim_token,
+            now_factory(),
+            lease_seconds=LEASE_SECONDS,
+        ):
+            return DeepReadOutcome.LOST
+
+        partial_reason = ", ".join(reason.value for reason in extraction.reasons) or None
+        try:
+            result = await generator(
+                item_id=item_id,
+                item_context=ItemContext(
+                    title=item["title"],
+                    url=fetched_url,
+                    source_name=_source_name(item),
+                    source_type=item["source_type"],
+                    published_at=item["created_at"],
+                ),
+                article_text=extraction.text,
+                partial_content=PartialContent(
+                    is_partial=extraction.quality is ExtractionQuality.PARTIAL,
+                    reason=partial_reason,
+                ),
+                localizer=localizer,
+                model=model,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[deep-read] LLM failed for item {item_id}: {type(exc).__name__}: {exc}")
+            return fail("llm", f"{type(exc).__name__}: {exc}")
+        completed = complete_deep_read_success(
+            conn,
+            item_id,
+            request_version,
+            claim_token,
+            _result_json(result),
+            localizer.code,
+            now_factory(),
+            warning_code=_warning_code(extraction),
+        )
+        return DeepReadOutcome.SUCCEEDED if completed else DeepReadOutcome.LOST
+    except asyncio.CancelledError:
+        requeue_deep_read(conn, item_id, request_version, claim_token)
+        raise
+    except Exception as exc:
+        requeue_deep_read(conn, item_id, request_version, claim_token)
+        print(
+            f"[deep-read] infrastructure failure for item {item_id}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        raise
+
+
 async def process_deep_read_queue(
     conn: sqlite3.Connection,
-    data_dir: str,
     *,
     fetcher_factory: FetcherFactory = ArticleFetcher,
     extractor: Extractor = extract_article_text,
@@ -148,211 +289,25 @@ async def process_deep_read_queue(
     now_factory: NowFactory = _utc_now,
     max_jobs: int = _MAX_JOBS_PER_RUN,
 ) -> DeepReadWorkerResult:
-    """Process a bounded queue slice and re-arm systemd when work remains."""
-    consume_deep_read_wakeup(data_dir)
+    """One pass for `--mode deep-read`: recover expired claims, then process up to max_jobs."""
     recovered = recover_expired_deep_reads(conn, now_factory())
-    processed = succeeded = failed = 0
-
+    outcomes: list[DeepReadOutcome] = []
     fetcher = fetcher_factory()
     try:
-        pending = list_pending_deep_reads(conn, limit=max_jobs)
-        for queued in pending:
-            claimed = claim_deep_read(
-                conn,
-                queued.item_id,
-                now_factory(),
-                lease_seconds=_LEASE_SECONDS,
-            )
-            if claimed is None or claimed.claim_token is None:
-                continue
-
-            processed += 1
-            item_id = claimed.item_id
-            request_version = claimed.request_version
-            claim_token = claimed.claim_token
-            try:
-                item = get_item(conn, item_id)
-                if item is None:
-                    _fail_claim(
-                        conn,
-                        item_id=item_id,
-                        request_version=request_version,
-                        claim_token=claim_token,
-                        error_code="unavailable",
-                        detail="Item no longer exists",
-                        now_factory=now_factory,
-                    )
-                    failed += 1
-                    continue
-                if item["ai_score"] is None:
-                    _fail_claim(
-                        conn,
-                        item_id=item_id,
-                        request_version=request_version,
-                        claim_token=claim_token,
-                        error_code="unavailable",
-                        detail="Item has not been AI-ranked",
-                        now_factory=now_factory,
-                    )
-                    failed += 1
-                    continue
-
-                localizer = load_localizer(conn)
-                model = load_model(conn)
-                fetched_url = item["url"]
-                try:
-                    fetched = fetcher.fetch(item["url"])
-                except Exception as exc:
-                    _fail_claim(
-                        conn,
-                        item_id=item_id,
-                        request_version=request_version,
-                        claim_token=claim_token,
-                        error_code="fetch",
-                        detail=f"{type(exc).__name__}: {exc}",
-                        now_factory=now_factory,
-                    )
-                    failed += 1
-                    print(
-                        f"[deep-read] fetch failed for item {item_id}: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
-                    continue
-                if isinstance(fetched, FetchFailure):
-                    extraction = _stored_reddit_body(item)
-                    if extraction is None:
-                        _fail_claim(
-                            conn,
-                            item_id=item_id,
-                            request_version=request_version,
-                            claim_token=claim_token,
-                            error_code=_fetch_error_code(fetched),
-                            detail=f"{fetched.reason.value}: {fetched.detail}",
-                            now_factory=now_factory,
-                        )
-                        failed += 1
-                        continue
-                else:
-                    fetched_url = fetched.url
-                    try:
-                        extraction = extractor(
-                            fetched.html,
-                            transport_truncated=fetched.truncated,
-                        )
-                    except Exception as exc:
-                        _fail_claim(
-                            conn,
-                            item_id=item_id,
-                            request_version=request_version,
-                            claim_token=claim_token,
-                            error_code="extraction",
-                            detail=f"{type(exc).__name__}: {exc}",
-                            now_factory=now_factory,
-                        )
-                        failed += 1
-                        print(
-                            f"[deep-read] extraction failed for item {item_id}: "
-                            f"{type(exc).__name__}: {exc}"
-                        )
-                        continue
-                    if extraction.quality is ExtractionQuality.UNUSABLE:
-                        stored_extraction = _stored_reddit_body(item)
-                        if stored_extraction is not None:
-                            extraction = stored_extraction
-                            fetched_url = item["url"]
-                        else:
-                            _fail_claim(
-                                conn,
-                                item_id=item_id,
-                                request_version=request_version,
-                                claim_token=claim_token,
-                                error_code=_unusable_extraction_error_code(fetched.url),
-                                detail="Article extraction produced no usable text",
-                                now_factory=now_factory,
-                            )
-                            failed += 1
-                            continue
-
-                if not heartbeat_deep_read(
-                    conn,
-                    item_id,
-                    request_version,
-                    claim_token,
-                    now_factory(),
-                    lease_seconds=_LEASE_SECONDS,
-                ):
-                    continue
-
-                partial_reason = ", ".join(reason.value for reason in extraction.reasons) or None
-                try:
-                    result = await generator(
-                        item_id=item_id,
-                        item_context=ItemContext(
-                            title=item["title"],
-                            url=fetched_url,
-                            source_name=_source_name(item),
-                            source_type=item["source_type"],
-                            published_at=item["created_at"],
-                        ),
-                        article_text=extraction.text,
-                        partial_content=PartialContent(
-                            is_partial=extraction.quality is ExtractionQuality.PARTIAL,
-                            reason=partial_reason,
-                        ),
-                        localizer=localizer,
-                        model=model,
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    _fail_claim(
-                        conn,
-                        item_id=item_id,
-                        request_version=request_version,
-                        claim_token=claim_token,
-                        error_code="llm",
-                        detail=f"{type(exc).__name__}: {exc}",
-                        now_factory=now_factory,
-                    )
-                    failed += 1
-                    print(
-                        f"[deep-read] LLM failed for item {item_id}: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
-                    continue
-                completed = complete_deep_read_success(
-                    conn,
-                    item_id,
-                    request_version,
-                    claim_token,
-                    _result_json(result),
-                    localizer.code,
-                    now_factory(),
-                    warning_code=_warning_code(extraction),
-                )
-                if completed:
-                    succeeded += 1
-            except asyncio.CancelledError:
-                requeue_deep_read(conn, item_id, request_version, claim_token)
-                raise
-            except Exception as exc:
-                requeue_deep_read(conn, item_id, request_version, claim_token)
-                print(
-                    f"[deep-read] infrastructure failure for item {item_id}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-                raise
+        while len(outcomes) < max_jobs:
+            claimed = claim_next_deep_read(conn, now_factory())
+            if claimed is None:
+                break
+            outcomes.append(await process_claimed_deep_read(
+                conn, claimed, fetcher=fetcher, extractor=extractor, generator=generator,
+                now_factory=now_factory,
+            ))
     finally:
         fetcher.close()
-
-    remaining = len(list_pending_deep_reads(conn, limit=1))
-    if remaining:
-        request_deep_read_worker(data_dir)
-
     return DeepReadWorkerResult(
         recovered=recovered,
-        processed=processed,
-        succeeded=succeeded,
-        failed=failed,
-        remaining=remaining,
+        processed=len(outcomes),
+        succeeded=outcomes.count(DeepReadOutcome.SUCCEEDED),
+        failed=outcomes.count(DeepReadOutcome.FAILED),
+        remaining=len(list_pending_deep_reads(conn, limit=1)),
     )

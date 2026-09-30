@@ -92,6 +92,7 @@ def harness(tmp_path):
             "BEEHIVE_PODMAN": str(podman),
             "BEEHIVE_SYSTEMCTL": str(systemctl),
             "BEEHIVE_CURL": str(curl),
+            "BEEHIVE_SETTLE_SECONDS": "0",
         }
         return subprocess.run(
             ["bash", str(_SCRIPT), *args], env=env, capture_output=True, text=True,
@@ -115,7 +116,9 @@ def test_promote_keeps_the_previous_image_as_rollback(harness):
 
     assert result.returncode == 0, result.stderr
     assert tags() == {"latest": "bbb", "rollback": "aaa", "abc1234": "bbb"}
-    assert "restart beehive-research.service beehive-web.service" in calls.read_text()
+    log = calls.read_text()
+    assert "restart beehive-research.service beehive-jobs.service beehive-web.service" in log
+    assert "is-active --quiet beehive-jobs.service" in log
 
 
 def test_promote_rollback_swaps_back_to_the_previous_image(harness):
@@ -147,3 +150,24 @@ def test_prune_removes_only_unused_sha_tagged_images(harness):
     assert "stale" not in images()
     # Images the script did not untag, including untagged ones from other work, stay put.
     assert {"new", "old", "civic", "orphan"} <= set(images())
+
+
+def test_promote_fails_when_a_worker_keeps_restarting_on_the_new_image(harness):
+    setup, run, tags, _, calls = harness
+    setup({"latest": "aaa", "abc1234": "bbb"})
+    counter = calls.parent / "restarts"
+    counter.write_text("0")
+    systemctl = calls.parent / "bin" / "systemctl"
+    # Every NRestarts query for the jobs worker reports one more restart than the last.
+    systemctl.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@" >> "{calls}"\n'
+        'case "$*" in *"NRestarts"*"beehive-jobs.service"*)\n'
+        f'  n=$(cat "{counter}"); echo $((n + 1)) > "{counter}"; echo "$n";;\n'
+        "esac\n"
+    )
+
+    result = run("promote", "abc1234")
+
+    assert result.returncode != 0
+    assert "beehive-jobs.service restarted on the new image" in result.stderr

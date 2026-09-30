@@ -1,5 +1,6 @@
 import html
 import os
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,11 @@ from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.email_groups import assign_channel, create_email_group
+from beehive.db.fetch_requests import (
+    claim_next_fetch_request,
+    fetch_request_states,
+    request_fetch,
+)
 from beehive.db.items import insert_new
 from beehive.db.sessions import create_session
 from beehive.db.sources import create_source, record_fetch_error, record_fetch_success
@@ -912,7 +918,7 @@ def test_trigger_fetch_404_for_missing_channel(authed_client):
     assert resp.status_code == 404
 
 
-def test_trigger_fetch_writes_marker_and_redirects(authed_client, db_path):
+def test_trigger_fetch_queues_a_request_and_redirects(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     conn.close()
@@ -923,10 +929,9 @@ def test_trigger_fetch_writes_marker_and_redirects(authed_client, db_path):
     assert resp.status_code == 303
     assert resp.headers["location"] == f"/admin/?tab=channels&triggered={channel_id}"
 
-    data_dir = os.path.dirname(db_path)
-    marker_path = os.path.join(data_dir, "fetch_trigger_channel_id")
-    with open(marker_path) as f:
-        assert f.read() == str(channel_id)
+    conn = connect(db_path)
+    assert fetch_request_states(conn, datetime.now(timezone.utc)) == {channel_id: "queued"}
+    conn.close()
 
 
 def test_channels_list_shows_freshness_label(authed_client, db_path):
@@ -949,7 +954,7 @@ def test_channels_list_shows_bulk_fetch_controls(authed_client, db_path):
     assert "Fetch selected" in resp.text
 
 
-def test_bulk_fetch_writes_selected_channels_and_redirects(authed_client, db_path):
+def test_bulk_fetch_queues_selected_channels_and_redirects(authed_client, db_path):
     conn = connect(db_path)
     first_id = create_channel(conn, "First", "profile")
     second_id = create_channel(conn, "Second", "profile")
@@ -965,9 +970,12 @@ def test_bulk_fetch_writes_selected_channels_and_redirects(authed_client, db_pat
 
     assert response.status_code == 303
     assert response.headers["location"] == "/admin/?tab=channels&triggered_count=2"
-    marker_path = os.path.join(os.path.dirname(db_path), "fetch_trigger_channel_id")
-    with open(marker_path) as marker:
-        assert marker.read() == f"{first_id}\n{second_id}"
+    conn = connect(db_path)
+    assert fetch_request_states(conn, datetime.now(timezone.utc)) == {
+        first_id: "queued",
+        second_id: "queued",
+    }
+    conn.close()
 
 
 def test_bulk_fetch_requires_a_selection(authed_client):
@@ -1045,18 +1053,14 @@ def test_channels_list_shows_queued_and_running_manual_fetch_status(
 ):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "economic news")
-    conn.close()
-    data_dir = os.path.dirname(db_path)
-    marker_path = os.path.join(data_dir, "fetch_trigger_channel_id")
-    inflight_path = f"{marker_path}.inflight"
-    with open(marker_path, "w") as marker:
-        marker.write(str(channel_id))
+    request_fetch(conn, [channel_id], datetime.now(timezone.utc))
 
     queued = authed_client.get("/admin/")
 
     assert "Fetch queued" in queued.text
 
-    os.replace(marker_path, inflight_path)
+    claim_next_fetch_request(conn, datetime.now(timezone.utc), lease_seconds=180)
+    conn.close()
     running = authed_client.get("/admin/")
 
     assert "Fetch in progress" in running.text
@@ -1096,11 +1100,9 @@ def test_channels_list_keeps_the_last_error_visible_while_a_retry_runs(
         "HTTP Error 404: Not Found",
         "2026-07-22T04:32:02+00:00",
     )
+    request_fetch(conn, [channel_id], datetime.now(timezone.utc))
+    claim_next_fetch_request(conn, datetime.now(timezone.utc), lease_seconds=180)
     conn.close()
-    data_dir = os.path.dirname(db_path)
-    inflight_path = os.path.join(data_dir, "fetch_trigger_channel_id.inflight")
-    with open(inflight_path, "w") as marker:
-        marker.write(str(channel_id))
 
     response = authed_client.get("/admin/")
 

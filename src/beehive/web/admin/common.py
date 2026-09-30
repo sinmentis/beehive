@@ -15,9 +15,8 @@ from fastapi.responses import HTMLResponse
 from beehive.ai.model_selection import (
     choose_model,
 )
-from beehive.collector.manual_trigger import (
-    list_manual_trigger_states,
-)
+from beehive.collector.jobs_status import load_status
+from beehive.db.fetch_requests import fetch_request_states
 from beehive.connectors.international_clearance import RETAILER_LABELS
 from beehive.db.channels import (
     list_channels,
@@ -44,6 +43,7 @@ from beehive.scheduling import (
 )
 from beehive.web.formatting import (
     host_local_time_label,
+    relative_time,
     short_time_label,
 )
 from beehive.source_labels import (
@@ -326,12 +326,12 @@ def _source_confirmation_value(source: dict, t: Localizer) -> str:
     return source_display_name(source, t)
 
 
-def _channel_attention_items(conn: sqlite3.Connection, t: Localizer, data_dir: str) -> list[dict]:
+def _channel_attention_items(conn: sqlite3.Connection, t: Localizer) -> list[dict]:
     """Everything about collection that needs the Owner, worst first: failing Sources, stuck manual
     fetches, then paused Sources. The admin contents rail counts this same list."""
     channels = {channel["id"]: channel for channel in list_channels(conn)}
     items = []
-    for channel_id, state in list_manual_trigger_states(data_dir).items():
+    for channel_id, state in fetch_request_states(conn, datetime.now(timezone.utc)).items():
         if state == "stale" and channel_id in channels:
             items.append(
                 {
@@ -383,11 +383,10 @@ def _admin_nav(request: Request, t: Localizer) -> dict:
     """The contents rail and running-head clock shared by every signed-in admin page. Each
     problem is counted once, in the chapter where the Owner fixes it."""
     conn = request.state.db
-    data_dir = os.path.dirname(request.app.state.db_path)
     default_recipient, _ = _resolve_default_for_admin(conn, t)
-    health = _build_system_health_rows(conn, t, data_dir, default_recipient)
+    health = _build_system_health_rows(conn, t, default_recipient)
     attention = {
-        "channels": len(_channel_attention_items(conn, t, data_dir)),
+        "channels": len(_channel_attention_items(conn, t)),
         "groups": sum(
             _email_group_needs_attention(group, default_recipient)
             for group in list_email_groups(conn)
@@ -443,7 +442,6 @@ def _channel_kind_label(kind: ChannelKind, t: Localizer) -> str:
 def _build_system_health_rows(
     conn: sqlite3.Connection,
     t: Localizer,
-    data_dir: str,
     default_recipient: ResolvedRecipient,
 ) -> list[dict]:
     source_counts = dict(
@@ -460,7 +458,7 @@ def _build_system_health_rows(
             """
         ).fetchone()
     )
-    manual_states = list_manual_trigger_states(data_dir)
+    manual_states = fetch_request_states(conn, datetime.now(timezone.utc))
     stale_fetches = sum(state == "stale" for state in manual_states.values())
     active_fetches = sum(
         state in {"queued", "running"} for state in manual_states.values()
@@ -522,6 +520,34 @@ def _build_system_health_rows(
             "action_label": t.text(f"web.admin.health.{key}_action"),
         }
 
+    now = datetime.now(timezone.utc)
+    jobs = load_status(conn)
+    queued_fetches = sum(state == "queued" for state in manual_states.values())
+    waiting_reads = conn.execute(
+        "SELECT COUNT(*) FROM deep_reads WHERE status = 'pending'").fetchone()[0]
+    slow_lanes = jobs.slow_lanes(now) if jobs is not None else ()
+    if jobs is None:
+        jobs_status, jobs_detail = "error", t.text("web.admin.health.jobs_detail_never")
+    elif jobs.is_down(now):
+        jobs_status = "error"
+        jobs_detail = t.text(
+            "web.admin.health.jobs_detail_down", time=relative_time(jobs.seen_at.isoformat(), t))
+    elif slow_lanes:
+        jobs_status = "warning"
+        jobs_detail = t.text(
+            "web.admin.health.jobs_detail_slow",
+            lane=t.text(f"web.admin.health.jobs_lane.{slow_lanes[0].name}"),
+            minutes=int((now - slow_lanes[0].busy_since).total_seconds() // 60),
+        )
+    else:
+        jobs_status = "ok"
+        jobs_detail = t.text(
+            "web.admin.health.jobs_detail_ok",
+            time=relative_time(jobs.seen_at.isoformat(), t),
+            fetches=queued_fetches,
+            reads=waiting_reads,
+        )
+
     source_failed = int(source_counts["failed"] or 0)
     source_status = "error" if source_failed or stale_fetches else "ok"
     delivery_status = (
@@ -533,6 +559,12 @@ def _build_system_health_rows(
     research_stale = int(research_counts["stale"] or 0)
     research_status = "error" if research_stale else "warning" if research_failed else "ok"
     return [
+        row(
+            "jobs",
+            status=jobs_status,
+            detail=jobs_detail,
+            href="/admin/?tab=channels",
+        ),
         row(
             "sources",
             status=source_status,

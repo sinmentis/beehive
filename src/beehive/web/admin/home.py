@@ -25,9 +25,7 @@ from beehive.ai.model_selection import (
     save_model,
 )
 from beehive.channels import require_channel_kind
-from beehive.collector.manual_trigger import (
-    list_manual_trigger_states,
-)
+from beehive.db.fetch_requests import fetch_request_states
 from beehive.db.admin_actions import (
     list_admin_actions,
     record_admin_action,
@@ -117,10 +115,9 @@ def _admin_chapter(tab: str | None) -> str:
 def _build_admin_channel_rows(
     conn: sqlite3.Connection,
     t: Localizer,
-    data_dir: str,
 ) -> list[dict]:
-    manual_states = list_manual_trigger_states(data_dir)
     now = datetime.now(timezone.utc)
+    manual_states = fetch_request_states(conn, now)
     channels = []
     for channel in list_channels(conn):
         kind = require_channel_kind(channel["kind"])
@@ -389,9 +386,8 @@ def _render_admin_home_page(
 ) -> HTMLResponse:
     effective, default_error = _resolve_default_for_admin(conn, t)
     stored = get_stored_default_email(conn)
-    data_dir = os.path.dirname(request.app.state.db_path)
     chapter = _admin_chapter(active_tab)
-    channels = _build_admin_channel_rows(conn, t, data_dir) if chapter == "channels" else []
+    channels = _build_admin_channel_rows(conn, t) if chapter == "channels" else []
     group_rows = _build_admin_email_group_rows(conn, effective, t) if chapter == "groups" else []
     ungrouped = (
         [channel for channel in list_channels(conn) if get_channel_group(conn, channel["id"]) is None]
@@ -416,7 +412,7 @@ def _render_admin_home_page(
             "triggered": triggered,
             "channels": channels,
             "attention_items": (
-                _channel_attention_items(conn, t, data_dir) if chapter == "channels" else []
+                _channel_attention_items(conn, t) if chapter == "channels" else []
             ),
             "ungrouped_channels": ungrouped,
             "email_groups": group_rows,
@@ -446,7 +442,7 @@ def _render_admin_home_page(
             "bulk_error": bulk_error,
             "recent_actions": _build_admin_action_rows(conn, t) if chapter == "system" else [],
             "system_health": (
-                _build_system_health_rows(conn, t, data_dir, effective) if chapter == "system" else []
+                _build_system_health_rows(conn, t, effective) if chapter == "system" else []
             ),
             "action_id": action_id,
             "undone": undone,

@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from beehive.ai.comment_summarizer import CommentCandidate, summarize_comments
 from beehive.ai.model_selection import DEFAULT_MODEL
@@ -36,6 +36,7 @@ from beehive.channels.collection import ChannelCollection
 from beehive.channels.source_policy import assert_source_allowed
 from beehive.connectors.base import CommentFetchTarget
 from beehive.connectors.registry import get as get_connector
+from beehive.db import app_state
 from beehive.db.items import (
     list_unranked_by_channel,
     update_ai_ranking_by_id,
@@ -52,6 +53,9 @@ from beehive.source_health import classify_fetch_error, retry_backoff
 from beehive.source_labels import source_display_name
 
 _COMMENT_FETCH_COUNT = 3
+# A Channel whose ranking keeps failing (an expired token, an outage) fails again on every cycle,
+# every 15 minutes. One alert per Channel in this window says so without flooding the inbox.
+_FAILURE_ALERT_INTERVAL = timedelta(hours=6)
 _COMMENT_FETCH_DELAY_SECONDS = 2
 # One LLM call must individually reason through every candidate's selected-language summary/
 # rationale, so its generation time scales with batch size (measured: ~40s for 5 items, ~96s
@@ -67,6 +71,20 @@ _RANKING_CHUNK_SIZE = 10
 # chunking means a retry (next cycle) would otherwise regroup the exact same items together
 # again -- without loosening the strict validation itself.
 _CHUNK_ATTEMPTS = 2
+
+
+def _failure_alert_key(channel_id: int) -> str:
+    return f"failure_alert_at:{channel_id}"
+
+
+def _failure_alert_due(conn: sqlite3.Connection, channel_id: int, now: datetime) -> bool:
+    last = app_state.get(conn, _failure_alert_key(channel_id))
+    if last is None:
+        return True
+    try:
+        return now - datetime.fromisoformat(last) >= _FAILURE_ALERT_INTERVAL
+    except ValueError:
+        return True
 
 
 def _record_source_failure(
@@ -271,10 +289,19 @@ async def run_channel_cycle(
             except Exception as exc:
                 last_exc = exc
         if chunk_ranked is None:
-            subject, body = format_llm_failure(
-                localizer, channel["name"], str(last_exc)
-            )
-            notifier.send(subject, body, to_addr=recipient)
+            if _failure_alert_due(conn, channel["id"], cycle_now):
+                subject, body = format_llm_failure(
+                    localizer, channel["name"], str(last_exc)
+                )
+                notifier.send(subject, body, to_addr=recipient)
+                app_state.set(conn, _failure_alert_key(channel["id"]), cycle_now.isoformat())
+            else:
+                print(
+                    f'[fetch] AI ranking failed again for Channel "{channel["name"]}"; an alert '
+                    f"already went out in the last {_FAILURE_ALERT_INTERVAL.total_seconds() / 3600:g} "
+                    f"hours: {last_exc}",
+                    flush=True,
+                )
             break
         for ranked_item in chunk_ranked:
             item = items_by_key[ranked_item.item_key]

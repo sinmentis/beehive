@@ -57,25 +57,21 @@ them for you.
 | --- | --- | --- |
 | `python -m scripts.set_admin_password` | Sets or changes the admin password, and creates the database if it doesn't exist. | Once |
 | `python -m scripts.run_web` | Runs the web app on port 8000, on all network interfaces. | Always on |
-| `python -m scripts.run_collector --mode fetch` | Fetches every channel that is due and scores the new items. A new channel is due at once. | Every 15 minutes |
-| `python -m scripts.run_collector --mode fetch-channel` | Fetches the channels queued with **Fetch now**. | When you select **Fetch now** |
-| `python -m scripts.run_collector --mode digest` | Sends the email groups that are due, and research-finished emails. | Every 15 minutes |
-| `python -m scripts.run_collector --mode tracker-reminders` | Emails a reminder for each watched lot about an hour before it closes. The old name `auction-reminders` still works. | Every 5 minutes |
-| `python -m scripts.run_collector --mode deep-read` | Writes the deep reads you asked for. | When you ask, and every 30 minutes |
-| `python -m scripts.run_collector --mode migrate` | Brings the database up to this version. Every command also does this when it starts. | At each release, after a backup |
+| `python -m scripts.run_jobs` | Runs every background job: each channel's scheduled fetch (a new channel is due at once), **Fetch now**, deep reads, email and reminders. | Always on |
 | `python -m scripts.run_research_worker` | Runs research sessions and chat replies, and loads the model list. | Always on |
+| `python -m scripts.run_collector --mode fetch` | One fetch pass over every channel that is due, now. | By hand |
+| `python -m scripts.run_collector --mode digest` | One pass of due email groups and research-finished emails, now. | By hand |
+| `python -m scripts.run_collector --mode tracker-reminders` | One pass of due reminders for watched lots, now. The old name `auction-reminders` still works. | By hand |
+| `python -m scripts.run_collector --mode deep-read` | Writes the next queued deep read, now. | By hand |
+| `python -m scripts.run_collector --mode migrate` | Brings the database up to this version. Every command also does this when it starts. | At each release, after a backup |
 
 Use the Python in your virtual environment, such as `.venv/bin/python`.
 
 ### Without the server setup
 
-The buttons in the web app only queue work, and the server setup picks it up. When you run Beehive
-by hand, run the matching command:
-
-- To fetch, run `--mode fetch`. **Fetch now** needs the server setup, where a systemd path unit
-  hands the request to `--mode fetch-channel`.
-- After you select **Deep read**, run `--mode deep-read`.
-- For research sessions and **Refresh list**, keep `scripts.run_research_worker` running.
-- To send email and reminders, run `--mode digest` and `--mode tracker-reminders`.
-
-To keep Beehive current, run `--mode fetch` on a schedule, for example every 15 minutes with cron.
+The buttons in the web app only queue work, and the two workers pick it up. Run the web app,
+`scripts.run_jobs` and `scripts.run_research_worker`, and Beehive behaves the same as on a server:
+channels stay current, and **Fetch now**, **Deep read**, research and **Refresh list** all work.
+The `run_collector` job modes run one pass by hand, which helps when testing a change. They only
+run while the jobs worker is stopped, so the two never fetch the same channel at once. The admin's
+**System** chapter says when the jobs worker last checked in.

@@ -342,6 +342,23 @@ def complete_tracker_reminder_claim(
     return cursor.rowcount
 
 
+def release_tracker_reminder_claim(conn: sqlite3.Connection, claim_token: str) -> int:
+    """Hands back a claim whose sender stopped before finishing, so the next pass can send those
+    reminders at once instead of waiting out the lease, which could outlast the lot itself."""
+    cursor = conn.execute(
+        """
+        UPDATE auction_watches
+        SET claim_token = NULL,
+            claim_closing_at = NULL,
+            claim_expires_at = NULL
+        WHERE claim_token = ?
+        """,
+        (claim_token,),
+    )
+    conn.commit()
+    return cursor.rowcount
+
+
 def fail_tracker_reminder_claim(
     conn: sqlite3.Connection, claim_token: str, error: str
 ) -> int:

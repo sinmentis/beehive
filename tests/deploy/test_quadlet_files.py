@@ -33,22 +33,15 @@ def _parser() -> configparser.ConfigParser:
     return p
 
 
-def test_expected_container_files_exist():
-    names = {f.name for f in _QUADLET_DIR.glob("*.container")}
-    assert {
+def test_expected_units_are_exactly_the_web_app_and_two_workers():
+    """ADR-0012: every background job runs in the always-on jobs worker, so there are no timers,
+    path units or oneshot containers left to install."""
+    assert {f.name for f in _QUADLET_DIR.iterdir() if f.is_file()} == {
+        "beehive-data.volume",
         "beehive-web.container",
-        "beehive-fetch.container",
-        "beehive-digest.container",
-        "beehive-auction-reminders.container",
-        "beehive-deep-read.container",
         "beehive-research.container",
-        "beehive-research-reconcile.container",
-    } <= names
-
-
-def test_expected_volume_files_exist():
-    names = {f.name for f in _QUADLET_DIR.glob("*.volume")}
-    assert "beehive-data.volume" in names
+        "beehive-jobs.container",
+    }
 
 
 def test_container_volume_references_have_a_matching_volume_file():
@@ -79,47 +72,12 @@ def test_container_files_are_valid_ini_with_no_service_keys_under_container():
         )
 
 
-def test_oneshot_containers_have_no_install_section():
-    for name in (
-        "beehive-fetch.container",
-        "beehive-digest.container",
-        "beehive-auction-reminders.container",
-        "beehive-deep-read.container",
-        "beehive-research-reconcile.container",
-    ):
-        parser = _parser()
-        parser.read(_QUADLET_DIR / name)
-        assert "Install" not in parser, (
-            f"{name}: oneshot units are timer-started, not boot-started"
-        )
-
-
-def test_timer_files_are_valid_ini_and_reference_a_unit():
-    for path in _QUADLET_DIR.glob("*.timer"):
+def test_every_container_is_always_on_and_boot_wanted():
+    for path in _QUADLET_DIR.glob("*.container"):
         parser = _parser()
         parser.read(path)
-        assert "Timer" in parser, f"{path.name}: missing [Timer] section"
-        assert "OnCalendar" in parser["Timer"], f"{path.name}: missing OnCalendar"
-        assert "Unit" in parser["Timer"], f"{path.name}: missing Unit= reference"
-
-
-def test_timer_files_reference_a_service_with_a_matching_container_file():
-    # Catches the actual bug found while writing this plan: a .timer file's Unit= line is
-    # never validated against reality by configparser alone (it's just a string), so a stale
-    # reference to a since-renamed .container file's generated service name would silently
-    # daemon-reload without error and simply never fire the intended service again.
-    container_stems = {f.stem for f in _QUADLET_DIR.glob("*.container")}
-    for path in _QUADLET_DIR.glob("*.timer"):
-        parser = _parser()
-        parser.read(path)
-        unit = parser["Timer"]["Unit"]
-        assert unit.endswith(".service"), (
-            f"{path.name}: Unit= '{unit}' should end in .service"
-        )
-        stem = unit.removesuffix(".service")
-        assert stem in container_stems, (
-            f"{path.name}: Unit={unit} has no matching {stem}.container file"
-        )
+        assert "Type" not in parser["Service"] or parser["Service"]["Type"] != "oneshot", path.name
+        assert parser["Install"]["WantedBy"] == "default.target", path.name
 
 
 def test_web_container_has_session_secret():
@@ -135,111 +93,28 @@ def test_web_container_has_digest_email_fallback():
 
 
 def test_every_container_that_can_send_email_carries_the_acs_secret():
-    """The admin UI's Email Group "Test send" route calls the same `build_notifier` the digest
+    """The admin UI's Email Group "Test send" route calls the same `build_notifier` the jobs
     worker does, so the web container needs the same credential. It did not have it, and
     `build_notifier` falls back to logging instead of failing, so a test send silently did
     nothing while the digest it was previewing would have delivered fine."""
-    for name in (
-        "beehive-web.container",
-        "beehive-digest.container",
-        "beehive-auction-reminders.container",
-    ):
+    for name in ("beehive-web.container", "beehive-jobs.container"):
         content = (_QUADLET_DIR / name).read_text()
         assert "target=ACS_CONNECTION_STRING" in content, f"{name}: no ACS secret"
         assert "DIGEST_EMAIL_FROM=" in content, f"{name}: no sender address"
 
 
-def test_expected_path_unit_exists():
-    names = {f.name for f in _QUADLET_DIR.glob("*.path")}
-    assert {"beehive-fetch-manual.path", "beehive-deep-read.path"} <= names
-
-
-def test_manual_fetch_container_exists_and_has_no_install_section():
+def test_jobs_container_runs_the_worker_with_both_secrets_and_room_to_stop():
+    content = (_QUADLET_DIR / "beehive-jobs.container").read_text()
     parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-fetch-manual.container")
-    assert "Container" in parser, "missing [Container] section"
-    assert "Install" not in parser, "path-started units are not boot-started"
+    parser.read(_QUADLET_DIR / "beehive-jobs.container")
 
-
-def test_manual_fetch_container_has_the_copilot_secret_and_db_path():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-fetch-manual.container")
-    assert "target=COPILOT_GITHUB_TOKEN" in parser["Container"]["Secret"]
-    assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
-
-
-def test_manual_fetch_timeout_covers_large_monitor_backlogs():
-    from beehive.collector.manual_trigger import MANUAL_FETCH_STALE_SECONDS
-
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-fetch-manual.container")
-    timeout_seconds = int(parser["Service"]["TimeoutStartSec"])
-
-    assert timeout_seconds == 3600
-    assert MANUAL_FETCH_STALE_SECONDS > timeout_seconds
-
-
-def test_scheduled_fetch_timeout_covers_auction_refreshes():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-fetch.container")
-
-    assert parser["Service"]["TimeoutStartSec"] == "3600"
-
-
-def test_auction_reminder_worker_runs_every_five_minutes_with_email_secret():
-    parser = _parser()
-    container_path = _QUADLET_DIR / "beehive-auction-reminders.container"
-    parser.read(container_path)
-    assert "Environment=DB_PATH=/data/beehive.db" in container_path.read_text()
-    assert "target=ACS_CONNECTION_STRING" in parser["Container"]["Secret"]
-    assert (
-        parser["Container"]["Exec"]
-        == "-m scripts.run_collector --mode auction-reminders"
-    )
-    assert parser["Service"]["TimeoutStartSec"] == "120"
-
-    timer = _parser()
-    timer.read(_QUADLET_DIR / "beehive-auction-reminders.timer")
-    assert timer["Timer"]["OnCalendar"] == "*:0/5"
-    assert timer["Timer"]["Persistent"] == "true"
-    assert timer["Timer"]["Unit"] == "beehive-auction-reminders.service"
-
-
-def test_manual_fetch_container_execstartpre_consumes_the_correct_marker():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-fetch-manual.container")
-    exec_start_pre = parser["Service"]["ExecStartPre"]
-    assert "fetch_trigger_channel_id" in exec_start_pre
-    assert "fetch_trigger_channel_id.inflight" in exec_start_pre
-
-
-def test_manual_fetch_path_unit_watches_the_correct_marker_and_references_the_manual_service():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-fetch-manual.path")
-    assert "Path" in parser, "missing [Path] section"
-    assert parser["Path"]["PathExists"].endswith("fetch_trigger_channel_id")
-    assert parser["Path"]["Unit"] == "beehive-fetch-manual.service"
-
-
-def test_deep_read_container_has_secret_limits_and_reconciliation_units():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-deep-read.container")
-
-    assert "target=COPILOT_GITHUB_TOKEN" in parser["Container"]["Secret"]
-    assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
-    assert parser["Container"]["Exec"] == "-m scripts.run_collector --mode deep-read"
-    assert parser["Service"]["Restart"] == "on-failure"
-    assert parser["Service"]["TimeoutStartSec"] == "1800"
-    assert "deep_read_trigger.inflight" in parser["Service"]["ExecStartPre"]
-
-    path_parser = _parser()
-    path_parser.read(_QUADLET_DIR / "beehive-deep-read.path")
-    assert path_parser["Path"]["PathExists"].endswith("deep_read_trigger")
-    assert path_parser["Path"]["Unit"] == "beehive-deep-read.service"
-
-    timer_parser = _parser()
-    timer_parser.read(_QUADLET_DIR / "beehive-deep-read.timer")
-    assert timer_parser["Timer"]["Unit"] == "beehive-deep-read.service"
+    assert parser["Container"]["Exec"] == "-m scripts.run_jobs"
+    assert parser["Container"]["Volume"] == "beehive-data.volume:/data"
+    assert "Environment=DB_PATH=/data/beehive.db" in content
+    assert "target=COPILOT_GITHUB_TOKEN" in content
+    assert parser["Service"]["Restart"] == "always"
+    # The worker waits 30 s for running jobs, then hands their claims back.
+    assert int(parser["Service"]["TimeoutStopSec"]) > 30
 
 
 def test_research_container_is_always_on_with_secret_limits_and_install():
@@ -256,40 +131,14 @@ def test_research_container_is_always_on_with_secret_limits_and_install():
     assert parser["Install"]["WantedBy"] == "default.target"
 
 
-def test_research_reconcile_container_is_oneshot_without_copilot_secret():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-research-reconcile.container")
-
-    assert (
-        parser["Container"]["Exec"] == "-m scripts.run_research_worker --reconcile-once"
-    )
-    assert parser["Container"]["Volume"] == "beehive-data.volume:/data"
-    assert parser["Container"]["Environment"] == "DB_PATH=/data/beehive.db"
-    # Reconciliation only recovers expired leases -- it never calls the AI, so it does not need
-    # (and should not receive) the Copilot GitHub token secret the always-on worker requires.
-    assert "Secret" not in parser["Container"]
-    assert parser["Service"]["Type"] == "oneshot"
-    assert "Install" not in parser, "oneshot units are timer-started, not boot-started"
-
-
-def test_research_reconcile_timer_references_the_reconcile_service():
-    parser = _parser()
-    parser.read(_QUADLET_DIR / "beehive-research-reconcile.timer")
-    assert parser["Timer"]["Unit"] == "beehive-research-reconcile.service"
-
-
-def test_containerfile_import_smoke_test_includes_research_worker():
+def test_containerfile_import_smoke_test_includes_both_workers():
     containerfile = (_QUADLET_DIR.parent.parent / "Containerfile").read_text()
     assert "scripts.run_research_worker" in containerfile
+    assert "scripts.run_jobs" in containerfile
 
 
-def test_fetch_timer_polls_far_more_often_than_the_smallest_channel_schedule():
-    """Per-Channel calendar scheduling decides *inside* the collector which Channels are due, so
-    the timer only has to wake often enough that a chosen wall-clock time is never noticeably
-    late. Persistent=true keeps a missed tick (host asleep/offline) running on the next boot."""
-    timer = _parser()
-    timer.read(_QUADLET_DIR / "beehive-fetch.timer")
-    assert timer["Timer"]["OnCalendar"] == "*:0/15"
-    assert timer["Timer"]["RandomizedDelaySec"] == "30s"
-    assert timer["Timer"]["Persistent"] == "true"
-    assert timer["Timer"]["Unit"] == "beehive-fetch.service"
+def test_release_restarts_every_always_on_unit():
+    release = (_QUADLET_DIR.parent / "release.sh").read_text()
+    units = {f.stem + ".service" for f in _QUADLET_DIR.glob("*.container")}
+    line = next(line for line in release.splitlines() if line.startswith("ALWAYS_ON_UNITS="))
+    assert set(line.split("(", 1)[1].rstrip(")").split()) == units

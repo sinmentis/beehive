@@ -1,0 +1,29 @@
+[Unit]
+Description=Beehive jobs worker (scheduled fetching, Fetch now, deep reads, digests, reminders)
+
+[Container]
+Image=localhost/beehive:latest
+LogDriver=passthrough
+GlobalArgs=--events-backend=file
+ContainerName=beehive-jobs
+Volume=beehive-data.volume:/data
+Environment=DB_PATH=/data/beehive.db
+Environment=DIGEST_EMAIL_TO=you@example.com
+Environment=DIGEST_EMAIL_FROM=beehive@example.com
+Secret=beehive-copilot-github-token,type=env,target=COPILOT_GITHUB_TOKEN
+# ACS connection string for digests, reminders and failure alerts. Create it as a rootless Podman
+# secret on the host (see deploy/README.md); it is never baked into the image or committed.
+Secret=beehive-acs-connection,type=env,target=ACS_CONNECTION_STRING
+Exec=-m scripts.run_jobs
+
+[Service]
+Restart=always
+CPUQuota=150%
+CPUWeight=20
+MemoryHigh=768M
+MemoryMax=1024M
+# Long enough for the worker's 30-second grace period, handing back claims and exiting.
+TimeoutStopSec=60
+
+[Install]
+WantedBy=default.target

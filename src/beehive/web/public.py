@@ -39,7 +39,6 @@ from beehive.channels.views import (
     build_tracker_item_views,
     build_watchlist_page,
 )
-from beehive.collector.deep_read_trigger import request_deep_read_worker
 from beehive.db.tracker_watches import (
     add_tracker_watch,
     get_watched_item_ids,
@@ -1389,27 +1388,9 @@ def request_deep_read_route(
     if item["ai_score"] is None:
         raise HTTPException(status_code=422, detail="Item has not been AI-ranked")
 
-    deep_read = request_deep_read(
-        conn, item_id, datetime.now(timezone.utc), regenerate=regenerate
-    )
-
-    # The marker is a wakeup HINT for systemd (SQLite is the durable queue, see
-    # collector/deep_read_trigger.py) -- it is only worth writing when this call actually left
-    # (or put) work in 'pending'; a cache hit (ready/failed without regenerate) or an
-    # already-'processing' row never needs one, since either nothing changed or a worker is
-    # already on it. Any failure writing the marker must never roll back or fail this request --
-    # the DB commit inside request_deep_read already happened, so the queued state is real even
-    # if the wakeup hint is lost; the reconciliation timer (deep_read_worker) will still pick it
-    # up. Just log it.
-    if deep_read.status == "pending":
-        data_dir = os.path.dirname(request.app.state.db_path)
-        try:
-            request_deep_read_worker(data_dir)
-        except OSError as exc:
-            print(
-                f"[deep-read] failed to write wakeup marker for item {item_id}: "
-                f"{type(exc).__name__}: {exc}"
-            )
+    # The row is the queue: the worker's deep-read lane polls for pending work, so a committed
+    # request is all it takes.
+    request_deep_read(conn, item_id, datetime.now(timezone.utc), regenerate=regenerate)
 
     return RedirectResponse(brief_url(item_id, origin, channel_id), status_code=303)
 

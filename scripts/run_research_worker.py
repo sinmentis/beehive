@@ -4,9 +4,8 @@ Research Runs (research.orchestrator) and Research Chat replies (research.conver
 beehive.collector.research_worker.ResearchWorker's two independent bounded pools.
 
 ``--reconcile-once`` instead runs a single idempotent expired-lease recovery sweep and exits --
-no Research Run or chat request is claimed or executed -- for a separate periodic timer unit
-that backstops the always-on worker process (see
-deploy/quadlet/beehive-research-reconcile.container/.timer)."""
+no Research Run or chat request is claimed or executed. The always-on worker already sweeps at
+start-up and every minute; this is for running one by hand."""
 from __future__ import annotations
 
 import argparse
@@ -47,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reconcile-once", action="store_true",
         help="Run one idempotent expired-lease recovery sweep and exit -- claims/executes "
-             "nothing. For the reconcile timer unit, never the always-on worker.")
+             "nothing. For running by hand; the always-on worker sweeps on its own.")
     args = parser.parse_args(argv)
 
     try:

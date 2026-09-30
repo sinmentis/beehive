@@ -1,13 +1,15 @@
 #!/usr/bin/env python
-"""Entrypoint for scheduled, path-triggered, and maintenance work.
+"""One-shot commands for maintenance and for running a background job by hand.
 
-Every mode shares one image and selects its role through ``--mode``. ``fetch`` runs the scheduled
-per-Channel fetch and AI-rank cycle; ``fetch-channel`` handles one admin-triggered Channel;
-``digest`` sends any due periodic email groups; ``deep-read`` drains queued article briefs; the rewrite modes
-migrate or restore existing unread summaries; ``migrate`` is the explicit release step that brings
-the SQLite schema to this build's version. Connector imports register source adapters before any
-Channel is processed. Every mode also calls the version-gated ``init_schema`` on startup, which is
-a single PRAGMA read once the database is current.
+The jobs worker (scripts/run_jobs.py) runs fetching, deep reads, digests and reminders on its own;
+these modes run one pass of the same code now, which helps when testing locally or recovering
+by hand. They hold the jobs lock while they run and refuse to start while another process holds
+it, so a Channel is never fetched by two processes at once: stop the jobs worker first, or use
+"Fetch now" in the admin. ``fetch`` evaluates every Channel's schedule once; ``digest`` sends any due email;
+``tracker-reminders`` sends due follow-ups; ``deep-read`` drains a few queued briefs; the rewrite
+modes migrate or restore existing unread summaries; ``migrate`` is the explicit release step that
+brings the SQLite schema to this build's version. Every mode calls the version-gated
+``init_schema`` on startup, which is a single PRAGMA read once the database is current.
 """
 
 from __future__ import annotations
@@ -20,39 +22,19 @@ import traceback
 from dataclasses import asdict
 
 import beehive.connectors.builtin  # noqa: F401 (registers every connector)
-from beehive.db.channels import get_channel, list_channels
-from beehive.db.connection import SCHEMA_VERSION, connect, init_schema, schema_version
-from beehive.collector.manual_trigger import (
-    complete_pending_manual_triggers,
-    consume_pending_manual_triggers,
-)
+from beehive.ai.model_selection import load_model
+from beehive.collector.jobs import delivery_context, fetch_channel, send_digests, send_reminders
+from beehive.collector.jobs_lock import JobsLock
 from beehive.collector.summary_rewrite import (
     SummaryRewriteRollbackResult,
     SummaryRewriteRunResult,
     rollback_summary_rewrite,
     run_summary_rewrite,
 )
-from beehive.collector.run_cycle import run_channel_cycle
-from beehive.ai.model_selection import load_model
-from beehive.digest.send import send_email_group_digests
-from beehive.email_routing import (
-    EmailConfigurationError,
-    ResolvedRecipient,
-    resolve_channel_email,
-    resolve_default_email,
-)
+from beehive.db.channels import list_channels
+from beehive.db.connection import SCHEMA_VERSION, connect, init_schema, schema_version
+from beehive.email_routing import EmailConfigurationError
 from beehive.localization import load_localizer
-from beehive.notify import Notifier, build_notifier
-from beehive.research.notifications import send_research_completion_notifications
-from beehive.tracker_reminders import send_due_tracker_reminders
-
-
-def _build_delivery_context(
-    conn,
-) -> tuple[Notifier, ResolvedRecipient]:
-    default_recipient = resolve_default_email(conn, os.environ.get("DIGEST_EMAIL_TO"))
-    notifier = build_notifier(os.environ, default_to_addr=default_recipient.address)
-    return notifier, default_recipient
 
 
 async def run_fetch(db_path: str) -> None:
@@ -61,23 +43,16 @@ async def run_fetch(db_path: str) -> None:
     try:
         localizer = load_localizer(conn)
         model = load_model(conn)
-        notifier, default_recipient = _build_delivery_context(conn)
-        alert_delivery_failures: list[EmailConfigurationError] = []
+        notifier, default_recipient = delivery_context(conn)
+        failures: list[Exception] = []
         for channel in list_channels(conn):
             try:
-                recipient = resolve_channel_email(channel, default_recipient)
-            except EmailConfigurationError as exc:
-                print(
-                    f'[fetch] Channel "{channel["name"]}" has an invalid email '
-                    f"recipient, skipping it: {exc}"
-                )
-                continue
-            try:
-                await run_channel_cycle(
+                await fetch_channel(
                     conn,
                     channel,
-                    notifier,
-                    recipient=recipient.address,
+                    force=False,
+                    notifier=notifier,
+                    default_recipient=default_recipient,
                     localizer=localizer,
                     model=model,
                 )
@@ -86,92 +61,18 @@ async def run_fetch(db_path: str) -> None:
                     f'[fetch] Channel "{channel["name"]}" could not deliver an alert '
                     f"email, continuing with the other Channels: {exc}"
                 )
-                alert_delivery_failures.append(exc)
+                failures.append(exc)
             except Exception as exc:  # noqa: BLE001
-                # ADR-0002 promises per-Channel isolation, but only EmailConfigurationError was
-                # caught, so any other failure (a corrupt row, a ranking bug, a DB error) aborted
-                # the run and silently starved every Channel later in the list.
+                # ADR-0002 promises per-Channel isolation: one Channel's failure (a corrupt row,
+                # a ranking bug, a DB error) must not starve every Channel after it in the list.
                 traceback.print_exc()
                 print(
                     f'[fetch] Channel "{channel["name"]}" failed, continuing with the '
                     f"other Channels: {exc}"
                 )
-                alert_delivery_failures.append(exc)
-        if alert_delivery_failures:
-            raise ExceptionGroup(
-                "One or more Channels failed during the fetch cycle",
-                alert_delivery_failures,
-            )
-    finally:
-        conn.close()
-
-
-async def run_fetch_channel(db_path: str) -> None:
-    conn = connect(db_path)
-    init_schema(conn)
-    try:
-        data_dir = os.path.dirname(db_path)
-        channel_ids = consume_pending_manual_triggers(data_dir)
-        if channel_ids is None:
-            print("[fetch-channel] no valid trigger marker found; nothing to do")
-            return
-        try:
-            localizer = load_localizer(conn)
-            model = load_model(conn)
-            channels = []
-            for channel_id in channel_ids:
-                channel = get_channel(conn, channel_id)
-                if channel is None:
-                    print(
-                        f"[fetch-channel] Channel {channel_id} no longer exists; skipping it"
-                    )
-                    continue
-                channels.append(channel)
-            if not channels:
-                return
-            notifier, default_recipient = _build_delivery_context(conn)
-            alert_delivery_failures: list[EmailConfigurationError] = []
-            for channel in channels:
-                try:
-                    recipient = resolve_channel_email(channel, default_recipient)
-                except EmailConfigurationError as exc:
-                    print(
-                        f'[fetch-channel] Channel "{channel["name"]}" has an invalid '
-                        f"email recipient, skipping it: {exc}"
-                    )
-                    continue
-                try:
-                    await run_channel_cycle(
-                        conn,
-                        channel,
-                        notifier,
-                        recipient=recipient.address,
-                        localizer=localizer,
-                        model=model,
-                        force_fetch=True,
-                    )
-                except EmailConfigurationError as exc:
-                    print(
-                        f'[fetch-channel] Channel "{channel["name"]}" could not deliver '
-                        f"an alert email: {exc}"
-                    )
-                    alert_delivery_failures.append(exc)
-                except Exception as exc:  # noqa: BLE001 -- see run_fetch
-                    traceback.print_exc()
-                    print(
-                        f'[fetch-channel] Channel "{channel["name"]}" failed, continuing '
-                        f"with the other Channels: {exc}"
-                    )
-                    alert_delivery_failures.append(exc)
-            if len(alert_delivery_failures) == 1:
-                raise alert_delivery_failures[0]
-            if alert_delivery_failures:
-                raise ExceptionGroup(
-                    "Multiple manually fetched Channels failed",
-                    alert_delivery_failures,
-                )
-        finally:
-            complete_pending_manual_triggers(data_dir)
+                failures.append(exc)
+        if failures:
+            raise ExceptionGroup("One or more Channels failed during the fetch cycle", failures)
     finally:
         conn.close()
 
@@ -180,24 +81,7 @@ def run_digest(db_path: str) -> None:
     conn = connect(db_path)
     init_schema(conn)
     try:
-        localizer = load_localizer(conn)
-        notifier, default_recipient = _build_delivery_context(conn)
-        delivery_failures: list[Exception] = []
-        try:
-            send_research_completion_notifications(
-                conn,
-                notifier,
-                default_recipient,
-                localizer,
-            )
-        except ExceptionGroup as exc:
-            delivery_failures.extend(exc.exceptions)
-        try:
-            send_email_group_digests(conn, notifier, default_recipient, localizer)
-        except ExceptionGroup as exc:
-            delivery_failures.extend(exc.exceptions)
-        if delivery_failures:
-            raise ExceptionGroup("One or more scheduled emails failed", delivery_failures)
+        send_digests(conn)
     finally:
         conn.close()
 
@@ -206,14 +90,7 @@ def run_tracker_reminders(db_path: str) -> None:
     conn = connect(db_path)
     init_schema(conn)
     try:
-        localizer = load_localizer(conn)
-        notifier, default_recipient = _build_delivery_context(conn)
-        send_due_tracker_reminders(
-            conn,
-            notifier,
-            default_recipient,
-            localizer,
-        )
+        send_reminders(conn)
     finally:
         conn.close()
 
@@ -229,7 +106,7 @@ async def run_deep_read(db_path: str) -> None:
     conn = connect(db_path)
     init_schema(conn)
     try:
-        await process_deep_read_queue(conn, os.path.dirname(db_path))
+        await process_deep_read_queue(conn)
     finally:
         conn.close()
 
@@ -289,13 +166,26 @@ def run_migrate(db_path: str) -> None:
         conn.close()
 
 
+_JOB_MODES = frozenset({"fetch", "digest", "tracker-reminders", "auction-reminders", "deep-read"})
+
+
+def take_jobs_lock(db_path: str) -> JobsLock:
+    """The jobs lock for a job mode, or a clear exit when another process is running jobs."""
+    lock = JobsLock(db_path)
+    if not lock.try_acquire():
+        raise SystemExit(
+            "Another process is running background jobs (the jobs worker, or another "
+            "run_collector job). The worker does this on its own: use Fetch now in the admin, or "
+            "stop the worker (systemctl --user stop beehive-jobs) and try again.")
+    return lock
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode",
         choices=[
             "fetch",
-            "fetch-channel",
             "digest",
             "tracker-reminders",
             "auction-reminders",
@@ -318,10 +208,17 @@ def main() -> None:
     parser.add_argument("--confirm-rollback", action="store_true")
     args = parser.parse_args()
 
+    lock = take_jobs_lock(args.db_path) if args.mode in _JOB_MODES else None
+    try:
+        _run_mode(parser, args)
+    finally:
+        if lock is not None:
+            lock.release()
+
+
+def _run_mode(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.mode == "fetch":
         asyncio.run(run_fetch(args.db_path))
-    elif args.mode == "fetch-channel":
-        asyncio.run(run_fetch_channel(args.db_path))
     elif args.mode == "deep-read":
         asyncio.run(run_deep_read(args.db_path))
     elif args.mode == "tracker-reminders":

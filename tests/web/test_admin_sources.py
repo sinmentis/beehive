@@ -1,12 +1,16 @@
 import json
-import os
+from datetime import datetime, timezone
 import re
 
 import pytest
 from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
-from beehive.collector.manual_trigger import request_channel_fetch
+from beehive.db.fetch_requests import (
+    claim_next_fetch_request,
+    fetch_request_states,
+    request_fetch,
+)
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
@@ -1331,18 +1335,28 @@ def test_edit_channel_empty_sources_offers_add_source_cta(authed_client, db_path
     assert f"/admin/channels/{channel_id}/sources/new" in html
 
 
-# --- Stale manual-fetch recovery -------------------------------------------------------------
+# --- Stale Fetch now recovery ---------------------------------------------------------------
 
-def _write_stale_inflight_marker(data_dir, channel_id):
-    request_channel_fetch(data_dir, channel_id)
-    watched = os.path.join(data_dir, "fetch_trigger_channel_id")
-    inflight = watched + ".inflight"
-    os.replace(watched, inflight)
-    os.utime(inflight, (100, 100))  # far in the past -> stale
-    return inflight
+_LONG_AGO = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
-def test_edit_channel_hides_recovery_when_no_stale_marker(authed_client, db_path):
+def _leave_stale_fetch_request(db_path, channel_id):
+    """A "Fetch now" request claimed by a worker that stopped long ago."""
+    conn = connect(db_path)
+    request_fetch(conn, [channel_id], _LONG_AGO)
+    claim_next_fetch_request(conn, _LONG_AGO, lease_seconds=180)
+    conn.close()
+
+
+def _fetch_states(db_path):
+    conn = connect(db_path)
+    try:
+        return fetch_request_states(conn, datetime.now(timezone.utc))
+    finally:
+        conn.close()
+
+
+def test_edit_channel_hides_recovery_when_nothing_is_stale(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
@@ -1350,28 +1364,28 @@ def test_edit_channel_hides_recovery_when_no_stale_marker(authed_client, db_path
     assert "recover-stale-fetch" not in html
 
 
-def test_edit_channel_shows_recovery_when_marker_is_stale(authed_client, db_path):
+def test_edit_channel_shows_recovery_when_a_request_is_stale(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
-    _write_stale_inflight_marker(os.path.dirname(db_path), channel_id)
+    _leave_stale_fetch_request(db_path, channel_id)
 
     html = authed_client.get(f"/admin/channels/{channel_id}/edit").text
     assert f"/admin/channels/{channel_id}/recover-stale-fetch" in html
 
 
-def test_recover_stale_fetch_clears_marker_and_redirects(authed_client, db_path):
+def test_recover_stale_fetch_clears_the_request_and_redirects(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
-    inflight = _write_stale_inflight_marker(os.path.dirname(db_path), channel_id)
+    _leave_stale_fetch_request(db_path, channel_id)
 
     resp = authed_client.post(
         f"/admin/channels/{channel_id}/recover-stale-fetch",
         data={"csrf_token": "csrf1"},
     )
     assert resp.status_code == 303
-    assert not os.path.exists(inflight)
+    assert _fetch_states(db_path) == {}
 
 
 def test_recover_stale_fetch_404_for_missing_channel(authed_client):
@@ -1385,14 +1399,14 @@ def test_recover_stale_fetch_rejects_wrong_csrf(authed_client, db_path):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
-    inflight = _write_stale_inflight_marker(os.path.dirname(db_path), channel_id)
+    _leave_stale_fetch_request(db_path, channel_id)
 
     resp = authed_client.post(
         f"/admin/channels/{channel_id}/recover-stale-fetch",
         data={"csrf_token": "wrong"},
     )
     assert resp.status_code == 403
-    assert os.path.exists(inflight)  # untouched when CSRF fails
+    assert _fetch_states(db_path) == {channel_id: "stale"}  # untouched when CSRF fails
 
 
 def _rss_connector(responses, calls):

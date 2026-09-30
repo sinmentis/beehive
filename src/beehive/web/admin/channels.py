@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Literal
@@ -12,11 +11,10 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from beehive.channels import all_definitions, require_channel_kind
-from beehive.collector.manual_trigger import (
-    clear_stale_manual_triggers,
-    list_manual_trigger_states,
-    request_channel_fetch,
-    request_channel_fetch_batch,
+from beehive.db.fetch_requests import (
+    clear_stale_fetch_requests,
+    fetch_request_states,
+    request_fetch,
 )
 from beehive.db.admin_actions import (
     clear_channel_with_undo,
@@ -170,8 +168,7 @@ def trigger_channel_fetch(
     channel = get_channel(conn, channel_id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-    data_dir = os.path.dirname(request.app.state.db_path)
-    request_channel_fetch(data_dir, channel_id)
+    request_fetch(conn, [channel_id], datetime.now(timezone.utc))
     record_admin_action(
         conn,
         action_type="channel_fetch_requested",
@@ -216,8 +213,7 @@ def trigger_channel_fetch_batch(
     for channel_id in selected_ids:
         if get_channel(conn, channel_id) is None:
             raise HTTPException(status_code=404, detail="Channel not found")
-    data_dir = os.path.dirname(request.app.state.db_path)
-    request_channel_fetch_batch(data_dir, selected_ids)
+    request_fetch(conn, selected_ids, datetime.now(timezone.utc))
     record_admin_action(
         conn,
         action_type="batch_fetch_requested",
@@ -417,12 +413,10 @@ def _source_observability(source: dict, t: Localizer) -> dict:
     }
 
 
-def _channel_has_stale_fetch(request: Request, channel_id: int) -> bool:
-    """Whether this Channel currently owns a STALE manual-fetch marker (a worker that took the
-    inflight marker but never cleared it). Reused verbatim from list_manual_trigger_states, so the
-    recovery control renders only when there is genuinely something stuck to clear."""
-    data_dir = os.path.dirname(request.app.state.db_path)
-    return list_manual_trigger_states(data_dir).get(channel_id) == "stale"
+def _channel_has_stale_fetch(conn: sqlite3.Connection, channel_id: int) -> bool:
+    """Whether this Channel's "Fetch now" request is held by a worker that stopped, so the
+    recovery control shows only when there is something stuck to clear."""
+    return fetch_request_states(conn, datetime.now(timezone.utc)).get(channel_id) == "stale"
 
 
 def _channel_setup_progress(
@@ -567,7 +561,7 @@ def _render_edit_channel_page(
                 source_channel, source_rows, datetime.now(timezone.utc), t
             ),
             "unsaved_submission": status_code >= 400,
-            "stale_recovery": _channel_has_stale_fetch(request, channel["id"]),
+            "stale_recovery": _channel_has_stale_fetch(conn, channel["id"]),
             "current_group": get_channel_group(conn, channel["id"]),
             "impact": channel_impact_counts(conn, channel["id"]),
             "setup": _channel_setup_progress(conn, channel["id"]),
@@ -745,14 +739,12 @@ def recover_stale_fetch_submit(
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
 ):
-    """Owner recovery for a manual fetch whose worker took the inflight marker but never cleared
-    it (a crash/kill). Clears ONLY a stale marker, reusing the marker helpers -- a genuinely
-    running fetch is left untouched -- and never rewrites the marker protocol."""
+    """Owner recovery for "Fetch now" requests held by a worker that stopped. Clears only
+    requests whose lease ran out; a fetch that is really running is left alone."""
     verify_csrf(session, csrf_token)
     if get_channel(conn, channel_id) is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-    data_dir = os.path.dirname(request.app.state.db_path)
-    recovered = clear_stale_manual_triggers(data_dir)
+    recovered = clear_stale_fetch_requests(conn, datetime.now(timezone.utc))
     if recovered:
         channel = get_channel(conn, channel_id)
         record_admin_action(

@@ -4,16 +4,19 @@
 #   deploy/release.sh build            build localhost/beehive:<sha> from HEAD (clean tree only)
 #   deploy/release.sh migrate <tag>    back up, then run that image's `--mode migrate` once
 #   deploy/release.sh promote <tag>    keep the old image as :rollback, point :latest at <tag>,
-#                                      restart the always-on units, and wait for /readyz
+#                                      restart the always-on units, wait for /readyz, and check
+#                                      that every unit stays up
 #   deploy/release.sh prune            drop SHA-tagged images other than :latest and :rollback
 #
-# Every other unit is a oneshot started from :latest, so it picks the new image up on its next
-# run. Roll back with `deploy/release.sh promote rollback`, which swaps :latest and :rollback.
-# That works across additive migrations because older code accepts a newer, compatible schema
-# (see src/beehive/db/connection.py).
+# Every unit is always on (the web app and two workers, ADR-0012), so promote restarts them all.
+# Roll back with `deploy/release.sh promote rollback`, which swaps :latest and :rollback. That
+# works across additive migrations because older code accepts a newer, compatible schema (see
+# src/beehive/db/connection.py). Rolling back past a release that changed the unit files also
+# needs the old unit files; deploy/README.md says how.
 #
-# Override via env: BEEHIVE_IMAGE, BEEHIVE_VOLUME, BEEHIVE_READYZ_URL, BEEHIVE_SKIP_BACKUP=1.
-# BEEHIVE_PODMAN, BEEHIVE_SYSTEMCTL and BEEHIVE_CURL exist for the test harness only.
+# Override via env: BEEHIVE_IMAGE, BEEHIVE_VOLUME, BEEHIVE_READYZ_URL, BEEHIVE_SKIP_BACKUP=1,
+# BEEHIVE_SETTLE_SECONDS. BEEHIVE_PODMAN, BEEHIVE_SYSTEMCTL and BEEHIVE_CURL exist for the test
+# harness only.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,7 +26,8 @@ READYZ_URL="${BEEHIVE_READYZ_URL:-http://127.0.0.1:8095/readyz}"
 PODMAN="${BEEHIVE_PODMAN:-podman}"
 SYSTEMCTL="${BEEHIVE_SYSTEMCTL:-systemctl}"
 CURL="${BEEHIVE_CURL:-curl}"
-ALWAYS_ON_UNITS=(beehive-research.service beehive-web.service)
+ALWAYS_ON_UNITS=(beehive-research.service beehive-jobs.service beehive-web.service)
+SETTLE_SECONDS="${BEEHIVE_SETTLE_SECONDS:-10}"
 
 die() {
   echo "release: $*" >&2
@@ -60,6 +64,24 @@ cmd_migrate() {
     "$IMAGE:$1" -m scripts.run_collector --mode migrate
 }
 
+# /readyz only proves the web app. The workers serve no port, so a worker crash-looping on the new
+# image would pass unnoticed: each unit must still be active, with no new restarts, a little later.
+check_units_stay_up() {
+  local unit restarts=()
+  for unit in "${ALWAYS_ON_UNITS[@]}"; do
+    restarts+=("$("$SYSTEMCTL" --user show -p NRestarts --value "$unit")")
+  done
+  sleep "$SETTLE_SECONDS"
+  local i=0
+  for unit in "${ALWAYS_ON_UNITS[@]}"; do
+    "$SYSTEMCTL" --user is-active --quiet "$unit" \
+      || die "$unit is not running on the new image; roll back with: $0 promote rollback"
+    [[ "$("$SYSTEMCTL" --user show -p NRestarts --value "$unit")" == "${restarts[$i]}" ]] \
+      || die "$unit restarted on the new image; roll back with: $0 promote rollback"
+    i=$((i + 1))
+  done
+}
+
 cmd_promote() {
   require_tag "${1:-}"
   local current target
@@ -74,6 +96,7 @@ cmd_promote() {
   "$SYSTEMCTL" --user restart "${ALWAYS_ON_UNITS[@]}"
   for _ in $(seq 1 60); do
     if "$CURL" -fsS "$READYZ_URL" >/dev/null 2>&1; then
+      check_units_stay_up
       echo "release: $IMAGE:$1 is live and ready"
       return 0
     fi

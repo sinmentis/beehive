@@ -20,9 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-session citation numbers, owner evidence curation (exclude or annotate an Evidence Item),
   and a durable long-running chat with versioned Conversation Memory. See
   [Research a question](docs/user-guide.md#research-a-question).
-- An always-on durable Research worker and a periodic reconcile timer for Research Runs and
-  Research Chat replies, deployed alongside the existing collector, digest, and deep-read
-  workers. See [`deploy/README.md`](deploy/README.md#research-worker-adr-0009).
+- An always-on durable Research worker for Research Runs and Research Chat replies. See
+  [`deploy/README.md`](deploy/README.md#research-worker-adr-0009).
 - Global English-default localization for the web interface, email delivery, alerts, and
   language-aware AI output, with Simplified Chinese, Japanese, Korean, Spanish, French, and
   German support.
@@ -77,6 +76,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Background jobs run in one always-on jobs worker instead of timers, marker files and oneshot
+  containers: scheduled fetching, **Fetch now**, deep reads, digests and reminders. **Fetch now**
+  works on a local install, the admin's **System** chapter shows whether the worker is running and
+  what is waiting, and there are three units to install instead of sixteen. A Channel's failure
+  alert email is now really sent, at most once every six hours. See
+  [ADR-0012](docs/adr/0012-one-jobs-worker.md) and the upgrade steps in
+  [`deploy/README.md`](deploy/README.md#move-to-the-jobs-worker-adr-0012).
 - The admin area is redesigned as a dark "datasheet" with its own shell and stylesheet
   (`admin.css`, self-hosted Archivo). The five tabs became four numbered chapters (Channels, Email
   groups, Global settings, System) in a contents rail that counts what needs attention. Forms are
@@ -144,6 +150,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loses its last paragraph.
 - The sign-in return path refuses `/\host` and paths with tabs or newlines, which browsers turn
   into a link to another site.
+- Article fetches for research (and now deep reads and feeds) keep their 20-second limit when
+  they run on a worker thread. A server that trickled its response one byte at a time could hold
+  them far longer.
 
 ## [0.1.0] - 2026-07-14
 

@@ -225,3 +225,17 @@ def test_expired_claim_is_recovered_after_fifteen_minutes(conn):
     )
     assert [item["item_id"] for item in recovered.items] == [item_id]
     assert recovered.token != first.token
+
+
+def test_a_released_claim_can_be_claimed_again_at_once(conn):
+    from beehive.db.tracker_watches import release_tracker_reminder_claim
+
+    item_id = _add_item(conn, "released", closing_at=_NOW + timedelta(minutes=10))
+    add_auction_watch(conn, item_id, _NOW - timedelta(hours=1))
+    first = claim_due_auction_reminders(conn, _NOW)
+
+    assert release_tracker_reminder_claim(conn, first.token) == 1
+
+    again = claim_due_auction_reminders(conn, _NOW + timedelta(minutes=1))
+    assert [item["item_id"] for item in again.items] == [item_id]
+    assert release_tracker_reminder_claim(conn, first.token) == 0

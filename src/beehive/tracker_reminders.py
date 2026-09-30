@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from beehive.channels.tracker import adapter_for_source
@@ -135,13 +136,18 @@ def send_due_tracker_reminders(
     localizer: Localizer,
     *,
     now: datetime | None = None,
+    on_claim: Callable[[str], None] | None = None,
 ) -> int:
+    """Sends every due reminder in one email. `on_claim` gets the claim token as soon as the
+    reminders are claimed, so a caller that has to stop midway can hand them back."""
     if default_recipient.address is None:
         print("[tracker-reminders] no default email recipient configured; skipping")
         return 0
 
     run_time = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     claim = claim_due_tracker_reminders(conn, run_time)
+    if on_claim is not None and claim.token is not None:
+        on_claim(claim.token)
     return _send_claim(
         conn,
         notifier,

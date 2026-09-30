@@ -452,3 +452,30 @@ def test_group_list_uses_short_schedule_labels(client, db_path):
 
     assert '<span class="nw">Daily at 09:00</span>' in page
     assert '<span class="nw">Mon, Wed at 07:30</span>' in page
+
+
+def test_system_shows_whether_the_jobs_worker_is_running(client, db_path):
+    from datetime import datetime, timedelta, timezone
+
+    from beehive.collector.jobs_status import LANES, LaneStatus, save_status
+
+    never = client.get("/admin/?tab=system").text
+    assert "Background jobs" in never
+    assert "Not running: it has never checked in." in never
+
+    conn = connect(db_path)
+    idle = tuple(LaneStatus(name, None, None, None, None) for name in LANES)
+    save_status(conn, seen_at=datetime.now(timezone.utc), last_sweep_started_at=None, lanes=idle)
+    running = client.get("/admin/?tab=system").text
+    assert "Last check-in: Just now" in running
+    assert "Fetch now waiting: 0" in running
+
+    save_status(
+        conn,
+        seen_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        last_sweep_started_at=None,
+        lanes=idle,
+    )
+    conn.close()
+    stopped = client.get("/admin/?tab=system").text
+    assert "Not running. It last checked in 10 minutes ago" in stopped
