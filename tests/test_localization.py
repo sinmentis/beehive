@@ -14,7 +14,7 @@ from beehive.localization import (
     localizer_for,
     save_language,
 )
-from beehive.translations import background, common, web
+from beehive.translations import MODULES, web, web_reading
 
 
 @pytest.fixture
@@ -79,13 +79,12 @@ def test_missing_translation_key_fails_loudly():
 
 def test_every_translation_module_has_the_supported_language_set():
     expected = {language.code for language in SUPPORTED_LANGUAGES}
-    assert set(common.CATALOGS) == expected
-    assert set(web.CATALOGS) == expected
-    assert set(background.CATALOGS) == expected
+    for module in MODULES:
+        assert set(module.CATALOGS) == expected, module.__name__
 
 
 def test_combined_catalog_keys_and_plural_shapes_match_english():
-    modules = (common.CATALOGS, web.CATALOGS, background.CATALOGS)
+    modules = tuple(module.CATALOGS for module in MODULES)
     for module_catalogs in modules:
         english = module_catalogs["en"]
         for language in SUPPORTED_LANGUAGES:
@@ -111,7 +110,7 @@ def test_combined_catalog_placeholders_match_english_for_every_locale():
     """Every locale's translation of a key must interpolate exactly the same {placeholder}
     names as the English original -- a missing or renamed placeholder would raise KeyError at
     render time, or silently drop data, only for that one language."""
-    modules = (common.CATALOGS, web.CATALOGS, background.CATALOGS)
+    modules = tuple(module.CATALOGS for module in MODULES)
     for module_catalogs in modules:
         english = module_catalogs["en"]
         for key, english_message in english.items():
@@ -144,7 +143,9 @@ def test_deep_read_namespace_renders_in_every_supported_language():
     failure copy, owner-only controls, and live-region/announcement text -- renders a non-empty
     string with plausible interpolation values in every supported language, and that the
     English catalog contains every state the feature plan calls for."""
-    deep_read_keys = {key for key in web.CATALOGS["en"] if key.startswith("web.deep_read.")}
+    deep_read_keys = {
+        key for key in web_reading.CATALOGS["en"] if key.startswith("web.deep_read.")
+    }
     expected_keys = {
         "web.deep_read.button_start", "web.deep_read.button_start_aria",
         "web.deep_read.button_pending", "web.deep_read.button_pending_aria",
@@ -185,20 +186,28 @@ def test_deep_read_namespace_renders_in_every_supported_language():
         rendered = localizer.text("web.title.deep_read_brief", **sample_values)
         assert rendered.strip()
         for key in deep_read_keys:
-            placeholders = _placeholder_names(web.CATALOGS["en"][key])
+            placeholders = _placeholder_names(web_reading.CATALOGS["en"][key])
             values = {name: sample_values[name] for name in placeholders}
             rendered = localizer.text(key, **values)
             assert rendered.strip(), f"{key!r} rendered blank for {language.code!r}"
 
 
 def test_admin_safety_catalog_is_localized_not_english_fallback():
-    """Guards the admin/owner-safety strings (web.py `_ADMIN_SAFETY_CATALOGS`) against
+    """Guards the admin/owner-safety strings against
     silently reverting to the old behavior of applying the English catalog to every locale.
     Full key and placeholder parity is already enforced by the combined-catalog tests, so this
     stays deliberately narrow: a handful of stable keys whose wording must differ from English
     in every non-English locale (common actions, a weekday, a health status, admin labels). If
     any of these equals the English source for any locale, the block has fallen back to English."""
-    english = web.CATALOGS["en"]
+    merged = {
+        language.code: {
+            key: message
+            for module in MODULES
+            for key, message in module.CATALOGS[language.code].items()
+        }
+        for language in SUPPORTED_LANGUAGES
+    }
+    english = merged["en"]
     always_translated_keys = [
         "common.save",
         "common.cancel",
@@ -214,7 +223,7 @@ def test_admin_safety_catalog_is_localized_not_english_fallback():
         for language in SUPPORTED_LANGUAGES:
             if language.code == "en":
                 continue
-            translated = web.CATALOGS[language.code][key]
+            translated = merged[language.code][key]
             assert translated != english_message, (
                 f"{key!r} is still the English fallback ({english_message!r}) for "
                 f"{language.code!r}; the admin-safety catalog is not localized")

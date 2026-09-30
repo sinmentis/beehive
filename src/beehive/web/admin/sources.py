@@ -131,7 +131,8 @@ def _source_type_options(t: Localizer) -> tuple[dict, ...]:
     )
 
 
-# Every value here is a translations/web.py key, not display text -- see _EMAIL_ERROR_KEYS above.
+# Every value here is a translation key (translations/web_admin.py), not display text -- see
+# _EMAIL_ERROR_KEYS in common.py.
 _SOURCE_ERROR_KEYS = {
     "hackernews_query config needs a non-empty 'query' key": "web.source_error.hn_query_required",
     "reddit_subreddit config needs a non-empty 'subreddit' key": "web.source_error.reddit_subreddit_required",

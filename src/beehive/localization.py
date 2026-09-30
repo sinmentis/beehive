@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TypeAlias
 
 from beehive.db import app_state
-from beehive.translations import background, common, web
+from beehive.translations import MODULES
 
 DEFAULT_LANGUAGE_CODE = "en"
 PLATFORM_LANGUAGE_KEY = "platform_language"
@@ -41,7 +41,7 @@ _LANGUAGES_BY_CODE = {language.code: language for language in SUPPORTED_LANGUAGE
 
 
 def _build_catalogs() -> dict[str, dict[str, Message]]:
-    modules = (common.CATALOGS, web.CATALOGS, background.CATALOGS)
+    modules = tuple(module.CATALOGS for module in MODULES)
     expected_codes = set(_LANGUAGES_BY_CODE)
     catalogs = {code: {} for code in expected_codes}
     for module_catalogs in modules:

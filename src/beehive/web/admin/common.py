@@ -83,9 +83,9 @@ _CLEAR_DEFAULT_WITHOUT_ENV_ERROR = (
 )
 
 
-# Every value here is a translations/web.py key, not display text -- the actual copy always
-# comes from the request's Localizer, so the same English exception message renders correctly
-# in any supported platform language rather than being hardcoded to one.
+# Every value here is a translation key (translations/web_admin.py), not display text -- the
+# actual copy always comes from the request's Localizer, so the same English exception message
+# renders correctly in any supported platform language rather than being hardcoded to one.
 _EMAIL_ERROR_KEYS = {
     "Email address is required": "web.email_error.required",
     "Email address cannot contain whitespace": "web.email_error.no_whitespace",

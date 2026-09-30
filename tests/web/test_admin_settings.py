@@ -274,7 +274,7 @@ def test_channel_rows_wrap_on_narrow_screens(authed_client, db_path):
 
 def test_clear_without_env_uses_english_exception_with_translated_display_text():
     """The missing-env clear branch raises an English exception message that is mapped
-    to a translations/web.py key through _EMAIL_ERROR_KEYS, keeping code/logs English while
+    to a translations/web_admin.py key through _EMAIL_ERROR_KEYS, keeping code/logs English while
     _email_error_message renders the display text in the caller's selected language."""
     from beehive.localization import localizer_for
     from beehive.email_routing import EmailConfigurationError
