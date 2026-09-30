@@ -81,7 +81,9 @@ you can filter to unread, read, or a score of 90 and above.
 - The archive keeps every story, day by day. Search covers stories, listings and lots.
 
 On a wide screen, channel sections sit side by side, and a long list splits into two columns. Each
-column scrolls on its own, so you never scroll back up to reach the next one.
+column scrolls on its own, so you never scroll back up to reach the next one. Where sections sit
+side by side, such as a news channel's top stories and the rest, select **Hide** on one and the
+others take the full width. **Show** brings it back, and Beehive remembers the choice.
 
 <img src="assets/wide-screen.png" alt="The home page at 2560 pixels wide: six channel sections in two columns, with news stories, store listings and auction lots" width="100%">
 
