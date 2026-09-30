@@ -15,9 +15,9 @@ or server, for one person, and uses your GitHub Copilot account for the AI.
 
 ## What Beehive does
 
-- **Follow the news you care about.** Pull in stories from Reddit, Google News searches, Hacker
-  News and the official feeds of the Reserve Bank of New Zealand, the NZ Government and the US
-  Federal Reserve.
+- **Follow the news you care about.** Pull in stories from any site's RSS or Atom feed, Reddit,
+  Google News searches, Hacker News and the official feeds of the Reserve Bank of New Zealand, the
+  NZ Government and the US Federal Reserve.
 - **See the best first.** The AI scores each new story from 0 to 100 against what you told it and
   sums it up in one line. The home page shows each channel's top stories.
 - **Catch sales and restocks.** A store monitor watches Shopify stores, Land & Sea, THE OUTNET,

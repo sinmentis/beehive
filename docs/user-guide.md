@@ -42,6 +42,7 @@ Each source works with one channel type, so **Add source** only offers the ones 
 | --- | --- | --- |
 | Reddit | Posts in a subreddit | Editorial |
 | Google News | Results for a search | Editorial |
+| RSS or Atom feed | Posts from any site or blog that publishes a feed | Editorial |
 | Hacker News | Top, best, new, Ask HN or Show HN stories, or a search | Editorial |
 | Reserve Bank of New Zealand | Official news | Editorial |
 | New Zealand Government | Official news | Editorial |
@@ -50,6 +51,9 @@ Each source works with one channel type, so **Add source** only offers the ones 
 | Land & Sea | A listing page | Monitor |
 | Designer clearance | Sale catalogues from THE OUTNET, Mytheresa, END. and YOOX | Monitor |
 | All About Auctions | Upcoming auctions and their lots, with bids and RRP | Tracker |
+
+For an RSS or Atom feed, paste the feed's URL or just the site's address. Beehive follows the
+site's feed link, and names the source after the feed unless you give it a name.
 
 Select **Test** next to a source to see a sample of what it returns, without saving anything.
 **Pause** stops a source without removing it.

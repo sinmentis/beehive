@@ -158,13 +158,20 @@ def test_story_byline_names_the_outlet_and_only_real_engagement(conn, client):
     channel_id = create_channel(c, "News", "p")
     news = create_source(c, channel_id, "google_news_query", {"query": "nz economy"})
     forum = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "newzealand"})
+    blogs_id = create_channel(c, "Blogs", "p")
+    feed = create_source(c, blogs_id, "rss_feed", {"feed_url": "https://trail.example/feed"})
     _story(c, news, "outlet", 90, metadata={"source_name": "Reuters"})
+    _story(c, feed, "blog", 88, metadata={"feed_title": "Trail Notes"})
+    _story(c, feed, "untitled-feed", 87, metadata={})
     _story(c, forum, "quiet", 85, metadata={"score": 0, "num_comments": 0})
     _story(c, forum, "busy", 80, metadata={"score": 12, "num_comments": 3})
 
     stories = {story.id: story for story in _section(client.get("/"), channel_id).stories}
 
     assert stories[_item_id(c, "outlet")].byline == ("Reuters",)
+    blog_stories = {story.id: story for story in _section(client.get("/"), blogs_id).stories}
+    assert blog_stories[_item_id(c, "blog")].byline == ("Trail Notes",)
+    assert blog_stories[_item_id(c, "untitled-feed")].byline == ("trail.example/feed",)
     assert stories[_item_id(c, "quiet")].byline == ("r/newzealand",)
     assert stories[_item_id(c, "busy")].byline == ("r/newzealand", "12 upvotes · 3 comments")
 

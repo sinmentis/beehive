@@ -19,16 +19,7 @@ import os
 import traceback
 from dataclasses import asdict
 
-from beehive.connectors import (  # noqa: F401  (registers the connectors)
-    all_about_auctions,
-    google_news,
-    hackernews,
-    international_clearance,
-    land_sea_collection,
-    official_feeds,
-    reddit,
-    shopify_collection,
-)
+import beehive.connectors.builtin  # noqa: F401 (registers every connector)
 from beehive.db.channels import get_channel, list_channels
 from beehive.db.connection import SCHEMA_VERSION, connect, init_schema, schema_version
 from beehive.collector.manual_trigger import (

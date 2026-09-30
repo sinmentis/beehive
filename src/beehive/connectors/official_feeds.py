@@ -11,12 +11,12 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
-from html.parser import HTMLParser
 from typing import Any, Callable
 
 from beehive.connectors.base import RawItem
 from beehive.connectors import http
 from beehive.connectors.registry import register
+from beehive.connectors.text import html_to_text
 from beehive.domain.channels import ChannelKind
 
 _BODY_CHAR_CAP = 1500
@@ -32,34 +32,6 @@ class FeedDefinition:
     type_key: str
     url: str
     publisher: str
-
-
-class _PlainTextExtractor(HTMLParser):
-    _BLOCK_TAGS = {"p", "li", "blockquote", "pre", "br"}
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self._parts: list[str] = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self._BLOCK_TAGS:
-            self._parts.append("\n")
-
-    def handle_data(self, data):
-        self._parts.append(data)
-
-    def text(self) -> str:
-        raw = "".join(self._parts)
-        lines = (" ".join(line.split()) for line in raw.splitlines())
-        return "\n".join(line for line in lines if line)
-
-
-def _html_to_text(value: Any) -> str:
-    if not isinstance(value, str) or not value:
-        return ""
-    extractor = _PlainTextExtractor()
-    extractor.feed(value)
-    return extractor.text()[:_BODY_CHAR_CAP]
 
 
 def _default_fetch_bytes(url: str) -> bytes:
@@ -90,7 +62,7 @@ def _to_raw_item(item, publisher: str) -> RawItem:
         external_id=external_id,
         title=title,
         url=link,
-        body=_html_to_text(_text_or_none(item.find("description"))),
+        body=html_to_text(_text_or_none(item.find("description")), cap=_BODY_CHAR_CAP),
         created_at=created_at,
         raw_metadata=raw_metadata,
     )

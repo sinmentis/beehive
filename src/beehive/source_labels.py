@@ -49,10 +49,24 @@ def hackernews_source_label(
     return None
 
 
-def collection_host_label(config: Mapping[str, object]) -> str:
-    """A storefront collection as host plus path, e.g. "shop.example.com/collections/sale"."""
-    url = config.get("collection_url")
-    url = url if isinstance(url, str) else ""
+# Source types that point at one address, and the config key holding it.
+_URL_CONFIG_KEYS = {
+    "shopify_collection": "collection_url",
+    "land_sea_collection": "collection_url",
+    "rss_feed": "feed_url",
+}
+URL_SOURCE_TYPES = frozenset(_URL_CONFIG_KEYS)
+
+
+def source_url(source_type: str, config: Mapping[str, object]) -> str:
+    """The address a URL-type Source fetches, or "" for every other type."""
+    key = _URL_CONFIG_KEYS.get(source_type)
+    value = config.get(key) if key is not None else None
+    return value if isinstance(value, str) else ""
+
+
+def url_host_label(url: str) -> str:
+    """An address as host plus path, e.g. "shop.example.com/collections/sale"."""
     parsed = urlparse(url)
     return f"{parsed.netloc}{parsed.path}" if parsed.netloc else url
 
@@ -66,8 +80,8 @@ def source_label(source_type: str, config: Mapping[str, object], t: Localizer) -
         return f'"{config.get("query", "")}"'
     if source_type == "all_about_auctions":
         return "All About Auctions"
-    if source_type in {"shopify_collection", "land_sea_collection"}:
-        return collection_host_label(config)
+    if source_type in URL_SOURCE_TYPES:
+        return url_host_label(source_url(source_type, config))
     if source_type == "international_clearance":
         retailer = config.get("retailer")
         return RETAILER_LABELS.get(retailer, str(retailer or source_type))

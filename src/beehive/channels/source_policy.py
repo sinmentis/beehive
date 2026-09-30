@@ -15,16 +15,7 @@ enumerate and resolve Source types that are actually registered, so importing th
 enough to make every recurring connector available."""
 from __future__ import annotations
 
-from beehive.connectors import (  # noqa: F401 (import side effect: registers the connectors)
-    all_about_auctions,
-    google_news,
-    hackernews,
-    international_clearance,
-    land_sea_collection,
-    official_feeds,
-    reddit,
-    shopify_collection,
-)
+import beehive.connectors.builtin  # noqa: F401 (registers every connector)
 from beehive.connectors.base import SourceConnector
 from beehive.connectors.registry import all_connectors
 from beehive.connectors.registry import get as get_connector

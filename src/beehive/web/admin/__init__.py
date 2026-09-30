@@ -8,16 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from beehive.connectors import (  # noqa: F401 (registers the connectors)
-    all_about_auctions,
-    google_news,
-    hackernews,
-    international_clearance,
-    land_sea_collection,
-    official_feeds,
-    reddit,
-    shopify_collection,
-)
+import beehive.connectors.builtin  # noqa: F401 (registers every connector)
 from beehive.web.admin import auth, channels, email_groups, home, sources
 
 router = APIRouter(prefix="/admin")

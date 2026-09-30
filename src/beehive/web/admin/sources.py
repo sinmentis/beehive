@@ -6,13 +6,15 @@ import json
 import sqlite3
 import time
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from beehive.channels import require_channel_kind
 from beehive.channels.source_policy import connector_supports_kind, source_types_for_kind
-from beehive.connectors.base import PreviewSourceConnector
+from beehive.connectors import rss_feed
+from beehive.connectors.base import PreviewSourceConnector, ResolvingSourceConnector
 from beehive.connectors.registry import get as get_connector
 from beehive.db.admin_actions import (
     delete_source_with_undo,
@@ -39,7 +41,7 @@ from beehive.web.deps import (
     verify_csrf,
 )
 from beehive.web.link_safety import safe_external_href
-from beehive.source_labels import source_display_name
+from beehive.source_labels import parse_source_config, source_display_name
 from beehive.web.admin.common import (
     _admin_source_label,
     _channel_kind_label,
@@ -73,6 +75,12 @@ def _source_type_options(t: Localizer) -> tuple[dict, ...]:
             "input_id": "type-google",
             "hint": t.text("web.admin.source_type_hint.google_news_query"),
             "label": t.text("web.source_type.google_news_query"),
+        },
+        {
+            "type_key": "rss_feed",
+            "input_id": "type-rss",
+            "hint": t.text("web.admin.source_type_hint.rss_feed"),
+            "label": t.text("web.source_type.rss_feed"),
         },
         {
             "type_key": "hackernews_stories",
@@ -144,6 +152,8 @@ _SOURCE_ERROR_KEYS = {
     "international_clearance config needs 'retailer' to be one of: the_outnet, mytheresa, end, yoox": "web.source_error.international_clearance_retailer_invalid",
     "international_clearance config needs 'minimum_discount_percent' to be an integer from 50 to 90": "web.source_error.international_clearance_discount_invalid",
     "international_clearance Mytheresa sources support discounts up to 70": "web.source_error.international_clearance_mytheresa_discount_invalid",
+    rss_feed.URL_REQUIRED: "web.source_error.rss_feed_url_invalid",
+    rss_feed.NOT_A_FEED: "web.source_error.rss_feed_not_found",
 }
 
 
@@ -153,6 +163,9 @@ def _source_error_message(error: ValueError, t: Localizer) -> str:
         return t.text("web.source_error.hn_feed_invalid")
     if message.startswith("hackernews_query config needs 'sort'"):
         return t.text("web.source_error.hn_sort_invalid")
+    if message.startswith(f"{rss_feed.UNREACHABLE}: "):
+        reason = message.removeprefix(f"{rss_feed.UNREACHABLE}: ")
+        return t.text("web.source_error.rss_feed_unreachable", reason=reason)
     key = _SOURCE_ERROR_KEYS.get(message)
     return t.text(key) if key is not None else message
 
@@ -170,11 +183,18 @@ def _source_config_from_form(
     land_sea_collection_url: str,
     international_clearance_retailer: str,
     international_clearance_minimum_discount_percent: str,
+    rss_feed_url: str,
 ) -> dict:
     if source_type == "reddit_subreddit":
         return {"subreddit": subreddit}
     if source_type == "google_news_query":
         return {"query": query}
+    if source_type == "rss_feed":
+        url = rss_feed_url.strip()
+        # People paste "example.com/blog" as often as a full URL; a browser would assume https.
+        if url and "://" not in url:
+            url = f"https://{url}"
+        return {"feed_url": url}
     if source_type == "hackernews_stories":
         return {"feed": hn_feed}
     if source_type == "hackernews_query":
@@ -236,6 +256,7 @@ _SOURCE_FORM_DEFAULTS = {
     "land_sea_collection_url": "",
     "international_clearance_retailer": "mytheresa",
     "international_clearance_minimum_discount_percent": "70",
+    "rss_feed_url": "",
 }
 
 
@@ -250,6 +271,8 @@ def _form_values_from_source(source: dict) -> dict:
         values["subreddit"] = config.get("subreddit", "")
     elif source_type == "google_news_query":
         values["query"] = config.get("query", "")
+    elif source_type == "rss_feed":
+        values["rss_feed_url"] = config.get("feed_url", "")
     elif source_type == "hackernews_stories":
         values["hn_feed"] = config.get("feed", "top")
     elif source_type == "hackernews_query":
@@ -271,6 +294,12 @@ def _form_values_from_source(source: dict) -> dict:
     return values
 
 
+class _SourceCheck(NamedTuple):
+    config: dict | None
+    error: str | None
+    suggested_name: str = ""
+
+
 def _validated_source_config(
     conn: sqlite3.Connection,
     channel: dict,
@@ -278,33 +307,50 @@ def _validated_source_config(
     form_values: dict,
     t: Localizer,
     *,
-    exclude_source_id: int | None = None,
-) -> tuple[dict | None, str | None]:
+    current: dict | None = None,
+) -> _SourceCheck:
     """The shared new/edit Source validation pipeline. Builds the config and rejects, in order, an
-    unknown Source type, a Source/Channel kind mismatch, a bad config, and a duplicate of another
-    Source in the same Channel -- each as a localized message. Returns (config, None) on success or
-    (None, error) on the first failure, and never persists. exclude_source_id skips the row being
-    edited so re-saving a Source unchanged is not flagged as a duplicate of itself."""
+    unknown Source type, a Source/Channel kind mismatch, a bad config, a target the connector
+    cannot resolve, and a duplicate of another Source in the same Channel -- each as a localized
+    message. Never persists.
+
+    A connector with resolve_config (an RSS feed) turns what the Owner typed into what to store,
+    such as a site's address into its feed, and may suggest a name. That needs the network, so
+    an edit that leaves the Source's type and config unchanged skips it. `current` is the row
+    being edited; it is also left out of the duplicate check."""
     channel_kind = require_channel_kind(channel["kind"])
     try:
         config = _source_config_from_form(source_type, **form_values)
         connector = get_connector(source_type)
     except ValueError as exc:
-        return None, _source_error_message(exc, t)
+        return _SourceCheck(None, _source_error_message(exc, t))
     # Reject a Source type incompatible with this Channel's kind with the same localized 400 flow
     # as a bad config -- persistence would reject it anyway (db.sources), this just turns that into
     # a friendly re-render instead of a 500.
     if not connector_supports_kind(source_type, channel_kind):
-        return None, t.text("web.source_error.incompatible_kind")
+        return _SourceCheck(None, t.text("web.source_error.incompatible_kind"))
     try:
         connector.validate_config(config)
     except ValueError as exc:
-        return None, _source_error_message(exc, t)
+        return _SourceCheck(None, _source_error_message(exc, t))
+    suggested_name = ""
+    unchanged = (
+        current is not None
+        and current["type"] == source_type
+        and parse_source_config(current["config"]) == config
+    )
+    if isinstance(connector, ResolvingSourceConnector) and not unchanged:
+        try:
+            resolved = connector.resolve_config(config)
+        except ValueError as exc:
+            return _SourceCheck(None, _source_error_message(exc, t))
+        config, suggested_name = resolved.config, resolved.suggested_name
+    exclude_source_id = current["id"] if current is not None else None
     if find_duplicate_source(
         conn, channel["id"], source_type, config, exclude_source_id=exclude_source_id
     ) is not None:
-        return None, t.text("web.source_error.duplicate")
-    return config, None
+        return _SourceCheck(None, t.text("web.source_error.duplicate"))
+    return _SourceCheck(config, None, suggested_name)
 
 
 def _render_source_form_page(
@@ -472,6 +518,7 @@ def new_source_submit(
     land_sea_collection_url: str = Form(""),
     international_clearance_retailer: str = Form("mytheresa"),
     international_clearance_minimum_discount_percent: str = Form("70"),
+    rss_feed_url: str = Form(""),
     source_name: str = Form(""),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
@@ -495,8 +542,11 @@ def new_source_submit(
         "international_clearance_minimum_discount_percent": (
             international_clearance_minimum_discount_percent
         ),
+        "rss_feed_url": rss_feed_url,
     }
-    config, error = _validated_source_config(conn, channel, type, form_values, t)
+    config, error, suggested_name = _validated_source_config(
+        conn, channel, type, form_values, t
+    )
     if error is not None:
         return _render_new_source_page(
             request,
@@ -509,7 +559,9 @@ def new_source_submit(
             status_code=400,
             source_name=source_name,
         )
-    source_id = create_source(conn, channel_id, type, config, name=source_name)
+    source_id = create_source(
+        conn, channel_id, type, config, name=source_name.strip() or suggested_name
+    )
     record_admin_action(
         conn,
         action_type="source_created",
@@ -564,6 +616,7 @@ def edit_source_submit(
     land_sea_collection_url: str = Form(""),
     international_clearance_retailer: str = Form("mytheresa"),
     international_clearance_minimum_discount_percent: str = Form("70"),
+    rss_feed_url: str = Form(""),
     source_name: str = Form(""),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
@@ -590,9 +643,10 @@ def edit_source_submit(
         "international_clearance_minimum_discount_percent": (
             international_clearance_minimum_discount_percent
         ),
+        "rss_feed_url": rss_feed_url,
     }
-    config, error = _validated_source_config(
-        conn, channel, type, form_values, t, exclude_source_id=source_id
+    config, error, suggested_name = _validated_source_config(
+        conn, channel, type, form_values, t, current=source
     )
     if error is not None:
         return _render_edit_source_page(
@@ -607,7 +661,7 @@ def edit_source_submit(
             status_code=400,
             source_name=source_name,
         )
-    update_source(conn, source_id, type, config, name=source_name)
+    update_source(conn, source_id, type, config, name=source_name.strip() or suggested_name)
     record_admin_action(
         conn,
         action_type="source_updated",

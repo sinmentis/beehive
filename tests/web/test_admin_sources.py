@@ -1393,3 +1393,112 @@ def test_recover_stale_fetch_rejects_wrong_csrf(authed_client, db_path):
     )
     assert resp.status_code == 403
     assert os.path.exists(inflight)  # untouched when CSRF fails
+
+
+def _rss_connector(responses, calls):
+    from beehive.connectors.rss_feed import RssFeedConnector
+    from beehive.deep_read.fetch import FetchedArticle
+
+    def fetch(url):
+        calls.append(url)
+        raw = responses[url]
+        content_type = "text/html" if raw.lstrip().startswith(b"<!doctype") else "application/rss+xml"
+        return FetchedArticle(
+            url=url, status_code=200, content_type=content_type,
+            html=raw.decode(), truncated=False, raw=raw,
+        )
+
+    return RssFeedConnector(fetch=fetch)
+
+
+_TRAIL_FEED = (
+    b'<rss version="2.0"><channel><title>Trail Notes</title><item><title>Boots</title>'
+    b"<link>https://trail.example/boots</link></item></channel></rss>"
+)
+_TRAIL_PAGE = (
+    b'<!doctype html><html><head><link rel="alternate" type="application/rss+xml" '
+    b'href="/feed.xml"></head></html>'
+)
+
+
+def test_rss_source_follows_a_site_to_its_feed_and_takes_the_feed_title(
+    authed_client, db_path, monkeypatch
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Outdoors", "gear")
+    conn.close()
+    calls = []
+    connector = _rss_connector(
+        {"https://trail.example/blog": _TRAIL_PAGE, "https://trail.example/feed.xml": _TRAIL_FEED},
+        calls,
+    )
+    monkeypatch.setattr(admin_routes, "get_connector", lambda source_type: connector)
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "rss_feed", "rss_feed_url": " trail.example/blog ", "csrf_token": "csrf1"},
+    )
+
+    assert resp.status_code == 303
+    assert calls == ["https://trail.example/blog", "https://trail.example/feed.xml"]
+    conn = connect(db_path)
+    row = conn.execute("SELECT type, config, name FROM sources WHERE channel_id = ?", (channel_id,)).fetchone()
+    conn.close()
+    assert row["type"] == "rss_feed"
+    assert json.loads(row["config"]) == {"feed_url": "https://trail.example/feed.xml"}
+    assert row["name"] == "Trail Notes"
+
+
+def test_rss_source_keeps_the_owner_name_and_skips_the_network_when_unchanged(
+    authed_client, db_path, monkeypatch
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Outdoors", "gear")
+    source_id = create_source(
+        conn, channel_id, "rss_feed", {"feed_url": "https://trail.example/feed.xml"}, name="Trail"
+    )
+    conn.close()
+    calls = []
+    connector = _rss_connector({}, calls)
+    monkeypatch.setattr(admin_routes, "get_connector", lambda source_type: connector)
+
+    resp = authed_client.post(
+        f"/admin/sources/{source_id}/edit",
+        data={
+            "type": "rss_feed",
+            "rss_feed_url": "https://trail.example/feed.xml",
+            "source_name": "Trail blog",
+            "csrf_token": "csrf1",
+        },
+    )
+
+    assert resp.status_code == 303
+    assert calls == []
+    assert get_source(connect(db_path), source_id)["name"] == "Trail blog"
+
+
+def test_rss_source_without_a_feed_explains_what_to_try(authed_client, db_path, monkeypatch):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Outdoors", "gear")
+    conn.close()
+    connector = _rss_connector({"https://trail.example/about": b"<!doctype html><p>About</p>"}, [])
+    monkeypatch.setattr(admin_routes, "get_connector", lambda source_type: connector)
+
+    resp = authed_client.post(
+        f"/admin/channels/{channel_id}/sources/new",
+        data={"type": "rss_feed", "rss_feed_url": "https://trail.example/about", "csrf_token": "csrf1"},
+    )
+
+    assert resp.status_code == 400
+    assert "No RSS or Atom feed found there" in resp.text
+    assert ">https://trail.example/about</textarea>" in resp.text
+
+
+def test_rss_source_is_offered_to_editorial_channels_only(authed_client, db_path):
+    conn = connect(db_path)
+    editorial_id = create_channel(conn, "News", "profile")
+    monitor_id = create_channel(conn, "Deals", "gear", kind="monitor")
+    conn.close()
+
+    assert 'id="type-rss"' in authed_client.get(f"/admin/channels/{editorial_id}/sources/new").text
+    assert 'id="type-rss"' not in authed_client.get(f"/admin/channels/{monitor_id}/sources/new").text

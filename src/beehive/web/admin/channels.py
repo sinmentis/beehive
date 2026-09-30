@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -58,6 +57,7 @@ from beehive.web.deps import (
     require_admin_session,
     verify_csrf,
 )
+from beehive.source_labels import parse_source_config, source_url
 from beehive.web.formatting import (
     host_local_time_label,
     relative_time,
@@ -389,9 +389,8 @@ def _admin_source_copy_value(source: dict, label: str) -> str:
     keeps any query string/fragment (e.g. Shopify vendor filters) so it can be pasted straight
     back into a new source. Falls back to the display label for source types that have nothing
     to truncate in the first place."""
-    if source["type"] in {"shopify_collection", "land_sea_collection"}:
-        config = json.loads(source["config"])
-        return config.get("collection_url") or label
+    if source["type"] in _URL_SOURCE_TYPES:
+        return source_url(source["type"], parse_source_config(source["config"])) or label
     return label
 
 

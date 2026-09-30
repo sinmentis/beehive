@@ -180,6 +180,8 @@ def _editorial_engagement_label(item: Row, t: Localizer) -> str:
         )
     if source_type == "google_news_query":
         return _clean_text(metadata.get("source_name")) or ""
+    if source_type == "rss_feed":
+        return _clean_text(metadata.get("feed_title")) or ""
     if source_type in {"hackernews_stories", "hackernews_query"}:
         return t.text(
             "web.engagement.hackernews",
@@ -193,9 +195,10 @@ def _editorial_engagement_label(item: Row, t: Localizer) -> str:
 
 def _editorial_byline(item: Row, source_label: str, engagement_label: str) -> tuple[str, ...]:
     """Where a story came from, as a reader wants it. A news search names the outlet (its query
-    is an internal detail); a forum adds votes and comments only once there are some."""
+    is an internal detail), a feed its own title; a forum adds votes and comments only once there
+    are some."""
     source_type = _req_str(item, "source_type")
-    if source_type == "google_news_query":
+    if source_type in {"google_news_query", "rss_feed"}:
         return (engagement_label or source_label,)
     if source_type in {"reddit_subreddit", "hackernews_stories", "hackernews_query"}:
         metadata = _metadata(item)

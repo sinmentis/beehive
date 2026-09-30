@@ -576,3 +576,34 @@ def test_context_manager_closes_client():
     with ArticleFetcher(resolve_host=lambda h: ["93.184.216.34"]) as fetcher:
         assert fetcher._client.is_closed is False
     assert fetcher._client.is_closed is True
+
+
+def test_widened_content_types_accept_a_feed_and_keep_its_raw_bytes():
+    feed = b'<?xml version="1.0" encoding="ISO-8859-1"?><rss version="2.0"><channel/></rss>'
+    seen = {}
+
+    def handler(request):
+        seen["accept"] = request.headers["accept"]
+        return httpx.Response(200, headers={"content-type": "application/rss+xml"}, content=iter([feed]))
+
+    fetcher = _fetcher(
+        lambda h: ["93.184.216.34"],
+        handler,
+        allowed_content_types=frozenset({"application/rss+xml"}),
+        accept="application/rss+xml",
+    )
+    result = fetcher.fetch("http://example.com/feed")
+    assert isinstance(result, FetchedArticle)
+    assert seen["accept"] == "application/rss+xml"
+    assert result.raw == feed
+    assert result.declared_charset is None
+
+
+def test_declared_charset_is_reported_separately_from_the_default():
+    fetcher = _fetcher(
+        lambda h: ["93.184.216.34"],
+        lambda r: _html_response(**{"content-type": "text/html; charset=ISO-8859-1"}),
+    )
+    result = fetcher.fetch("http://example.com/")
+    assert isinstance(result, FetchedArticle)
+    assert result.declared_charset == "iso-8859-1"

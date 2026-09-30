@@ -77,6 +77,23 @@ class SourceConnector(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class ResolvedSource:
+    """What a connector's resolve_config turns the Owner's input into: the config to store and,
+    when the source has a name of its own (a feed's title), a suggested Source name."""
+    config: dict
+    suggested_name: str = ""
+
+
+@runtime_checkable
+class ResolvingSourceConnector(Protocol):
+    """Optional network step when the Owner saves a Source, e.g. following a page address to the
+    feed it links to. Raises ValueError with a message the admin can show."""
+
+    def resolve_config(self, config: dict) -> ResolvedSource:
+        ...
+
+
 @runtime_checkable
 class PreviewSourceConnector(Protocol):
     """Optional bounded fetch used by the admin Source test surface."""

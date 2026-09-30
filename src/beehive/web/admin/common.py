@@ -46,7 +46,12 @@ from beehive.web.formatting import (
     host_local_time_label,
     short_time_label,
 )
-from beehive.source_labels import derived_source_label, source_display_name
+from beehive.source_labels import (
+    URL_SOURCE_TYPES,
+    derived_source_label,
+    source_display_name,
+    source_url,
+)
 
 
 # The admin home is four numbered chapters. The old tab names still resolve, so bookmarks and
@@ -232,7 +237,7 @@ _FETCH_ERROR_KINDS = frozenset(
 )
 
 
-_URL_SOURCE_TYPES = frozenset({"shopify_collection", "land_sea_collection"})
+_URL_SOURCE_TYPES = URL_SOURCE_TYPES
 
 
 _ATTENTION_ORDER = {"failed": 0, "stale": 1, "paused": 2}
@@ -301,7 +306,7 @@ def _source_confirmation_value(source: dict, t: Localizer) -> str:
         config = {}
     source_type = source["type"]
     if source_type in _URL_SOURCE_TYPES:
-        host = urlparse(config.get("collection_url") or "").netloc
+        host = urlparse(source_url(source_type, config)).netloc
         if host:
             return host.removeprefix("www.")
     elif source_type == "reddit_subreddit" and config.get("subreddit"):

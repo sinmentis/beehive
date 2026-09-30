@@ -67,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The pages still send `noindex, nofollow`. An Apple touch icon joins a favicon redrawn in the new
   mark.
 
+- Any RSS or Atom feed can be an Editorial source. Paste the feed or just the site's address:
+  Beehive finds the site's feed and names the source after it. Feed URLs are fetched with the
+  same DNS pinning and redirect checks as deep reads.
+
 ### Changed
 
 - The admin area is redesigned as a dark "datasheet" with its own shell and stylesheet
@@ -130,6 +134,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Monitor snapshot that would retire most listings at once is held until a second snapshot in a
   row confirms it, so a briefly empty storefront response no longer retires the catalogue.
 - A discount change on a clearance listing reranks it again.
+- A clearance Channel's Sources line names each retailer instead of repeating
+  `international_clearance`.
+- An official feed description ending in an unfinished `&` sequence, such as "R&D", no longer
+  loses its last paragraph.
 
 ## [0.1.0] - 2026-07-14
 

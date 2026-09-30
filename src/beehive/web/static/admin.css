@@ -272,6 +272,7 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .src-config{display:none}
 .source-form:has(#type-reddit:checked) .config-reddit_subreddit,
 .source-form:has(#type-google:checked) .config-google_news_query,
+.source-form:has(#type-rss:checked) .config-rss_feed,
 .source-form:has(#type-hn-stories:checked) .config-hackernews_stories,
 .source-form:has(#type-hn-query:checked) .config-hackernews_query,
 .source-form:has(#type-shopify:checked) .config-shopify_collection,

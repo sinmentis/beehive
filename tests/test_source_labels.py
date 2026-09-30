@@ -21,6 +21,7 @@ def t():
             "shop.example.com/collections/sale",
         ),
         ("international_clearance", {"retailer": "mytheresa"}, "Mytheresa"),
+        ("rss_feed", {"feed_url": "https://trail.example/blog/feed?format=rss"}, "trail.example/blog/feed"),
         ("rbnz_news", {}, "RBNZ News"),
         ("hackernews_stories", {"feed": "top"}, "HN · Top"),
         ("something_new", {}, "something_new"),

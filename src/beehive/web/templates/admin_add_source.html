@@ -40,6 +40,11 @@
       {{ ui.line_field("google-query", "query", query, placeholder="New Zealand economy") }}
       {% endcall %}
     </div>
+    <div class="src-config config-rss_feed">
+      {% call ui.param(t('web.admin.source_new.rss_feed_url_label'), for_id="rss-feed-url", note=t('web.admin.source_new.rss_feed_url_hint')) %}
+      {{ ui.line_field("rss-feed-url", "rss_feed_url", rss_feed_url, placeholder="https://example.com/feed", inputmode="url", literal=True) }}
+      {% endcall %}
+    </div>
     <div class="src-config config-hackernews_stories">
       {% call ui.param(t('web.admin.source_new.feed_label'), for_id="hn-feed", note=t('web.admin.source_new.feed_hint')) %}
       <select class="inp inp-mid" id="hn-feed" name="hn_feed">

@@ -55,6 +55,7 @@ _ALLOWED_SCHEMES = ("http", "https")
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 _ALLOWED_PORTS = frozenset(_DEFAULT_PORTS.values())
 _ALLOWED_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+_DEFAULT_ACCEPT = "text/html,application/xhtml+xml"
 _REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 _SUPPORTED_CONTENT_ENCODINGS = frozenset({"", "identity", "gzip", "x-gzip", "deflate"})
 
@@ -103,6 +104,11 @@ class FetchedArticle:
     content_type: str  # media type only, parameters (e.g. charset) stripped
     html: str
     truncated: bool  # True if a byte/decompressed cap cut the body short
+    # The same body before charset decoding, and the charset the server declared (None when it
+    # declared none). A feed parser needs both: an XML feed often names its encoding only in its
+    # own <?xml encoding=...?> prolog, which decoding with a default charset would ignore.
+    raw: bytes = b""
+    declared_charset: str | None = None
 
 
 FetchOutcome = FetchedArticle | FetchFailure
@@ -246,13 +252,13 @@ def _validate_and_resolve(url: str, resolve_host) -> _Endpoint | FetchFailure:
     )
 
 
-def _content_type_and_charset(headers: httpx.Headers) -> tuple[str, str]:
+def _content_type_and_charset(headers: httpx.Headers) -> tuple[str, str | None]:
+    """The media type and the charset the server declared, or None when it declared none."""
     raw = headers.get("content-type", "")
     message = Message()
     message["content-type"] = raw
     media_type = (message.get_content_type() or "").lower()
-    charset = message.get_content_charset() or "utf-8"
-    return media_type, charset
+    return media_type, message.get_content_charset()
 
 
 def _verify_peer(response: httpx.Response, expected_ip: str) -> bool:
@@ -283,6 +289,7 @@ def _verify_peer(response: httpx.Response, expected_ip: str) -> bool:
 class _RawBody:
     text: str
     truncated: bool
+    raw: bytes
 
 
 def _read_capped_body(
@@ -351,7 +358,7 @@ def _read_capped_body(
         text = body.decode(charset, errors="replace")
     except LookupError:
         text = body.decode("utf-8", errors="replace")
-    return _RawBody(text=text, truncated=truncated)
+    return _RawBody(text=text, truncated=truncated, raw=body)
 
 
 class ArticleFetcher:
@@ -372,8 +379,14 @@ class ArticleFetcher:
         max_response_bytes: int = _DEFAULT_MAX_RESPONSE_BYTES,
         max_decompressed_bytes: int = _DEFAULT_MAX_DECOMPRESSED_BYTES,
         user_agent: str = _DEFAULT_USER_AGENT,
+        allowed_content_types: frozenset[str] = _ALLOWED_CONTENT_TYPES,
+        accept: str = _DEFAULT_ACCEPT,
     ) -> None:
+        """`allowed_content_types` and `accept` default to HTML; the RSS connector widens them to
+        feed types. Every other safety rule stays the same whatever they are set to."""
         self._resolve_host = resolve_host
+        self._allowed_content_types = allowed_content_types
+        self._accept = accept
         self._max_redirects = max_redirects
         self._connect_timeout = connect_timeout
         self._total_timeout = total_timeout
@@ -441,10 +454,10 @@ class ArticleFetcher:
                         status_code=status_code,
                     )
 
-                content_type, charset = _content_type_and_charset(headers)
-                if content_type not in _ALLOWED_CONTENT_TYPES:
+                content_type, declared_charset = _content_type_and_charset(headers)
+                if content_type not in self._allowed_content_types:
                     return FetchFailure(FetchFailureReason.UNSUPPORTED_CONTENT_TYPE,
-                                         f"content-type {content_type!r} is not HTML-compatible")
+                                         f"content-type {content_type!r} is not accepted here")
 
                 if not _verify_peer(response, endpoint.ip):
                     return FetchFailure(FetchFailureReason.PEER_MISMATCH,
@@ -452,7 +465,7 @@ class ArticleFetcher:
 
                 body = _read_capped_body(
                     response,
-                    charset,
+                    declared_charset or "utf-8",
                     self._max_response_bytes,
                     self._max_decompressed_bytes,
                     deadline,
@@ -462,7 +475,8 @@ class ArticleFetcher:
 
                 return FetchedArticle(
                     url=current_url, status_code=status_code, content_type=content_type,
-                    html=body.text, truncated=body.truncated,
+                    html=body.text, truncated=body.truncated, raw=body.raw,
+                    declared_charset=declared_charset,
                 )
             finally:
                 response.close()
@@ -479,7 +493,7 @@ class ArticleFetcher:
             headers={
                 "Host": endpoint.host_header,
                 "User-Agent": self._user_agent,
-                "Accept": "text/html,application/xhtml+xml",
+                "Accept": self._accept,
             },
             extensions={"sni_hostname": endpoint.sni_hostname, "timeout": {"connect": timeout, "read": timeout,
                                                                             "write": timeout, "pool": timeout}},
