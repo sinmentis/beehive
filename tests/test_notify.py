@@ -43,6 +43,38 @@ def test_acs_email_notifier_send_calls_sdk():
     fake_poller.result.assert_called_once()
 
 
+def _poll_error(cause: Exception) -> Exception:
+    from azure.core.exceptions import HttpResponseError
+    try:
+        raise HttpResponseError(message="(Denied) Denied by the resource provider.") from cause
+    except HttpResponseError as exc:
+        return exc
+
+
+def _acs_send_with_poll_error(error: Exception):
+    notifier = AcsEmailNotifier(
+        connection_string="endpoint=https://x;accesskey=y",
+        to_addr="you@example.com", from_addr="beehive@example.com")
+    fake_client = MagicMock()
+    fake_client.begin_send.return_value.result.side_effect = error
+    with patch("azure.communication.email.EmailClient.from_connection_string",
+               return_value=fake_client):
+        notifier.send("subject", "body")
+
+
+def test_acs_send_treats_failed_status_poll_as_sent():
+    from azure.core.polling.base_polling import BadStatus
+    # A 401 on the status GET after ACS accepted the POST must not raise, or callers resend.
+    _acs_send_with_poll_error(_poll_error(BadStatus("Invalid return status 401 for 'GET'")))
+
+
+def test_acs_send_raises_when_acs_reports_the_send_failed():
+    from azure.core.exceptions import HttpResponseError
+    from azure.core.polling.base_polling import OperationFailed
+    with pytest.raises(HttpResponseError):
+        _acs_send_with_poll_error(_poll_error(OperationFailed("Operation failed or canceled")))
+
+
 def test_format_llm_failure():
     subject, body = format_llm_failure(_EN, "NZ Finance", "timeout after 120s")
     assert "NZ Finance" in subject

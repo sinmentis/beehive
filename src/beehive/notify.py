@@ -3,10 +3,13 @@ azure.communication.email is imported lazily inside AcsEmailNotifier.send so thi
 importable without the `email` extra installed."""
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 
 from beehive.email_routing import EmailConfigurationError
 from beehive.localization import Localizer
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Notifier(ABC):
@@ -45,7 +48,16 @@ class AcsEmailNotifier(Notifier):
             "content": content,
         }
         poller = client.begin_send(message)
-        poller.result()
+        try:
+            poller.result()
+        except Exception as exc:
+            from azure.core.polling.base_polling import OperationFailed
+            if isinstance(exc.__cause__, OperationFailed):
+                raise
+            # ACS already accepted the message; only the status poll failed. Raising here would
+            # make the caller resend, and every resend reaches the inbox as a duplicate.
+            _LOGGER.warning("ACS accepted email to %s but its status poll failed: %s",
+                            recipient, exc)
 
 
 def build_notifier(env: dict, default_to_addr: str | None = None) -> Notifier:
