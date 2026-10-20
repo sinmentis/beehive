@@ -1,8 +1,10 @@
+import json
 import sys
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from beehive.civic.events import CivicEventLogger
 from beehive.domain.channels import ChannelKind
 
 
@@ -108,6 +110,169 @@ def test_deep_read_mode_invokes_asyncio_run(monkeypatch, tmp_path):
 
         main()
     mock_run.assert_called_once()
+
+
+def test_civic_run_mode_invokes_asyncio_run(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["prog", "--mode", "civic-run", "--db-path", str(tmp_path / "t.db")],
+    )
+    with patch(
+        "scripts.run_collector.run_civic_cycle", new_callable=AsyncMock
+    ) as mock_run:
+        from scripts.run_collector import main
+
+        main()
+    mock_run.assert_awaited_once()
+    assert mock_run.await_args.args == (str(tmp_path / "t.db"),)
+    assert isinstance(
+        mock_run.await_args.kwargs["event_logger"], CivicEventLogger
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "function_name"),
+    [
+        ("civic-outcomes", "run_civic_outcomes"),
+        ("civic-recover", "run_civic_recovery"),
+        ("civic-maintenance", "run_civic_maintenance"),
+    ],
+)
+def test_civic_maintenance_modes_dispatch(monkeypatch, tmp_path, mode, function_name):
+    db_path = str(tmp_path / "t.db")
+    monkeypatch.setattr(
+        sys, "argv", ["prog", "--mode", mode, "--db-path", db_path])
+    with patch(f"scripts.run_collector.{function_name}") as operation:
+        from scripts.run_collector import main
+
+        main()
+    operation.assert_called_once()
+    assert operation.call_args.args == (db_path,)
+    assert isinstance(operation.call_args.kwargs["event_logger"], CivicEventLogger)
+
+
+async def _civic_projection_backlog(tmp_path, count):
+    from beehive.civic.spool import CivicSpool
+    from beehive.db.connection import connect, init_schema
+    from scripts.run_collector import _emit_civic_batches
+    from tests.civic.civic_worker_support import (
+        MutableClock,
+        create_partymap_watch,
+        seal_empty_daily_batches,
+    )
+
+    conn = connect(str(tmp_path / "civic.db"))
+    init_schema(conn)
+    create_partymap_watch(conn)
+    clock = MutableClock()
+    batch_ids = await seal_empty_daily_batches(conn, count, clock)
+    spool = CivicSpool(tmp_path / "civic-spool", shadow=True)
+    writes, errors = _emit_civic_batches(conn, spool, clock())
+    assert errors == ()
+    assert [write.batch_id for write in writes] == batch_ids
+    assert not any(write.replayed for write in writes)
+    return conn, clock, spool, batch_ids
+
+
+async def test_civic_projection_rotates_bounded_verification_over_every_file(tmp_path):
+    from datetime import timedelta
+
+    from beehive.db.civic_batches import get_civic_batch
+    from beehive.domain.civic import CivicBatchStatus
+    from scripts.run_collector import _emit_civic_batches
+
+    conn, clock, spool, batch_ids = await _civic_projection_backlog(tmp_path, 23)
+    tampered = get_civic_batch(conn, batch_ids[-1])
+    (spool.inbox / f"{tampered.idempotency_key}.json").write_bytes(b'{"changed":true}')
+
+    verified, failed = set(), []
+    for _ in range(3):
+        clock.now += timedelta(minutes=5)
+        writes, errors = _emit_civic_batches(conn, spool, clock())
+        assert len(writes) + len(errors) <= 20
+        assert all(write.replayed for write in writes)
+        verified |= {write.batch_id for write in writes}
+        failed += [error["batch_id"] for error in errors]
+
+    assert failed == [tampered.id]
+    assert verified == set(batch_ids) - {tampered.id}
+    quarantined = get_civic_batch(conn, tampered.id)
+    assert quarantined.status is CivicBatchStatus.QUARANTINED
+    assert quarantined.error_code == "spool_integrity_mismatch"
+
+
+@pytest.mark.parametrize("replacement", ["symlink", "directory", "deleted"])
+async def test_civic_projection_rechecks_non_regular_inbox_entries_every_pass(
+    tmp_path, replacement
+):
+    from datetime import timedelta
+
+    from beehive.db.civic_batches import get_civic_batch, get_frozen_publication
+    from beehive.domain.civic import CivicBatchStatus
+    from scripts.run_collector import _emit_civic_batches
+
+    conn, clock, spool, batch_ids = await _civic_projection_backlog(tmp_path, 23)
+    clock.now += timedelta(minutes=5)
+    window = spool.plan_projection(conn, clock()).verification_batch_ids
+    target = get_civic_batch(
+        conn, next(batch_id for batch_id in batch_ids if batch_id not in window))
+    path = spool.inbox / f"{target.idempotency_key}.json"
+    path.unlink()
+    if replacement == "symlink":
+        decoy = tmp_path / "decoy.json"
+        decoy.write_bytes(get_frozen_publication(conn, target.id))
+        path.symlink_to(decoy)
+    elif replacement == "directory":
+        path.mkdir()
+
+    writes, errors = _emit_civic_batches(conn, spool, clock())
+
+    if replacement == "deleted":
+        assert errors == ()
+        assert target.id in {write.batch_id for write in writes if not write.replayed}
+        assert path.read_bytes() == get_frozen_publication(conn, target.id)
+        return
+    assert [error["batch_id"] for error in errors] == [target.id]
+    batch = get_civic_batch(conn, target.id)
+    assert batch.status is CivicBatchStatus.QUARANTINED
+    assert batch.error_code == "spool_integrity_mismatch"
+
+
+def test_civic_cli_failure_is_structured_without_secret_traceback(
+    monkeypatch, tmp_path, capsys
+):
+    db_path = str(tmp_path / "t.db")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["prog", "--mode", "civic-recover", "--db-path", db_path],
+    )
+    def fail(_db_path, *, event_logger):
+        event_logger.emit("civic.test.started", status="started")
+        raise RuntimeError(
+            "Bearer secret-token prompt=private-prompt model_response=private-output"
+        )
+
+    with patch("scripts.run_collector.run_civic_recovery", side_effect=fail):
+        from scripts.run_collector import main
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    events = [json.loads(line) for line in captured.out.splitlines()]
+    assert [event["event"] for event in events] == [
+        "civic.test.started",
+        "civic.command.failed",
+    ]
+    assert events[-1]["error_class"] == "RuntimeError"
+    assert len({event["correlation_id"] for event in events}) == 1
+    assert "secret-token" not in captured.out
+    assert "private-prompt" not in captured.out
+    assert "private-output" not in captured.out
 
 
 def test_summary_rewrite_dry_run_mode_invokes_asyncio_run(monkeypatch, tmp_path):

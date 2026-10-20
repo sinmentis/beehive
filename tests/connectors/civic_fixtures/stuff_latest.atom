@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>https://www.stuff.co.nz/rss?section=/</id>
+  <title>Stuff - /</title>
+  <link rel="self" href="https://www.stuff.co.nz/rss?section=/"/>
+  <updated>2026-08-12T10:45:39Z</updated>
+  <entry>
+    <id>https://www.stuff.co.nz/politics/361019424/leadership-vote-held</id>
+    <title>Leadership vote held after challenge fails</title>
+    <link href="https://www.stuff.co.nz/politics/361019424/leadership-vote-held"/>
+    <published>2026-08-12T10:35:42Z</published>
+    <updated>2026-08-12T10:36:00Z</updated>
+    <summary>The caucus met this morning.</summary>
+    <author><name>A Reporter</name></author>
+  </entry>
+  <entry>
+    <id>https://www.stuff.co.nz/politics/361019425/budget-reaction</id>
+    <title>Budget reaction from the regions</title>
+    <link href="https://www.stuff.co.nz/politics/361019425/budget-reaction"/>
+    <updated>2026-08-11T22:05:00Z</updated>
+    <summary>Regional response.</summary>
+  </entry>
+</feed>

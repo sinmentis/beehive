@@ -1,0 +1,88 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "corroboration-category-mismatch-invalid",
+  "title": "An item in a different category cannot corroborate",
+  "description": "The second item is a column rather than a report of the same category, so it cannot corroborate the legislative event.",
+  "branches": [
+    "corroboration_category_match"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-annual-conference",
+    "fingerprint": "fp-annual-conference-20260720",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260720/annual-conference",
+    "eventDate": "2026-07-20",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance held its annual conference in Riverport on the recorded date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/harbour-alliance-annual-conference",
+      "canonicalUrl": "https://harbourledger.example/politics/harbour-alliance-annual-conference",
+      "title": "Harbour Alliance holds its annual conference in Riverport",
+      "excerpt": "The report gives the conference dates and the venue the party named.",
+      "publishedAt": "2026-07-20T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-20",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "context",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/harbour-alliance-transport-policy",
+      "canonicalUrl": "https://keawire.example/news/harbour-alliance-transport-policy",
+      "title": "Harbour Alliance publishes a transport policy document",
+      "excerpt": "The report covers a policy publication rather than the conference itself.",
+      "publishedAt": "2026-07-20T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-20",
+      "category": "party-policy",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "corroboration_category_mismatch",
+      "evidence_insufficient"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group"
+    ],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": [
+      "e2"
+    ]
+  }
+}

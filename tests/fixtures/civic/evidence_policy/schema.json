@@ -1,0 +1,737 @@
+{
+  "fixtureSchemaVersion": 1,
+  "title": "Civic evidence policy fixture corpus",
+  "description": "Synthetic, copyright safe fixtures describing what the Civic evidence policy must decide. Every publisher, URL, title, and excerpt is invented and every host sits under the reserved .example top level domain. No production module is required to read these files.",
+  "documents": {
+    "evidence_case": {
+      "fieldOrder": [
+        "fixtureSchemaVersion",
+        "kind",
+        "id",
+        "title",
+        "description",
+        "branches",
+        "polarity",
+        "candidate",
+        "evidence",
+        "dedupContext",
+        "retry",
+        "expected"
+      ],
+      "required": [
+        "fixtureSchemaVersion",
+        "kind",
+        "id",
+        "title",
+        "description",
+        "branches",
+        "polarity",
+        "candidate",
+        "evidence",
+        "expected"
+      ],
+      "candidateFieldOrder": [
+        "candidateId",
+        "fingerprint",
+        "recordKind",
+        "operation",
+        "subjectId",
+        "recordKey",
+        "eventDate",
+        "category",
+        "contentClass",
+        "durable",
+        "claimText"
+      ],
+      "candidateRequired": [
+        "candidateId",
+        "fingerprint",
+        "recordKind",
+        "operation",
+        "subjectId",
+        "recordKey",
+        "eventDate",
+        "category",
+        "contentClass",
+        "durable",
+        "claimText"
+      ],
+      "evidenceFieldOrder": [
+        "evidenceId",
+        "connector",
+        "sourceTier",
+        "sourceKind",
+        "civicEvidenceTier",
+        "stance",
+        "publisherId",
+        "partySlug",
+        "url",
+        "canonicalUrl",
+        "title",
+        "excerpt",
+        "publishedAt",
+        "subjectId",
+        "eventDate",
+        "category",
+        "accessibleFullText",
+        "paywalled",
+        "anonymousSourceDependency",
+        "discoveryOnly"
+      ],
+      "evidenceRequired": [
+        "evidenceId",
+        "connector",
+        "sourceTier",
+        "sourceKind",
+        "civicEvidenceTier",
+        "stance",
+        "publisherId",
+        "url",
+        "canonicalUrl",
+        "title",
+        "excerpt",
+        "publishedAt",
+        "subjectId",
+        "eventDate",
+        "category",
+        "accessibleFullText",
+        "paywalled",
+        "anonymousSourceDependency",
+        "discoveryOnly"
+      ],
+      "expectedFieldOrder": [
+        "eligibility",
+        "outcome",
+        "reasonCodes",
+        "ownershipGroups",
+        "ownershipClusters",
+        "evidenceUsed",
+        "evidenceExcluded"
+      ],
+      "expectedRequired": [
+        "eligibility",
+        "outcome",
+        "reasonCodes",
+        "ownershipGroups",
+        "ownershipClusters",
+        "evidenceUsed",
+        "evidenceExcluded"
+      ],
+      "retryFieldOrder": [
+        "maxAttempts",
+        "attemptsUsed",
+        "before",
+        "additionalEvidence",
+        "after"
+      ],
+      "retryRequired": [
+        "maxAttempts",
+        "attemptsUsed",
+        "before",
+        "additionalEvidence",
+        "after"
+      ],
+      "dedupContextFieldOrder": [
+        "now",
+        "priorSealedCandidates",
+        "publishedFingerprints"
+      ],
+      "dedupContextRequired": [
+        "now",
+        "priorSealedCandidates",
+        "publishedFingerprints"
+      ],
+      "directory": "cases"
+    },
+    "run_case": {
+      "fieldOrder": [
+        "fixtureSchemaVersion",
+        "kind",
+        "id",
+        "title",
+        "description",
+        "branches",
+        "polarity",
+        "run",
+        "queue",
+        "expected"
+      ],
+      "required": [
+        "fixtureSchemaVersion",
+        "kind",
+        "id",
+        "title",
+        "description",
+        "branches",
+        "polarity",
+        "run",
+        "queue",
+        "expected"
+      ],
+      "runFieldOrder": [
+        "runId",
+        "watchId",
+        "slotDate",
+        "mode",
+        "publishedCap"
+      ],
+      "runRequired": [
+        "runId",
+        "watchId",
+        "slotDate",
+        "mode",
+        "publishedCap"
+      ],
+      "queueFieldOrder": [
+        "candidateId",
+        "rank",
+        "fingerprint",
+        "recordKind",
+        "eligibility"
+      ],
+      "queueRequired": [
+        "candidateId",
+        "rank",
+        "fingerprint",
+        "recordKind",
+        "eligibility"
+      ],
+      "expectedFieldOrder": [
+        "publishedCandidateIds",
+        "deferredCandidateIds",
+        "reasonCodes",
+        "deferralReasonByCandidateId"
+      ],
+      "expectedRequired": [
+        "publishedCandidateIds",
+        "deferredCandidateIds",
+        "reasonCodes",
+        "deferralReasonByCandidateId"
+      ],
+      "directory": "runs"
+    }
+  },
+  "vocabularies": {
+    "kind": [
+      "evidence_case",
+      "run_case"
+    ],
+    "polarity": [
+      "negative",
+      "positive"
+    ],
+    "eligibility": [
+      "blocked",
+      "deferred",
+      "publishable"
+    ],
+    "outcome": [
+      "deferred_capacity",
+      "deferred_evidence",
+      "deferred_unsupported",
+      "duplicate",
+      "qualified",
+      "screened_out"
+    ],
+    "recordKind": [
+      "correction",
+      "electorate-boundary",
+      "party-registration",
+      "policy",
+      "promise-finding",
+      "timeline"
+    ],
+    "supportedRecordKind": [
+      "correction",
+      "policy",
+      "promise-finding",
+      "timeline"
+    ],
+    "operation": [
+      "add",
+      "correct",
+      "retract"
+    ],
+    "contentClass": [
+      "factual",
+      "live-blog",
+      "opinion",
+      "poll"
+    ],
+    "category": [
+      "correction",
+      "electoral-administration",
+      "electorate-boundary",
+      "legislation",
+      "live-blog",
+      "official-finding",
+      "opinion",
+      "party-policy",
+      "party-timeline-event",
+      "poll"
+    ],
+    "sourceTier": [
+      "T0",
+      "T1",
+      "T2",
+      "T3",
+      "T4",
+      "T5"
+    ],
+    "sourceKind": [
+      "electoral-commission",
+      "government",
+      "independent-news",
+      "legislation",
+      "official-review",
+      "official-statistics",
+      "parliament",
+      "party-primary"
+    ],
+    "civicEvidenceTier": [
+      "aggregator",
+      "official",
+      "other_media",
+      "party_primary",
+      "reputable_media"
+    ],
+    "evidenceStance": [
+      "context",
+      "contradicting",
+      "corroborating",
+      "supporting"
+    ],
+    "connector": [
+      "google_news",
+      "hackernews",
+      "official_feeds",
+      "party_primary",
+      "reddit",
+      "social_syndication"
+    ],
+    "publisherKind": [
+      "discovery",
+      "media",
+      "official",
+      "party"
+    ],
+    "runMode": [
+      "election",
+      "normal"
+    ]
+  },
+  "outcomeByEligibility": {
+    "publishable": [
+      "qualified"
+    ],
+    "blocked": [
+      "screened_out",
+      "duplicate"
+    ],
+    "deferred": [
+      "deferred_evidence",
+      "deferred_unsupported",
+      "deferred_capacity"
+    ]
+  },
+  "reasonCodes": {
+    "batch_cap_reached": {
+      "disposition": "defer",
+      "summary": "Slot cap reached; overflow candidate waits for the next slot."
+    },
+    "batch_cap_within_limit": {
+      "disposition": "allow",
+      "summary": "Published candidate count is at or below the slot cap."
+    },
+    "corroboration_category_match": {
+      "disposition": "allow",
+      "summary": "Corroborating items share the candidate category."
+    },
+    "corroboration_category_mismatch": {
+      "disposition": "defer",
+      "summary": "An item describes a different category and cannot corroborate."
+    },
+    "corroboration_event_date_match": {
+      "disposition": "allow",
+      "summary": "Corroborating items share the event date."
+    },
+    "corroboration_event_date_mismatch": {
+      "disposition": "defer",
+      "summary": "An item describes a different event date and cannot corroborate."
+    },
+    "corroboration_subject_match": {
+      "disposition": "allow",
+      "summary": "Corroborating items share the candidate subject."
+    },
+    "corroboration_subject_mismatch": {
+      "disposition": "defer",
+      "summary": "An item describes a different subject and cannot corroborate."
+    },
+    "dedup_no_prior_match": {
+      "disposition": "allow",
+      "summary": "No prior sealed candidate or published fingerprint matches."
+    },
+    "dedup_outside_published_window": {
+      "disposition": "allow",
+      "summary": "The matching published fingerprint is older than the fourteen day window."
+    },
+    "dedup_outside_sealed_window": {
+      "disposition": "allow",
+      "summary": "The matching sealed candidate is older than the seven day window."
+    },
+    "discovery_resolved_to_publisher": {
+      "disposition": "allow",
+      "summary": "A discovery item resolved to registered publisher evidence."
+    },
+    "duplicate_canonical_url": {
+      "disposition": "block",
+      "summary": "A prior candidate already carries this canonical evidence URL."
+    },
+    "duplicate_published_fingerprint_within_fourteen_days": {
+      "disposition": "block",
+      "summary": "The same fingerprint was published downstream within fourteen days."
+    },
+    "duplicate_sealed_candidate_within_seven_days": {
+      "disposition": "block",
+      "summary": "The same fingerprint was sealed into a batch within seven days."
+    },
+    "evidence_accessible_full_article": {
+      "disposition": "allow",
+      "summary": "At least one cited article is fully accessible."
+    },
+    "evidence_anonymous_source_dependency": {
+      "disposition": "defer",
+      "summary": "Every media item depends on unnamed sources."
+    },
+    "evidence_discovery_only_source": {
+      "disposition": "defer",
+      "summary": "Only discovery tier material is available; it can never be evidence."
+    },
+    "evidence_insufficient": {
+      "disposition": "defer",
+      "summary": "The remaining admissible evidence does not meet any rule."
+    },
+    "evidence_media_two_ownership_groups": {
+      "disposition": "allow",
+      "summary": "Two reputable publishers under distinct ownership groups agree."
+    },
+    "evidence_named_sources_only": {
+      "disposition": "allow",
+      "summary": "No cited item depends on an unnamed source."
+    },
+    "evidence_no_accessible_full_article": {
+      "disposition": "defer",
+      "summary": "No cited article can be fetched in full."
+    },
+    "evidence_official_finding_requires_official_source": {
+      "disposition": "defer",
+      "summary": "An official finding needs T0 to T2 evidence, not a party statement."
+    },
+    "evidence_official_singleton": {
+      "disposition": "allow",
+      "summary": "One constitutive official record establishes the fact by itself."
+    },
+    "evidence_official_source_required": {
+      "disposition": "defer",
+      "summary": "A legal or parliamentary state needs a T0 source."
+    },
+    "evidence_party_mismatch": {
+      "disposition": "block",
+      "summary": "One party's characterization of another party's policy is excluded."
+    },
+    "evidence_party_primary_required": {
+      "disposition": "defer",
+      "summary": "A party policy, promise, or position needs a T3 party primary source."
+    },
+    "evidence_party_primary_singleton": {
+      "disposition": "allow",
+      "summary": "The party's own primary source establishes its policy by itself."
+    },
+    "evidence_paywall_corroborated": {
+      "disposition": "allow",
+      "summary": "Paywalled material is paired with accessible corroborating evidence."
+    },
+    "evidence_paywalled_without_accessible_corroboration": {
+      "disposition": "defer",
+      "summary": "Paywalled material has no accessible archive or corroboration."
+    },
+    "evidence_same_ownership_cluster": {
+      "disposition": "defer",
+      "summary": "Both publishers roll up to one ownership cluster and count as one publisher."
+    },
+    "evidence_single_ownership_group": {
+      "disposition": "defer",
+      "summary": "The admissible media evidence resolves to one ownership group, which counts as one publisher."
+    },
+    "evidence_unknown_ownership_group": {
+      "disposition": "defer",
+      "summary": "A publisher has no registered ownership group, so it fails closed."
+    },
+    "record_kind_supported": {
+      "disposition": "allow",
+      "summary": "The record kind is inside the automated publication scope."
+    },
+    "record_kind_unsupported": {
+      "disposition": "defer",
+      "summary": "The record kind is outside the automated publication scope."
+    },
+    "research_retry_exhausted": {
+      "disposition": "defer",
+      "summary": "The single bounded research attempt did not resolve the evidence gap."
+    },
+    "research_retry_resolved": {
+      "disposition": "allow",
+      "summary": "One bounded research attempt supplied the missing evidence."
+    },
+    "significance_durable": {
+      "disposition": "allow",
+      "summary": "The fact stays voter relevant beyond thirty days."
+    },
+    "significance_excluded_category": {
+      "disposition": "block",
+      "summary": "The material falls in a hard excluded category."
+    },
+    "significance_non_durable": {
+      "disposition": "block",
+      "summary": "The material is not durable enough to publish."
+    }
+  },
+  "requiredBranches": {
+    "anonymous_source_dependency": "Media evidence must not depend on unnamed sources.",
+    "article_accessibility": "At least one cited article must be fully accessible.",
+    "batch_cap_election": "Election period slots publish at most ten candidates.",
+    "batch_cap_normal": "Normal slots publish at most six candidates.",
+    "corroboration_category_match": "Corroborating items must share the candidate category.",
+    "corroboration_event_date_match": "Corroborating items must share the event date.",
+    "corroboration_subject_match": "Corroborating items must share the candidate subject.",
+    "dedup_canonical_url": "Canonical evidence URLs are deduplicated across candidates.",
+    "dedup_published_fingerprint_14d": "Published downstream fingerprints are deduplicated for fourteen days.",
+    "dedup_sealed_candidate_7d": "Sealed candidate fingerprints are deduplicated for seven days.",
+    "discovery_only_sources": "Discovery tier material can never become publication evidence.",
+    "media_ownership_cluster": "Publishers in one ownership cluster count as one publisher.",
+    "media_ownership_independence": "Media only evidence needs two distinct ownership groups.",
+    "media_ownership_registry": "Publishers without a registered owner fail closed.",
+    "paywall_accessibility": "Paywalled evidence needs accessible corroboration.",
+    "record_kind_supported": "Only supported record kinds may be published.",
+    "research_retry_bounded": "One bounded research attempt may resolve an evidence gap.",
+    "significance_durability": "Only durable, non excluded material may be published.",
+    "tier_official_finding": "Official findings need T0 to T2 evidence.",
+    "tier_t0_official_singleton": "One T0 record establishes legal or parliamentary state.",
+    "tier_t3_party_primary_policy": "Party policy needs the matching party's primary source."
+  },
+  "categoryEvidenceRules": {
+    "correction": {
+      "publishable": true,
+      "sufficientTiers": [
+        "T0",
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 3.1: a correction carries the same evidence bar as the record it corrects"
+    },
+    "electoral-administration": {
+      "publishable": true,
+      "sufficientTiers": [
+        "T0",
+        "T1"
+      ],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 4.1: electoral administration state comes from a T0 or T1 official source"
+    },
+    "electorate-boundary": {
+      "publishable": false,
+      "sufficientTiers": [],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 3.2: electorate facts are outside the initial automated scope"
+    },
+    "legislation": {
+      "publishable": true,
+      "sufficientTiers": [
+        "T0"
+      ],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 4.2 rule 2: a legal or parliamentary state requires a T0 source"
+    },
+    "live-blog": {
+      "publishable": false,
+      "sufficientTiers": [],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 4.3: live blog updates are a hard exclusion"
+    },
+    "official-finding": {
+      "publishable": true,
+      "sufficientTiers": [
+        "T0",
+        "T1",
+        "T2"
+      ],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 4.2 rule 3: an outcome or official finding requires T0 to T2 evidence"
+    },
+    "opinion": {
+      "publishable": false,
+      "sufficientTiers": [],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 4.3: opinion pieces are a hard exclusion"
+    },
+    "party-policy": {
+      "publishable": true,
+      "sufficientTiers": [
+        "T3"
+      ],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": true,
+      "rule": "plan 4.2 rule 1: a party policy, promise, or position requires that party's T3 source"
+    },
+    "party-timeline-event": {
+      "publishable": true,
+      "sufficientTiers": [
+        "T0",
+        "T1",
+        "T2",
+        "T3",
+        "T4"
+      ],
+      "mediaOnlyPublishable": true,
+      "requiresMatchingParty": false,
+      "rule": "plan 3.1 durable party timeline event, established through plan 4.2 rule 4: two reputable publishers under distinct ownership groups, one accessible full article, and no anonymous source dependency"
+    },
+    "poll": {
+      "publishable": false,
+      "sufficientTiers": [],
+      "mediaOnlyPublishable": false,
+      "requiresMatchingParty": false,
+      "rule": "plan 4.3: polls and projections are a hard exclusion"
+    }
+  },
+  "mediaOnlyBranches": [
+    "anonymous_source_dependency",
+    "article_accessibility",
+    "corroboration_category_match",
+    "corroboration_event_date_match",
+    "corroboration_subject_match",
+    "dedup_canonical_url",
+    "dedup_published_fingerprint_14d",
+    "dedup_sealed_candidate_7d",
+    "discovery_only_sources",
+    "media_ownership_cluster",
+    "media_ownership_independence",
+    "media_ownership_registry",
+    "paywall_accessibility",
+    "research_retry_bounded"
+  ],
+  "precedenceReasonCodes": [
+    "evidence_official_finding_requires_official_source",
+    "evidence_official_source_required",
+    "evidence_party_mismatch",
+    "evidence_party_primary_required",
+    "record_kind_unsupported",
+    "significance_excluded_category",
+    "significance_non_durable"
+  ],
+  "admissibilityRules": {
+    "discoveryOnlyReasonCode": "evidence_discovery_only_source",
+    "singleOwnershipReasonCode": "evidence_single_ownership_group",
+    "mediaInsufficiencyCodes": [
+      "corroboration_category_mismatch",
+      "corroboration_event_date_mismatch",
+      "corroboration_subject_mismatch",
+      "evidence_anonymous_source_dependency",
+      "evidence_no_accessible_full_article",
+      "evidence_paywalled_without_accessible_corroboration",
+      "evidence_same_ownership_cluster",
+      "evidence_single_ownership_group",
+      "evidence_unknown_ownership_group"
+    ],
+    "note": "Discovery tier material is excluded before the evidence rules run, so a case may only record the discovery only reason code when nothing admissible is left. A case that still holds admissible media evidence must fail on a media rule instead."
+  },
+  "tierRuleCases": {
+    "legal-state-media-only-invalid": {
+      "category": "legislation",
+      "usedTiersSubsetOf": [
+        "T4"
+      ],
+      "requiredReasonCode": "evidence_official_source_required"
+    },
+    "official-electoral-singleton-valid": {
+      "category": "electoral-administration",
+      "requiredUsedTier": "T0",
+      "requiredReasonCode": "evidence_official_singleton"
+    },
+    "official-finding-official-review-valid": {
+      "category": "official-finding",
+      "requiredUsedTier": "T2",
+      "requiredReasonCode": "evidence_official_singleton"
+    },
+    "official-finding-party-only-invalid": {
+      "category": "official-finding",
+      "usedTiersSubsetOf": [
+        "T3"
+      ],
+      "requiredReasonCode": "evidence_official_finding_requires_official_source"
+    },
+    "official-legislation-singleton-valid": {
+      "category": "legislation",
+      "requiredUsedTier": "T0",
+      "requiredReasonCode": "evidence_official_singleton"
+    },
+    "official-parliament-singleton-valid": {
+      "category": "legislation",
+      "requiredUsedTier": "T0",
+      "requiredReasonCode": "evidence_official_singleton"
+    },
+    "party-policy-party-primary-valid": {
+      "category": "party-policy",
+      "requiredUsedTier": "T3",
+      "requiredReasonCode": "evidence_party_primary_singleton"
+    },
+    "party-policy-without-party-primary-invalid": {
+      "category": "party-policy",
+      "usedTiersSubsetOf": [
+        "T4"
+      ],
+      "requiredReasonCode": "evidence_party_primary_required"
+    },
+    "significance-durable-legislation-valid": {
+      "category": "legislation",
+      "requiredUsedTier": "T0",
+      "requiredReasonCode": "evidence_official_singleton"
+    }
+  },
+  "dedupWindows": {
+    "sealedCandidateDays": 7,
+    "publishedFingerprintDays": 14,
+    "boundary": "inclusive",
+    "note": "A match whose age equals the window exactly is a duplicate. Comparisons use less than or equal, never less than."
+  },
+  "researchRetry": {
+    "maxAttemptsPerCandidate": 1
+  },
+  "batchCaps": {
+    "normal": 6,
+    "election": 10
+  },
+  "urlPolicy": {
+    "scheme": "https",
+    "allowedHostSuffix": ".example",
+    "note": "Reserved .example hosts only. No live third party URL may appear here."
+  },
+  "textPolicy": {
+    "maxExcerptCharacters": 200,
+    "maxTitleCharacters": 120,
+    "forbiddenCharacters": [
+      "\u2014",
+      "\u2013"
+    ],
+    "note": "Invented text only. No copied article text, quotations, or personal data."
+  }
+}

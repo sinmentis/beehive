@@ -17,9 +17,19 @@ _SERVICE_ONLY_KEYS = {
     "TimeoutStartSec",
     "TimeoutStopSec",
     "ExecStartPre",
+    "LogRateLimitBurst",
+    "LogRateLimitIntervalSec",
     "Type",
     "Restart",
+    "StandardError",
+    "StandardOutput",
+    "SyslogIdentifier",
 }
+_BIND_SOURCE_PREFIXES = ("/", "%h/")
+_BIND_OPTIONS = frozenset({"ro", "rw", "z", "Z"})
+# Civic stays a timer-started oneshot with its own locked image and spool mount: the documented
+# exception to ADR-0012 (docs/adr/0013-civic-stays-timer-driven.md).
+_CIVIC_ONESHOTS = {"beehive-civic.container", "beehive-civic-maintenance.container"}
 
 
 def _parser() -> configparser.ConfigParser:
@@ -33,7 +43,42 @@ def _parser() -> configparser.ConfigParser:
     return p
 
 
-def test_expected_units_are_exactly_the_web_app_and_two_workers():
+def _container_volumes(path: Path) -> list[str]:
+    """Every repeated Volume= entry under [Container], preserving declaration order."""
+    section = ""
+    volumes = []
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1]
+        elif section == "Container" and line.startswith("Volume="):
+            volumes.append(line.removeprefix("Volume="))
+    return volumes
+
+
+def _validate_bind_mount(path: Path, reference: str) -> None:
+    parts = reference.split(":")
+    assert len(parts) in {2, 3}, (
+        f"{path.name}: bind Volume={reference!r} must be source:destination[:options]"
+    )
+    source, destination = parts[:2]
+    assert source.startswith(_BIND_SOURCE_PREFIXES), (
+        f"{path.name}: bind source {source!r} must be absolute or start with %h/"
+    )
+    assert ".." not in Path(source.replace("%h", "/home")).parts, (
+        f"{path.name}: bind source {source!r} must not traverse parent directories"
+    )
+    assert destination.startswith("/") and ".." not in Path(destination).parts, (
+        f"{path.name}: bind destination {destination!r} must be an absolute container path"
+    )
+    if len(parts) == 3:
+        options = frozenset(option for option in parts[2].split(",") if option)
+        assert options and options <= _BIND_OPTIONS, (
+            f"{path.name}: unsupported bind options {sorted(options - _BIND_OPTIONS)}"
+        )
+
+
+def test_expected_units_are_exactly_the_web_app_two_workers_and_civic():
     """ADR-0012: every background job runs in the always-on jobs worker, so there are no timers,
     path units or oneshot containers left to install."""
     assert {f.name for f in _QUADLET_DIR.iterdir() if f.is_file()} == {
@@ -41,6 +86,10 @@ def test_expected_units_are_exactly_the_web_app_and_two_workers():
         "beehive-web.container",
         "beehive-research.container",
         "beehive-jobs.container",
+        "beehive-civic.container",
+        "beehive-civic.timer",
+        "beehive-civic-maintenance.container",
+        "beehive-civic-maintenance.timer",
     }
 
 
@@ -49,16 +98,19 @@ def test_container_volume_references_have_a_matching_volume_file():
     # reference "newscenter-data.volume", but no such Quadlet unit existed in this
     # directory, so `systemctl daemon-reload` would have failed at install time.
     volume_files = {f.name for f in _QUADLET_DIR.glob("*.volume")}
+    named_references = []
     for path in _QUADLET_DIR.glob("*.container"):
-        parser = _parser()
-        parser.read(path)
-        volume_line = parser["Container"].get("Volume")
-        if volume_line is None:
-            continue
-        source = volume_line.split(":", 1)[0]
-        assert source in volume_files, (
-            f"{path.name}: Volume= references '{source}', but no matching .volume file exists"
-        )
+        for reference in _container_volumes(path):
+            source = reference.split(":", 1)[0]
+            if source.endswith(".volume") and "/" not in source and "%" not in source:
+                named_references.append(source)
+                assert source in volume_files, (
+                    f"{path.name}: Volume= references '{source}', but no matching .volume "
+                    "file exists"
+                )
+            else:
+                _validate_bind_mount(path, reference)
+    assert "beehive-data.volume" in named_references
 
 
 def test_container_files_are_valid_ini_with_no_service_keys_under_container():
@@ -74,10 +126,41 @@ def test_container_files_are_valid_ini_with_no_service_keys_under_container():
 
 def test_every_container_is_always_on_and_boot_wanted():
     for path in _QUADLET_DIR.glob("*.container"):
+        if path.name in _CIVIC_ONESHOTS:
+            continue
         parser = _parser()
         parser.read(path)
         assert "Type" not in parser["Service"] or parser["Service"]["Type"] != "oneshot", path.name
         assert parser["Install"]["WantedBy"] == "default.target", path.name
+
+
+def test_civic_units_are_timer_started_oneshots():
+    for name in _CIVIC_ONESHOTS:
+        parser = _parser()
+        parser.read(_QUADLET_DIR / name)
+        assert parser["Service"]["Type"] == "oneshot", name
+        assert "Install" not in parser, f"{name}: oneshot units are timer-started, not boot-started"
+        timer = _parser()
+        timer.read(_QUADLET_DIR / name.replace(".container", ".timer"))
+        assert timer["Timer"]["Unit"] == name.replace(".container", ".service")
+        assert timer["Install"]["WantedBy"] == "timers.target"
+
+
+def test_civic_units_stream_bounded_unbuffered_ndjson_to_journald():
+    for name, identifier in (
+        ("beehive-civic.container", "beehive-civic"),
+        ("beehive-civic-maintenance.container", "beehive-civic-maintenance"),
+    ):
+        content = (_QUADLET_DIR / name).read_text()
+        parser = _parser()
+        parser.read(_QUADLET_DIR / name)
+
+        assert "Environment=PYTHONUNBUFFERED=1" in content
+        assert parser["Service"]["StandardOutput"] == "journal"
+        assert parser["Service"]["StandardError"] == "journal"
+        assert parser["Service"]["SyslogIdentifier"] == identifier
+        assert parser["Service"]["LogRateLimitIntervalSec"] == "30s"
+        assert parser["Service"]["LogRateLimitBurst"] == "1000"
 
 
 def test_web_container_has_session_secret():
@@ -139,6 +222,7 @@ def test_containerfile_import_smoke_test_includes_both_workers():
 
 def test_release_restarts_every_always_on_unit():
     release = (_QUADLET_DIR.parent / "release.sh").read_text()
-    units = {f.stem + ".service" for f in _QUADLET_DIR.glob("*.container")}
+    units = {f.stem + ".service" for f in _QUADLET_DIR.glob("*.container")
+             if f.name not in _CIVIC_ONESHOTS}
     line = next(line for line in release.splitlines() if line.startswith("ALWAYS_ON_UNITS="))
     assert set(line.split("(", 1)[1].rstrip(")").split()) == units

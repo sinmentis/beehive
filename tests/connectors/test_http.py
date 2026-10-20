@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import gzip
+import urllib.request
 import zlib
+from email.message import Message
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
@@ -17,6 +19,8 @@ from beehive.connectors.http import (
     post_json,
     post_json_browser_tls,
 )
+from beehive.connectors.http import (_ALLOWED_HOSTS_ATTR, UnsafeRedirectError,
+                                      _ValidatingRedirectHandler)
 from tests.connectors.http_stubs import urlopen_response
 
 _URL = "https://example.com/feed.json"
@@ -317,6 +321,35 @@ def test_permanent_statuses_are_classified_and_not_retried(code, kind):
     assert excinfo.value.kind is kind
 
 
+@pytest.mark.parametrize("code,attempts", [(404, 1), (403, 1), (503, 3)])
+def test_an_origin_answer_carries_its_http_status(code, attempts):
+    with (
+        patch(
+            "beehive.connectors.http.urllib.request.urlopen",
+            side_effect=[_http_error(code)] * attempts,
+        ),
+        patch("beehive.connectors.http.time.sleep"),
+    ):
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            fetch_bytes(_URL)
+
+    assert excinfo.value.status == code
+
+
+@pytest.mark.parametrize(
+    "failure", [URLError("name resolution failed"), TimeoutError("timed out"), OSError("reset")])
+def test_a_failure_without_an_origin_answer_carries_no_status(failure):
+    with (
+        patch("beehive.connectors.http.urllib.request.urlopen", side_effect=[failure] * 3),
+        patch("beehive.connectors.http.time.sleep"),
+    ):
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            fetch_bytes(_URL)
+
+    assert excinfo.value.kind is ConnectorHttpErrorKind.TRANSIENT
+    assert excinfo.value.status is None
+
+
 def test_a_connection_level_failure_is_retried_as_transient():
     """Only HTTPError used to be retried, so `URLError`/timeouts -- the *common* transients --
     lost the source until the next scheduled fetch, up to 24 hours later."""
@@ -427,3 +460,145 @@ def test_invalid_json_is_reported_as_a_protocol_error():
             fetch_json(_URL)
 
     assert excinfo.value.kind is ConnectorHttpErrorKind.PROTOCOL
+
+
+# ============================================================================
+# Redirect validation (SSRF)
+# ============================================================================
+#
+# urllib follows 3xx automatically, so validating only the initial URL left a real hole: an
+# allow-listed origin could answer with `Location: http://169.254.169.254/...` and the client
+# would fetch it. These exercise the handler directly -- a redirect target is refused before any
+# connection is attempted, so there is nothing to serve and no network is touched.
+
+_ALLOWED = frozenset({"rbnz.govt.nz"})
+
+
+def _redirect_request(newurl, *, allowed_hosts=_ALLOWED, start="https://www.rbnz.govt.nz/feeds"):
+    """Drives the handler exactly as urllib does when it sees a Location header."""
+    request = urllib.request.Request(start)
+    if allowed_hosts is not _UNSET_SENTINEL:
+        setattr(request, _ALLOWED_HOSTS_ATTR, allowed_hosts)
+    headers = Message()
+    headers["Location"] = newurl
+    return _ValidatingRedirectHandler().redirect_request(
+        request, None, 302, "Found", headers, newurl)
+
+
+_UNSET_SENTINEL = object()
+
+
+def test_a_redirect_within_the_allowlist_is_followed():
+    redirected = _redirect_request("https://www.rbnz.govt.nz/feeds/news")
+    assert redirected is not None
+    assert redirected.full_url == "https://www.rbnz.govt.nz/feeds/news"
+
+
+def test_the_allowlist_is_carried_onto_the_redirected_request():
+    """Otherwise hop three would be unchecked -- the interesting hop for an attacker."""
+    redirected = _redirect_request("https://www.rbnz.govt.nz/feeds/news")
+    assert getattr(redirected, _ALLOWED_HOSTS_ATTR) == _ALLOWED
+
+
+def test_a_redirect_off_the_allowlist_is_refused():
+    with pytest.raises(UnsafeRedirectError) as excinfo:
+        _redirect_request("https://evil.example.com/collect")
+    assert "evil.example.com" in str(excinfo.value.url)
+
+
+def test_a_redirect_to_a_non_standard_port_is_refused():
+    with pytest.raises(UnsafeRedirectError):
+        _redirect_request("http://127.0.0.1:8000/admin", allowed_hosts=None)
+
+
+def test_a_redirect_to_a_private_address_is_refused(monkeypatch):
+    """The module-level `_skip_dns` fixture pins resolution to a public address so the other
+    tests here stay about HTTP behaviour; this one restores real classification, because
+    "an allow-listed host redirects to a private address" is precisely the case the handler
+    exists for."""
+    monkeypatch.setattr("beehive.url_safety._resolve", lambda hostname: [hostname])
+    with pytest.raises(UnsafeRedirectError) as excinfo:
+        _redirect_request("http://10.0.0.5/admin", allowed_hosts=None)
+    assert "prohibited address" in str(excinfo.value)
+
+
+def test_a_redirect_to_cloud_metadata_is_refused_even_with_no_allowlist(monkeypatch):
+    """The link-local metadata address is the canonical SSRF target, and a caller that passed no
+    allow-list is still protected by the address rules."""
+    monkeypatch.setattr("beehive.url_safety._resolve", lambda hostname: [hostname])
+    with pytest.raises(UnsafeRedirectError) as excinfo:
+        _redirect_request("http://169.254.169.254/latest/meta-data/", allowed_hosts=None)
+    assert "169.254.169.254" in str(excinfo.value)
+
+
+def test_an_allow_listed_host_redirecting_to_a_private_address_is_refused(monkeypatch):
+    """The realistic attack: the request goes to a host the allow-list trusts, and the ANSWER
+    points somewhere internal."""
+    monkeypatch.setattr(
+        "beehive.url_safety._resolve",
+        lambda hostname: ["127.0.0.1"] if hostname == "internal.rbnz.govt.nz"
+        else ["93.184.216.34"])
+    with pytest.raises(UnsafeRedirectError):
+        _redirect_request("https://internal.rbnz.govt.nz/metrics")
+
+
+def test_a_redirect_to_a_non_http_scheme_is_refused():
+    with pytest.raises(UnsafeRedirectError):
+        _redirect_request("file:///etc/passwd", allowed_hosts=None)
+
+
+def test_a_subdomain_of_an_allowed_host_is_still_allowed():
+    redirected = _redirect_request("https://api.rbnz.govt.nz/feeds/news")
+    assert redirected is not None
+
+
+def test_a_lookalike_host_is_refused():
+    with pytest.raises(UnsafeRedirectError):
+        _redirect_request("https://evil-rbnz.govt.nz.attacker.test/x")
+
+
+def test_a_foreign_request_without_our_marker_is_left_alone():
+    """The handler is installed globally, so it must be a strict no-op for any urllib user that
+    is not this module."""
+    request = urllib.request.Request("https://example.com/a")
+    headers = Message()
+    headers["Location"] = "https://anywhere.example.net/b"
+    redirected = _ValidatingRedirectHandler().redirect_request(
+        request, None, 302, "Found", headers, "https://anywhere.example.net/b")
+    assert redirected is not None
+
+
+def test_an_unsafe_redirect_surfaces_as_an_unsafe_url_connector_error():
+    """The taxonomy a caller branches on must match what an unsafe initial URL produces."""
+    with patch("beehive.connectors.http.urllib.request.urlopen",
+               side_effect=UnsafeRedirectError("https://evil.example.com/x", "not allowed")):
+        with pytest.raises(ConnectorHttpError) as excinfo:
+            fetch_bytes("https://www.rbnz.govt.nz/feeds/news", allowed_hosts=_ALLOWED)
+    assert excinfo.value.kind is ConnectorHttpErrorKind.UNSAFE_URL
+    assert "refused redirect to https://evil.example.com/x" in str(excinfo.value)
+
+
+def test_the_final_url_is_reported_after_a_redirect():
+    response = urlopen_response(
+        b"payload", headers={"Content-Type": "application/xml"},
+        url="https://www.rbnz.govt.nz/feeds/news-moved")
+    with patch("beehive.connectors.http.urllib.request.urlopen", return_value=response):
+        result = fetch_bytes("https://www.rbnz.govt.nz/feeds/news", allowed_hosts=_ALLOWED)
+    assert result.final_url == "https://www.rbnz.govt.nz/feeds/news-moved"
+
+
+def test_the_final_url_defaults_to_the_requested_url():
+    response = urlopen_response(b"payload")
+    with patch("beehive.connectors.http.urllib.request.urlopen", return_value=response):
+        result = fetch_bytes("https://www.rbnz.govt.nz/feeds/news", allowed_hosts=_ALLOWED)
+    assert result.final_url == "https://www.rbnz.govt.nz/feeds/news"
+
+
+def test_a_stubbed_response_never_yields_a_mock_final_url():
+    """Guards the shared stub: `url` is set explicitly because an auto-created MagicMock
+    attribute is truthy, and would hand every stubbed caller a Mock where a URL string belongs."""
+    with patch("beehive.connectors.http.urllib.request.urlopen",
+               return_value=urlopen_response(b"payload")):
+        result = fetch_bytes("https://www.rbnz.govt.nz/feeds/news", allowed_hosts=_ALLOWED)
+    assert isinstance(result.final_url, str)
+    assert result.final_url == "https://www.rbnz.govt.nz/feeds/news"

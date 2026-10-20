@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xml:lang="en-NZ" xmlns="http://www.w3.org/2005/Atom">
+  <id>url_changed</id>
+  <link rel="alternate" type="text/html" href="https://www.legislation.govt.nz"/>
+  <link rel="self" type="application/atom+xml" href="https://www.legislation.govt.nz/subscribe/nzpco-rss.xml"/>
+  <title>New Zealand Legislation</title>
+  <updated>2026-08-13T01:09:47+12:00</updated>
+  <author>
+    <name>Parliamentary Counsel Office</name>
+    <uri>https://www.legislation.govt.nz</uri>
+  </author>
+  <entry>
+    <id>https://www.legislation.govt.nz</id>
+    <updated>2026-08-13T01:09:47+12:00</updated>
+    <link rel="alternate" type="text/html" href="https://www.legislation.govt.nz/subscribe/nzpco-rss.xml"/>
+    <content type="html">&lt;p&gt;&lt;strong&gt;This web feed will no longer be updated&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;On 8 March 2026 the new New Zealand Legislation website launched. The new website includes web feed functionality, however the URLs for these feeds are different. This message is being shown to all feeds from the old website.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Migrate to new web feeds&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;If you have been using this feed to keep up to date with legislation, we encourage you to migrate to web feeds on the new website. See our &lt;a href="https://www.legislation.govt.nz/learn-more/find-and-use-legislation/keep-up-to-date-with-legislation/"&gt;Keep up to date with legislation page&lt;/a&gt; for more information.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Migrate to new API&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;If you have been using this feed to access legislation data or as a de facto API, we encourage you to migrate to our new developer API. See our &lt;a href="https://www.legislation.govt.nz/learn-more/legislation-data/developer-api/"&gt;Developer API page&lt;/a&gt; for more information.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Continue using this feed temporarily&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;To continue using this feed as-is, you need to update the domain in the feed URL from &lt;strong&gt;legislation.govt.nz&lt;/strong&gt; to &lt;strong&gt;classic.legislation.govt.nz&lt;/strong&gt;. The old legislation website is still available at that domain for now, but it will be decommissioned later this year.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Contact us for support&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;For any questions about migrating, you can email us at &lt;a href="mailto:contact@pco.govt.nz"&gt;contact@pco.govt.nz&lt;/a&gt;. In particular, we encourage developers who are migrating integrations from legacy web feeds to get in touch so we can ensure our new API meets your requirements.&lt;/p&gt;</content>
+  </entry>
+</feed>

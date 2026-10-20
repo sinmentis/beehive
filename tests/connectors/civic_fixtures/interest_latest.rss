@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0" xml:base="https://www.interest.co.nz/">
+  <channel>
+    <title>Latest stories from interest.co.nz</title>
+    <link>https://www.interest.co.nz/</link>
+    <description/>
+    <language>en</language>
+    <item>
+      <title>Luxon strips Chris Penk of ministerial portfolios</title>
+      <link>https://www.interest.co.nz/public-policy/139787/pm-punishes-chris-penk</link>
+      <description>The Prime Minister removed the portfolios today.</description>
+      <pubDate>12th Aug 26, 5:01pm</pubDate>
+      <dc:creator>Anna Whyte</dc:creator>
+      <guid isPermaLink="false">/public-policy/139787/pm-punishes-chris-penk</guid>
+    </item>
+    <item>
+      <title>Job ads slide for the fourth month in a row</title>
+      <link>https://www.interest.co.nz/economy/139783/job-ad-numbers-declined</link>
+      <description>SEEK's latest employment marketplace report.</description>
+      <pubDate>12th Aug 26, 4:31pm</pubDate>
+      <guid isPermaLink="false">/economy/139783/job-ad-numbers-declined</guid>
+    </item>
+  </channel>
+</rss>

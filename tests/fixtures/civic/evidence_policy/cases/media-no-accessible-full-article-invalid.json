@@ -1,0 +1,89 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "media-no-accessible-full-article-invalid",
+  "title": "Media evidence with no accessible full article defers",
+  "description": "Two ownership groups agree, but neither article can be fetched in full, so no claim can be traced to supplied evidence.",
+  "branches": [
+    "article_accessibility"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-youth-wing-renaming",
+    "fingerprint": "fp-youth-wing-renaming-20260728",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260728/youth-wing-renaming",
+    "eventDate": "2026-07-28",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union renamed its youth wing on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/northern-union-youth-wing-name",
+      "canonicalUrl": "https://riverportpost.example/politics/northern-union-youth-wing-name",
+      "title": "Article that cannot be fetched in full",
+      "excerpt": "Only the headline and the first sentence can be retrieved.",
+      "publishedAt": "2026-07-28T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-28",
+      "category": "party-timeline-event",
+      "accessibleFullText": false,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/northern-union-youth-wing-name",
+      "canonicalUrl": "https://keawire.example/news/northern-union-youth-wing-name",
+      "title": "Second article also cannot be fetched in full",
+      "excerpt": "The second article also fails extraction beyond the headline.",
+      "publishedAt": "2026-07-28T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-28",
+      "category": "party-timeline-event",
+      "accessibleFullText": false,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_insufficient",
+      "evidence_no_accessible_full_article"
+    ],
+    "ownershipGroups": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

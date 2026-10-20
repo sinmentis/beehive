@@ -1,0 +1,61 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "discovery-aggregator-only-invalid",
+  "title": "Aggregator only evidence can never be published",
+  "description": "A discovery tier aggregator URL is structurally forbidden as evidence, so nothing admissible remains.",
+  "branches": [
+    "discovery_only_sources"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-regional-office-move",
+    "fingerprint": "fp-regional-office-move-20260726",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260726/regional-office-move",
+    "eventDate": "2026-07-26",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance moved its regional office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T5",
+      "sourceKind": null,
+      "civicEvidenceTier": "aggregator",
+      "stance": "context",
+      "publisherId": "aggregator-discovery",
+      "url": "https://news-aggregator.example/topics/harbour-alliance-regional-office",
+      "canonicalUrl": "https://news-aggregator.example/topics/harbour-alliance-regional-office",
+      "title": "Aggregator listing about a party office move",
+      "excerpt": "The listing summarises a claim without linking to a registered publisher.",
+      "publishedAt": "2026-07-26T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-26",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": true
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_discovery_only_source",
+      "evidence_insufficient"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [],
+    "evidenceExcluded": [
+      "e1"
+    ]
+  }
+}

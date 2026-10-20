@@ -1,0 +1,107 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "dedup-published-fingerprint-just-outside-fourteen-days-valid",
+  "title": "A fingerprint published one minute past fourteen days may publish again",
+  "description": "The matching published fingerprint is fourteen days and one minute old, which is the first instant outside the published comparison window.",
+  "branches": [
+    "dedup_published_fingerprint_14d"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-campaign-hub-registration",
+    "fingerprint": "fp-campaign-hub-registration",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260811/campaign-hub-registration",
+    "eventDate": "2026-08-11",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union registered its campaign hub on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "aotea-public-radio",
+      "url": "https://aoteapublicradio.example/news/northern-union-campaign-hub",
+      "canonicalUrl": "https://aoteapublicradio.example/news/northern-union-campaign-hub",
+      "title": "Northern Union registers its campaign hub",
+      "excerpt": "The report gives the registration date and the location of the hub.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/northern-union-campaign-hub",
+      "canonicalUrl": "https://riverportpost.example/politics/northern-union-campaign-hub",
+      "title": "Second owner group reports the same campaign hub registration",
+      "excerpt": "A second newsroom confirms the registration date and the location.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [],
+    "publishedFingerprints": [
+      {
+        "fingerprint": "fp-campaign-hub-registration",
+        "batchId": "2026-07-29-02",
+        "publishedAt": "2026-07-29T06:29:00+12:00"
+      }
+    ]
+  },
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "dedup_outside_published_window",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "aotea-public-radio-group",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "crown-broadcasting-cluster",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

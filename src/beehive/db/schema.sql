@@ -728,3 +728,819 @@ CREATE TABLE IF NOT EXISTS fetch_requests (
     rerun INTEGER NOT NULL DEFAULT 0 CHECK (rerun IN (0, 1)),
     CHECK ((claim_token IS NULL) = (lease_expires_at IS NULL))
 );
+
+-- Beehive Civic persistence. A third, additive table family alongside the feed tables and the
+-- Research tables: a Civic Watch never becomes a Channel/Source/Item or a Research Session, so
+-- none of these tables reference either family and nothing above this line changes because they
+-- exist. An existing database first picked the family up from these CREATE TABLE IF NOT EXISTS
+-- statements; later additive columns (currently the two payload_hash fields) are backfilled by
+-- db/connection.py so upgraded and fresh databases remain identical.
+--
+-- Same explicit-now convention as the Research family: every TEXT timestamp is written by
+-- db/civic_*.py from a caller-supplied `now: datetime`, never a SQL-side DEFAULT, because
+-- worker leases and fixed deadlines have to be compared against wall-clock time the caller
+-- already captured and letting SQLite stamp its own "now" makes that untestable under frozen
+-- time. Every status/phase CHECK mirrors domain/civic.py exactly, so a row that satisfies these
+-- CHECKs is always loadable into the corresponding frozen dataclass without tripping its
+-- __post_init__.
+
+-- One row per Civic Watch. subject is the Watch's identity (UNIQUE) so the same civic subject
+-- can never be monitored twice in parallel under two competing schedules.
+CREATE TABLE IF NOT EXISTS civic_watches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL UNIQUE,
+    question TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'paused', 'retired')),
+    schedule_timezone TEXT NOT NULL DEFAULT 'Pacific/Auckland',
+    schedule_time TEXT NOT NULL DEFAULT '06:30',
+    created_at TEXT NOT NULL,
+    paused_at TEXT,
+    retired_at TEXT,
+    CHECK (
+        (status = 'paused' AND paused_at IS NOT NULL)
+        OR (status != 'paused' AND paused_at IS NULL)
+    ),
+    CHECK (
+        (status = 'retired' AND retired_at IS NOT NULL)
+        OR (status != 'retired' AND retired_at IS NULL)
+    )
+);
+
+-- Immutable once published: a Civic Vocabulary version is numbered per Watch, sealed with a
+-- content_hash over its own terms, and thereafter only ever superseded by a later version. An
+-- already-delivered Civic Batch names the version it was screened against, so editing a
+-- published version in place would retroactively change what a published statement was allowed
+-- to say. The partial unique index below enforces at most one 'published' version per Watch --
+-- "the vocabulary currently in force" is a single, unambiguous row, never a set.
+CREATE TABLE IF NOT EXISTS civic_vocabulary_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL REFERENCES civic_watches(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL CHECK (version > 0),
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'published', 'superseded')),
+    content_hash TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    published_at TEXT,
+    superseded_at TEXT,
+    UNIQUE(watch_id, version),
+    CHECK (
+        (status = 'draft' AND content_hash = '' AND published_at IS NULL)
+        OR (status != 'draft' AND content_hash != '' AND published_at IS NOT NULL)
+    ),
+    CHECK (
+        (status = 'superseded' AND superseded_at IS NOT NULL)
+        OR (status != 'superseded' AND superseded_at IS NULL)
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_civic_vocabulary_one_published_per_watch
+    ON civic_vocabulary_versions(watch_id) WHERE status = 'published';
+
+-- Terms belong to a version, never to the Watch directly: that is what makes "which terms were
+-- in force" answerable for any past Civic Batch. normalized_term is the comparison form
+-- (domain.civic.normalize_term) and carries the uniqueness constraint, so "Green Party" and
+-- "green  party" cannot both be added to the same version.
+CREATE TABLE IF NOT EXISTS civic_vocabulary_terms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vocabulary_version_id INTEGER NOT NULL
+        REFERENCES civic_vocabulary_versions(id) ON DELETE CASCADE,
+    term TEXT NOT NULL,
+    normalized_term TEXT NOT NULL,
+    category TEXT NOT NULL
+        CHECK (category IN ('party', 'person', 'topic', 'place', 'organisation')),
+    role TEXT NOT NULL CHECK (role IN ('required', 'optional', 'excluded')),
+    created_at TEXT NOT NULL,
+    UNIQUE(vocabulary_version_id, normalized_term)
+);
+
+-- One Civic Run per Watch per slot -- UNIQUE(watch_id, slot_at) is the DB-enforced form of
+-- "a slot is executed at most once", so a scheduler that ticks twice inside the same slot (a
+-- restart, an overlapping timer, two hosts) can never mint a second run for it; db/civic_runs.py
+-- returns the existing row instead. slot_at is the Watch's own calendar slot, not the moment the
+-- scheduler happened to notice it, so a late tick still serves the slot it was late for.
+--
+-- Lease/deadline shape is deliberately identical to research_runs: claim_token/lease_expires_at
+-- is a short worker lease every progressive write is fenced on, while deadline_at is the run's
+-- fixed total budget, set once via COALESCE at first claim and never reset by recovery. The
+-- partial unique index enforces at most one active (pending/processing) run per Watch, so a
+-- backlog of missed slots can never be worked in parallel against the same Watch.
+CREATE TABLE IF NOT EXISTS civic_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL REFERENCES civic_watches(id) ON DELETE CASCADE,
+    vocabulary_version_id INTEGER
+        REFERENCES civic_vocabulary_versions(id) ON DELETE RESTRICT,
+    slot_at TEXT NOT NULL,
+    run_mode TEXT NOT NULL DEFAULT 'normal' CHECK (run_mode IN ('normal', 'election')),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'processing', 'completed', 'cancelled', 'failed')),
+    phase TEXT
+        CHECK (phase IS NULL OR phase IN (
+            'gathering', 'screening', 'researching', 'verifying', 'publishing'
+        )),
+    claim_token TEXT,
+    lease_expires_at TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1)),
+    requested_at TEXT NOT NULL,
+    started_at TEXT,
+    deadline_at TEXT,
+    completed_at TEXT,
+    error_code TEXT,
+    error_detail TEXT,
+    UNIQUE(watch_id, slot_at),
+    CHECK (
+        (
+            status = 'processing' AND phase IS NOT NULL AND claim_token IS NOT NULL
+            AND lease_expires_at IS NOT NULL AND started_at IS NOT NULL
+            AND deadline_at IS NOT NULL
+        )
+        OR (status != 'processing' AND phase IS NULL AND claim_token IS NULL)
+    ),
+    CHECK (
+        (status IN ('completed', 'cancelled', 'failed') AND completed_at IS NOT NULL)
+        OR (status IN ('pending', 'processing') AND completed_at IS NULL)
+    ),
+    CHECK (error_code IS NULL OR status = 'failed')
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_runs_watch ON civic_runs(watch_id);
+-- Backs both the oldest-first pending queue and the global processing-run cap check
+-- (COUNT WHERE status='processing' AND lease_expires_at > now), both taken under BEGIN IMMEDIATE.
+CREATE INDEX IF NOT EXISTS idx_civic_runs_status
+    ON civic_runs(status, requested_at, lease_expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_civic_runs_one_active_per_watch
+    ON civic_runs(watch_id) WHERE status IN ('pending', 'processing');
+
+-- The publishable envelope of one Civic Run. Exactly one Batch per Run (UNIQUE(run_id)), so a
+-- crash-and-reclaim resumes the same envelope rather than minting a second one -- the same
+-- invariant research_snapshots enforces for Evidence Snapshots.
+--
+-- content_hash is NULL while 'building' and written exactly once at seal, over the Batch's own
+-- Candidates. Every state after that reads those same bytes, which is what makes a retried
+-- delivery provably the same publication rather than a similar one. idempotency_key is
+-- generated at insert (never derived from mutable content) and is what a Civic Delivery Receipt
+-- is keyed on, so a replayed delivery is recognisable even before the envelope is compared.
+-- payload_hash is separate: new PartyMap seals bind it atomically with their frozen v1 bytes.
+-- Legacy and generic non-publication Batches are not backfilled.
+--
+-- next_attempt_at is retry backoff for a delivery that failed retryably: the Batch returns to
+-- 'sealed' and is not offered again until that moment. 'quarantined' is deliberately terminal
+-- and never auto-retried -- it means an integrity problem an Owner has to look at.
+CREATE TABLE IF NOT EXISTS civic_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES civic_runs(id) ON DELETE CASCADE,
+    watch_id INTEGER NOT NULL REFERENCES civic_watches(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'building'
+        CHECK (status IN (
+            'building', 'sealed', 'delivering', 'delivered', 'quarantined', 'failed'
+        )),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    content_hash TEXT,
+    payload_hash TEXT,
+    publication_schema_version INTEGER
+        CHECK (publication_schema_version IS NULL OR publication_schema_version = 1),
+    candidate_count INTEGER NOT NULL DEFAULT 0 CHECK (candidate_count >= 0),
+    claim_token TEXT,
+    lease_expires_at TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    max_attempts INTEGER NOT NULL DEFAULT 5 CHECK (max_attempts > 0),
+    created_at TEXT NOT NULL,
+    sealed_at TEXT,
+    settled_at TEXT,
+    next_attempt_at TEXT,
+    error_code TEXT,
+    error_detail TEXT,
+    UNIQUE(run_id),
+    CHECK (
+        (status = 'building' AND content_hash IS NULL AND sealed_at IS NULL)
+        OR (status != 'building' AND content_hash IS NOT NULL AND sealed_at IS NOT NULL)
+    ),
+    CHECK (
+        (status = 'delivering' AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+        OR (status != 'delivering' AND claim_token IS NULL AND lease_expires_at IS NULL)
+    ),
+    CHECK (
+        (status IN ('delivered', 'quarantined', 'failed') AND settled_at IS NOT NULL)
+        OR (status IN ('building', 'sealed', 'delivering') AND settled_at IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_batches_delivery_queue
+    ON civic_batches(status, next_attempt_at, id);
+-- The parent key civic_capacity_deferrals' composite (run, batch) foreign keys resolve against.
+-- Redundant as a constraint -- UNIQUE(run_id) already implies it -- but SQLite requires a unique
+-- index over exactly the referenced columns, in that order, for a composite reference to be
+-- accepted at all.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_civic_batches_run_identity
+    ON civic_batches(run_id, id);
+
+-- Present only for new publication-scoped seals. Historical Batches are never backfilled.
+-- Bytes, payload hash and membership are committed by one seal transaction.
+CREATE TABLE IF NOT EXISTS civic_batch_publications (
+    batch_id INTEGER PRIMARY KEY REFERENCES civic_batches(id) ON DELETE CASCADE,
+    envelope_bytes BLOB NOT NULL CHECK (typeof(envelope_bytes) = 'blob'),
+    frozen_at TEXT NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS civic_batch_publications_building_only
+BEFORE INSERT ON civic_batch_publications
+WHEN NOT EXISTS (
+    SELECT 1 FROM civic_batches WHERE id = NEW.batch_id AND status = 'building'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'a Civic publication must be frozen before sealing');
+END;
+
+CREATE TRIGGER IF NOT EXISTS civic_batch_publications_no_update
+BEFORE UPDATE ON civic_batch_publications
+BEGIN
+    SELECT RAISE(ABORT, 'a frozen Civic publication cannot be updated');
+END;
+
+-- One proposed civic statement. dedupe_key is scoped to the Watch, not the Run
+-- (UNIQUE(watch_id, dedupe_key)), which is what makes cross-day deduplication a database
+-- invariant instead of a screening heuristic: the same underlying development can only ever
+-- enter one Civic Batch, however many days it keeps being reported.
+--
+-- superseded_by_candidate_id is how a correction is published: the earlier statement is marked
+-- superseded and points at its replacement rather than being edited or deleted, so the published
+-- record stays append-only. ON DELETE RESTRICT, never CASCADE or SET NULL -- deleting a
+-- correction must neither delete the statement it corrected nor quietly orphan it into a
+-- "superseded by nothing" state. Deleting the whole Civic Watch still works: that cascade
+-- removes every Candidate together, so no surviving row is left referencing a deleted one.
+--
+-- sealed_into_batch_at is what makes a Civic Batch's envelope membership immutable. It is
+-- written exactly once, by db/civic_batches.py's seal, onto the Candidates that were VERIFIED at
+-- that instant, and never cleared. The content_hash is computed over "sealed_into_batch_at IS
+-- NOT NULL" rather than over "status = 'verified'" precisely because status keeps moving after
+-- the seal: publishing a correction tomorrow marks this Candidate SUPERSEDED, which would
+-- otherwise silently change the recomputed hash of an envelope that was already delivered and
+-- receipted. Only a Candidate that reached VERIFIED can carry it, so the stamp survives that
+-- later supersession and nothing else can ever acquire it.
+CREATE TABLE IF NOT EXISTS civic_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL REFERENCES civic_watches(id) ON DELETE CASCADE,
+    run_id INTEGER NOT NULL REFERENCES civic_runs(id) ON DELETE CASCADE,
+    batch_id INTEGER NOT NULL REFERENCES civic_batches(id) ON DELETE CASCADE,
+    dedupe_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    statement TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'drafted'
+        CHECK (status IN (
+            'drafted', 'researching', 'verifying', 'verified', 'deferred_capacity',
+            'deferred_ai', 'rejected', 'superseded'
+        )),
+    research_attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (research_attempt_count >= 0),
+    ai_revision INTEGER NOT NULL DEFAULT 0 CHECK (ai_revision >= 0),
+    ai_refresh_reason TEXT,
+    created_at TEXT NOT NULL,
+    settled_at TEXT,
+    sealed_into_batch_at TEXT,
+    rejection_code TEXT,
+    superseded_by_candidate_id INTEGER
+        REFERENCES civic_candidates(id) ON DELETE RESTRICT,
+    UNIQUE(watch_id, dedupe_key),
+    CHECK (
+        (status IN ('verified', 'deferred_capacity', 'deferred_ai', 'rejected', 'superseded')
+            AND settled_at IS NOT NULL)
+        OR (status IN ('drafted', 'researching', 'verifying') AND settled_at IS NULL)
+    ),
+    CHECK (
+        (status = 'rejected' AND rejection_code IS NOT NULL)
+        OR (status != 'rejected' AND rejection_code IS NULL)
+    ),
+    CHECK (
+        (status = 'superseded' AND superseded_by_candidate_id IS NOT NULL)
+        OR (status != 'superseded' AND superseded_by_candidate_id IS NULL)
+    ),
+    CHECK (superseded_by_candidate_id IS NULL OR superseded_by_candidate_id != id),
+    CHECK (
+        sealed_into_batch_at IS NULL OR status IN ('verified', 'superseded')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_candidates_batch ON civic_candidates(batch_id, id);
+CREATE INDEX IF NOT EXISTS idx_civic_candidates_run ON civic_candidates(run_id, status);
+-- The seal-time envelope read: "the Candidates this Batch actually published, in id order".
+CREATE INDEX IF NOT EXISTS idx_civic_candidates_envelope
+    ON civic_candidates(batch_id, sealed_into_batch_at, id);
+-- The adoption read: "this Watch's Candidates waiting for a slot with room", oldest first. A
+-- partial index, so it holds only the handful of carried-over rows rather than every Candidate
+-- the Watch has ever produced.
+CREATE INDEX IF NOT EXISTS idx_civic_candidates_capacity_queue
+    ON civic_candidates(watch_id, id) WHERE status = 'deferred_capacity';
+
+CREATE TABLE IF NOT EXISTS civic_publication_rejections (
+    candidate_id INTEGER PRIMARY KEY REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    batch_id INTEGER NOT NULL REFERENCES civic_batches(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL CHECK (length(reason) > 0),
+    detail TEXT NOT NULL CHECK (length(detail) > 0),
+    rejected_at TEXT NOT NULL
+);
+
+-- Source records for one Candidate. UNIQUE(candidate_id, external_key) makes re-capturing the
+-- same source idempotent, so a resumed run cannot inflate a Candidate's corroboration count by
+-- recording the same article twice. tier/stance are what domain.civic.evidence_supports_
+-- publication reads -- they are real validated fields, never conventions inside `excerpt`.
+--
+-- publisher_id through anonymous_source_dependency are the beehive.civic.evidence policy inputs,
+-- stored as real validated columns for exactly the same reason: the qualification engine reads
+-- them, so they must be queryable and constrained rather than conventions buried in `excerpt`.
+-- They are written exactly once -- add_candidate_evidence returns the existing row rather than
+-- updating it -- which is what makes evidence membership and ownership immutable: the basis of a
+-- decision cannot be edited after a decision has been recorded against it. A NULL source_kind
+-- means discovery-only material, which can never become a citation.
+CREATE TABLE IF NOT EXISTS civic_candidate_evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    source_ref TEXT NOT NULL,
+    external_key TEXT NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    publisher TEXT NOT NULL DEFAULT '',
+    excerpt TEXT NOT NULL DEFAULT '',
+    tier TEXT NOT NULL
+        CHECK (tier IN (
+            'official', 'party_primary', 'reputable_media', 'other_media', 'aggregator'
+        )),
+    stance TEXT NOT NULL
+        CHECK (stance IN ('supporting', 'corroborating', 'contradicting', 'context')),
+    published_at TEXT,
+    captured_at TEXT NOT NULL,
+    publisher_id TEXT NOT NULL DEFAULT '',
+    source_kind TEXT,
+    party_slug TEXT,
+    subject_id TEXT NOT NULL DEFAULT '',
+    claim_category TEXT,
+    event_date TEXT,
+    canonical_url TEXT NOT NULL DEFAULT '',
+    accessible_full_text INTEGER NOT NULL DEFAULT 0
+        CHECK (accessible_full_text IN (0, 1)),
+    paywalled INTEGER NOT NULL DEFAULT 0 CHECK (paywalled IN (0, 1)),
+    anonymous_source_dependency INTEGER NOT NULL DEFAULT 0
+        CHECK (anonymous_source_dependency IN (0, 1)),
+    UNIQUE(candidate_id, external_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_candidate_evidence_candidate
+    ON civic_candidate_evidence(candidate_id, stance);
+
+-- Append-only record of the bounded extra research passes spent on one Candidate. The attempt
+-- number is allocated MAX+1 per candidate under BEGIN IMMEDIATE and is what enforces the budget
+-- across crashes: the spend is durable before the work starts, so a worker that dies mid-pass
+-- can never silently buy itself another one.
+CREATE TABLE IF NOT EXISTS civic_research_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number > 0),
+    outcome TEXT NOT NULL CHECK (outcome IN ('resolved', 'unresolved', 'error')),
+    evidence_added INTEGER NOT NULL DEFAULT 0 CHECK (evidence_added >= 0),
+    notes TEXT NOT NULL DEFAULT '',
+    started_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    error_code TEXT,
+    UNIQUE(candidate_id, attempt_number),
+    CHECK (
+        (outcome = 'error' AND error_code IS NOT NULL)
+        OR (outcome != 'error' AND error_code IS NULL)
+    ),
+    CHECK (outcome != 'resolved' OR evidence_added > 0)
+);
+
+-- Append-only verifier records, numbered per Candidate. A later verification never overwrites
+-- an earlier one, so the full history behind a published statement stays readable -- and a
+-- 'supported' verdict is structurally impossible without supporting evidence and structurally
+-- impossible alongside contradicting evidence, mirroring domain.civic.CivicVerification.
+CREATE TABLE IF NOT EXISTS civic_verifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number > 0),
+    verdict TEXT NOT NULL
+        CHECK (verdict IN ('supported', 'contradicted', 'insufficient', 'error')),
+    supporting_evidence_count INTEGER NOT NULL DEFAULT 0
+        CHECK (supporting_evidence_count >= 0),
+    contradicting_evidence_count INTEGER NOT NULL DEFAULT 0
+        CHECK (contradicting_evidence_count >= 0),
+    rationale TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    recorded_at TEXT NOT NULL,
+    error_code TEXT,
+    UNIQUE(candidate_id, attempt_number),
+    CHECK (
+        (verdict = 'error' AND error_code IS NOT NULL)
+        OR (verdict != 'error' AND error_code IS NULL AND model != '')
+    ),
+    CHECK (
+        verdict != 'supported'
+        OR (supporting_evidence_count > 0 AND contradicting_evidence_count = 0)
+    ),
+    CHECK (verdict != 'contradicted' OR contradicting_evidence_count > 0)
+);
+
+-- Owner-facing operational messages, on their own send lease and retry budget so a failing mail
+-- provider can never stall or duplicate a Civic Batch. Same lease shape as civic_batches:
+-- claim_token/lease_expires_at while 'sending', next_attempt_at for backoff after a retryable
+-- failure, attempt_count against max_attempts.
+CREATE TABLE IF NOT EXISTS civic_notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL REFERENCES civic_watches(id) ON DELETE CASCADE,
+    run_id INTEGER REFERENCES civic_runs(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'suppressed')),
+    claim_token TEXT,
+    lease_expires_at TEXT,
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    max_attempts INTEGER NOT NULL DEFAULT 5 CHECK (max_attempts > 0),
+    queued_at TEXT NOT NULL,
+    settled_at TEXT,
+    next_attempt_at TEXT,
+    error_code TEXT,
+    error_detail TEXT,
+    UNIQUE(watch_id, dedupe_key),
+    CHECK (
+        (status = 'sending' AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+        OR (status != 'sending' AND claim_token IS NULL AND lease_expires_at IS NULL)
+    ),
+    CHECK (
+        (status IN ('sent', 'failed', 'suppressed') AND settled_at IS NOT NULL)
+        OR (status IN ('pending', 'sending') AND settled_at IS NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_notifications_queue
+    ON civic_notifications(status, next_attempt_at, id);
+
+-- Immutable proof that one Civic Batch was accepted downstream. UNIQUE(idempotency_key) is what
+-- makes a replayed delivery a no-op: the key -- not the row id, not the batch id -- is the
+-- delivery's identity, so a retry presenting the same key finds this row and returns it instead
+-- of publishing again. content_hash is recorded alongside it so a replay whose envelope has
+-- somehow changed is detectable rather than silently accepted. payload_hash binds the exact
+-- canonical publication-v1 bytes as well; NULL is accepted only on legacy rows written before
+-- the column existed. There is deliberately no UPDATE path in db/civic_receipts.py: a receipt is
+-- written once and never revised.
+CREATE TABLE IF NOT EXISTS civic_delivery_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL REFERENCES civic_batches(id) ON DELETE CASCADE,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    content_hash TEXT NOT NULL,
+    payload_hash TEXT,
+    channel TEXT NOT NULL CHECK (channel IN ('spool', 'email')),
+    target TEXT NOT NULL,
+    provider_reference TEXT NOT NULL DEFAULT '',
+    delivered_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_delivery_receipts_batch
+    ON civic_delivery_receipts(batch_id);
+
+-- Versioned receipts for the Civic AI stages. There are exactly two, because there are exactly
+-- two model calls per Candidate: `generate` screens the material and, when it passes, writes the
+-- canonical Chinese entry together with its English, Hindi and Tagalog overlays in one strict
+-- response; `verification` is an independent, differently-modelled call that judges the result.
+-- One row per attempt, holding what was sent (hashes only), what came back (normalized, parsed
+-- JSON), and which provider, model, prompt and schema produced it. Nothing here stores a
+-- credential, a URL or the prompt text itself.
+--
+-- Two calls rather than six is what makes the plan's fixed ceiling of 30 AI calls per Run
+-- compatible with both publication caps: 12 calls for a normal slot of six Candidates, 20 for an
+-- election slot of ten, leaving the remaining budget for the single bounded transient retry each
+-- stage is allowed. A stage row is never split to make one call look like several.
+--
+-- The reservation is the fence. A worker inserts a 'reserved' row inside BEGIN IMMEDIATE, commits
+-- it, and only then makes the remote call -- so a model call never holds a write lock, and the
+-- two partial unique indexes below mean a second worker can neither reserve the same stage
+-- concurrently nor record a second success for one that already succeeded. A crash between the
+-- reservation and the response leaves exactly one 'reserved' row, which recovery can see and
+-- which costs the Candidate one of its bounded attempts rather than being silently refunded.
+--
+-- input_hash covers the immutable candidate/evidence snapshot the stage was given, and the
+-- prompt/schema/model columns cover everything else that could change the answer. A replay whose
+-- values all match returns the stored output; a replay whose values differ is drift and raises,
+-- because regenerating a statement other rows already depend on must never be silent.
+CREATE TABLE IF NOT EXISTS civic_ai_stages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    run_id INTEGER NOT NULL REFERENCES civic_runs(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL CHECK (stage IN ('generate', 'verification')),
+    ai_revision INTEGER NOT NULL DEFAULT 0 CHECK (ai_revision >= 0),
+    attempt INTEGER NOT NULL CHECK (attempt > 0),
+    status TEXT NOT NULL CHECK (status IN ('reserved', 'succeeded', 'failed')),
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    prompt_hash TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    claim_token TEXT NOT NULL,
+    output_hash TEXT,
+    output_json TEXT,
+    error_code TEXT,
+    error_detail TEXT NOT NULL DEFAULT '',
+    reserved_at TEXT NOT NULL,
+    completed_at TEXT,
+    UNIQUE(candidate_id, stage, attempt),
+    CHECK (
+        (status = 'succeeded' AND output_hash IS NOT NULL AND output_json IS NOT NULL
+            AND error_code IS NULL AND completed_at IS NOT NULL)
+        OR (status = 'failed' AND error_code IS NOT NULL AND output_hash IS NULL
+            AND output_json IS NULL AND completed_at IS NOT NULL)
+        OR (status = 'reserved' AND output_hash IS NULL AND output_json IS NULL
+            AND error_code IS NULL AND completed_at IS NULL)
+    )
+);
+
+-- Revision-scoped reservation/success indexes are installed by connection.py after additive
+-- column migrations, so a legacy table can gain ai_revision before those indexes reference it.
+-- The per-run AI call budget read (plan 7.4: 30 calls per run).
+CREATE INDEX IF NOT EXISTS idx_civic_ai_stages_run ON civic_ai_stages(run_id, id);
+
+-- Which source items a Civic Run has already turned into a Candidate. Clustering is many-to-one
+-- -- several documents about the same development become one Candidate -- so "have I seen this
+-- item?" cannot be answered from civic_candidates.dedupe_key alone, and without this table a
+-- resumed Run would re-cluster the same articles into a second Candidate under a different key.
+-- UNIQUE(watch_id, item_key) is the fence: an item belongs to exactly one Candidate per Watch,
+-- forever, and the claim is taken in the same BEGIN IMMEDIATE that creates the Candidate.
+CREATE TABLE IF NOT EXISTS civic_consumed_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL REFERENCES civic_watches(id) ON DELETE CASCADE,
+    run_id INTEGER NOT NULL REFERENCES civic_runs(id) ON DELETE CASCADE,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    item_key TEXT NOT NULL,
+    source_key TEXT NOT NULL,
+    external_key TEXT NOT NULL,
+    canonical_url TEXT NOT NULL,
+    consumed_at TEXT NOT NULL,
+    UNIQUE(watch_id, item_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_consumed_items_candidate
+    ON civic_consumed_items(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_civic_consumed_items_run
+    ON civic_consumed_items(run_id, id);
+
+-- The durable receipt of one pure `beehive.civic.evidence` decision: what went in, what came
+-- out, and which build of the engine decided it.
+--
+-- input_hash covers the claim, the exact evidence rows, the ownership registry and the dedup
+-- membership the engine saw -- deliberately NOT the wall clock, so a resumed worker replaying
+-- the same decision matches instead of drifting on the passage of time alone. A replay whose
+-- inputs hash the same returns the stored decision untouched; a replay whose inputs hash
+-- differently raises, because a Run coming back to a Candidate it has already qualified on
+-- material that has since changed is exactly the silent rewrite this table exists to prevent.
+--
+-- research_attempts_used (0 or 1) is what distinguishes the first decision from the one taken
+-- after the single bounded research pass, so the extra evidence writes a NEW row rather than
+-- overwriting the decision that justified spending the attempt. Both remain readable.
+CREATE TABLE IF NOT EXISTS civic_qualifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    run_id INTEGER NOT NULL REFERENCES civic_runs(id) ON DELETE CASCADE,
+    research_attempts_used INTEGER NOT NULL DEFAULT 0
+        CHECK (research_attempts_used BETWEEN 0 AND 1),
+    ai_revision INTEGER NOT NULL DEFAULT 0 CHECK (ai_revision >= 0),
+    refresh_reason TEXT,
+    engine_version TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    output_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL
+        CHECK (outcome IN (
+            'qualified', 'screened_out', 'duplicate', 'deferred_evidence',
+            'deferred_unsupported', 'deferred_capacity'
+        )),
+    disposition TEXT NOT NULL
+        CHECK (disposition IN (
+            'publishable', 'deferred', 'deferred_unsupported', 'excluded'
+        )),
+    reasons TEXT NOT NULL,
+    evidence_used TEXT NOT NULL DEFAULT '',
+    evidence_excluded TEXT NOT NULL DEFAULT '',
+    ownership_groups TEXT NOT NULL DEFAULT '',
+    dedup_reason TEXT,
+    matched_candidate_id INTEGER REFERENCES civic_candidates(id) ON DELETE SET NULL,
+    matched_batch_id INTEGER REFERENCES civic_batches(id) ON DELETE SET NULL,
+    record_kind TEXT,
+    decided_at TEXT NOT NULL,
+    UNIQUE(candidate_id, ai_revision, research_attempts_used),
+    CHECK (reasons != ''),
+    CHECK (
+        (outcome = 'qualified' AND disposition = 'publishable')
+        OR (outcome IN ('screened_out', 'duplicate') AND disposition = 'excluded')
+        OR (outcome IN ('deferred_evidence', 'deferred_capacity') AND disposition = 'deferred')
+        OR (outcome = 'deferred_unsupported' AND disposition = 'deferred_unsupported')
+    ),
+    CHECK (outcome = 'duplicate' OR (matched_candidate_id IS NULL AND matched_batch_id IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_qualifications_run
+    ON civic_qualifications(run_id, candidate_id);
+
+-- Why a VERIFIED Candidate that was ready to publish did not go out in the Batch it was built
+-- in, and where it went instead.
+--
+-- The daily cap (plan 5.2: six normally, ten in an election period) is a capacity limit, not an
+-- evidence one, so overflow must not look like a failure anywhere in the record: the Candidate
+-- keeps its evidence, its verification and its qualification receipt, keeps owning the source
+-- items it consumed, and is simply not in today's envelope. This table is the audit trail of
+-- that -- one row per deferral, written by the seal that made the decision.
+--
+-- from_batch_id is fixed at the moment of deferral; to_batch_id is filled in later, once a Run
+-- with room adopts the Candidate. That deliberately does not require the receiving Run to exist
+-- when the seal happens: a Batch that has to defer cannot be made to wait for tomorrow. A
+-- Candidate deferred twice has two rows, so "carried from Monday to Wednesday" stays readable
+-- instead of collapsing into a single moving pointer.
+--
+-- UNIQUE(candidate_id, from_batch_id) makes the write idempotent: a replayed seal records the
+-- same deferral once. The partial index on the open rows is the "still waiting" read.
+--
+-- `reason` distinguishes the two ways a ready Candidate leaves a Batch without being published:
+-- the day was full ('batch_cap_reached'), or the Run itself died before it could seal, in which
+-- case the Candidate was adopted or verified but never stamped and has to go back in the queue
+-- ('run_failed' / 'run_cancelled' / 'run_deadline_exceeded' / 'run_completed_unsealed').
+--
+-- Both (run, batch) pairs are COMPOSITE foreign keys into civic_batches(run_id, id) rather than
+-- two independent ones, and that is load bearing: with separate keys, deleting just the
+-- destination Batch would null to_batch_id and leave to_run_id pointing at a Batch that no
+-- longer exists, which is both untrue and unrepresentable under the "either both or neither"
+-- CHECK. A composite ON DELETE SET NULL nulls every column of the key together, so the
+-- destination is always a whole answer or no answer at all. adopted_at deliberately survives
+-- that: the hop really did happen, and forgetting when would be the lie.
+CREATE TABLE IF NOT EXISTS civic_capacity_deferrals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL REFERENCES civic_watches(id) ON DELETE CASCADE,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    from_run_id INTEGER NOT NULL,
+    from_batch_id INTEGER NOT NULL,
+    to_run_id INTEGER,
+    to_batch_id INTEGER,
+    published_cap INTEGER NOT NULL CHECK (published_cap > 0),
+    run_mode TEXT NOT NULL CHECK (run_mode IN ('normal', 'election')),
+    -- Why this Watch is still holding the Candidate. The batch_cap_* and run_* reasons belong to
+    -- a Candidate that was already VERIFIED; ai_budget_exhausted and ai_transient_failed belong
+    -- to one whose generation never finished, which is why they resume at VERIFYING rather than
+    -- being adopted straight back to VERIFIED. Keeping both in one table is deliberate: "what is
+    -- this Watch holding, since when, and why" is one question, and answering it from two tables
+    -- would let the two drift.
+    reason TEXT NOT NULL DEFAULT 'batch_cap_reached'
+        CHECK (reason IN (
+            'batch_cap_reached', 'run_failed', 'run_cancelled', 'run_deadline_exceeded',
+            'run_completed_unsealed', 'ai_budget_exhausted', 'ai_transient_failed',
+            'ai_provenance_stale', 'source_refresh_required'
+        )),
+    deferred_at TEXT NOT NULL,
+    adopted_at TEXT,
+    UNIQUE(candidate_id, from_batch_id),
+    CHECK (from_batch_id != to_batch_id),
+    -- An open deferral has gone nowhere yet, so it can never name a destination.
+    CHECK (adopted_at IS NOT NULL OR (to_run_id IS NULL AND to_batch_id IS NULL)),
+    -- The destination is one fact, not two.
+    CHECK ((to_run_id IS NULL) = (to_batch_id IS NULL)),
+    FOREIGN KEY (from_run_id, from_batch_id)
+        REFERENCES civic_batches(run_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (to_run_id, to_batch_id)
+        REFERENCES civic_batches(run_id, id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_capacity_deferrals_candidate
+    ON civic_capacity_deferrals(candidate_id, id);
+-- "Which carryovers is this Watch still holding?" -- the read the next Run's adoption takes.
+CREATE INDEX IF NOT EXISTS idx_civic_capacity_deferrals_open
+    ON civic_capacity_deferrals(watch_id, candidate_id) WHERE adopted_at IS NULL;
+
+-- Base evidence identities and original values remain immutable. Captures are append-only;
+-- current readers select the latest capture, including an explicitly unknown publication.
+CREATE TABLE IF NOT EXISTS civic_evidence_captures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evidence_id INTEGER NOT NULL REFERENCES civic_candidate_evidence(id) ON DELETE CASCADE,
+    candidate_id INTEGER NOT NULL REFERENCES civic_candidates(id) ON DELETE CASCADE,
+    run_id INTEGER NOT NULL REFERENCES civic_runs(id),
+    ai_revision INTEGER NOT NULL CHECK (ai_revision >= 0),
+    capture_index INTEGER NOT NULL CHECK (capture_index >= 0),
+    predecessor_id INTEGER REFERENCES civic_evidence_captures(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    excerpt TEXT NOT NULL,
+    canonical_url TEXT NOT NULL,
+    published_at TEXT,
+    event_date TEXT,
+    captured_at TEXT NOT NULL,
+    accessible_full_text INTEGER NOT NULL CHECK (accessible_full_text IN (0, 1)),
+    paywalled INTEGER NOT NULL DEFAULT 0 CHECK (paywalled IN (0, 1)),
+    source_metadata_json TEXT NOT NULL CHECK (json_valid(source_metadata_json)),
+    content_hash TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    UNIQUE(evidence_id, capture_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_civic_evidence_captures_current
+    ON civic_evidence_captures(evidence_id, capture_index DESC);
+CREATE TRIGGER IF NOT EXISTS civic_evidence_captures_no_update
+BEFORE UPDATE ON civic_evidence_captures
+BEGIN
+    SELECT RAISE(ABORT, 'Civic evidence captures are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS civic_evidence_captures_no_standalone_delete
+BEFORE DELETE ON civic_evidence_captures
+WHEN EXISTS (SELECT 1 FROM civic_candidate_evidence WHERE id = OLD.evidence_id)
+ AND EXISTS (SELECT 1 FROM civic_candidates WHERE id = OLD.candidate_id)
+ AND EXISTS (SELECT 1 FROM civic_runs WHERE id = OLD.run_id)
+BEGIN
+    SELECT RAISE(ABORT, 'Civic evidence capture history cannot be deleted independently');
+END;
+CREATE TRIGGER IF NOT EXISTS civic_evidence_captures_unsealed_only
+BEFORE INSERT ON civic_evidence_captures
+WHEN NOT EXISTS (
+    SELECT 1 FROM civic_candidates c
+    JOIN civic_batches b ON b.id = c.batch_id AND b.run_id = c.run_id
+    JOIN civic_candidate_evidence e ON e.candidate_id = c.id
+    WHERE e.id = NEW.evidence_id AND c.id = NEW.candidate_id
+      AND c.run_id = NEW.run_id AND c.ai_revision = NEW.ai_revision
+      AND c.status IN ('drafted', 'researching', 'verifying')
+      AND c.sealed_into_batch_at IS NULL AND b.status = 'building'
+)
+OR NEW.capture_index != (
+    SELECT COALESCE(MAX(capture_index), -1) + 1
+    FROM civic_evidence_captures WHERE evidence_id = NEW.evidence_id
+)
+OR NEW.predecessor_id IS NOT (
+    SELECT id FROM civic_evidence_captures WHERE evidence_id = NEW.evidence_id
+    ORDER BY capture_index DESC LIMIT 1
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Civic evidence capture requires current unsealed membership and predecessor');
+END;
+
+-- Every authorized detail fetch spends the shared Run budget before network I/O. Failed and
+-- abandoned reservations remain charged; completed results can be replayed after restart.
+CREATE TABLE IF NOT EXISTS civic_hydration_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES civic_runs(id) ON DELETE CASCADE,
+    candidate_id INTEGER REFERENCES civic_candidates(id),
+    work_key TEXT NOT NULL,
+    claim_token TEXT NOT NULL,
+    units INTEGER NOT NULL CHECK (units BETWEEN 0 AND 25),
+    purpose TEXT NOT NULL CHECK (purpose IN ('fresh', 'refresh')),
+    expected_ai_revision INTEGER,
+    capture_fingerprint TEXT,
+    plan_hash TEXT,
+    status TEXT NOT NULL CHECK (status IN ('reserved', 'completed', 'failed', 'blocked')),
+    reserved_at TEXT NOT NULL,
+    completed_at TEXT,
+    result_json TEXT,
+    result_hash TEXT,
+    error_code TEXT,
+    CHECK (
+        (status = 'reserved' AND units > 0 AND completed_at IS NULL AND error_code IS NULL)
+        OR (status = 'completed' AND completed_at IS NOT NULL
+            AND result_json IS NOT NULL AND result_hash IS NOT NULL AND error_code IS NULL)
+        OR (status IN ('failed', 'blocked') AND completed_at IS NOT NULL AND error_code IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_civic_hydration_one_reserved
+    ON civic_hydration_attempts(run_id, work_key) WHERE status = 'reserved';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_civic_hydration_one_completed
+    ON civic_hydration_attempts(run_id, work_key) WHERE status = 'completed';
+CREATE INDEX IF NOT EXISTS idx_civic_hydration_run_budget
+    ON civic_hydration_attempts(run_id, id);
+CREATE INDEX IF NOT EXISTS idx_civic_hydration_candidate
+    ON civic_hydration_attempts(candidate_id, id);
+CREATE TRIGGER IF NOT EXISTS civic_hydration_spend_immutable
+BEFORE UPDATE OF run_id, candidate_id, work_key, claim_token, units, purpose,
+    expected_ai_revision, capture_fingerprint, plan_hash, reserved_at ON civic_hydration_attempts
+BEGIN
+    SELECT RAISE(ABORT, 'Civic hydration authorization cannot be rewritten');
+END;
+CREATE TRIGGER IF NOT EXISTS civic_hydration_settled_immutable
+BEFORE UPDATE ON civic_hydration_attempts
+WHEN OLD.status != 'reserved'
+BEGIN
+    SELECT RAISE(ABORT, 'Settled Civic hydration work is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS civic_hydration_budget_guard
+BEFORE INSERT ON civic_hydration_attempts
+WHEN NEW.units + (
+    SELECT COALESCE(SUM(units), 0) FROM civic_hydration_attempts WHERE run_id = NEW.run_id
+) > 25
+BEGIN
+    SELECT RAISE(ABORT, 'Civic Run hydration budget exceeded');
+END;
+CREATE TRIGGER IF NOT EXISTS civic_hydration_no_refund
+BEFORE DELETE ON civic_hydration_attempts
+WHEN EXISTS (SELECT 1 FROM civic_runs WHERE id = OLD.run_id)
+BEGIN
+    SELECT RAISE(ABORT, 'Civic hydration spend cannot be refunded');
+END;
+
+-- One row per Civic source with an open whole-site outage episode: its listing and its verified
+-- health URL both answered with an HTTP error. The row is the hold's escalation clock; see
+-- beehive.db.civic_source_outages for how an episode starts, survives flapping, and ends.
+CREATE TABLE IF NOT EXISTS civic_source_outages (
+    source_key TEXT PRIMARY KEY,
+    unavailable_since TEXT NOT NULL,
+    last_unavailable_at TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT ''
+);

@@ -1,0 +1,88 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "media-unknown-owner-invalid",
+  "title": "A publisher with no registered owner fails closed",
+  "description": "The second publisher has no ownership group in the registry, so it is excluded and the candidate is left with one publisher.",
+  "branches": [
+    "media_ownership_registry"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-membership-drive-launch",
+    "fingerprint": "fp-membership-drive-launch-20260802",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260802/membership-drive-launch",
+    "eventDate": "2026-08-02",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance launched its membership drive on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/harbour-alliance-membership-drive",
+      "canonicalUrl": "https://keawire.example/news/harbour-alliance-membership-drive",
+      "title": "Registered publisher reports the membership drive launch",
+      "excerpt": "The report names the party officers who launched the drive.",
+      "publishedAt": "2026-08-02T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-02",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "other_media",
+      "stance": "corroborating",
+      "publisherId": "unlisted-daily",
+      "url": "https://unlisteddaily.example/story/harbour-alliance-membership-drive",
+      "canonicalUrl": "https://unlisteddaily.example/story/harbour-alliance-membership-drive",
+      "title": "Unregistered site repeats the membership drive launch",
+      "excerpt": "The site repeats the launch date without a registered owner record.",
+      "publishedAt": "2026-08-02T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-02",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_insufficient",
+      "evidence_unknown_ownership_group"
+    ],
+    "ownershipGroups": [
+      "kea-independent-media"
+    ],
+    "ownershipClusters": [
+      "kea-independent-media"
+    ],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": [
+      "e2"
+    ]
+  }
+}

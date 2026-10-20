@@ -1,0 +1,63 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "official-electoral-singleton-valid",
+  "title": "Electoral commission singleton establishes an electoral record",
+  "description": "One T0 electoral commission release is enough to publish an electoral administration timeline event without any media corroboration.",
+  "branches": [
+    "record_kind_supported",
+    "tier_t0_official_singleton"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-electoral-roll-close",
+    "fingerprint": "fp-electoral-roll-close-20260810",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260810/roll-close-notice",
+    "eventDate": "2026-08-10",
+    "category": "electoral-administration",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "The commission published the closing date for the printed roll."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "official_feeds",
+      "sourceTier": "T0",
+      "sourceKind": "electoral-commission",
+      "civicEvidenceTier": "official",
+      "stance": "supporting",
+      "publisherId": "example-electoral-commission",
+      "url": "https://electoral-commission.example/releases/2026/roll-close-notice",
+      "canonicalUrl": "https://electoral-commission.example/releases/2026/roll-close-notice",
+      "title": "Notice of printed roll closing date",
+      "excerpt": "The commission set the printed roll closing date for the next general election.",
+      "publishedAt": "2026-08-10T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-10",
+      "category": "electoral-administration",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "evidence_official_singleton",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": []
+  }
+}

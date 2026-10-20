@@ -1,0 +1,89 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "discovery-community-with-single-media-invalid",
+  "title": "Community material cannot top up a single publisher",
+  "description": "Community evidence never counts toward corroboration, so the admissible evidence is one registered publisher. The community thread is excluded rather than counted, and what actually blocks the candidate is that one ownership group cannot carry a media only fact.",
+  "branches": [
+    "discovery_only_sources",
+    "media_ownership_independence"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-volunteer-hub-opening",
+    "fingerprint": "fp-volunteer-hub-opening-20260723",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260723/volunteer-hub-opening",
+    "eventDate": "2026-07-23",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union opened a volunteer hub on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "reddit",
+      "sourceTier": "T5",
+      "sourceKind": null,
+      "civicEvidenceTier": "aggregator",
+      "stance": "context",
+      "publisherId": "community-forum-discovery",
+      "url": "https://community-forum.example/threads/northern-union-volunteer-hub",
+      "canonicalUrl": "https://community-forum.example/threads/northern-union-volunteer-hub",
+      "title": "Community thread about a volunteer hub",
+      "excerpt": "Forum members describe an opening date with no record attached.",
+      "publishedAt": "2026-07-23T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-23",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": true
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/northern-union-volunteer-hub",
+      "canonicalUrl": "https://keawire.example/news/northern-union-volunteer-hub",
+      "title": "One registered publisher reports the volunteer hub opening",
+      "excerpt": "One newsroom reports the opening date on the record.",
+      "publishedAt": "2026-07-23T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-23",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_insufficient",
+      "evidence_single_ownership_group"
+    ],
+    "ownershipGroups": [
+      "kea-independent-media"
+    ],
+    "ownershipClusters": [
+      "kea-independent-media"
+    ],
+    "evidenceUsed": [
+      "e2"
+    ],
+    "evidenceExcluded": [
+      "e1"
+    ]
+  }
+}

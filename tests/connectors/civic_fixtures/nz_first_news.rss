@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>New Zealand First - News</title>
+    <link>http://www.nzfirst.nz/news</link>
+    <description>Latest news</description>
+    <item>
+      <title>Restoring common sense to local government</title>
+      <link>https://www.nzfirst.nz/restoring_common_sense</link>
+      <guid>https://www.nzfirst.nz/restoring_common_sense</guid>
+      <pubDate>Tue, 11 Aug 2026 09:30:00 +1200</pubDate>
+      <description>&lt;p&gt;The party &lt;b&gt;announced&lt;/b&gt; a policy today.&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Speech to the regional conference</title>
+      <link>https://www.nzfirst.nz/regional_conference_speech</link>
+      <guid>https://www.nzfirst.nz/regional_conference_speech</guid>
+      <pubDate>Mon, 10 Aug 2026 20:00:00 GMT</pubDate>
+      <description>Speech notes.</description>
+    </item>
+    <item>
+      <title>Undated notice</title>
+      <link>https://www.nzfirst.nz/undated_notice</link>
+      <guid>https://www.nzfirst.nz/undated_notice</guid>
+      <description>No pubDate at all.</description>
+    </item>
+    <item>
+      <title>Syndicated elsewhere</title>
+      <link>https://www.example-news.test/story</link>
+      <guid>https://www.example-news.test/story</guid>
+      <pubDate>Tue, 11 Aug 2026 09:30:00 +1200</pubDate>
+      <description>Hosted on another domain.</description>
+    </item>
+  </channel>
+</rss>

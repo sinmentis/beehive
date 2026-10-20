@@ -1,0 +1,65 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "media-paywalled-without-corroboration-invalid",
+  "title": "Paywalled evidence with no accessible corroboration defers",
+  "description": "The single cited article is paywalled and no accessible archive or corroborating publisher exists, so nothing can be verified.",
+  "branches": [
+    "paywall_accessibility"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-regional-council-appointment",
+    "fingerprint": "fp-regional-council-appointment-20260729",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260729/regional-council-appointment",
+    "eventDate": "2026-07-29",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union appointed its regional council on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "gulf-beacon",
+      "url": "https://gulfbeacon.example/premium/northern-union-regional-council",
+      "canonicalUrl": "https://gulfbeacon.example/premium/northern-union-regional-council",
+      "title": "Paywalled report with no accessible counterpart",
+      "excerpt": "The only account of the appointment sits behind a subscription wall.",
+      "publishedAt": "2026-07-29T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-29",
+      "category": "party-timeline-event",
+      "accessibleFullText": false,
+      "paywalled": true,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_insufficient",
+      "evidence_paywalled_without_accessible_corroboration"
+    ],
+    "ownershipGroups": [
+      "gulf-beacon-press"
+    ],
+    "ownershipClusters": [
+      "gulf-beacon-press"
+    ],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": []
+  }
+}

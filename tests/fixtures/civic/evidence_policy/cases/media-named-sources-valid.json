@@ -1,0 +1,95 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "media-named-sources-valid",
+  "title": "Media evidence with named sources only",
+  "description": "Both cited articles rest on named, on the record sources, so the anonymous source rule does not block publication.",
+  "branches": [
+    "anonymous_source_dependency"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-riverport-office-opening",
+    "fingerprint": "fp-riverport-office-opening-20260801",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260801/riverport-office-opening",
+    "eventDate": "2026-08-01",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union opened its Riverport office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/northern-union-riverport-office",
+      "canonicalUrl": "https://riverportpost.example/politics/northern-union-riverport-office",
+      "title": "Named party officers confirm the Riverport office opening",
+      "excerpt": "Two named party officers confirm the opening date on the record.",
+      "publishedAt": "2026-08-01T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-01",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/northern-union-riverport-office",
+      "canonicalUrl": "https://harbourledger.example/politics/northern-union-riverport-office",
+      "title": "Second owner group quotes the same named officers",
+      "excerpt": "The second newsroom quotes the same named officers on the record.",
+      "publishedAt": "2026-08-01T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-01",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

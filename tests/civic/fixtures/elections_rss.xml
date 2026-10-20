@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Electoral Commission media and news</title>
+    <link>https://elections.nz/media-and-news/</link>
+    <description>The 10 most recently updated pages</description>
+    <item>
+      <title>Enrolment update for the 2026 General Election</title>
+      <link>https://elections.nz/media-and-news/2026/enrolment-update/</link>
+      <guid>https://elections.nz/media-and-news/2026/enrolment-update/</guid>
+      <pubDate>Tue, 04 Aug 2026 09:30:00 +1200</pubDate>
+      <dc:date>2026-08-11T16:05:00+12:00</dc:date>
+      <description>&lt;p&gt;Enrolment now stands at &lt;b&gt;94.1 percent&lt;/b&gt; of the eligible population.&lt;/p&gt;</description>
+      <category>Media release</category>
+    </item>
+    <item>
+      <title>Overseas voting opens</title>
+      <link>https://elections.nz/media-and-news/2026/overseas-voting/?utm_source=newsletter&amp;utm_medium=email</link>
+      <guid>https://elections.nz/media-and-news/2026/overseas-voting/</guid>
+      <pubDate>Mon, 03 Aug 2026 08:00:00 +1200</pubDate>
+      <description>Overseas voting opens today.</description>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+  <url>
+    <loc>https://www.greens.org.nz/only_a_change_of_government_will_ease_cost_of_living</loc>
+    <news:news>
+      <news:publication>
+        <news:name>Green Party of Aotearoa New Zealand</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:genres>Blog</news:genres>
+      <news:publication_date>2026-08-12</news:publication_date>
+      <news:title>Only a change of Government will ease cost-of-living crisis</news:title>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://www.greens.org.nz/report_back_on_the_climate_bill</loc>
+    <news:news>
+      <news:publication>
+        <news:name>Green Party of Aotearoa New Zealand</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-08-11</news:publication_date>
+      <news:title>Report back on the climate bill</news:title>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://www.greens.org.nz/no_news_block</loc>
+  </url>
+</urlset>

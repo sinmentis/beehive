@@ -3,11 +3,20 @@ live in exactly one place instead of being re-derived (or forgotten) per provide
 
 What this centralizes, and why each rule exists:
 
-- **SSRF validation.** Every request target goes through `url_safety.assert_fetchable_url`. This
-  matters most for URLs the app did not construct itself: `reddit.fetch_comments` builds its
-  target from a `<link href>` that arrived in a feed and was then stored in the database, so
-  without this check a `file://`, `http://127.0.0.1:8000/...` or link-local URL was reachable.
-  Callers that know the provider pass `allowed_hosts` for a much tighter control.
+- **SSRF validation, including every redirect hop.** Every request target goes through
+  `url_safety.assert_fetchable_url`. This matters most for URLs the app did not construct itself:
+  `reddit.fetch_comments` builds its target from a `<link href>` that arrived in a feed and was
+  then stored in the database, so without this check a `file://`, `http://127.0.0.1:8000/...` or
+  link-local URL was reachable. Callers that know the provider pass `allowed_hosts` for a much
+  tighter control.
+
+  Validating only the *initial* URL was not enough, and that was a real hole: urllib follows 3xx
+  responses automatically, so an origin (or anyone who could influence one) could answer a
+  perfectly valid request with `Location: http://169.254.169.254/...` and reach a target the
+  allow-list existed to forbid. `_ValidatingRedirectHandler` re-runs `assert_fetchable_url` with
+  the SAME `allowed_hosts` on every hop before it is followed, so an off-allow-list or
+  private-address redirect fails as UNSAFE_URL instead of being fetched. `HttpResponse.final_url`
+  reports where the chain actually ended, so a caller that cares can see it.
 - **Raw and decompressed response-size caps.** `response.read()` with no argument was previously
   used by all seven urllib connectors, so one oversized or hostile response could exhaust the
   512 MB container (`land_sea_collection`'s module docstring records that this already happened
@@ -83,9 +92,14 @@ class ConnectorHttpErrorKind(str, Enum):
 
 
 class ConnectorHttpError(RuntimeError):
-    def __init__(self, kind: ConnectorHttpErrorKind, message: str):
+    def __init__(
+        self, kind: ConnectorHttpErrorKind, message: str, *, status: int | None = None,
+    ):
         super().__init__(message)
         self.kind = kind
+        # The HTTP status the origin answered with; None when no response arrived at all
+        # (DNS, TLS, timeout, reset), which a TRANSIENT kind alone cannot tell apart.
+        self.status = status
 
     def __str__(self) -> str:
         return f"[{self.kind.value}] {super().__str__()}"
@@ -94,12 +108,25 @@ class ConnectorHttpError(RuntimeError):
 @dataclass(frozen=True)
 class HttpResponse:
     """`body` is None exactly when `not_modified` is True -- a 304 carries no body by
-    definition, and the caller is expected to keep whatever it parsed last time."""
+    definition, and the caller is expected to keep whatever it parsed last time.
+
+    `content_type` is the bare media type the origin declared, lower-cased with any `; charset=`
+    parameter stripped, or None when it sent no `Content-Type` at all. Surfaced because an origin
+    that starts serving an HTML error page where XML or JSON used to be is the most common way a
+    crawler silently begins producing nonsense -- `beehive.civic.fetching` asserts on it, and a
+    caller that does not care can keep ignoring it exactly as before.
+
+    `final_url` is where the redirect chain actually ended (the requested URL when nothing
+    redirected). Every hop has already passed the same `assert_fetchable_url` check with the same
+    `allowed_hosts`, so this is reporting rather than a control -- but a caller resolving relative
+    links, or recording provenance, needs to know it moved."""
 
     body: bytes | None
     etag: str | None = None
     last_modified: str | None = None
     not_modified: bool = False
+    content_type: str | None = None
+    final_url: str | None = None
 
 
 def _classify_status(code: int) -> ConnectorHttpErrorKind:
@@ -217,6 +244,74 @@ def _decode_content_encoding(
         ) from exc
 
 
+class UnsafeRedirectError(Exception):
+    """Internal signal that a redirect target failed `assert_fetchable_url`.
+
+    Deliberately not an `HTTPError`: urllib's own handlers catch and re-dispatch those, and this
+    must abort the whole request rather than become another status code to classify. `fetch_bytes`
+    converts it into `ConnectorHttpError(UNSAFE_URL)` so callers see the same taxonomy an unsafe
+    initial URL produces."""
+
+    def __init__(self, url: str, reason: str):
+        super().__init__(reason)
+        self.url = url
+        self.reason = reason
+
+
+# The attribute `fetch_bytes` stamps on its Request so the redirect handler below knows which
+# allow-list to enforce. A Request without it is not ours -- some other library sharing this
+# process -- and is passed through untouched, so installing our handler globally cannot change
+# anyone else's behaviour.
+_ALLOWED_HOSTS_ATTR = "_beehive_allowed_hosts"
+_UNSET = object()
+
+
+class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validates every redirect target before it is followed.
+
+    urllib follows 3xx automatically, so without this an origin could answer a request to an
+    allow-listed host with `Location: http://169.254.169.254/latest/meta-data/` and the client
+    would fetch it -- the allow-list would have been checked exactly once, against a URL the
+    attacker never needed to control. The allow-list is read from the Request rather than baked
+    into the handler so one installed opener can serve calls with different allow-lists.
+
+    The redirected Request is re-stamped with the same allow-list, so hop three is checked as
+    strictly as hop one."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        allowed_hosts = getattr(req, _ALLOWED_HOSTS_ATTR, _UNSET)
+        if allowed_hosts is _UNSET:
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+        try:
+            assert_fetchable_url(newurl, allowed_hosts=allowed_hosts)
+        except UnsafeUrlError as exc:
+            raise UnsafeRedirectError(newurl, str(exc)) from exc
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None:
+            setattr(redirected, _ALLOWED_HOSTS_ATTR, allowed_hosts)
+        return redirected
+
+
+def _install_validating_opener() -> None:
+    """Installs the redirect check into urllib's opener chain, once, at import.
+
+    Installed globally rather than built per call so `urllib.request.urlopen` -- which every
+    connector and every existing test already goes through -- keeps working unchanged. The
+    handler is a strict no-op for any Request that does not carry `_ALLOWED_HOSTS_ATTR`."""
+    urllib.request.install_opener(
+        urllib.request.build_opener(_ValidatingRedirectHandler()))
+
+
+_install_validating_opener()
+
+
+def _media_type(raw: str | None) -> str | None:
+    """The bare media type from a Content-Type header, lower-cased with parameters dropped."""
+    if not raw:
+        return None
+    return raw.split(";", 1)[0].strip().lower() or None
+
+
 def _read_capped(response, max_bytes: int, url: str) -> bytes:
     declared = response.headers.get("Content-Length")
     if declared is not None:
@@ -293,19 +388,28 @@ def fetch_bytes(
     sleep = sleep or time.sleep
     for attempt in range(max_attempts):
         request = urllib.request.Request(url, data=body, headers=headers, method=method)
+        # Read back by _ValidatingRedirectHandler on every hop.
+        setattr(request, _ALLOWED_HOSTS_ATTR, allowed_hosts)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
                 return HttpResponse(
                     body=_read_capped(response, max_bytes, url),
                     etag=response.headers.get("ETag"),
                     last_modified=response.headers.get("Last-Modified"),
+                    content_type=_media_type(response.headers.get("Content-Type")),
+                    final_url=getattr(response, "url", None) or url,
                 )
+        except UnsafeRedirectError as exc:
+            raise ConnectorHttpError(
+                ConnectorHttpErrorKind.UNSAFE_URL,
+                f"{url}: refused redirect to {exc.url}: {exc.reason}") from exc
         except urllib.error.HTTPError as exc:
             if exc.code == 304:
                 return HttpResponse(
                     body=None, etag=etag, last_modified=last_modified, not_modified=True)
             kind = _classify_http_error(exc)
-            last_error = ConnectorHttpError(kind, f"{url}: HTTP {exc.code} {exc.reason}")
+            last_error = ConnectorHttpError(
+                kind, f"{url}: HTTP {exc.code} {exc.reason}", status=exc.code)
             if kind is not ConnectorHttpErrorKind.TRANSIENT:
                 raise last_error from exc
             honored = _retry_after_seconds(exc)
@@ -432,6 +536,7 @@ def post_json_browser_tls(
             last_error = ConnectorHttpError(
                 kind,
                 f"{url}: HTTP {response.status_code}",
+                status=response.status_code,
             )
             if kind is not ConnectorHttpErrorKind.TRANSIENT:
                 raise last_error

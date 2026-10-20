@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://partymap.co.nz/schemas/civic-publication-outcome-v1.schema.json",
+  "title": "Civic publication outcome v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/accepted"
+    },
+    {
+      "$ref": "#/$defs/rejected"
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "base": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "idempotency_key",
+        "payload_hash",
+        "outcome",
+        "recorded_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256
+        },
+        "payload_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "recorded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch",
+        "reference"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "pattern": "^newsroom/[a-zA-Z0-9._/-]+$",
+          "maxLength": 240
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "pull_request_number": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "accepted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "idempotency_key",
+            "payload_hash",
+            "outcome",
+            "recorded_at",
+            "proposal"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "idempotency_key": {
+              "type": "string"
+            },
+            "payload_hash": {
+              "$ref": "#/$defs/sha256"
+            },
+            "outcome": {
+              "const": "accepted"
+            },
+            "recorded_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "proposal": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/proposal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rejected": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "idempotency_key",
+            "payload_hash",
+            "outcome",
+            "recorded_at",
+            "reason",
+            "detail"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "idempotency_key": {
+              "type": "string"
+            },
+            "payload_hash": {
+              "$ref": "#/$defs/sha256"
+            },
+            "outcome": {
+              "const": "rejected"
+            },
+            "recorded_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reason": {
+              "enum": [
+                "unknown_party_slug",
+                "event_id_collision",
+                "source_url_collision",
+                "unsupported_record_kind",
+                "unsupported_category",
+                "unsupported_operation",
+                "schema_version_unsupported",
+                "invalid_payload_hash",
+                "invalid_envelope",
+                "destination_validation_failed"
+              ]
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          }
+        }
+      ]
+    }
+  }
+}

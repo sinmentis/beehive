@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "result": {
+    "count": 1,
+    "results": [
+      {
+        "id": "0f2c9a3b-51d7-4e88-9a6c-2f4b7d1e0c93",
+        "name": "electoral-roll-statistics",
+        "title": "Electoral roll statistics",
+        "notes": "Quarterly enrolment counts by electorate.",
+        "metadata_created": "2019-03-12T21:00:00.123456",
+        "metadata_modified": "2026-08-10T04:30:00.987654",
+        "organization": {"title": "Electoral Commission"}
+      }
+    ]
+  }
+}

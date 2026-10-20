@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PartyMap Civic automation: Owner-approved Civic Watches gather New Zealand official, party and
+  licensed media sources daily, generate and independently verify four-locale entries, and seal
+  them into Civic Batches delivered through a local two-phase spool. Civic runs on two
+  timer-started units with its own locked image (ADR-0013). Schema version 5. See
+  [PartyMap Civic automation](docs/civic.md).
 - Per-Channel fetch scheduling: each Channel now chooses either a fixed interval (every 3 or 6
   hours) or a daily wall-clock time in its own IANA timezone, defaulting to `Pacific/Auckland`. A
   daily schedule is anchored to its calendar slot instead of the last successful fetch, so a late

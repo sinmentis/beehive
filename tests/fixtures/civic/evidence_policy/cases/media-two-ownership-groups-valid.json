@@ -1,0 +1,106 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "media-two-ownership-groups-valid",
+  "title": "Two reputable publishers under distinct owners corroborate",
+  "description": "Media only evidence is publishable when two registered publishers with different ownership groups describe the same subject, event date, and category, and no prior candidate or published fingerprint matches.",
+  "branches": [
+    "corroboration_category_match",
+    "corroboration_event_date_match",
+    "corroboration_subject_match",
+    "dedup_canonical_url",
+    "media_ownership_independence",
+    "media_ownership_registry"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-harbour-ward-office-opening",
+    "fingerprint": "fp-harbour-ward-office-opening-20260809",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260809/harbour-ward-office-opening",
+    "eventDate": "2026-08-09",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance opened its harbour ward campaign office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/harbour-alliance-harbour-ward-office",
+      "canonicalUrl": "https://harbourledger.example/politics/harbour-alliance-harbour-ward-office",
+      "title": "Harbour ward campaign office opening confirmed",
+      "excerpt": "The report names the party officers who confirmed the opening date.",
+      "publishedAt": "2026-08-09T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-09",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/harbour-alliance-harbour-ward-office",
+      "canonicalUrl": "https://keawire.example/news/harbour-alliance-harbour-ward-office",
+      "title": "Independent newsroom confirms the same opening date",
+      "excerpt": "A second newsroom names the same officers and the same opening date.",
+      "publishedAt": "2026-08-09T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-09",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [],
+    "publishedFingerprints": []
+  },
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "dedup_no_prior_match",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

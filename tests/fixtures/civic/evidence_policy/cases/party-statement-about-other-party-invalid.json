@@ -1,0 +1,61 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "party-statement-about-other-party-invalid",
+  "title": "One party's statement about another party's policy is excluded",
+  "description": "A party primary source only establishes its own party's position. A characterization of a rival policy is a hard exclusion, so the candidate is screened out rather than deferred.",
+  "branches": [
+    "tier_t3_party_primary_policy"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-rival-transport-fund-claim",
+    "fingerprint": "fp-rival-transport-fund-claim-20260811",
+    "recordKind": "policy",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/regional-transport-fund",
+    "eventDate": "2026-08-11",
+    "category": "party-policy",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "A rival party described the transport fund as unaffordable."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "party_primary",
+      "sourceTier": "T3",
+      "sourceKind": "party-primary",
+      "civicEvidenceTier": "party_primary",
+      "stance": "supporting",
+      "publisherId": "northern-union-party",
+      "partySlug": "northern-union",
+      "url": "https://northernunion.example/statements/on-the-transport-fund",
+      "canonicalUrl": "https://northernunion.example/statements/on-the-transport-fund",
+      "title": "Northern Union comments on another party's transport fund",
+      "excerpt": "The statement characterises a rival party's transport fund and its expected cost.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-11",
+      "category": "party-policy",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "blocked",
+    "outcome": "screened_out",
+    "reasonCodes": [
+      "evidence_party_mismatch"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [],
+    "evidenceExcluded": [
+      "e1"
+    ]
+  }
+}

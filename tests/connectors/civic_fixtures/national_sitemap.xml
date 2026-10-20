@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url>
+<loc>https://www.national.org.nz/</loc>
+<lastmod>2026-04-06T22:51:16.850Z</lastmod>
+<changefreq>monthly</changefreq>
+<priority>1</priority>
+</url>
+<url>
+<loc>https://www.national.org.nz/plan</loc>
+<lastmod>2026-08-09T05:52:00.000Z</lastmod>
+<changefreq>monthly</changefreq>
+<priority>0.8</priority>
+</url>
+<url>
+<loc>https://www.national.org.nz/news/20260811-honlouiseupston</loc>
+<lastmod>2026-08-11T03:48:30.206Z</lastmod>
+<changefreq>monthly</changefreq>
+<priority>0.8</priority>
+</url>
+<url>
+<loc>https://www.national.org.nz/news/20260810-honsimeonbrown</loc>
+<lastmod>2026-08-10T21:15:00.000Z</lastmod>
+<changefreq>monthly</changefreq>
+<priority>0.8</priority>
+</url>
+<url>
+<loc>https://www.national.org.nz/news/20260809-undated-release</loc>
+<changefreq>monthly</changefreq>
+<priority>0.8</priority>
+</url>
+</urlset>

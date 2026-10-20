@@ -18,6 +18,8 @@ Secrets and paths come from the environment. Everything else is set in the web a
 | `DIGEST_EMAIL_TO` | Sending email | The default recipient. The **Default email address** in the admin overrides it. |
 | `DB_SYNCHRONOUS` | Tuning | SQLite's `synchronous` mode: `OFF`, `NORMAL`, `FULL` or `EXTRA`. Defaults to `NORMAL`: a crash loses nothing, and a power cut can undo the last few writes. |
 | `TRUSTED_PROXY_IPS` | A reverse proxy | Your proxy's addresses, so the sign-in rate limit sees each visitor's real address. See [Reverse proxy and client addresses](../deploy/README.md#reverse-proxy-and-client-addresses). |
+| `CIVIC_SPOOL_ROOT` | Civic commands | The PartyMap inbox/outcome root. Defaults to `/spool`; the Quadlet units bind it to `%h/.local/share/partymap-intake` on the host. See [PartyMap Civic automation](civic.md). |
+| `CIVIC_SPOOL_SHADOW` | Civic commands | `1` writes and validates envelopes and outcomes without consuming outcomes or writing receipts. Defaults to `0`. |
 | `RESEARCH_WORKER_*` | The research worker | Pool sizes, polling and lease timing. See [Environment overrides](../deploy/README.md#environment-overrides). |
 
 Keep credentials out of the repository. The server setup passes them in as Podman secrets.

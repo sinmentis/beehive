@@ -1,0 +1,83 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "significance-opinion-excluded",
+  "title": "Opinion pieces are excluded",
+  "description": "Opinion material cannot be stated neutrally as a factual state change, so it is a hard exclusion regardless of ownership independence.",
+  "branches": [
+    "significance_durability"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-levy-opinion",
+    "fingerprint": "fp-levy-opinion-20260810",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260810/levy-opinion",
+    "eventDate": "2026-08-10",
+    "category": "opinion",
+    "contentClass": "opinion",
+    "durable": false,
+    "claimText": "Columnists disagreed about the levy bill."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/opinion/levy-column",
+      "canonicalUrl": "https://riverportpost.example/opinion/levy-column",
+      "title": "Column arguing about the levy bill",
+      "excerpt": "The column argues for a position rather than reporting a state change.",
+      "publishedAt": "2026-08-10T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-10",
+      "category": "opinion",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "context",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/opinion/levy-response-column",
+      "canonicalUrl": "https://keawire.example/opinion/levy-response-column",
+      "title": "Response column from a different owner group",
+      "excerpt": "The response column argues the opposite position.",
+      "publishedAt": "2026-08-10T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-10",
+      "category": "opinion",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "blocked",
+    "outcome": "screened_out",
+    "reasonCodes": [
+      "significance_excluded_category",
+      "significance_non_durable"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [],
+    "evidenceExcluded": [
+      "e1",
+      "e2"
+    ]
+  }
+}

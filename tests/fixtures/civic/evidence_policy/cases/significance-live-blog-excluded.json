@@ -1,0 +1,83 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "significance-live-blog-excluded",
+  "title": "Live blog updates are not durable",
+  "description": "Live blog entries change after publication and do not describe a settled state, so they are excluded even with two ownership groups.",
+  "branches": [
+    "significance_durability"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-debate-night-live",
+    "fingerprint": "fp-debate-night-live-20260811",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260811/debate-night-live",
+    "eventDate": "2026-08-11",
+    "category": "live-blog",
+    "contentClass": "live-blog",
+    "durable": false,
+    "claimText": "A debate night live blog recorded running commentary."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/live/debate-night",
+      "canonicalUrl": "https://harbourledger.example/live/debate-night",
+      "title": "Live blog of a debate night",
+      "excerpt": "The live blog updates continuously and revises earlier entries.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-11",
+      "category": "live-blog",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/live/debate-night",
+      "canonicalUrl": "https://riverportpost.example/live/debate-night",
+      "title": "Second live blog of the same debate night",
+      "excerpt": "A second live blog also revises its earlier entries as the night proceeds.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-11",
+      "category": "live-blog",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "blocked",
+    "outcome": "screened_out",
+    "reasonCodes": [
+      "significance_excluded_category",
+      "significance_non_durable"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [],
+    "evidenceExcluded": [
+      "e1",
+      "e2"
+    ]
+  }
+}

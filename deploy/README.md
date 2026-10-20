@@ -9,8 +9,11 @@ process selects its role through a Quadlet unit's `Exec=`:
   Tracker reminders, and
 - an always-on durable Research worker (Research Runs + Research Chat replies, ADR-0009).
 
-Apart from the host's nightly backup timer there are no timers or path units: each worker polls
-its own queues and schedules in SQLite.
+Apart from the host's nightly backup timer and the two PartyMap Civic timers, there are no timers
+or path units: each worker polls its own queues and schedules in SQLite. Civic is the documented
+exception (ADR-0013): a daily 06:30 Pacific/Auckland Civic Watch run and a five-minute spool
+maintenance job, both oneshot containers on their own locked image. See
+[Civic (PartyMap) worker](#civic-partymap-worker-adr-0013).
 
 The read surfaces are served directly and are public unless the Owner sets **Who can read** to
 private (ADR-0011); `/admin/*` and all write actions are always gated by the app's own password
@@ -32,6 +35,9 @@ the reverse proxy.
 | `quadlet/beehive-web.container` | Always-on web app — `PublishPort=127.0.0.1:8095:8000`, `Restart=always` |
 | `quadlet/beehive-jobs.container` | Always-on jobs worker (ADR-0012) — scheduled fetching, "Fetch now", deep reads, digests and reminders, `Restart=always` |
 | `quadlet/beehive-research.container` | Always-on durable Research worker — bounded Research Run + Research Chat pools (ADR-0009), `Restart=always` |
+| `quadlet/beehive-civic.container` + `.timer` | Daily 06:30 Pacific/Auckland Civic Watch run and canonical inbox write; binds the host intake directory at `/spool` (ADR-0013) |
+| `quadlet/beehive-civic-maintenance.container` + `.timer` | Five-minute Civic lease recovery, sealed-envelope replay and outcome processing over the same intake bind; receives no AI credential |
+| `Containerfile.civic` | Locked image for the two Civic units (`localhost/beehive:civic`), pinned base digests and `uv sync --locked` |
 | `systemd/beehive-backup.service` + `.timer`, `backup/` | Nightly host-side SQLite backup with a restore drill on every run (see [Backups](#backups)) |
 
 The web container publishes to `127.0.0.1` only, so the app is reachable from the host's loopback
@@ -208,6 +214,10 @@ act on any of it stay in the dashboard repository's trusted binding, which also 
 persistent pause gate. Nothing here grants itself permission; this file only describes what
 exists.
 
+The two Civic timers are not in the declaration yet, so a dashboard pause does not stop them.
+Stop `beehive-civic.timer` and `beehive-civic-maintenance.timer` by hand if a pause must cover
+Civic too.
+
 Readiness is `/readyz` on the container's port 8000 (`GET`, expect `200`, 5s budget). It opens the
 SQLite database through the app's own connection seam, checks the core tables are present, and
 reads one row back, so a mounted-but-empty volume answers 503 instead of passing.
@@ -252,7 +262,8 @@ az communication list-key --name <your-acs-resource> -g <your-resource-group> \
   admin cookie.
 - `beehive-copilot-github-token` → `COPILOT_GITHUB_TOKEN` (the jobs worker's AI ranking and
   deep-read briefs, and the Research worker's plan/sufficiency/synthesis/chat AI calls and LLM
-  model-list refresh, all via `ai/llm_client.py`). The web container does not receive it.
+  model-list refresh, plus the daily Civic generation and verification calls, all via
+  `ai/llm_client.py`). The web and Civic maintenance containers do not receive it.
 - `beehive-acs-connection` → `ACS_CONNECTION_STRING` (Email Group digests, Research-completion
   emails, Tracker reminders and failure alerts from the jobs worker, paired with the
   `DIGEST_EMAIL_TO`/`DIGEST_EMAIL_FROM` `Environment=` values on that container). Omit this secret
@@ -354,6 +365,128 @@ journalctl --user -u beehive-jobs.service -n 200 --no-pager
 After fixing a Source, select **Fetch now** in the admin; the worker runs it within seconds. The
 `scripts.run_collector` job modes refuse to run while the worker is active, so a Channel is never
 fetched by two processes at once.
+
+## Civic (PartyMap) worker (ADR-0013)
+
+Install the units and enable both timers once the image and intake directory below exist:
+
+```bash
+cp deploy/quadlet/beehive-civic*.container ~/.config/containers/systemd/
+# Timers are plain systemd units, not Quadlet files.
+install -m 0644 deploy/quadlet/beehive-civic*.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now beehive-civic.timer beehive-civic-maintenance.timer
+```
+
+`beehive-civic.timer` starts the daily job at `06:30` in `Pacific/Auckland`. The global Watch
+resolves its immutable calendar slot through the application scheduler, so a persistent timer
+catch-up cannot create the same slot twice. PartyMap mode requires exactly one active Watch with
+subject `partymap`, the same 06:30 Auckland schedule, and a published vocabulary; a
+party-per-Watch layout fails before enqueueing.
+
+The repository Civic Quadlet templates use `Image=localhost/beehive:civic`, not the shared
+`:latest` image. Build the dedicated image from the repository root before installing the Civic
+units or enabling their timers:
+
+```bash
+podman build -t localhost/beehive:civic -f deploy/Containerfile.civic .
+```
+
+This recipe pins the Python and uv image digests and installs dependencies from `uv.lock` with
+`uv sync --locked --no-dev --extra ai --extra email --no-editable`.
+
+Treat `:civic` as the local staging tag. For an integrated rollout, assign the built image a
+unique release tag and set `Image=` in both installed Civic units to that same tag before
+reloading or restarting them. Never reuse a release tag. Retain the previous release image for
+rollback. Once the replacement is healthy, remove superseded stopped containers and older images,
+keeping the current image and one rollback image. Do not prune named volumes, database data, or
+spool artifacts as image cleanup.
+
+Receipt revisions require both Civic jobs to move to revision-aware code together. After new
+revisions have been written, do not point an older revision-unaware image at the migrated
+database. Preserve the pre-rollout database/spool snapshot; after new publications are accepted,
+prefer a compatible rollback image or a forward fix rather than restoring older publication
+state. See [Civic publication reliability](../docs/civic-publication-reliability.md).
+
+Use the web container's existing database mount to plan and then explicitly apply that Owner
+configuration. Neither command starts a timer or needs an AI credential:
+
+```bash
+podman exec beehive-web python -m scripts.setup_partymap_civic
+podman exec beehive-web python -m scripts.setup_partymap_civic --apply
+```
+
+The apply is atomic and idempotent. It refuses any conflicting active Watch, incompatible
+`partymap` schedule/status, Owner draft, or non-matching published Vocabulary instead of
+superseding Owner configuration.
+
+Create the rootless host seam before starting either timer:
+
+```bash
+install -d -m 0700 \
+  "$HOME/.local/share/partymap-intake/inbox" \
+  "$HOME/.local/share/partymap-intake/outcomes"
+```
+
+Both Civic containers bind `%h/.local/share/partymap-intake` at `/spool` with Podman's shared
+SELinux relabel option (`:z`) and set `CIVIC_SPOOL_ROOT=/spool`. The SQLite database remains in
+`beehive-data.volume`; it is not exposed through the seam. The host PartyMap Publisher runs as
+the same rootless user and reads/writes the host directory directly. Keep it mode `0700` (files
+are written `0600`). On SELinux hosts, retain `:z` on both mounts so the two containers share one
+label; do not separately relabel or chown the directory to a container-only UID.
+
+Inbox existence alone never records delivery. `beehive-civic-maintenance.timer` first recovers
+expired Run/Batch/Notification leases, replays any missing or identical inbox file, then validates
+outcomes. Each projection pass writes every deliverable Batch without a regular inbox file (at most
+50, continuing after a persisted cursor) and byte-verifies the next 20 existing files after a
+second cursor, so an unsettled shadow backlog never starves newer Batches. Both cursors advance by
+compare-and-set in `app_state`. Accepted outcomes consume one delivery claim and receipt the whole
+Batch. Rejected outcomes quarantine it. Missing outcomes leave it sealed with `attempt_count`
+unchanged.
+An accepted outcome with no proposal is delivered only when the inbox envelope is empty; for a
+non-empty envelope that local-apply acknowledgement is shadow-only and production quarantines it.
+After either durable settlement, maintenance atomically moves the envelope to
+`processed/accepted` or `processed/rejected` and fsyncs both sides of the rename. The outcome JSON
+stays in `outcomes`. A crash after DB settlement or during the move is replayed on the next tick;
+shadow mode leaves every envelope in `inbox`.
+
+For a shadow rollout, set `Environment=CIVIC_SPOOL_SHADOW=1` on both Civic containers. The daily
+job still writes exact v1 envelopes and maintenance still validates outcome files, but accepted
+outcomes leave the Batch sealed and write no receipt.
+
+```bash
+systemctl --user status beehive-civic.timer beehive-civic-maintenance.timer
+journalctl --user -u beehive-civic.service -o cat --since "48 hours ago" --no-pager
+journalctl --user -u beehive-civic-maintenance.service -o cat \
+  --since "48 hours ago" --no-pager
+```
+
+Both services use unbuffered Python output and write immediately flushed
+`partymap.civic.event.v1` NDJSON to journald under the identifiers `beehive-civic` and
+`beehive-civic-maintenance`. One `correlation_id` is generated per command invocation and shared
+by Worker, spool, outcome, and recovery events. systemd limits each service to 1,000 messages per
+30 seconds. The existing final JSON summaries are unchanged in shape and remain at the end of
+each command run.
+
+For a read-only health snapshot, run the image without network access or credentials and mount
+both stores read-only:
+
+```bash
+podman run --rm --network=none --read-only \
+  -v beehive-data:/data:ro \
+  -v "$HOME/.local/share/partymap-intake:/spool:ro,z" \
+  localhost/beehive:latest \
+  -m scripts.diagnose_partymap_civic \
+  --db-path /data/beehive.db --spool-root /spool --since-hours 48 --pretty
+```
+
+The report contains Watch schedules, vocabulary term counts, recent lifecycle counts and
+timestamps, hashes, idempotency keys, bounded provider references, spool file metadata, and
+anomaly codes. It never includes article text, titles, statements, URLs, prompts, model output,
+notification bodies, environment values, or database paths. Prefer this report over sharing the
+SQLite database, inbox/outcome files, or broad process logs. IDs, hashes, filenames, and provider
+references can still identify internal work, so review the JSON before sending it outside the
+operations team.
 
 ## Research worker (ADR-0009)
 

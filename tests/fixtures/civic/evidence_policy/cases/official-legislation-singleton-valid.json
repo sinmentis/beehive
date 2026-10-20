@@ -1,0 +1,62 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "official-legislation-singleton-valid",
+  "title": "Legislation register singleton establishes Royal assent",
+  "description": "One T0 legislation register entry establishes commencement by itself.",
+  "branches": [
+    "tier_t0_official_singleton"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-transport-act-assent",
+    "fingerprint": "fp-transport-act-assent-20260805",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260805/transport-act-assent",
+    "eventDate": "2026-08-05",
+    "category": "legislation",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "The transport funding act received Royal assent."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "official_feeds",
+      "sourceTier": "T0",
+      "sourceKind": "legislation",
+      "civicEvidenceTier": "official",
+      "stance": "supporting",
+      "publisherId": "example-legislation",
+      "url": "https://legislation.example/acts/2026/transport-funding-act",
+      "canonicalUrl": "https://legislation.example/acts/2026/transport-funding-act",
+      "title": "Transport funding act assent record",
+      "excerpt": "The register records the assent date and the commencement provisions.",
+      "publishedAt": "2026-08-05T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-05",
+      "category": "legislation",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "evidence_official_singleton",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": []
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "discovery-social-post-only-invalid",
+  "title": "Social post evidence can never be published",
+  "description": "Social material is discovery only and cannot become publication evidence.",
+  "branches": [
+    "discovery_only_sources"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-supporter-sign-up-drive",
+    "fingerprint": "fp-supporter-sign-up-drive-20260724",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260724/supporter-sign-up-drive",
+    "eventDate": "2026-07-24",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance started a supporter sign up drive on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "social_syndication",
+      "sourceTier": "T5",
+      "sourceKind": null,
+      "civicEvidenceTier": "aggregator",
+      "stance": "context",
+      "publisherId": "social-post-discovery",
+      "url": "https://social-posts.example/posts/harbour-alliance-supporter-drive",
+      "canonicalUrl": "https://social-posts.example/posts/harbour-alliance-supporter-drive",
+      "title": "Social post claiming a party supporter drive",
+      "excerpt": "A social account claims the drive started with no supporting record.",
+      "publishedAt": "2026-07-24T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-24",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": true
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_discovery_only_source",
+      "evidence_insufficient"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [],
+    "evidenceExcluded": [
+      "e1"
+    ]
+  }
+}

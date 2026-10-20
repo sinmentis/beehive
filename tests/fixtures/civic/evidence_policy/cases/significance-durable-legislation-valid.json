@@ -1,0 +1,62 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "significance-durable-legislation-valid",
+  "title": "A legislative stage is durable and publishable",
+  "description": "A recorded legislative stage stays voter relevant well beyond thirty days and is a state change PartyMap can represent.",
+  "branches": [
+    "significance_durability"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-levy-bill-second-reading",
+    "fingerprint": "fp-levy-bill-second-reading-20260811",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260811/levy-bill-second-reading",
+    "eventDate": "2026-08-11",
+    "category": "legislation",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "The levy bill passed its second reading on the recorded date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "official_feeds",
+      "sourceTier": "T0",
+      "sourceKind": "parliament",
+      "civicEvidenceTier": "official",
+      "stance": "supporting",
+      "publisherId": "example-parliament",
+      "url": "https://parliament.example/business/bills/levy-bill-second",
+      "canonicalUrl": "https://parliament.example/business/bills/levy-bill-second",
+      "title": "Second reading recorded for the levy bill",
+      "excerpt": "The record gives the second reading date and the recorded vote.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-11",
+      "category": "legislation",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "evidence_official_singleton",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": []
+  }
+}

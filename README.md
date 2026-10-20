@@ -110,6 +110,7 @@ job, plus a nightly backup.
 - [User guide](docs/user-guide.md): channels, sources, deep reads, the Watch List, email and research
 - [Configuration](docs/configuration.md): every setting, environment variable and command
 - [How it works](docs/how-it-works.md): the pipeline, research and privacy
+- [PartyMap Civic automation](docs/civic.md): Civic Watches, evidence policy and the PartyMap spool
 - [Deployment](deploy/README.md): the Podman units, secrets, backups and releases
 - [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Design decisions](docs/adr/) · [Glossary](CONTEXT.md)
 

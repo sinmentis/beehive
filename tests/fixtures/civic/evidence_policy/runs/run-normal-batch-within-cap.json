@@ -1,0 +1,61 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "run_case",
+  "id": "run-normal-batch-within-cap",
+  "title": "A normal slot below the cap publishes every qualified candidate",
+  "description": "Four qualified candidates on a normal slot stay under the cap of six, so nothing is held back.",
+  "branches": [
+    "batch_cap_normal"
+  ],
+  "polarity": "positive",
+  "run": {
+    "runId": "run-2026-08-12",
+    "watchId": "watch-nz-civic",
+    "slotDate": "2026-08-12",
+    "mode": "normal",
+    "publishedCap": 6
+  },
+  "queue": [
+    {
+      "candidateId": "cand-slot-01",
+      "rank": 1,
+      "fingerprint": "fp-slot-2026-08-12-01",
+      "recordKind": "policy",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-02",
+      "rank": 2,
+      "fingerprint": "fp-slot-2026-08-12-02",
+      "recordKind": "timeline",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-03",
+      "rank": 3,
+      "fingerprint": "fp-slot-2026-08-12-03",
+      "recordKind": "promise-finding",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-04",
+      "rank": 4,
+      "fingerprint": "fp-slot-2026-08-12-04",
+      "recordKind": "correction",
+      "eligibility": "publishable"
+    }
+  ],
+  "expected": {
+    "publishedCandidateIds": [
+      "cand-slot-01",
+      "cand-slot-02",
+      "cand-slot-03",
+      "cand-slot-04"
+    ],
+    "deferredCandidateIds": [],
+    "reasonCodes": [
+      "batch_cap_within_limit"
+    ],
+    "deferralReasonByCandidateId": {}
+  }
+}

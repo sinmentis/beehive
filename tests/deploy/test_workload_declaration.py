@@ -99,9 +99,13 @@ def test_every_role_has_one_always_on_unit_and_nothing_else_needs_control():
     """The count is the check: three always-on containers in `deploy/quadlet/` and no timers,
     path units or one-shot containers. Adding a fourth unit without a role is the drift this
     catches."""
-    containers = list(_QUADLET_DIR.glob("*.container"))
+    # Civic's timer-started oneshots are not dashboard-controlled yet (ADR-0013); every other
+    # unit must be an always-on container with a role.
+    civic = {"beehive-civic", "beehive-civic-maintenance"}
+    containers = [path for path in _QUADLET_DIR.glob("*.container") if path.stem not in civic]
     assert all(_has_install(path) for path in containers)
-    assert not list(_QUADLET_DIR.glob("*.timer")) and not list(_QUADLET_DIR.glob("*.path"))
+    assert {path.stem for path in _QUADLET_DIR.glob("*.timer")} == civic
+    assert not list(_QUADLET_DIR.glob("*.path"))
     lifecycle = _declaration()["spec"]["capabilities"]["core.lifecycle"]
     assert len(lifecycle["roles"]) == len(containers)
 

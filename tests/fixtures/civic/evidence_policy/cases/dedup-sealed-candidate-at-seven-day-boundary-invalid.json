@@ -1,0 +1,100 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "dedup-sealed-candidate-at-seven-day-boundary-invalid",
+  "title": "A fingerprint sealed exactly seven days ago is still a duplicate",
+  "description": "The matching sealed candidate is exactly seven days old. The sealed candidate window is inclusive, so the edge itself is a duplicate and an engine comparing with a strict less than would wrongly republish.",
+  "branches": [
+    "dedup_sealed_candidate_7d"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-northern-branch-opening-repeat",
+    "fingerprint": "fp-northern-branch-opening-20260804",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260804/northern-branch-opening",
+    "eventDate": "2026-08-04",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance opened its northern branch office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/harbour-alliance-northern-branch",
+      "canonicalUrl": "https://keawire.example/news/harbour-alliance-northern-branch",
+      "title": "Harbour Alliance opens its northern branch office",
+      "excerpt": "The report gives the opening date and the region the branch covers.",
+      "publishedAt": "2026-08-04T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-04",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/harbour-alliance-northern-branch",
+      "canonicalUrl": "https://riverportpost.example/politics/harbour-alliance-northern-branch",
+      "title": "Second owner group reports the same branch opening",
+      "excerpt": "A second newsroom confirms the opening date and the region.",
+      "publishedAt": "2026-08-04T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-04",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [
+      {
+        "candidateId": "cand-northern-branch-opening",
+        "fingerprint": "fp-northern-branch-opening-20260804",
+        "canonicalUrl": "https://keawire.example/news/harbour-alliance-northern-branch-first",
+        "sealedAt": "2026-08-05T06:30:00+12:00"
+      }
+    ],
+    "publishedFingerprints": []
+  },
+  "expected": {
+    "eligibility": "blocked",
+    "outcome": "duplicate",
+    "reasonCodes": [
+      "duplicate_sealed_candidate_within_seven_days"
+    ],
+    "ownershipGroups": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

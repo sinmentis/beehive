@@ -1,0 +1,97 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "media-paywalled-with-accessible-corroboration-valid",
+  "title": "Paywalled evidence paired with accessible corroboration",
+  "description": "Paywalled material is admissible when an accessible article from a different ownership group carries the same fact.",
+  "branches": [
+    "article_accessibility",
+    "paywall_accessibility"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-annual-meeting-date",
+    "fingerprint": "fp-annual-meeting-date-20260730",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260730/annual-meeting-date",
+    "eventDate": "2026-07-30",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union set the date of its annual meeting."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "gulf-beacon",
+      "url": "https://gulfbeacon.example/premium/northern-union-annual-meeting",
+      "canonicalUrl": "https://gulfbeacon.example/premium/northern-union-annual-meeting",
+      "title": "Paywalled report on the annual meeting date",
+      "excerpt": "The opening paragraph gives the meeting date behind a subscription wall.",
+      "publishedAt": "2026-07-30T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-30",
+      "category": "party-timeline-event",
+      "accessibleFullText": false,
+      "paywalled": true,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/northern-union-annual-meeting",
+      "canonicalUrl": "https://keawire.example/news/northern-union-annual-meeting",
+      "title": "Accessible report confirms the same annual meeting date",
+      "excerpt": "A freely accessible report confirms the same date and the same venue.",
+      "publishedAt": "2026-07-30T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-30",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "evidence_paywall_corroborated",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "gulf-beacon-press",
+      "kea-independent-media"
+    ],
+    "ownershipClusters": [
+      "gulf-beacon-press",
+      "kea-independent-media"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

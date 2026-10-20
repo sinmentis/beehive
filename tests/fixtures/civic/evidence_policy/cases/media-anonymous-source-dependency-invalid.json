@@ -1,0 +1,89 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "media-anonymous-source-dependency-invalid",
+  "title": "Anonymous source dependency blocks media corroboration",
+  "description": "Two distinct ownership groups agree, but every cited article depends on unnamed sources, so the media rule is not met.",
+  "branches": [
+    "anonymous_source_dependency"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-head-office-relocation",
+    "fingerprint": "fp-head-office-relocation-20260731",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260731/head-office-relocation",
+    "eventDate": "2026-07-31",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union relocated its head office to Riverport."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/northern-union-head-office",
+      "canonicalUrl": "https://riverportpost.example/politics/northern-union-head-office",
+      "title": "Unnamed sources describe a party head office move",
+      "excerpt": "The report rests entirely on people who would not be named.",
+      "publishedAt": "2026-07-31T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-31",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": true,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/northern-union-head-office",
+      "canonicalUrl": "https://keawire.example/news/northern-union-head-office",
+      "title": "Second outlet also relies on unnamed sources",
+      "excerpt": "The second newsroom also attributes the account to people it will not name.",
+      "publishedAt": "2026-07-31T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-31",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": true,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_anonymous_source_dependency",
+      "evidence_insufficient"
+    ],
+    "ownershipGroups": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

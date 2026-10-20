@@ -1,0 +1,10 @@
+[Unit]
+Description=Process Beehive Civic outcomes and recover expired leases
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=beehive-civic-maintenance.service
+
+[Install]
+WantedBy=timers.target

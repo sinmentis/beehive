@@ -1,0 +1,29 @@
+[Unit]
+Description=Beehive Civic Watch run and PartyMap inbox projection
+
+[Container]
+Image=localhost/beehive:civic
+ContainerName=beehive-civic
+Volume=beehive-data.volume:/data
+Volume=%h/.local/share/partymap-intake:/spool:z
+Environment=DB_PATH=/data/beehive.db
+Environment=CIVIC_SPOOL_ROOT=/spool
+Environment=PYTHONUNBUFFERED=1
+# Set to 1 during a shadow rollout. Envelopes are still written and validated, but outcomes do
+# not consume delivery attempts or write receipts.
+Environment=CIVIC_SPOOL_SHADOW=0
+Secret=beehive-copilot-github-token,type=env,target=COPILOT_GITHUB_TOKEN
+Exec=-m scripts.run_collector --mode civic-run
+
+[Service]
+Type=oneshot
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=beehive-civic
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+CPUQuota=100%
+CPUWeight=20
+MemoryHigh=512M
+MemoryMax=768M
+TimeoutStartSec=3600

@@ -1,0 +1,129 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "run_case",
+  "id": "run-election-batch-cap-overflow",
+  "title": "An election slot above the raised cap still defers the overflow",
+  "description": "Twelve qualified candidates during the election period exceed the raised cap of ten, so two defer to the next slot.",
+  "branches": [
+    "batch_cap_election"
+  ],
+  "polarity": "negative",
+  "run": {
+    "runId": "run-2026-09-11",
+    "watchId": "watch-nz-civic",
+    "slotDate": "2026-09-11",
+    "mode": "election",
+    "publishedCap": 10
+  },
+  "queue": [
+    {
+      "candidateId": "cand-slot-01",
+      "rank": 1,
+      "fingerprint": "fp-slot-2026-09-11-01",
+      "recordKind": "policy",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-02",
+      "rank": 2,
+      "fingerprint": "fp-slot-2026-09-11-02",
+      "recordKind": "timeline",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-03",
+      "rank": 3,
+      "fingerprint": "fp-slot-2026-09-11-03",
+      "recordKind": "promise-finding",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-04",
+      "rank": 4,
+      "fingerprint": "fp-slot-2026-09-11-04",
+      "recordKind": "correction",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-05",
+      "rank": 5,
+      "fingerprint": "fp-slot-2026-09-11-05",
+      "recordKind": "policy",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-06",
+      "rank": 6,
+      "fingerprint": "fp-slot-2026-09-11-06",
+      "recordKind": "timeline",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-07",
+      "rank": 7,
+      "fingerprint": "fp-slot-2026-09-11-07",
+      "recordKind": "promise-finding",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-08",
+      "rank": 8,
+      "fingerprint": "fp-slot-2026-09-11-08",
+      "recordKind": "correction",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-09",
+      "rank": 9,
+      "fingerprint": "fp-slot-2026-09-11-09",
+      "recordKind": "policy",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-10",
+      "rank": 10,
+      "fingerprint": "fp-slot-2026-09-11-10",
+      "recordKind": "timeline",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-11",
+      "rank": 11,
+      "fingerprint": "fp-slot-2026-09-11-11",
+      "recordKind": "promise-finding",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-12",
+      "rank": 12,
+      "fingerprint": "fp-slot-2026-09-11-12",
+      "recordKind": "correction",
+      "eligibility": "publishable"
+    }
+  ],
+  "expected": {
+    "publishedCandidateIds": [
+      "cand-slot-01",
+      "cand-slot-02",
+      "cand-slot-03",
+      "cand-slot-04",
+      "cand-slot-05",
+      "cand-slot-06",
+      "cand-slot-07",
+      "cand-slot-08",
+      "cand-slot-09",
+      "cand-slot-10"
+    ],
+    "deferredCandidateIds": [
+      "cand-slot-11",
+      "cand-slot-12"
+    ],
+    "reasonCodes": [
+      "batch_cap_reached"
+    ],
+    "deferralReasonByCandidateId": {
+      "cand-slot-11": "batch_cap_reached",
+      "cand-slot-12": "batch_cap_reached"
+    }
+  }
+}

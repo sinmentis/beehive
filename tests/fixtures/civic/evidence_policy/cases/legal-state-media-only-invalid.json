@@ -1,0 +1,89 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "legal-state-media-only-invalid",
+  "title": "Media only evidence cannot establish a legal state",
+  "description": "Two independent publishers agree, but a legal or parliamentary state still needs a T0 record, so the candidate defers instead of publishing.",
+  "branches": [
+    "tier_t0_official_singleton"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-transport-act-commencement",
+    "fingerprint": "fp-transport-act-commencement-20260805",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260805/transport-act-commencement",
+    "eventDate": "2026-08-05",
+    "category": "legislation",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "The transport funding act commenced on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/transport-act-commencement",
+      "canonicalUrl": "https://harbourledger.example/politics/transport-act-commencement",
+      "title": "Reporters describe the commencement timetable",
+      "excerpt": "Two reporters describe when the funding rules are expected to take effect.",
+      "publishedAt": "2026-08-05T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-05",
+      "category": "legislation",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/transport-act-commencement",
+      "canonicalUrl": "https://keawire.example/news/transport-act-commencement",
+      "title": "Second outlet describes the same commencement timetable",
+      "excerpt": "The outlet repeats the expected commencement timetable for the funding rules.",
+      "publishedAt": "2026-08-05T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-05",
+      "category": "legislation",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_insufficient",
+      "evidence_official_source_required"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

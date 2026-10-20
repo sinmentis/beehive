@@ -1,0 +1,88 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "corroboration-event-date-mismatch-invalid",
+  "title": "An item about a different event date cannot corroborate",
+  "description": "The second publisher describes an event on another date, so it cannot join the corroboration set.",
+  "branches": [
+    "corroboration_event_date_match"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-riverport-office-opening",
+    "fingerprint": "fp-riverport-office-opening-20260721",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260721/riverport-office-opening",
+    "eventDate": "2026-07-21",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance opened its Riverport campaign office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/harbour-alliance-riverport-office",
+      "canonicalUrl": "https://harbourledger.example/politics/harbour-alliance-riverport-office",
+      "title": "Harbour Alliance opens its Riverport campaign office",
+      "excerpt": "The report gives the opening date and the party members who attended.",
+      "publishedAt": "2026-07-21T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-21",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/harbour-alliance-southbank-office",
+      "canonicalUrl": "https://riverportpost.example/politics/harbour-alliance-southbank-office",
+      "title": "Harbour Alliance opened a Southbank office earlier in the month",
+      "excerpt": "The second report describes a different office opening from another week.",
+      "publishedAt": "2026-07-14T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-14",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "corroboration_event_date_mismatch",
+      "evidence_insufficient"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group"
+    ],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": [
+      "e2"
+    ]
+  }
+}

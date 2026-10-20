@@ -1,0 +1,62 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "official-finding-official-review-valid",
+  "title": "Official finding established by independent official scrutiny",
+  "description": "A T2 official review establishes an official finding on an existing promise.",
+  "branches": [
+    "tier_official_finding"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-transport-fund-finding",
+    "fingerprint": "fp-transport-fund-finding-20260806",
+    "recordKind": "promise-finding",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/regional-transport-fund/finding",
+    "eventDate": "2026-08-06",
+    "category": "official-finding",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "The auditor reported first year allocation of the transport fund."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "official_feeds",
+      "sourceTier": "T2",
+      "sourceKind": "official-review",
+      "civicEvidenceTier": "official",
+      "stance": "supporting",
+      "publisherId": "example-auditor-general",
+      "url": "https://auditor-general.example/reports/2026/transport-fund-review",
+      "canonicalUrl": "https://auditor-general.example/reports/2026/transport-fund-review",
+      "title": "Auditor review of the regional transport fund",
+      "excerpt": "The review reports how much of the fund was allocated in the first year.",
+      "publishedAt": "2026-08-06T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-06",
+      "category": "official-finding",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "evidence_official_singleton",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": []
+  }
+}

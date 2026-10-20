@@ -1,0 +1,99 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "dedup-published-fingerprint-within-fourteen-days-invalid",
+  "title": "A fingerprint published downstream within fourteen days is a duplicate",
+  "description": "The destination dataset already published this fingerprint about ten days ago. That is outside the seven day sealed candidate window and inside the fourteen day published comparison window, so only the published window can catch it.",
+  "branches": [
+    "dedup_published_fingerprint_14d"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-branch-registration-repeat",
+    "fingerprint": "fp-branch-registration-20260731",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260731/branch-registration",
+    "eventDate": "2026-07-31",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance registered a new regional branch on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/harbour-alliance-branch-registration",
+      "canonicalUrl": "https://riverportpost.example/politics/harbour-alliance-branch-registration",
+      "title": "Harbour Alliance registers a new regional branch",
+      "excerpt": "The report gives the registration date and the region the branch covers.",
+      "publishedAt": "2026-07-31T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-31",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/harbour-alliance-branch-registration",
+      "canonicalUrl": "https://keawire.example/news/harbour-alliance-branch-registration",
+      "title": "Second owner group reports the same branch registration",
+      "excerpt": "A second newsroom confirms the registration date and the region.",
+      "publishedAt": "2026-07-31T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-31",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [],
+    "publishedFingerprints": [
+      {
+        "fingerprint": "fp-branch-registration-20260731",
+        "batchId": "2026-08-02-01",
+        "publishedAt": "2026-08-02T09:15:00+12:00"
+      }
+    ]
+  },
+  "expected": {
+    "eligibility": "blocked",
+    "outcome": "duplicate",
+    "reasonCodes": [
+      "duplicate_published_fingerprint_within_fourteen_days"
+    ],
+    "ownershipGroups": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

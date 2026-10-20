@@ -1,0 +1,100 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "dedup-sealed-candidate-within-seven-days-invalid",
+  "title": "A fingerprint sealed within seven days is a duplicate",
+  "description": "A candidate with the same fingerprint was sealed into a batch five days ago, inside the seven day sealed candidate window.",
+  "branches": [
+    "dedup_sealed_candidate_7d"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-youth-wing-launch-repeat",
+    "fingerprint": "fp-youth-wing-launch-20260810",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260810/youth-wing-launch",
+    "eventDate": "2026-08-10",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union launched its youth wing on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/northern-union-youth-wing",
+      "canonicalUrl": "https://keawire.example/news/northern-union-youth-wing",
+      "title": "Northern Union launches its youth wing",
+      "excerpt": "The report gives the launch date and the officers the party named.",
+      "publishedAt": "2026-08-10T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-10",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/northern-union-youth-wing",
+      "canonicalUrl": "https://riverportpost.example/politics/northern-union-youth-wing",
+      "title": "Second owner group reports the same youth wing launch",
+      "excerpt": "A second newsroom confirms the launch date and the named officers.",
+      "publishedAt": "2026-08-10T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-10",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [
+      {
+        "candidateId": "cand-youth-wing-launch",
+        "fingerprint": "fp-youth-wing-launch-20260810",
+        "canonicalUrl": "https://keawire.example/news/northern-union-youth-wing-first",
+        "sealedAt": "2026-08-07T06:45:00+12:00"
+      }
+    ],
+    "publishedFingerprints": []
+  },
+  "expected": {
+    "eligibility": "blocked",
+    "outcome": "duplicate",
+    "reasonCodes": [
+      "duplicate_sealed_candidate_within_seven_days"
+    ],
+    "ownershipGroups": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "kea-independent-media",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

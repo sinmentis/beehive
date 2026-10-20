@@ -1,0 +1,108 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "dedup-outside-sealed-window-valid",
+  "title": "A fingerprint sealed before the seven day window may publish again",
+  "description": "The only matching sealed candidate is ten days old, outside the seven day window, so the new development is publishable.",
+  "branches": [
+    "dedup_sealed_candidate_7d"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-conference-venue-confirmation",
+    "fingerprint": "fp-conference-venue-confirmation",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260811/conference-venue-confirmation",
+    "eventDate": "2026-08-11",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union confirmed the venue for its annual conference."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/northern-union-conference-venue",
+      "canonicalUrl": "https://keawire.example/news/northern-union-conference-venue",
+      "title": "Northern Union confirms its annual conference venue",
+      "excerpt": "The report names the venue and the dates the party confirmed.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/northern-union-conference-venue",
+      "canonicalUrl": "https://harbourledger.example/politics/northern-union-conference-venue",
+      "title": "Second owner group confirms the same conference venue",
+      "excerpt": "A second newsroom repeats the venue and the confirmed dates.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [
+      {
+        "candidateId": "cand-conference-venue-shortlist",
+        "fingerprint": "fp-conference-venue-confirmation",
+        "canonicalUrl": "https://keawire.example/news/northern-union-conference-shortlist",
+        "sealedAt": "2026-08-02T06:45:00+12:00"
+      }
+    ],
+    "publishedFingerprints": []
+  },
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "dedup_outside_sealed_window",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

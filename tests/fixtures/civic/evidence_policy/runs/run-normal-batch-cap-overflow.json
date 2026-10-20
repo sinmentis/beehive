@@ -1,0 +1,97 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "run_case",
+  "id": "run-normal-batch-cap-overflow",
+  "title": "A normal slot above the cap defers the overflow in rank order",
+  "description": "Eight qualified candidates on a normal slot exceed the cap of six. The two lowest ranked candidates defer to the next slot and keep their evidence and reason.",
+  "branches": [
+    "batch_cap_normal"
+  ],
+  "polarity": "negative",
+  "run": {
+    "runId": "run-2026-08-13",
+    "watchId": "watch-nz-civic",
+    "slotDate": "2026-08-13",
+    "mode": "normal",
+    "publishedCap": 6
+  },
+  "queue": [
+    {
+      "candidateId": "cand-slot-01",
+      "rank": 1,
+      "fingerprint": "fp-slot-2026-08-13-01",
+      "recordKind": "policy",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-02",
+      "rank": 2,
+      "fingerprint": "fp-slot-2026-08-13-02",
+      "recordKind": "timeline",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-03",
+      "rank": 3,
+      "fingerprint": "fp-slot-2026-08-13-03",
+      "recordKind": "promise-finding",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-04",
+      "rank": 4,
+      "fingerprint": "fp-slot-2026-08-13-04",
+      "recordKind": "correction",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-05",
+      "rank": 5,
+      "fingerprint": "fp-slot-2026-08-13-05",
+      "recordKind": "policy",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-06",
+      "rank": 6,
+      "fingerprint": "fp-slot-2026-08-13-06",
+      "recordKind": "timeline",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-07",
+      "rank": 7,
+      "fingerprint": "fp-slot-2026-08-13-07",
+      "recordKind": "promise-finding",
+      "eligibility": "publishable"
+    },
+    {
+      "candidateId": "cand-slot-08",
+      "rank": 8,
+      "fingerprint": "fp-slot-2026-08-13-08",
+      "recordKind": "correction",
+      "eligibility": "publishable"
+    }
+  ],
+  "expected": {
+    "publishedCandidateIds": [
+      "cand-slot-01",
+      "cand-slot-02",
+      "cand-slot-03",
+      "cand-slot-04",
+      "cand-slot-05",
+      "cand-slot-06"
+    ],
+    "deferredCandidateIds": [
+      "cand-slot-07",
+      "cand-slot-08"
+    ],
+    "reasonCodes": [
+      "batch_cap_reached"
+    ],
+    "deferralReasonByCandidateId": {
+      "cand-slot-07": "batch_cap_reached",
+      "cand-slot-08": "batch_cap_reached"
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "discovery-community-forum-only-invalid",
+  "title": "Community forum evidence can never be published",
+  "description": "Community material is a discovery signal only and never counts as evidence.",
+  "branches": [
+    "discovery_only_sources"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-regional-office-move",
+    "fingerprint": "fp-regional-office-move-20260725",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260725/regional-office-move",
+    "eventDate": "2026-07-25",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance moved its regional office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "reddit",
+      "sourceTier": "T5",
+      "sourceKind": null,
+      "civicEvidenceTier": "aggregator",
+      "stance": "context",
+      "publisherId": "community-forum-discovery",
+      "url": "https://community-forum.example/threads/harbour-alliance-regional-office",
+      "canonicalUrl": "https://community-forum.example/threads/harbour-alliance-regional-office",
+      "title": "Community thread about a party office move",
+      "excerpt": "Forum members discuss an office move with no publisher or official record.",
+      "publishedAt": "2026-07-25T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-25",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": true
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_discovery_only_source",
+      "evidence_insufficient"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [],
+    "evidenceExcluded": [
+      "e1"
+    ]
+  }
+}

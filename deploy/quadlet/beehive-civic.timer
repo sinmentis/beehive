@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Beehive Civic Watches daily at 06:30 Pacific/Auckland
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 Pacific/Auckland
+RandomizedDelaySec=30s
+Persistent=true
+Unit=beehive-civic.service
+
+[Install]
+WantedBy=timers.target

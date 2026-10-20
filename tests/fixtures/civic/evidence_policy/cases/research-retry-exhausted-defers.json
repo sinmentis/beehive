@@ -1,0 +1,132 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "research-retry-exhausted-defers",
+  "title": "The single research attempt does not close the evidence gap",
+  "description": "The bounded research attempt only finds a title under the same owner, so the ownership test still fails. The retry budget is spent and the candidate defers rather than publishing.",
+  "branches": [
+    "research_retry_bounded"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-regional-conference-booking",
+    "fingerprint": "fp-regional-conference-booking-20260808",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260808/regional-conference-booking",
+    "eventDate": "2026-08-08",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union booked the venue for its regional conference."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/northern-union-regional-conference",
+      "canonicalUrl": "https://harbourledger.example/politics/northern-union-regional-conference",
+      "title": "First report on the regional conference booking",
+      "excerpt": "The report gives the booked venue and the conference dates.",
+      "publishedAt": "2026-08-08T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-08",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "retry": {
+    "maxAttempts": 1,
+    "attemptsUsed": 1,
+    "before": {
+      "eligibility": "deferred",
+      "outcome": "deferred_evidence",
+      "reasonCodes": [
+        "evidence_insufficient",
+        "evidence_single_ownership_group"
+      ],
+      "ownershipGroups": [
+        "harbour-media-group"
+      ],
+      "ownershipClusters": [
+        "harbour-media-group"
+      ],
+      "evidenceUsed": [
+        "e1"
+      ],
+      "evidenceExcluded": []
+    },
+    "additionalEvidence": [
+      {
+        "evidenceId": "e2",
+        "connector": "google_news",
+        "sourceTier": "T4",
+        "sourceKind": "independent-news",
+        "civicEvidenceTier": "reputable_media",
+        "stance": "corroborating",
+        "publisherId": "southern-chronicle",
+        "url": "https://southernchronicle.example/news/northern-union-regional-conference",
+        "canonicalUrl": "https://southernchronicle.example/news/northern-union-regional-conference",
+        "title": "Same owner title found by the bounded research pass",
+        "excerpt": "The additional report comes from a title under the same ownership group.",
+        "publishedAt": "2026-08-08T09:00:00+12:00",
+        "subjectId": "northern-union",
+        "eventDate": "2026-08-08",
+        "category": "party-timeline-event",
+        "accessibleFullText": true,
+        "paywalled": false,
+        "anonymousSourceDependency": false,
+        "discoveryOnly": false
+      }
+    ],
+    "after": {
+      "eligibility": "deferred",
+      "outcome": "deferred_evidence",
+      "reasonCodes": [
+        "evidence_insufficient",
+        "evidence_single_ownership_group",
+        "research_retry_exhausted"
+      ],
+      "ownershipGroups": [
+        "harbour-media-group"
+      ],
+      "ownershipClusters": [
+        "harbour-media-group"
+      ],
+      "evidenceUsed": [
+        "e1",
+        "e2"
+      ],
+      "evidenceExcluded": []
+    }
+  },
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_insufficient",
+      "evidence_single_ownership_group",
+      "research_retry_exhausted"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "research-retry-resolves-valid",
+  "title": "One bounded research attempt supplies the missing publisher",
+  "description": "The candidate starts with one publisher and defers. A single bounded research attempt adds a second ownership group, and the candidate becomes publishable without a second attempt.",
+  "branches": [
+    "research_retry_bounded"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-campaign-office-opening",
+    "fingerprint": "fp-campaign-office-opening-20260809",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "northern-union",
+    "recordKey": "northern-union/20260809/campaign-office-opening",
+    "eventDate": "2026-08-09",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Northern Union opened its campaign office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/northern-union-campaign-office",
+      "canonicalUrl": "https://harbourledger.example/politics/northern-union-campaign-office",
+      "title": "First report on the campaign office opening",
+      "excerpt": "The report names the party officers present and the opening date.",
+      "publishedAt": "2026-08-09T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-08-09",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "retry": {
+    "maxAttempts": 1,
+    "attemptsUsed": 1,
+    "before": {
+      "eligibility": "deferred",
+      "outcome": "deferred_evidence",
+      "reasonCodes": [
+        "evidence_insufficient",
+        "evidence_single_ownership_group"
+      ],
+      "ownershipGroups": [
+        "harbour-media-group"
+      ],
+      "ownershipClusters": [
+        "harbour-media-group"
+      ],
+      "evidenceUsed": [
+        "e1"
+      ],
+      "evidenceExcluded": []
+    },
+    "additionalEvidence": [
+      {
+        "evidenceId": "e2",
+        "connector": "google_news",
+        "sourceTier": "T4",
+        "sourceKind": "independent-news",
+        "civicEvidenceTier": "reputable_media",
+        "stance": "corroborating",
+        "publisherId": "riverport-post",
+        "url": "https://riverportpost.example/politics/northern-union-campaign-office",
+        "canonicalUrl": "https://riverportpost.example/politics/northern-union-campaign-office",
+        "title": "Second owner group found by the bounded research pass",
+        "excerpt": "The additional report confirms the same officers and the same date.",
+        "publishedAt": "2026-08-09T09:00:00+12:00",
+        "subjectId": "northern-union",
+        "eventDate": "2026-08-09",
+        "category": "party-timeline-event",
+        "accessibleFullText": true,
+        "paywalled": false,
+        "anonymousSourceDependency": false,
+        "discoveryOnly": false
+      }
+    ],
+    "after": {
+      "eligibility": "publishable",
+      "outcome": "qualified",
+      "reasonCodes": [
+        "corroboration_category_match",
+        "corroboration_event_date_match",
+        "corroboration_subject_match",
+        "evidence_accessible_full_article",
+        "evidence_media_two_ownership_groups",
+        "evidence_named_sources_only",
+        "record_kind_supported",
+        "research_retry_resolved",
+        "significance_durable"
+      ],
+      "ownershipGroups": [
+        "harbour-media-group",
+        "riverport-press"
+      ],
+      "ownershipClusters": [
+        "harbour-media-group",
+        "riverport-press"
+      ],
+      "evidenceUsed": [
+        "e1",
+        "e2"
+      ],
+      "evidenceExcluded": []
+    }
+  },
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "record_kind_supported",
+      "research_retry_resolved",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

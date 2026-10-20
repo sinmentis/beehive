@@ -10,6 +10,8 @@ it, so a Channel is never fetched by two processes at once: stop the jobs worker
 modes migrate or restore existing unread summaries; ``migrate`` is the explicit release step that
 brings the SQLite schema to this build's version. Every mode calls the version-gated
 ``init_schema`` on startup, which is a single PRAGMA read once the database is current.
+``civic-run`` schedules and executes due Civic Watches, while the Civic outcome, recovery and
+maintenance modes maintain the two-phase filesystem spool. Civic modes do not take the jobs lock.
 """
 
 from __future__ import annotations
@@ -19,7 +21,10 @@ import asyncio
 import json
 import os
 import traceback
+from typing import TYPE_CHECKING
 from dataclasses import asdict
+from datetime import datetime, timezone
+from time import monotonic
 
 import beehive.connectors.builtin  # noqa: F401 (registers every connector)
 from beehive.ai.model_selection import load_model
@@ -31,10 +36,20 @@ from beehive.collector.summary_rewrite import (
     rollback_summary_rewrite,
     run_summary_rewrite,
 )
+from beehive.civic.ai_gateway import CopilotCivicGateway
+from beehive.civic.events import CivicEventLogger
 from beehive.db.channels import list_channels
+from beehive.db.civic_notifications import recover_expired_notifications
 from beehive.db.connection import SCHEMA_VERSION, connect, init_schema, schema_version
 from beehive.email_routing import EmailConfigurationError
 from beehive.localization import load_localizer
+
+if TYPE_CHECKING:
+    from beehive.civic.spool import CivicSpool
+
+
+class _CivicReportedFailure(RuntimeError):
+    """A Civic command already emitted its safe events and final summary."""
 
 
 async def run_fetch(db_path: str) -> None:
@@ -96,6 +111,296 @@ def run_tracker_reminders(db_path: str) -> None:
 
 
 run_auction_reminders = run_tracker_reminders
+
+
+def _civic_shadow_mode() -> bool:
+    raw = os.environ.get("CIVIC_SPOOL_SHADOW", "0").strip().lower()
+    if raw in {"1", "true", "yes"}:
+        return True
+    if raw in {"0", "false", "no"}:
+        return False
+    raise ValueError("CIVIC_SPOOL_SHADOW must be 0/1, true/false, or yes/no")
+
+
+def _civic_spool(event_logger: CivicEventLogger | None = None) -> CivicSpool:
+    # The Civic stack pulls in the article extractor, so only Civic modes import it.
+    from beehive.civic.spool import CivicSpool
+
+    return CivicSpool(
+        os.environ.get("CIVIC_SPOOL_ROOT", "/spool"),
+        shadow=_civic_shadow_mode(),
+        event_logger=event_logger,
+    )
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _run_civic_command(mode: str, operation) -> None:
+    started_at = monotonic()
+    event_logger = CivicEventLogger()
+    try:
+        operation(event_logger)
+    except _CivicReportedFailure:
+        raise SystemExit(1) from None
+    except Exception as exc:
+        event_logger.emit(
+            "civic.command.failed",
+            phase=mode,
+            status="failed",
+            error_code="civic_command_failed",
+            error_class=type(exc).__name__,
+            elapsed_ms=(monotonic() - started_at) * 1000,
+        )
+        raise SystemExit(1) from None
+
+
+def _emit_civic_batches(conn, spool: CivicSpool, now: datetime):
+    projection = spool.project_deliverable_batches(conn, now)
+    return projection.writes, tuple(
+        {"batch_id": failure.batch_id, "error": type(failure.error).__name__}
+        for failure in projection.failures
+    )
+
+
+async def run_civic_cycle(
+    db_path: str,
+    *,
+    event_logger: CivicEventLogger | None = None,
+) -> None:
+    from beehive.civic.worker import CivicRunExecutionStatus, CivicWorker
+    from beehive.connectors.civic_sources import enabled_sources as enabled_civic_sources
+
+    event_logger = event_logger or CivicEventLogger()
+    conn = connect(db_path)
+    init_schema(conn)
+    try:
+        worker = CivicWorker(
+            conn,
+            CopilotCivicGateway(),
+            source_entries=enabled_civic_sources(os.environ),
+            model=load_model(conn),
+            event_logger=event_logger,
+        )
+        cycle = await worker.run_due_cycle()
+        now = worker.now_fn()
+        writes, spool_errors = _emit_civic_batches(
+            conn, _civic_spool(event_logger), now)
+        print(json.dumps({
+            "scheduled": [
+                {
+                    "watch_id": result.watch.id,
+                    "slot_at": result.slot_at.isoformat(),
+                    "disposition": result.disposition.value,
+                }
+                for result in cycle.schedules
+            ],
+            "runs": [
+                {
+                    "run_id": result.run_id,
+                    "status": result.status.value,
+                    "batch_id": result.batch_id,
+                    "source_failures": [
+                        {
+                            "source_key": failure.source_key,
+                            "status": failure.status.value,
+                            "detail": failure.status.value,
+                        }
+                        for failure in result.source_failures
+                    ],
+                    "source_holds": [
+                        {
+                            "source_key": hold.source_key,
+                            "status": hold.status.value,
+                            "detail": hold.detail,
+                        }
+                        for hold in result.source_holds
+                    ],
+                    "error_code": result.error_code,
+                    "error_detail": result.error_code or "",
+                }
+                for result in cycle.runs
+            ],
+            "spool_writes": [
+                {
+                    "batch_id": result.batch_id,
+                    "path": result.path.name,
+                    "payload_hash": result.payload_hash,
+                    "replayed": result.replayed,
+                }
+                for result in writes
+            ],
+            "spool_errors": spool_errors,
+        }, sort_keys=True), flush=True)
+        failed = [
+            result for result in cycle.runs
+            if result.status is not CivicRunExecutionStatus.COMPLETED
+            or result.source_failures
+        ]
+        if failed or spool_errors:
+            raise _CivicReportedFailure(
+                f"{len(failed)} Civic Run(s) failed/lost claims/had source failures; "
+                f"{len(spool_errors)} Civic Batch spool write(s) failed")
+    finally:
+        conn.close()
+
+
+def run_civic_outcomes(
+    db_path: str,
+    *,
+    event_logger: CivicEventLogger | None = None,
+) -> None:
+    from beehive.civic.spool import CivicOutcomeDisposition
+
+    event_logger = event_logger or CivicEventLogger()
+    conn = connect(db_path)
+    init_schema(conn)
+    try:
+        results = _civic_spool(event_logger).process_outcomes(
+            conn, _utc_now(), now_fn=_utc_now)
+        print(json.dumps([
+            {
+                "path": result.path.name,
+                "disposition": result.disposition.value,
+                "batch_id": result.batch_id,
+                "detail": (
+                    result.detail
+                    if result.disposition is not CivicOutcomeDisposition.ERROR
+                    else "outcome_processing_failed"
+                ),
+            }
+            for result in results
+        ], sort_keys=True), flush=True)
+        errors = [
+            result for result in results
+            if result.disposition is CivicOutcomeDisposition.ERROR]
+        if errors:
+            raise _CivicReportedFailure(
+                f"{len(errors)} Civic outcome file(s) failed validation")
+    finally:
+        conn.close()
+
+
+def run_civic_recovery(
+    db_path: str,
+    *,
+    event_logger: CivicEventLogger | None = None,
+) -> None:
+    from beehive.db.civic_batches import recover_expired_batch_deliveries
+    from beehive.db.civic_runs import recover_expired_civic_runs
+
+    event_logger = event_logger or CivicEventLogger()
+    conn = connect(db_path)
+    init_schema(conn)
+    try:
+        now = _utc_now()
+        started_at = monotonic()
+        event_logger.emit(
+            "civic.recovery.started", phase="recovery", status="started")
+        try:
+            runs = recover_expired_civic_runs(conn, now, now_fn=_utc_now)
+            batches = recover_expired_batch_deliveries(conn, now)
+            notifications = recover_expired_notifications(conn, now)
+        except Exception as exc:
+            event_logger.emit(
+                "civic.recovery.failed",
+                phase="recovery",
+                status="failed",
+                error_code="recovery_failed",
+                error_class=type(exc).__name__,
+                elapsed_ms=(monotonic() - started_at) * 1000,
+            )
+            raise
+        event_logger.emit(
+            "civic.recovery.finished",
+            phase="recovery",
+            status="completed",
+            run_count=runs.requeued_count + runs.deadline_exceeded_count,
+            released_count=batches.released_count + notifications.released_count,
+            failed_count=(
+                runs.deadline_exceeded_count
+                + batches.failed_count
+                + notifications.failed_count
+            ),
+            elapsed_ms=(monotonic() - started_at) * 1000,
+        )
+        print(json.dumps({
+            "runs_requeued": runs.requeued_count,
+            "runs_deadline_exceeded": runs.deadline_exceeded_count,
+            "batches_released": batches.released_count,
+            "batches_failed": batches.failed_count,
+            "notifications_released": notifications.released_count,
+            "notifications_failed": notifications.failed_count,
+        }, sort_keys=True), flush=True)
+    finally:
+        conn.close()
+
+
+def run_civic_maintenance(
+    db_path: str,
+    *,
+    event_logger: CivicEventLogger | None = None,
+) -> None:
+    from beehive.civic.spool import CivicOutcomeDisposition
+
+    started_at = monotonic()
+    event_logger = event_logger or CivicEventLogger()
+    event_logger.emit(
+        "civic.maintenance.started", phase="maintenance", status="started")
+    run_civic_recovery(db_path, event_logger=event_logger)
+    conn = connect(db_path)
+    init_schema(conn)
+    try:
+        now = _utc_now()
+        spool = _civic_spool(event_logger)
+        writes, spool_errors = _emit_civic_batches(conn, spool, now)
+        outcomes = spool.process_outcomes(conn, now, now_fn=_utc_now)
+        errors = [
+            result for result in outcomes
+            if result.disposition is CivicOutcomeDisposition.ERROR]
+        if errors or spool_errors:
+            event_logger.emit(
+                "civic.maintenance.failed",
+                phase="maintenance",
+                status="failed",
+                outcome_count=len(outcomes),
+                failed_count=len(errors) + len(spool_errors),
+                error_code="maintenance_failed",
+                elapsed_ms=(monotonic() - started_at) * 1000,
+            )
+        else:
+            event_logger.emit(
+                "civic.maintenance.finished",
+                phase="maintenance",
+                status="completed",
+                batch_count=len(writes),
+                outcome_count=len(outcomes),
+                elapsed_ms=(monotonic() - started_at) * 1000,
+            )
+        print(json.dumps({
+            "spool_writes": len(writes),
+            "spool_errors": spool_errors,
+            "outcomes": [
+                {
+                    "path": result.path.name,
+                    "disposition": result.disposition.value,
+                    "batch_id": result.batch_id,
+                    "detail": (
+                        result.detail
+                        if result.disposition is not CivicOutcomeDisposition.ERROR
+                        else "outcome_processing_failed"
+                    ),
+                }
+                for result in outcomes
+            ],
+        }, sort_keys=True), flush=True)
+        if errors or spool_errors:
+            raise _CivicReportedFailure(
+                f"{len(errors)} Civic outcome file(s) and "
+                f"{len(spool_errors)} spool write(s) failed")
+    finally:
+        conn.close()
 
 
 async def run_deep_read(db_path: str) -> None:
@@ -191,6 +496,10 @@ def main() -> None:
             "auction-reminders",
             "deep-read",
             "migrate",
+            "civic-run",
+            "civic-outcomes",
+            "civic-recover",
+            "civic-maintenance",
             "rewrite-unread-summaries",
             "rollback-unread-summaries",
         ],
@@ -221,6 +530,30 @@ def _run_mode(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
         asyncio.run(run_fetch(args.db_path))
     elif args.mode == "deep-read":
         asyncio.run(run_deep_read(args.db_path))
+    elif args.mode == "civic-run":
+        _run_civic_command(
+            "civic_run",
+            lambda event_logger: asyncio.run(
+                run_civic_cycle(args.db_path, event_logger=event_logger)),
+        )
+    elif args.mode == "civic-outcomes":
+        _run_civic_command(
+            "civic_outcomes",
+            lambda event_logger: run_civic_outcomes(
+                args.db_path, event_logger=event_logger),
+        )
+    elif args.mode == "civic-recover":
+        _run_civic_command(
+            "civic_recovery",
+            lambda event_logger: run_civic_recovery(
+                args.db_path, event_logger=event_logger),
+        )
+    elif args.mode == "civic-maintenance":
+        _run_civic_command(
+            "civic_maintenance",
+            lambda event_logger: run_civic_maintenance(
+                args.db_path, event_logger=event_logger),
+        )
     elif args.mode == "tracker-reminders":
         run_tracker_reminders(args.db_path)
     elif args.mode == "auction-reminders":

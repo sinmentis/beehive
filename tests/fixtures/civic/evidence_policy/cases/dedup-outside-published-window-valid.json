@@ -1,0 +1,107 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "dedup-outside-published-window-valid",
+  "title": "A fingerprint published before the fourteen day window may publish again",
+  "description": "The only matching published fingerprint is eighteen days old, outside the fourteen day window, so the follow up development is publishable.",
+  "branches": [
+    "dedup_published_fingerprint_14d"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-membership-conference-date",
+    "fingerprint": "fp-membership-conference-date",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260811/membership-conference-date",
+    "eventDate": "2026-08-11",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance confirmed the date of its membership conference."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/harbour-alliance-membership-conference",
+      "canonicalUrl": "https://riverportpost.example/politics/harbour-alliance-membership-conference",
+      "title": "Harbour Alliance confirms its membership conference date",
+      "excerpt": "The report gives the conference date the party confirmed.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "aotea-public-radio",
+      "url": "https://aoteapublicradio.example/news/harbour-alliance-membership-conference",
+      "canonicalUrl": "https://aoteapublicradio.example/news/harbour-alliance-membership-conference",
+      "title": "Second owner group confirms the same conference date",
+      "excerpt": "A second newsroom repeats the confirmed conference date.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [],
+    "publishedFingerprints": [
+      {
+        "fingerprint": "fp-membership-conference-date",
+        "batchId": "2026-07-25-01",
+        "publishedAt": "2026-07-25T09:15:00+12:00"
+      }
+    ]
+  },
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "dedup_outside_published_window",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "aotea-public-radio-group",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "crown-broadcasting-cluster",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

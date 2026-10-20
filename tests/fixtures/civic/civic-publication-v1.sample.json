@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "batch": {
+    "idempotency_key": "sample-civic-batch-2026-08-27",
+    "batch_content_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "payload_hash": "799cceffdb318cddcfedd54e0a897d2653c14acfd7e6187baebb0c1687b17878",
+    "slot_at": "2026-08-27T06:30:00+12:00",
+    "sealed_at": "2026-08-27T06:45:00+12:00"
+  },
+  "items": [
+    {
+      "record_key": "sample:national:2026-08-26:policy-announcement",
+      "operation": "add",
+      "record_kind": "timeline",
+      "subject": {
+        "kind": "political-party",
+        "id": "national"
+      },
+      "event_date": "2026-08-26",
+      "category": "party-timeline-event",
+      "uncertainty": false,
+      "locales": {
+        "zh": {
+          "title": "示例政策公告",
+          "summary": "这是用于验证跨仓库发布合同的示例记录。"
+        },
+        "en": {
+          "title": "Sample policy announcement",
+          "summary": "This is a sample record used to verify the cross-repository publication contract."
+        },
+        "hi": {
+          "title": "नमूना नीति घोषणा",
+          "summary": "यह क्रॉस-रिपॉजिटरी प्रकाशन अनुबंध को सत्यापित करने के लिए एक नमूना रिकॉर्ड है।"
+        },
+        "tl": {
+          "title": "Halimbawang anunsiyo sa patakaran",
+          "summary": "Isa itong halimbawang tala para beripikahin ang kontrata sa paglalathala sa pagitan ng mga repository."
+        }
+      },
+      "citations": [
+        {
+          "alias": "e1",
+          "document_key": "nz_electoral_commission:sample-policy-announcement",
+          "canonical_url": "https://elections.nz/guidance-and-rules/candidate-hub/key-information-and-dates",
+          "publisher_id": "nz-electoral-commission",
+          "publisher": "New Zealand Electoral Commission",
+          "source_kind": "electoral-commission",
+          "title": "Candidate hub: 2026 general election key information and dates",
+          "published_at": null,
+          "captured_at": "2026-08-27T06:31:00+12:00",
+          "archive_url": null,
+          "accessible_full_text": true,
+          "paywalled": false,
+          "anonymous_source_dependency": false
+        }
+      ]
+    }
+  ]
+}

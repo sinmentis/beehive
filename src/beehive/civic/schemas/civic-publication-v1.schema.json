@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://partymap.co.nz/schemas/civic-publication-v1.schema.json",
+  "title": "Civic publication envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "batch",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "idempotency_key",
+        "batch_content_hash",
+        "payload_hash",
+        "slot_at",
+        "sealed_at"
+      ],
+      "properties": {
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256
+        },
+        "batch_content_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload_hash": {
+          "$ref": "#/$defs/sha256",
+          "$comment": "SHA-256 of canonical UTF-8 JSON with this property omitted. Canonical JSON sorts object keys, uses compact separators, preserves Unicode, and emits no trailing newline."
+        },
+        "slot_at": {
+          "$ref": "#/$defs/offsetDateTime"
+        },
+        "sealed_at": {
+          "$ref": "#/$defs/offsetDateTime"
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "offsetDateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "localeText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "summary"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        }
+      }
+    },
+    "locales": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zh",
+        "en",
+        "hi",
+        "tl"
+      ],
+      "properties": {
+        "zh": {
+          "$ref": "#/$defs/localeText"
+        },
+        "en": {
+          "$ref": "#/$defs/localeText"
+        },
+        "hi": {
+          "$ref": "#/$defs/localeText"
+        },
+        "tl": {
+          "$ref": "#/$defs/localeText"
+        }
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "document_key",
+        "canonical_url",
+        "publisher_id",
+        "publisher",
+        "source_kind",
+        "title",
+        "published_at",
+        "captured_at",
+        "archive_url",
+        "accessible_full_text",
+        "paywalled",
+        "anonymous_source_dependency"
+      ],
+      "properties": {
+        "alias": {
+          "type": "string",
+          "pattern": "^e[1-9][0-9]*$"
+        },
+        "document_key": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 1024
+        },
+        "canonical_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "maxLength": 2048
+        },
+        "publisher_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_kind": {
+          "enum": [
+            "electoral-commission",
+            "parliament",
+            "government",
+            "legislation",
+            "official-statistics",
+            "official-review",
+            "party-primary",
+            "independent-news"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "published_at": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/offsetDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "captured_at": {
+          "$ref": "#/$defs/offsetDateTime"
+        },
+        "archive_url": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://",
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accessible_full_text": {
+          "const": true
+        },
+        "paywalled": {
+          "const": false
+        },
+        "anonymous_source_dependency": {
+          "const": false
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_key",
+        "operation",
+        "record_kind",
+        "subject",
+        "event_date",
+        "category",
+        "uncertainty",
+        "locales",
+        "citations"
+      ],
+      "properties": {
+        "record_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "operation": {
+          "const": "add"
+        },
+        "record_kind": {
+          "const": "timeline"
+        },
+        "subject": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "political-party"
+            },
+            "id": {
+              "$ref": "#/$defs/slug"
+            }
+          }
+        },
+        "event_date": {
+          "$ref": "#/$defs/date"
+        },
+        "category": {
+          "enum": [
+            "party-timeline-event",
+            "legislation",
+            "official-finding",
+            "electoral-administration"
+          ]
+        },
+        "uncertainty": {
+          "type": "boolean"
+        },
+        "locales": {
+          "$ref": "#/$defs/locales"
+        },
+        "citations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/citation"
+          }
+        }
+      }
+    }
+  }
+}

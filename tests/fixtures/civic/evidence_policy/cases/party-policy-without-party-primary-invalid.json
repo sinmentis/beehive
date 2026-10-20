@@ -1,0 +1,89 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "party-policy-without-party-primary-invalid",
+  "title": "Party policy without a party primary source defers",
+  "description": "Two independent publishers describe a party policy, but no party primary source exists, so the policy record cannot be published.",
+  "branches": [
+    "tier_t3_party_primary_policy"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-harbour-transport-fund-media",
+    "fingerprint": "fp-harbour-transport-fund-media-20260811",
+    "recordKind": "policy",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/regional-transport-fund",
+    "eventDate": "2026-08-11",
+    "category": "party-policy",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance adopted a regional transport fund policy."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/harbour-transport-fund",
+      "canonicalUrl": "https://harbourledger.example/politics/harbour-transport-fund",
+      "title": "Reporters summarise a party transport fund",
+      "excerpt": "The report describes a transport fund attributed to the party.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-11",
+      "category": "party-policy",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/harbour-transport-fund",
+      "canonicalUrl": "https://keawire.example/news/harbour-transport-fund",
+      "title": "Second outlet summarises the same party transport fund",
+      "excerpt": "A second newsroom repeats the fund size attributed to the party.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-11",
+      "category": "party-policy",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "evidence_insufficient",
+      "evidence_party_primary_required"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "kea-independent-media"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

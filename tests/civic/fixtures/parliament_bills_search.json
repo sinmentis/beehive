@@ -1,0 +1,43 @@
+{
+  "page": 1,
+  "pageSize": 2,
+  "totalResults": 102,
+  "results": [
+    {
+      "id": "58c619f0-9c1f-4ce0-df81-08dd076d450c",
+      "title": "Oranga Tamariki (Responding to Serious Youth Offending) Amendment Bill",
+      "shortTitle": null,
+      "status": "Committee of whole House",
+      "billNumber": "99-2",
+      "documentType": "Bill",
+      "itemType": "Government",
+      "selectCommittee": "Social Services and Community",
+      "parliamentNumber": 54,
+      "publicationDate": null,
+      "lastModified": null,
+      "lastStageDate": "2026-08-06T14:01:00Z",
+      "billCurrentStageName": "Committee of whole House",
+      "billStages": [],
+      "titleUrl": null,
+      "url": null
+    },
+    {
+      "id": "93fa87db-caaf-43f5-c814-08ded59a19e9",
+      "title": "Climate Change Response (Tort Liability) Amendment Bill",
+      "shortTitle": null,
+      "status": "First reading",
+      "billNumber": "158-1",
+      "documentType": "Bill",
+      "itemType": "Government",
+      "selectCommittee": null,
+      "parliamentNumber": 54,
+      "publicationDate": null,
+      "lastModified": null,
+      "lastStageDate": "2026-08-06T14:00:00Z",
+      "billCurrentStageName": "First reading",
+      "billStages": [],
+      "titleUrl": null,
+      "url": null
+    }
+  ]
+}

@@ -25,7 +25,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # Raise COMPATIBLE_SCHEMA_VERSION to the new version only when older code cannot safely use the
 # new shape (a dropped or renamed column, a changed meaning). Additive changes leave it alone, so
 # rolling back to an older image keeps working.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 COMPATIBLE_SCHEMA_VERSION = 1
 _COMPATIBLE_VERSION_KEY = "schema_compatible_version"
 
@@ -147,6 +147,65 @@ _COLUMNS_TO_ENSURE = [
         "run_kind",
         "TEXT NOT NULL DEFAULT 'full' CHECK (run_kind IN ('full', 'synthesis'))",
     ),
+    # beehive.civic.evidence policy inputs, added to civic_candidate_evidence after the table
+    # itself. A row captured before they existed carries the neutral defaults -- no publisher id,
+    # no subject, nothing accessible, nothing paywalled -- which the qualification engine reads as
+    # "unregistered", and unregistered fails closed rather than being counted as one more
+    # independent voice. source_kind NULL on such a row means discovery-only, which is never
+    # evidence, so an un-upgraded capture can never quietly become a citation.
+    ("civic_candidate_evidence", "publisher_id", "TEXT NOT NULL DEFAULT ''"),
+    ("civic_candidate_evidence", "source_kind", "TEXT"),
+    ("civic_candidate_evidence", "party_slug", "TEXT"),
+    ("civic_candidate_evidence", "subject_id", "TEXT NOT NULL DEFAULT ''"),
+    ("civic_candidate_evidence", "claim_category", "TEXT"),
+    ("civic_candidate_evidence", "event_date", "TEXT"),
+    ("civic_candidate_evidence", "canonical_url", "TEXT NOT NULL DEFAULT ''"),
+    (
+        "civic_candidate_evidence",
+        "accessible_full_text",
+        "INTEGER NOT NULL DEFAULT 0 CHECK (accessible_full_text IN (0, 1))",
+    ),
+    (
+        "civic_candidate_evidence",
+        "paywalled",
+        "INTEGER NOT NULL DEFAULT 0 CHECK (paywalled IN (0, 1))",
+    ),
+    (
+        "civic_candidate_evidence",
+        "anonymous_source_dependency",
+        "INTEGER NOT NULL DEFAULT 0 CHECK (anonymous_source_dependency IN (0, 1))",
+    ),
+    # Whether this Run publishes under normal or election-period caps (plan 5.2). Application
+    # config, never remote data: a legacy Run predating the column runs under the normal cap of
+    # six, which is the conservative choice -- an under-publishing day carries its overflow
+    # forward, an over-publishing one cannot be taken back.
+    (
+        "civic_runs",
+        "run_mode",
+        "TEXT NOT NULL DEFAULT 'normal' CHECK (run_mode IN ('normal', 'election'))",
+    ),
+    # The v1 spool envelope hash is separate from the legacy Candidate-content hash. NULL marks
+    # a legacy/unscoped Batch or receipt. New PartyMap seals bind the hash with frozen bytes,
+    # while every new receipt requires a non-NULL hash through the repository APIs.
+    ("civic_batches", "payload_hash", "TEXT"),
+    (
+        "civic_batches",
+        "publication_schema_version",
+        "INTEGER CHECK (publication_schema_version IS NULL OR publication_schema_version = 1)",
+    ),
+    ("civic_delivery_receipts", "payload_hash", "TEXT"),
+    # The PartyMap record kind the qualification decided on. Needed at seal time, because
+    # beehive.civic.batch_policy refuses to queue a record kind outside the automated publication
+    # scope, and the seal must not have to re-derive that from a claim it no longer holds. NULL
+    # on a receipt written before the column existed; the seal treats that as "not queueable" and
+    # leaves the Candidate out rather than guessing a kind for it.
+    ("civic_qualifications", "record_kind", "TEXT"),
+    ("civic_candidates", "ai_revision", "INTEGER NOT NULL DEFAULT 0 CHECK (ai_revision >= 0)"),
+    ("civic_candidates", "ai_refresh_reason", "TEXT"),
+    ("civic_ai_stages", "ai_revision", "INTEGER NOT NULL DEFAULT 0 CHECK (ai_revision >= 0)"),
+    ("civic_qualifications", "ai_revision", "INTEGER NOT NULL DEFAULT 0 CHECK (ai_revision >= 0)"),
+    ("civic_qualifications", "refresh_reason", "TEXT"),
+    ("civic_evidence_captures", "paywalled", "INTEGER NOT NULL DEFAULT 0 CHECK (paywalled IN (0, 1))"),
 ]
 
 _CHANNEL_DIGEST_MIGRATION_KEY = "digest_channel_watermarks_migrated_v1"
@@ -196,6 +255,15 @@ _INDEXES_TO_ENSURE = [
         "sources(channel_id)",
     ),
 ]
+
+_CIVIC_RECEIPT_PAYLOAD_TRIGGER = """
+CREATE TRIGGER IF NOT EXISTS civic_delivery_receipts_require_payload_hash
+BEFORE INSERT ON civic_delivery_receipts
+WHEN NEW.payload_hash IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'new Civic Delivery Receipts require payload_hash');
+END
+"""
 
 # Once-ever (app_state-guarded) rebuild of an existing `channels` table whose kind CHECK still
 # only permits ('editorial', 'monitor'). SQLite cannot ALTER a CHECK constraint, so the documented
@@ -434,6 +502,139 @@ def _migrate_channels_kind_to_tracker(conn: sqlite3.Connection) -> None:
         (_CHANNELS_KIND_TRACKER_MIGRATION_KEY,))
 
 
+def _migrate_civic_capacity_deferral_destinations(conn: sqlite3.Connection) -> None:
+    """Rebuilds civic_capacity_deferrals when it predates the composite destination key.
+
+    The first cut of this table declared to_run_id and to_batch_id as two independent
+    ON DELETE SET NULL references, which its own "either both or neither" CHECK made
+    unsatisfiable: deleting the destination Batch would null one column, leave the other, and the
+    delete would fail on a constraint rather than doing the obvious thing. CREATE TABLE IF NOT
+    EXISTS cannot fix an existing table, so a database created against that definition has to be
+    rebuilt -- otherwise a fresh database and an upgraded one would disagree about which deletes
+    are legal, which is exactly the divergence tests/db/test_schema_parity.py exists to stop.
+
+    Detected from the stored DDL rather than a marker key, so it is self-correcting and safe to
+    run on every start: a table that already carries the composite key is left alone."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        ("civic_capacity_deferrals",)).fetchone()
+    if row is None or (
+            "FOREIGN KEY (to_run_id, to_batch_id)" in row[0]
+            and "'ai_provenance_stale'" in row[0]
+            and "'source_refresh_required'" in row[0]):
+        return
+    definition = _SCHEMA_PATH.read_text()
+    start = definition.index("CREATE TABLE IF NOT EXISTS civic_capacity_deferrals")
+    create_sql = definition[start:definition.index(");", start) + 2]
+    with write_transaction(conn):
+        sequence = _sequence_value(conn, "civic_capacity_deferrals")
+        conn.execute("ALTER TABLE civic_capacity_deferrals RENAME TO civic_capacity_migration")
+        conn.execute(create_sql)
+        conn.execute(
+            "INSERT INTO civic_capacity_deferrals (id, watch_id, candidate_id, from_run_id, "
+            "from_batch_id, to_run_id, to_batch_id, published_cap, run_mode, reason, "
+            "deferred_at, adopted_at) SELECT id, watch_id, candidate_id, from_run_id, "
+            "from_batch_id, to_run_id, to_batch_id, published_cap, run_mode, reason, "
+            "deferred_at, adopted_at FROM civic_capacity_migration")
+        conn.execute("DROP TABLE civic_capacity_migration")
+        _restore_sequence(conn, "civic_capacity_deferrals", sequence)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_civic_capacity_deferrals_candidate "
+            "ON civic_capacity_deferrals(candidate_id, id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_civic_capacity_deferrals_open "
+            "ON civic_capacity_deferrals(watch_id, candidate_id) WHERE adopted_at IS NULL")
+
+
+def _sequence_value(conn: sqlite3.Connection, table: str) -> int | None:
+    row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = ?", (table,)).fetchone()
+    return row[0] if row is not None else None
+
+
+def _restore_sequence(conn: sqlite3.Connection, table: str, value: int | None) -> None:
+    if value is not None:
+        updated = conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = ?", (value, table))
+        if not updated.rowcount:
+            conn.execute("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)", (table, value))
+
+
+def _migrate_civic_ai_revisions(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'civic_qualifications'").fetchone()
+    if "UNIQUE(candidate_id, ai_revision, research_attempts_used)" not in row["sql"]:
+        definition = _SCHEMA_PATH.read_text()
+        start = definition.index("CREATE TABLE IF NOT EXISTS civic_qualifications")
+        create_sql = definition[start:definition.index(");", start) + 2]
+        column_names = ", ".join(
+            row["name"] for row in conn.execute("PRAGMA table_info(civic_qualifications)"))
+        with write_transaction(conn):
+            sequence = _sequence_value(conn, "civic_qualifications")
+            conn.execute(
+                "ALTER TABLE civic_qualifications RENAME TO civic_qualification_revision_migration")
+            conn.execute(create_sql)
+            conn.execute(
+                f"INSERT INTO civic_qualifications ({column_names}) SELECT {column_names} "
+                "FROM civic_qualification_revision_migration")
+            conn.execute("DROP TABLE civic_qualification_revision_migration")
+            _restore_sequence(conn, "civic_qualifications", sequence)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_civic_qualifications_run "
+                "ON civic_qualifications(run_id, candidate_id)")
+    with write_transaction(conn):
+        for suffix, status in (("reserved", "reserved"), ("success", "succeeded")):
+            name = f"idx_civic_ai_stages_one_{suffix}"
+            index_columns = tuple(
+                row["name"] for row in conn.execute(f"PRAGMA index_info({name})"))
+            if index_columns and index_columns != ("candidate_id", "stage", "ai_revision"):
+                conn.execute(f"DROP INDEX {name}")
+            conn.execute(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS {name} "
+                f"ON civic_ai_stages(candidate_id, stage, ai_revision) WHERE status = '{status}'")
+        trigger = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' "
+            "AND name = 'civic_candidates_ai_revision_guard'").fetchone()
+        if (trigger is not None
+                and "NEW.ai_refresh_reason IS 'source_capture_changed'" not in trigger["sql"]):
+            conn.execute("DROP TRIGGER civic_candidates_ai_revision_guard")
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS civic_candidates_ai_revision_guard
+            BEFORE UPDATE OF ai_revision ON civic_candidates
+            WHEN NEW.ai_revision != OLD.ai_revision AND (
+                NEW.ai_revision != OLD.ai_revision + 1
+                OR OLD.sealed_into_batch_at IS NOT NULL
+                OR NEW.sealed_into_batch_at IS NOT NULL
+                OR NEW.batch_id != OLD.batch_id OR NEW.run_id != OLD.run_id
+                OR NEW.watch_id != OLD.watch_id
+                OR NOT (
+                    (OLD.status IN ('verified', 'verifying') AND NEW.status = 'drafted')
+                    OR (
+                        NEW.ai_refresh_reason IS 'source_capture_changed'
+                        AND OLD.status IN ('drafted', 'researching', 'verifying', 'verified')
+                        AND (
+                            NEW.status = 'drafted'
+                            OR (
+                                NEW.status = 'researching'
+                                AND OLD.research_attempt_count > (
+                                    SELECT COUNT(*) FROM civic_research_attempts
+                                    WHERE candidate_id = OLD.id
+                                )
+                            )
+                        )
+                    )
+                )
+                OR NOT EXISTS (
+                    SELECT 1 FROM civic_batches
+                    WHERE id = OLD.batch_id AND run_id = OLD.run_id
+                        AND watch_id = OLD.watch_id AND status = 'building'
+                )
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'AI refresh requires an unsealed candidate and a new revision');
+            END
+        """)
+
+
 def _migrate_channel_digest_watermarks(conn: sqlite3.Connection) -> None:
     marker = conn.execute(
         "SELECT value FROM app_state WHERE key = ?",
@@ -600,7 +801,12 @@ def _reconcile_schema(conn: sqlite3.Connection) -> None:
         _ensure_column(conn, table, column, column_type)
     for index_name, index_definition in _INDEXES_TO_ENSURE:
         _ensure_index(conn, index_name, index_definition)
+    # Existing receipt rows may legitimately have NULL after the additive column migration.
+    # New rows never may: a trigger can enforce that distinction without rebuilding the table.
+    conn.execute(_CIVIC_RECEIPT_PAYLOAD_TRIGGER)
     _migrate_channels_kind_to_tracker(conn)
+    _migrate_civic_capacity_deferral_destinations(conn)
+    _migrate_civic_ai_revisions(conn)
     _migrate_channel_digest_watermarks(conn)
     _migrate_default_email_group(conn)
     _migrate_research_completion_notification_baseline(conn)

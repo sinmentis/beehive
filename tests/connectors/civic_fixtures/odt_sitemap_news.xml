@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+    <url>
+        <lastmod>2026-08-12T09:35:08.799Z</lastmod>
+        <news:news>
+            <news:title>Council votes to keep the rates rise under five percent</news:title>
+            <news:publication_date>2026-08-12T09:31:26.266Z</news:publication_date>
+            <news:publication>
+                <news:name>Otago Daily Times</news:name>
+                <news:language>en-NZ</news:language>
+            </news:publication>
+        </news:news>
+        <loc>https://www.odt.co.nz/news/dunedin/council-votes-to-keep-rates-rise-under-five-percent</loc>
+    </url>
+    <url>
+        <lastmod>2026-08-12T08:00:00.000Z</lastmod>
+        <news:news>
+            <news:title>Leadership vote held after challenge fails</news:title>
+            <news:publication_date>2026-08-12T07:55:00.000Z</news:publication_date>
+            <news:publication>
+                <news:name>Otago Daily Times</news:name>
+                <news:language>en-NZ</news:language>
+            </news:publication>
+        </news:news>
+        <loc>https://www.odt.co.nz/news/politics/leadership-vote-held-after-challenge-fails</loc>
+    </url>
+</urlset>

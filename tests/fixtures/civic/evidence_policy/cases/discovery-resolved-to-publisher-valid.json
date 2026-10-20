@@ -1,0 +1,119 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "discovery-resolved-to-publisher-valid",
+  "title": "Aggregator discovery resolved to two registered publishers",
+  "description": "The aggregator listing itself is never evidence, but the publisher URLs it resolves to are, so the resolved pair carries the candidate.",
+  "branches": [
+    "discovery_only_sources"
+  ],
+  "polarity": "positive",
+  "candidate": {
+    "candidateId": "cand-campaign-launch-event",
+    "fingerprint": "fp-campaign-launch-event-20260727",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260727/campaign-launch-event",
+    "eventDate": "2026-07-27",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance held its campaign launch event on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T5",
+      "sourceKind": null,
+      "civicEvidenceTier": "aggregator",
+      "stance": "context",
+      "publisherId": "aggregator-discovery",
+      "url": "https://news-aggregator.example/topics/harbour-alliance-campaign-launch",
+      "canonicalUrl": "https://news-aggregator.example/topics/harbour-alliance-campaign-launch",
+      "title": "Aggregator listing for the campaign launch",
+      "excerpt": "The listing links to publisher articles and carries no reporting of its own.",
+      "publishedAt": "2026-07-27T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-27",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": true
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/harbour-alliance-campaign-launch",
+      "canonicalUrl": "https://harbourledger.example/politics/harbour-alliance-campaign-launch",
+      "title": "Publisher article resolved from the aggregator listing",
+      "excerpt": "The resolved article names the speakers and the launch date.",
+      "publishedAt": "2026-07-27T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-27",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e3",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/harbour-alliance-campaign-launch",
+      "canonicalUrl": "https://riverportpost.example/politics/harbour-alliance-campaign-launch",
+      "title": "Second owner group carries the same resolved report",
+      "excerpt": "A different owner group reports the same speakers and the same date.",
+      "publishedAt": "2026-07-27T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-27",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "publishable",
+    "outcome": "qualified",
+    "reasonCodes": [
+      "corroboration_category_match",
+      "corroboration_event_date_match",
+      "corroboration_subject_match",
+      "discovery_resolved_to_publisher",
+      "evidence_accessible_full_article",
+      "evidence_media_two_ownership_groups",
+      "evidence_named_sources_only",
+      "record_kind_supported",
+      "significance_durable"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e2",
+      "e3"
+    ],
+    "evidenceExcluded": [
+      "e1"
+    ]
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "dedup-exact-canonical-duplicate-invalid",
+  "title": "Exact canonical URL match is an outright duplicate",
+  "description": "Tracking parameters are stripped before comparison, so the candidate's canonical evidence URL already belongs to a prior candidate.",
+  "branches": [
+    "dedup_canonical_url"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-wharf-ward-office-opening",
+    "fingerprint": "fp-wharf-ward-office-opening-20260811-repeat",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260811/wharf-ward-office-opening",
+    "eventDate": "2026-08-11",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance opened its wharf ward campaign office on the reported date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/harbour-alliance-wharf-ward-office?utm_source=x",
+      "canonicalUrl": "https://harbourledger.example/politics/harbour-alliance-wharf-ward-office",
+      "title": "Harbour Alliance opens its wharf ward campaign office",
+      "excerpt": "The report gives the opening date and the ward the office serves.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "riverport-post",
+      "url": "https://riverportpost.example/politics/harbour-alliance-wharf-ward-office",
+      "canonicalUrl": "https://riverportpost.example/politics/harbour-alliance-wharf-ward-office",
+      "title": "Second owner group reports the same office opening",
+      "excerpt": "A second newsroom repeats the opening date and the ward.",
+      "publishedAt": "2026-08-11T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-11",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "dedupContext": {
+    "now": "2026-08-12T06:30:00+12:00",
+    "priorSealedCandidates": [
+      {
+        "candidateId": "cand-harbour-wharf-ward-office",
+        "fingerprint": "fp-wharf-ward-office-opening-20260811",
+        "canonicalUrl": "https://harbourledger.example/politics/harbour-alliance-wharf-ward-office",
+        "sealedAt": "2026-08-11T06:45:00+12:00"
+      }
+    ],
+    "publishedFingerprints": []
+  },
+  "expected": {
+    "eligibility": "blocked",
+    "outcome": "duplicate",
+    "reasonCodes": [
+      "duplicate_canonical_url"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group",
+      "riverport-press"
+    ],
+    "evidenceUsed": [
+      "e1",
+      "e2"
+    ],
+    "evidenceExcluded": []
+  }
+}

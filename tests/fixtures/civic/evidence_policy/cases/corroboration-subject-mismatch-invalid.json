@@ -1,0 +1,88 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "corroboration-subject-mismatch-invalid",
+  "title": "An item about a different subject cannot corroborate",
+  "description": "The second publisher describes a different subject, so it drops out of the corroboration set and one publisher remains.",
+  "branches": [
+    "corroboration_subject_match"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-list-ranking-process",
+    "fingerprint": "fp-list-ranking-process-20260722",
+    "recordKind": "timeline",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260722/list-ranking-process",
+    "eventDate": "2026-07-22",
+    "category": "party-timeline-event",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Harbour Alliance confirmed the process it will use to rank its party list."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "supporting",
+      "publisherId": "harbour-ledger",
+      "url": "https://harbourledger.example/politics/harbour-alliance-list-process",
+      "canonicalUrl": "https://harbourledger.example/politics/harbour-alliance-list-process",
+      "title": "Harbour Alliance confirms its list ranking process",
+      "excerpt": "The report describes the ranking process the party confirmed.",
+      "publishedAt": "2026-07-22T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-07-22",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    },
+    {
+      "evidenceId": "e2",
+      "connector": "google_news",
+      "sourceTier": "T4",
+      "sourceKind": "independent-news",
+      "civicEvidenceTier": "reputable_media",
+      "stance": "corroborating",
+      "publisherId": "kea-wire",
+      "url": "https://keawire.example/news/northern-union-list-process",
+      "canonicalUrl": "https://keawire.example/news/northern-union-list-process",
+      "title": "Northern Union confirms a list ranking process of its own",
+      "excerpt": "The second report describes a different party and a different process.",
+      "publishedAt": "2026-07-22T09:00:00+12:00",
+      "subjectId": "northern-union",
+      "eventDate": "2026-07-22",
+      "category": "party-timeline-event",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_evidence",
+    "reasonCodes": [
+      "corroboration_subject_mismatch",
+      "evidence_insufficient"
+    ],
+    "ownershipGroups": [
+      "harbour-media-group"
+    ],
+    "ownershipClusters": [
+      "harbour-media-group"
+    ],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": [
+      "e2"
+    ]
+  }
+}

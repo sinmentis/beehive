@@ -1,0 +1,42 @@
+{
+  "id": "43a27e9c-c54f-4eff-8573-9edbd7019edd",
+  "title": "Thursday, 6 August 2026",
+  "subtitle": "",
+  "volumeNumber": -1,
+  "sittingDate": "2026-08-06T00:00:00",
+  "progress": "Draft",
+  "parliamentNumber": 54,
+  "content": "",
+  "hansardDebates": [
+    {
+      "id": "f514e58e-aee7-e721-6540-a72a5a3cae3e",
+      "hansardDailyId": "00000000-0000-0000-0000-000000000000",
+      "title": "Commencement",
+      "subtitle": "",
+      "content": "",
+      "hansardItems": [],
+      "hansardDebateAssociationsBill": []
+    },
+    {
+      "id": "954d6b72-e874-6088-d76c-57b73201db31",
+      "hansardDailyId": "00000000-0000-0000-0000-000000000000",
+      "title": "Start of Sitting Day \u2014 Karakia/Prayers",
+      "subtitle": "",
+      "content": "",
+      "hansardItems": [
+        {
+          "id": "2c1f0670-1b53-9e8d-454a-08fd7f4a2c6c",
+          "type": "Speech",
+          "memberId": "4d83c8a5-2f48-4991-9c45-b1a6060daedd",
+          "memberName": "MAUREEN PUGH",
+          "electorate": "West Coast-Tasman",
+          "startTime": "2026-08-06T02:00:58",
+          "title": "Start of Sitting Day \u2014 Karakia/Prayers",
+          "content": "",
+          "subtitle": ""
+        }
+      ],
+      "hansardDebateAssociationsBill": []
+    }
+  ]
+}

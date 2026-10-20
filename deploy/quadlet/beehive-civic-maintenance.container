@@ -1,0 +1,26 @@
+[Unit]
+Description=Beehive Civic outcome and expired-lease processing
+
+[Container]
+Image=localhost/beehive:civic
+ContainerName=beehive-civic-maintenance
+Volume=beehive-data.volume:/data
+Volume=%h/.local/share/partymap-intake:/spool:z
+Environment=DB_PATH=/data/beehive.db
+Environment=CIVIC_SPOOL_ROOT=/spool
+Environment=CIVIC_SPOOL_SHADOW=0
+Environment=PYTHONUNBUFFERED=1
+Exec=-m scripts.run_collector --mode civic-maintenance
+
+[Service]
+Type=oneshot
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=beehive-civic-maintenance
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=1000
+CPUQuota=50%
+CPUWeight=10
+MemoryHigh=192M
+MemoryMax=256M
+TimeoutStartSec=180

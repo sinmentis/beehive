@@ -1,0 +1,60 @@
+{
+  "fixtureSchemaVersion": 1,
+  "kind": "evidence_case",
+  "id": "record-kind-unsupported-defers",
+  "title": "An unsupported record kind defers instead of being coerced",
+  "description": "Electorate boundary changes are outside the initial automated scope. Even with a T0 source the candidate is logged as unsupported rather than mapped onto an available record kind.",
+  "branches": [
+    "record_kind_supported"
+  ],
+  "polarity": "negative",
+  "candidate": {
+    "candidateId": "cand-boundary-review-outcome",
+    "fingerprint": "fp-boundary-review-outcome-20260810",
+    "recordKind": "electorate-boundary",
+    "operation": "add",
+    "subjectId": "harbour-alliance",
+    "recordKey": "harbour-alliance/20260810/boundary-review-outcome",
+    "eventDate": "2026-08-10",
+    "category": "electorate-boundary",
+    "contentClass": "factual",
+    "durable": true,
+    "claimText": "Revised electorate boundaries take effect on the stated date."
+  },
+  "evidence": [
+    {
+      "evidenceId": "e1",
+      "connector": "official_feeds",
+      "sourceTier": "T0",
+      "sourceKind": "electoral-commission",
+      "civicEvidenceTier": "official",
+      "stance": "supporting",
+      "publisherId": "example-electoral-commission",
+      "url": "https://electoral-commission.example/releases/2026/boundary-review-outcome",
+      "canonicalUrl": "https://electoral-commission.example/releases/2026/boundary-review-outcome",
+      "title": "Boundary review outcome published by the commission",
+      "excerpt": "The release describes revised electorate boundaries and their effective date.",
+      "publishedAt": "2026-08-10T09:00:00+12:00",
+      "subjectId": "harbour-alliance",
+      "eventDate": "2026-08-10",
+      "category": "electorate-boundary",
+      "accessibleFullText": true,
+      "paywalled": false,
+      "anonymousSourceDependency": false,
+      "discoveryOnly": false
+    }
+  ],
+  "expected": {
+    "eligibility": "deferred",
+    "outcome": "deferred_unsupported",
+    "reasonCodes": [
+      "record_kind_unsupported"
+    ],
+    "ownershipGroups": [],
+    "ownershipClusters": [],
+    "evidenceUsed": [
+      "e1"
+    ],
+    "evidenceExcluded": []
+  }
+}

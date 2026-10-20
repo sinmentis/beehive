@@ -9,11 +9,12 @@ follows the same three-part discipline:
    the tool-permissive `run_prompt` -- so a prompt-injection payload hidden in the Research
    Question, a prior plan, or any other untrusted text has no tool to reach (see
    `llm_client.py`'s own docstring for how that guarantee is verified rather than assumed).
-2. The AI's only output is inert structured JSON. `structured_response.py` holds the shared
-   strict-parsing primitives (fenced-JSON extraction, exact top-level shape, bounded
+2. The AI's only output is inert structured JSON. `beehive.ai.structured_response` holds the
+   shared strict-parsing primitives (fenced-JSON extraction, exact top-level shape, bounded
    strings/lists, typed errors) that every Research AI response parser in this package is
-   built from, so "reject anything that doesn't match" is enforced identically everywhere
-   rather than each parser reinventing its own edge cases.
+   built from -- re-exported through this package's own `structured_response.py` -- so "reject
+   anything that doesn't match" is enforced identically everywhere rather than each parser
+   reinventing its own edge cases.
 3. `connector_policy.py` is the explicit allowlist of which connector types a Research Plan may
    use and the exact config schema each one accepts. The application -- never the AI --
    normalizes and validates every proposed Research Source against this allowlist, then calls
