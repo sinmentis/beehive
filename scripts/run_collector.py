@@ -36,7 +36,7 @@ from beehive.collector.summary_rewrite import (
     rollback_summary_rewrite,
     run_summary_rewrite,
 )
-from beehive.civic.ai_gateway import CopilotCivicGateway
+from beehive.civic.ai_gateway import CopilotCivicGateway, require_available_civic_models
 from beehive.civic.events import CivicEventLogger
 from beehive.db.channels import list_channels
 from beehive.db.civic_notifications import recover_expired_notifications
@@ -168,6 +168,7 @@ async def run_civic_cycle(
     db_path: str,
     *,
     event_logger: CivicEventLogger | None = None,
+    catch_up_at: datetime | None = None,
 ) -> None:
     from beehive.civic.worker import CivicRunExecutionStatus, CivicWorker
     from beehive.connectors.civic_sources import enabled_sources as enabled_civic_sources
@@ -176,11 +177,29 @@ async def run_civic_cycle(
     conn = connect(db_path)
     init_schema(conn)
     try:
+        model = load_model(conn)
+        event_logger.emit("civic.models.started", phase="preflight", status="started")
+        try:
+            await require_available_civic_models(model)
+        except Exception as exc:
+            event_logger.emit(
+                "civic.models.failed", phase="preflight", status="failed",
+                error_code=getattr(exc, "error_code", "model_preflight_failed"),
+                error_class=type(exc).__name__, detail=str(exc))
+            raise
+        event_logger.emit("civic.models.finished", phase="preflight", status="completed")
+        if catch_up_at is not None:
+            from beehive.civic.scheduling import enqueue_partymap_catch_up
+
+            recovery = enqueue_partymap_catch_up(conn, catch_up_at, _utc_now())
+            event_logger.emit(
+                "civic.catch_up.enqueued", phase="scheduling",
+                status=recovery.status, run_id=recovery.id, watch_id=recovery.watch_id)
         worker = CivicWorker(
             conn,
             CopilotCivicGateway(),
             source_entries=enabled_civic_sources(os.environ),
-            model=load_model(conn),
+            model=model,
             event_logger=event_logger,
         )
         cycle = await worker.run_due_cycle()
@@ -515,7 +534,12 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirm-rewrite", action="store_true")
     parser.add_argument("--confirm-rollback", action="store_true")
+    parser.add_argument(
+        "--civic-catch-up-at", type=datetime.fromisoformat,
+        help="Explicit recovery slot after a failed daily run; replay the same timestamp safely.")
     args = parser.parse_args()
+    if args.civic_catch_up_at is not None and args.mode != "civic-run":
+        parser.error("--civic-catch-up-at is only valid with --mode civic-run")
 
     lock = take_jobs_lock(args.db_path) if args.mode in _JOB_MODES else None
     try:
@@ -531,10 +555,14 @@ def _run_mode(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None
     elif args.mode == "deep-read":
         asyncio.run(run_deep_read(args.db_path))
     elif args.mode == "civic-run":
+        recovery_options = (
+            {"catch_up_at": args.civic_catch_up_at}
+            if args.civic_catch_up_at is not None else {})
         _run_civic_command(
             "civic_run",
             lambda event_logger: asyncio.run(
-                run_civic_cycle(args.db_path, event_logger=event_logger)),
+                run_civic_cycle(
+                    args.db_path, event_logger=event_logger, **recovery_options)),
         )
     elif args.mode == "civic-outcomes":
         _run_civic_command(

@@ -341,7 +341,7 @@ async def test_v4_prompts_bind_both_rule_sets_and_old_unsealed_receipts_get_real
     ):
         assert LANGUAGE_FIDELITY_RULES in prompt
         assert NOVELTY_RULES in prompt
-    assert CIVIC_PROMPT_VERSION == "civic-ai-prompts/5"
+    assert CIVIC_PROMPT_VERSION == "civic-ai-prompts/6"
     if drift == "prompt_version":
         conn.execute(
             "UPDATE civic_ai_stages SET prompt_version = 'civic-ai-prompts/4' WHERE candidate_id = ?",

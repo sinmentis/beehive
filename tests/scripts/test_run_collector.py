@@ -131,6 +131,75 @@ def test_civic_run_mode_invokes_asyncio_run(monkeypatch, tmp_path):
     )
 
 
+async def test_civic_model_failure_happens_before_scheduling(tmp_path, monkeypatch):
+    from scripts import run_collector
+    from beehive.civic.ai_gateway import CivicModelError
+    from beehive.db.connection import connect, init_schema
+
+    db_path = str(tmp_path / "civic.db")
+    conn = connect(db_path)
+    init_schema(conn)
+    conn.close()
+    preflight = AsyncMock(side_effect=CivicModelError("model_unavailable", "verifier"))
+    monkeypatch.setattr(run_collector, "require_available_civic_models", preflight)
+    with patch("beehive.civic.worker.CivicWorker") as worker:
+        with pytest.raises(CivicModelError, match="model_unavailable"):
+            await run_collector.run_civic_cycle(db_path)
+        worker.assert_not_called()
+    conn = connect(db_path)
+    assert conn.execute("SELECT count(*) FROM civic_runs").fetchone()[0] == 0
+    conn.close()
+
+
+def test_civic_catch_up_preserves_failed_run_and_is_idempotent(tmp_path):
+    from datetime import timedelta
+    from beehive.civic.scheduling import enqueue_partymap_catch_up, schedule_partymap_civic_run
+    from beehive.db.civic_runs import fail_pending_civic_run, get_civic_run
+    from beehive.db.connection import connect, init_schema
+    from tests.civic.civic_worker_support import T0, create_partymap_watch
+
+    conn = connect(str(tmp_path / "civic.db"))
+    init_schema(conn)
+    create_partymap_watch(conn)
+    daily = schedule_partymap_civic_run(conn, T0)[0].run
+    assert daily is not None
+    failed_at = T0 + timedelta(minutes=1)
+    fail_pending_civic_run(conn, daily.id, failed_at, "model_unavailable")
+    original = get_civic_run(conn, daily.id)
+    recovery_at = T0 + timedelta(hours=1)
+    recovery = enqueue_partymap_catch_up(conn, recovery_at, recovery_at)
+    assert recovery.id != daily.id
+    assert get_civic_run(conn, daily.id) == original
+    assert enqueue_partymap_catch_up(conn, recovery_at, recovery_at) == recovery
+    assert conn.execute("SELECT count(*) FROM civic_runs").fetchone()[0] == 2
+    with pytest.raises(ValueError, match="future"):
+        enqueue_partymap_catch_up(conn, recovery_at + timedelta(seconds=1), recovery_at)
+    with pytest.raises(ValueError, match="active"):
+        enqueue_partymap_catch_up(
+            conn, recovery_at + timedelta(seconds=1), recovery_at + timedelta(seconds=1))
+    conn.close()
+
+
+def test_civic_catch_up_cannot_replace_a_successful_daily_run(tmp_path):
+    from datetime import timedelta
+    from beehive.civic.scheduling import enqueue_partymap_catch_up, schedule_partymap_civic_run
+    from beehive.db.connection import connect, init_schema
+    from beehive.db.civic_runs import claim_civic_run, complete_civic_run
+    from beehive.domain.civic import CivicRunStatus
+    from tests.civic.civic_worker_support import T0, create_partymap_watch
+
+    conn = connect(str(tmp_path / "civic.db"))
+    init_schema(conn)
+    create_partymap_watch(conn)
+    daily = schedule_partymap_civic_run(conn, T0)[0].run
+    lease = claim_civic_run(conn, daily.id, T0, 60, 120)
+    complete_civic_run(conn, daily.id, lease.run.claim_token, CivicRunStatus.COMPLETED, T0)
+    with pytest.raises(ValueError, match="failed daily"):
+        enqueue_partymap_catch_up(conn, T0 + timedelta(hours=1), T0 + timedelta(hours=1))
+    assert conn.execute("SELECT count(*) FROM civic_runs").fetchone()[0] == 1
+    conn.close()
+
+
 @pytest.mark.parametrize(
     ("mode", "function_name"),
     [
