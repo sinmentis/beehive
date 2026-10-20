@@ -22,11 +22,12 @@ The receipt records which concrete model ran.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-from beehive.ai.model_catalog import BUILTIN_MODELS
+from beehive.ai.model_catalog import BUILTIN_MODELS, LIST_TIMEOUT_SECONDS
 from beehive.ai.model_selection import UnsupportedModelError
 from beehive.civic.limits import AI_CALL_TIMEOUT_SECONDS
 
@@ -164,6 +165,23 @@ def verifier_model_for(drafting_model: str) -> str:
     return require_supported_model(verifier)
 
 
+async def require_available_civic_models(drafting_model: str) -> None:
+    from beehive.ai.llm_client import list_models
+
+    required = (require_supported_model(drafting_model), verifier_model_for(drafting_model))
+    async with asyncio.timeout(LIST_TIMEOUT_SECONDS):
+        models = await list_models()
+    available = {
+        model.model_id for model in models if model.policy_state in {None, "enabled"}
+    }
+    missing = [model for model in required if model not in available]
+    if missing:
+        raise CivicModelError(
+            "model_unavailable",
+            f"Civic requires enabled account models: {', '.join(missing)}. "
+            "No candidates were consumed; update the pinned model policy before retrying.")
+
+
 def _family(model_id: str) -> str:
     return model_id.split("-", 1)[0]
 
@@ -177,5 +195,6 @@ __all__ = [
     "CivicModelResponse",
     "CopilotCivicGateway",
     "require_supported_model",
+    "require_available_civic_models",
     "verifier_model_for",
 ]

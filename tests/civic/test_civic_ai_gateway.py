@@ -135,3 +135,52 @@ def test_a_request_needs_a_prompt_and_a_positive_timeout():
         _request(prompt="   ")
     with pytest.raises(ValueError, match="timeout"):
         _request(timeout=0)
+
+
+@pytest.mark.parametrize("policy", ["missing", "disabled", "unconfigured"])
+async def test_model_preflight_refuses_an_unavailable_verifier(monkeypatch, policy):
+    from beehive.ai import llm_client
+    from beehive.ai.model_catalog import ListedModel
+    from beehive.civic.ai_gateway import require_available_civic_models
+
+    async def listed():
+        models = [ListedModel("gpt-5.6-terra", "Draft")]
+        if policy != "missing":
+            models.append(ListedModel("claude-sonnet-5.5", "Verifier", policy))
+        return models
+
+    monkeypatch.setattr(llm_client, "list_models", listed)
+    with pytest.raises(CivicModelError, match="claude-sonnet-5.5") as error:
+        await require_available_civic_models("gpt-5.6-terra")
+    assert error.value.error_code == "model_unavailable"
+
+
+async def test_model_preflight_checks_both_models_without_sending_prompts(monkeypatch):
+    from beehive.ai import llm_client
+    from beehive.ai.model_catalog import ListedModel
+    from beehive.civic.ai_gateway import require_available_civic_models
+
+    async def listed():
+        return [
+            ListedModel("gpt-5.6-terra", "Draft", "enabled"),
+            ListedModel("claude-sonnet-5.5", "Verifier"),
+        ]
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("model readiness must not send a prompt")
+
+    monkeypatch.setattr(llm_client, "list_models", listed)
+    monkeypatch.setattr(llm_client, "run_data_only_prompt", forbidden)
+    await require_available_civic_models("gpt-5.6-terra")
+
+
+async def test_model_preflight_does_not_hide_account_errors(monkeypatch):
+    from beehive.ai import llm_client
+    from beehive.civic.ai_gateway import require_available_civic_models
+
+    async def failed():
+        raise ConnectionError("account listing failed")
+
+    monkeypatch.setattr(llm_client, "list_models", failed)
+    with pytest.raises(ConnectionError, match="account listing failed"):
+        await require_available_civic_models("gpt-5.6-terra")

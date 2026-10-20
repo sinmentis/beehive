@@ -67,7 +67,7 @@ from beehive.domain.civic import CivicEvidence
 # Bumped whenever a prompt's wording changes in a way that could produce different output. Stored
 # on every stage receipt next to the prompt's own hash: the version says which prompt was meant,
 # the hash proves which prompt was actually sent.
-CIVIC_PROMPT_VERSION = "civic-ai-prompts/5"
+CIVIC_PROMPT_VERSION = "civic-ai-prompts/6"
 
 # Bumped whenever the JSON contract a stage accepts changes shape. Separate from the prompt
 # version because a schema change invalidates stored output, while a prompt reword does not.
@@ -513,7 +513,11 @@ _EDITORIAL_RULES = (
     "title does not: the one to three main concrete measures, commitments, amounts, places or "
     "reasons the cited evidence states. A summary that only restates the title, or only says "
     "that something was announced, released or published, is not acceptable when the evidence "
-    "says more. Dates must be written as YYYY-MM-DD in every language. A month without a day "
+    "says more. For policy proposals, prioritise the affected people, commencement conditions, "
+    "and any stated fiscal cost or funding source alongside the main measure. Preserve material "
+    "exclusions and distinguish party cost estimates from independent findings. Do not invent "
+    "a start date, cost or funding source when the evidence does not provide one. "
+    "Dates must be written as YYYY-MM-DD in every language. A month without a day "
     "is a name, not a number: write it in words in every language, in Chinese with Chinese "
     "numerals (十一月, 2026年六月), never 11月. Every number and every named party must "
     "already appear in the evidence "

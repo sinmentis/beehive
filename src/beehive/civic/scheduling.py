@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Callable
 
@@ -14,7 +14,7 @@ from beehive.db.civic_runs import (
 )
 from beehive.db.civic_vocabulary import get_published_vocabulary_version
 from beehive.db.civic_watches import list_schedulable_civic_watches
-from beehive.domain.civic import CivicRun, CivicWatch
+from beehive.domain.civic import CivicRun, CivicRunStatus, CivicWatch
 from beehive.scheduling import CalendarSchedule
 
 DEFAULT_CIVIC_SCHEDULE_TIME = "06:30"
@@ -169,6 +169,36 @@ def schedule_partymap_civic_run(
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("Civic scheduling needs a timezone-aware datetime")
     return (_schedule_watch(conn, watch, now, run_mode=run_mode),)
+
+
+def enqueue_partymap_catch_up(
+    conn: sqlite3.Connection, slot_at: datetime, now: datetime,
+) -> CivicRun:
+    """An explicit recovery slot preserves the failed daily Run and its fixed deadline."""
+    if any(value.tzinfo is None or value.utcoffset() is None for value in (slot_at, now)):
+        raise ValueError("Civic catch-up needs timezone-aware timestamps")
+    slot_at = slot_at.astimezone(timezone.utc)
+    if slot_at > now:
+        raise ValueError("Civic catch-up cannot use a future slot")
+    watch = require_partymap_global_watch(conn)
+    if slot_at < watch.created_at:
+        raise ValueError("Civic catch-up cannot predate its Watch")
+    existing = get_civic_run_for_slot(conn, watch.id, slot_at)
+    if existing is not None:
+        return existing
+    calendar = CalendarSchedule.parse(
+        timezone_name=watch.schedule_timezone, time_text=watch.schedule_time,
+        weekdays_text=None, default_time=DEFAULT_CIVIC_SCHEDULE_TIME)
+    daily = get_civic_run_for_slot(conn, watch.id, calendar.latest_slot_at_or_before(now))
+    if (daily is None or daily.status is not CivicRunStatus.FAILED
+            or daily.completed_at is None or slot_at <= daily.completed_at):
+        raise ValueError("Civic catch-up requires a failed daily Run before the recovery slot")
+    vocabulary = get_published_vocabulary_version(conn, watch.id)
+    if vocabulary is None:
+        raise CivicGlobalWatchConfigurationError("Civic catch-up requires published vocabulary")
+    return enqueue_civic_run(
+        conn, watch.id, slot_at, now,
+        vocabulary_version_id=vocabulary.id, run_mode=daily.run_mode)
 
 
 __all__ = [

@@ -61,4 +61,5 @@ def test_new_amounts_count_but_dates_and_years_do_not():
 def test_the_generation_contract_asks_for_substance_beyond_the_title():
     prompt = build_generation_prompt(snapshot())
     assert "must add what the title does not" in prompt
-    assert CIVIC_PROMPT_VERSION == "civic-ai-prompts/5"
+    assert CIVIC_PROMPT_VERSION == "civic-ai-prompts/6"
+    assert "fiscal cost or funding source" in prompt

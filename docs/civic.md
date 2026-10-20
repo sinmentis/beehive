@@ -21,6 +21,24 @@ clusters are matched against a closed alias registry for the 17 catalogued parti
 multiple matches settle that Candidate as unsupported before any AI call, while the rest of the
 Run continues.
 
+Before scheduling or consuming candidates, the command checks the live Copilot account model
+list for both pinned models. Missing or disabled models fail explicitly and trigger the unit's
+existing failure notification. There is no automatic downgrade or same-family verifier fallback.
+
+After correcting an operational failure, an operator can authorize one catch-up slot:
+
+```bash
+python -m scripts.run_collector --mode civic-run \
+  --civic-catch-up-at "2026-10-20T07:00:00+00:00"
+```
+
+Use the actual recovery time, with a timezone, no later than the current time. The current daily
+Run must have failed before that time. Reuse the exact timestamp when retrying the command.
+This creates a separately audited Run with the normal evidence gates and publication cap, rather
+than resetting the failed Run's deadline or rewriting its history. An active Run blocks another
+slot. Deferred candidates are adopted by the normal worker; rejected content is not approved or
+republished by this operation.
+
 Metadata-only party sitemaps and listings are discovery surfaces, not evidence bodies. After the
 deterministic 25-cluster cap selects a Run's work, Beehive fetches only those selected on-host
 detail pages through the same host allow-list, crawl pacer, content-type check and response-size
