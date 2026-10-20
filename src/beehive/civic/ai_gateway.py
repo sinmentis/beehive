@@ -160,7 +160,7 @@ def verifier_model_for(drafting_model: str) -> str:
     if drafting_model == "auto":
         raise UnsupportedModelError(
             "Civic verification requires a concrete drafting model to select an independent family")
-    verifier = "gpt-6-astra" if _family(drafting_model) == "claude" else "claude-opus-5"
+    verifier = "gpt-6-astra" if _family(drafting_model) == "claude" else "claude-sonnet-5.5"
     return require_supported_model(verifier)
 
 

@@ -5,11 +5,11 @@ from beehive.civic.ai_gateway import require_supported_model, verifier_model_for
 
 
 @pytest.mark.parametrize(("draft", "verifier"), [
-    ("gpt-5.6-terra", "claude-opus-5"),
-    ("gpt-6-astra", "claude-opus-5"),
+    ("gpt-5.6-terra", "claude-sonnet-5.5"),
+    ("gpt-6-astra", "claude-sonnet-5.5"),
     ("claude-opus-5", "gpt-6-astra"),
     ("claude-haiku-4.5", "gpt-6-astra"),
-    ("grok-4.7", "claude-opus-5"),
+    ("grok-4.7", "claude-sonnet-5.5"),
 ])
 def test_verification_uses_an_explicit_strong_independent_model(draft, verifier):
     assert verifier_model_for(draft) == verifier
