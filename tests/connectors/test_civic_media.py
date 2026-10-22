@@ -7,6 +7,7 @@ import pytest
 
 from beehive.civic.catalog import CivicSourceEntry
 from beehive.civic.connectors.feeds import CivicFeedConnector
+from beehive.civic.connectors.sitemaps import SitemapConnector
 from beehive.civic.documents import CivicSourceError, CivicSourceHealth
 from beehive.connectors.civic_catalog import (
     CivicSourceRestrictedError,
@@ -141,7 +142,7 @@ def test_the_verified_endpoints_are_the_committed_ones():
         "stuff": "https://www.stuff.co.nz/rss",
         "the-post": "https://www.thepost.co.nz/rss",
         "odt": "https://www.odt.co.nz/sitemaps/odt/sitemap_news1.xml",
-        "spinoff": "https://thespinoff.co.nz/feed",
+        "spinoff": "https://thespinoff.co.nz/sitemaps/articles/1.xml",
         "newsroom": "https://newsroom.co.nz/feed/",
         "interest": "https://www.interest.co.nz/rss",
         "waatea": "https://waateanews.com/feed/",
@@ -152,7 +153,8 @@ def test_the_verified_endpoints_are_the_committed_ones():
 def test_each_outlet_uses_the_strategy_its_surface_needs():
     assert MEDIA_CATALOG.get("odt").connector_class is NewsSitemapConnector
     assert MEDIA_CATALOG.get("interest").connector_class is WallClockFeedConnector
-    for key in ("1news", "te-ao", "stuff", "the-post", "spinoff", "newsroom", "waatea"):
+    assert MEDIA_CATALOG.get("spinoff").connector_class is SitemapConnector
+    for key in ("1news", "te-ao", "stuff", "the-post", "newsroom", "waatea"):
         assert MEDIA_CATALOG.get(key).connector_class is CivicFeedConnector
 
 

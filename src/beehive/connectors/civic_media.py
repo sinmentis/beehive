@@ -36,6 +36,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from beehive.civic.connectors.feeds import CivicFeedConnector, FeedSourceDefinition
+from beehive.civic.connectors.sitemaps import SitemapConnector, SitemapSourceDefinition
 from beehive.civic.documents import CivicFetchResult
 from beehive.civic.fetching import CivicEndpoint, CivicTransport
 from beehive.connectors.base import RawItem
@@ -203,8 +204,9 @@ MEDIA_SOURCES: tuple[PartyMediaSourceEntry, ...] = (
             is_atom=True),
         connector_class=CivicFeedConnector,
         article_capture=False,
-        note="Article pages are client-rendered app shells (checked 2026-09-29): no article "
-             "text in the HTML, so its feed items can suggest stories but never be captured.",
+        note="Article pages are client-rendered app shells (checked 2026-09-29 and 2026-10-22): "
+             "no article text in the HTML, so its feed items can suggest stories but never be "
+             "captured. A Candidate with only Stuff or The Post evidence is settled at once.",
     ),
     _outlet(
         key="the-post",
@@ -252,11 +254,20 @@ MEDIA_SOURCES: tuple[PartyMediaSourceEntry, ...] = (
         owner_id=OWNER_SPINOFF,
         hosts=("thespinoff.co.nz",),
         tier=_OTHER,
-        definition=_feed(
-            "spinoff", "https://thespinoff.co.nz/feed", "thespinoff.co.nz", "The Spinoff",
-            _OTHER, is_atom=True),
-        connector_class=CivicFeedConnector,
-        note="Commentary-led, editorially independent.",
+        definition=SitemapSourceDefinition(
+            source_key="spinoff",
+            endpoint=CivicEndpoint(
+                url="https://thespinoff.co.nz/sitemaps/articles/1.xml",
+                allowed_hosts=frozenset({"thespinoff.co.nz"}),
+                max_bytes=PARTY_MEDIA_MAX_BYTES),
+            publisher="The Spinoff",
+            tier=_OTHER,
+            path_includes=("/politics/",),
+            max_urls=MAX_DOCUMENTS_PER_FETCH),
+        connector_class=SitemapConnector,
+        note="Commentary-led, editorially independent. The RSS feed was removed (404, checked "
+             "2026-10-22); the first article sitemap lists the newest articles first. Its "
+             "<lastmod> is not a publication date, so articles are dated from their own page.",
     ),
     _outlet(
         key="newsroom",
