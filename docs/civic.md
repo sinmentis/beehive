@@ -124,3 +124,16 @@ The diagnostic opens SQLite with `mode=ro` and `query_only`, reports only bounde
 metadata, validates spool hashes/correlation, and lists recovery anomalies. It is safer to share
 than the database or spool payloads, but its IDs, hashes, and sanitized provider references can
 still identify internal work. Review them before sharing outside the operations team.
+
+## Notices and source holds
+
+Civic Runs queue operational notices: source failures, clusters whose detail pages could not be
+fetched, and cluster overflow. The jobs worker emails them to the default recipient as one
+combined message, at most once every six hours. Notices older than 48 hours are suppressed
+instead of sent.
+
+A Candidate whose source articles have not been captured is held and retried on later Runs for
+up to 14 days. One whose only evidence comes from outlets whose articles are never captured
+(Stuff, The Post) is rejected at once as `source_uncapturable`, because no later Run can date it.
+When a party site refuses a detail page (HTTP 401/403), the rest of that Run skips the site, so
+it cannot spend the hydration budget other sources need.

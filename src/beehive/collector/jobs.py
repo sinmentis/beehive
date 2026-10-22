@@ -15,6 +15,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from beehive.ai.model_selection import load_model
+from beehive.civic.notifications import CivicNotificationDeliveryError, send_civic_notifications
 from beehive.collector.run_cycle import run_channel_cycle
 from beehive.db.channels import get_channel
 from beehive.db.connection import connect
@@ -115,7 +116,8 @@ def run_deep_read_job(db_path: str, claimed: DeepRead) -> DeepReadOutcome:
 
 
 def send_digests(conn: sqlite3.Connection) -> None:
-    """Research completion emails, then every Email group digest that is due. Raises one
+    """Research completion emails, every Email group digest that is due, then queued Civic
+    notices (at most one combined email every six hours). Raises one
     ExceptionGroup listing every delivery that failed, after trying all of them."""
     notifier, default_recipient = delivery_context(conn)
     localizer = load_localizer(conn)
@@ -128,6 +130,10 @@ def send_digests(conn: sqlite3.Connection) -> None:
         send_email_group_digests(conn, notifier, default_recipient, localizer)
     except ExceptionGroup as exc:
         failures.extend(exc.exceptions)
+    try:
+        send_civic_notifications(conn, notifier, default_recipient, localizer)
+    except CivicNotificationDeliveryError as exc:
+        failures.append(exc)
     if failures:
         raise ExceptionGroup("One or more scheduled emails failed", failures)
 

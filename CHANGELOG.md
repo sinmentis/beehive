@@ -138,6 +138,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Civic notices are now emailed (one combined message at most every six hours) instead of
+  piling up unsent. Notices older than 48 hours are suppressed.
+- A Civic Candidate backed only by Stuff or The Post is rejected at once instead of being held
+  and retried daily for 14 days.
+- A party site that refuses detail pages no longer uses up a Civic Run's hydration budget.
+- The Spinoff source reads its politics article sitemap; its RSS feed was removed.
 - Editorial digests permanently suppress repeated stories with the same publisher and exact
   headline, even when Google News republishes them under a new GUID on a later day.
 - Digest subjects and channel delivery dates now use each Email Group's configured timezone

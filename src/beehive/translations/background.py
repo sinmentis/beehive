@@ -414,7 +414,44 @@ _RESEARCH_NOTIFICATION_CATALOGS = {
     },
 }
 
-for _locale, _catalog in _RESEARCH_NOTIFICATION_CATALOGS.items():
-    CATALOGS[_locale].update(_catalog)
+_CIVIC_NOTIFICATION_CATALOGS = {
+    "en": {
+        "background.civic_notices_subject": {
+            "one": "{product} Civic: {count} notice",
+            "other": "{product} Civic: {count} notices",
+        },
+    },
+    "zh-CN": {
+        "background.civic_notices_subject": {"one": "{product} Civic：{count} 条通知", "other": "{product} Civic：{count} 条通知"},
+    },
+    "ja": {
+        "background.civic_notices_subject": {"one": "{product} Civic：通知 {count} 件", "other": "{product} Civic：通知 {count} 件"},
+    },
+    "ko": {
+        "background.civic_notices_subject": {"one": "{product} Civic: 알림 {count}건", "other": "{product} Civic: 알림 {count}건"},
+    },
+    "es": {
+        "background.civic_notices_subject": {
+            "one": "{product} Civic: {count} aviso",
+            "other": "{product} Civic: {count} avisos",
+        },
+    },
+    "fr": {
+        "background.civic_notices_subject": {
+            "one": "{product} Civic : {count} avis",
+            "other": "{product} Civic : {count} avis",
+        },
+    },
+    "de": {
+        "background.civic_notices_subject": {
+            "one": "{product} Civic: {count} Hinweis",
+            "other": "{product} Civic: {count} Hinweise",
+        },
+    },
+}
 
-del _locale, _catalog
+for _catalogs in (_RESEARCH_NOTIFICATION_CATALOGS, _CIVIC_NOTIFICATION_CATALOGS):
+    for _locale, _catalog in _catalogs.items():
+        CATALOGS[_locale].update(_catalog)
+
+del _catalogs, _locale, _catalog
