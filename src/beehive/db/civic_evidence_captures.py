@@ -22,6 +22,9 @@ MAX_REFRESH_FETCH_ATTEMPTS = 3
 # has been attempted for this long without becoming usable is settled rejected
 # (`source_hold_expired`) instead of being re-adopted and held by every daily Run.
 SOURCE_HOLD_LIFETIME = timedelta(days=14)
+# Every source is an outlet whose articles are never captured, so no later Run can date it.
+# Settled at once instead of held for SOURCE_HOLD_LIFETIME.
+UNCAPTURABLE_SOURCE_REASON = "source_refresh_uncapturable"
 
 
 class CivicCaptureConflictError(ValueError):
@@ -150,7 +153,7 @@ def candidate_source_plan(
     """Authoritative readiness/refresh plan for every unsealed Candidate, not only new ones."""
     from beehive.civic.evidence_refresh import (
         EvidenceRefreshPlan, EvidenceRefreshStatus, capture_fingerprint,
-        captured_refreshable_documents, plan_evidence_refresh,
+        captured_refreshable_documents, has_capturable_evidence, plan_evidence_refresh,
     )
     from beehive.civic.production import event_date_for_document
     from beehive.db.civic_batches import get_civic_batch
@@ -178,8 +181,9 @@ def candidate_source_plan(
             event_date_for_document(document, watch) is not None
             for document in captured_refreshable_documents(inputs)
         ):
-            return replace(plan, status=EvidenceRefreshStatus.DEFERRED,
-                           reason="source_refresh_date_unavailable")
+            reason = ("source_refresh_date_unavailable" if has_capturable_evidence(inputs)
+                      else UNCAPTURABLE_SOURCE_REASON)
+            return replace(plan, status=EvidenceRefreshStatus.DEFERRED, reason=reason)
     except ValueError as exc:
         return EvidenceRefreshPlan(
             candidate.id, batch.id, candidate.run_id, candidate.ai_revision,
@@ -653,16 +657,21 @@ def _hold_source_locked(conn, candidate, batch, reason: str, now: datetime) -> N
          published_cap(mode), mode.value, now.isoformat()))
 
 
-def _source_hold_expired(
-    conn: sqlite3.Connection, candidate: CivicCandidate, fingerprint: str, now: datetime,
-) -> bool:
+def _holdable(candidate: CivicCandidate) -> bool:
     from beehive.domain.civic import CivicCandidateStatus
 
     # Deferred and verified Candidates keep the old hold; the next adopted pass settles them.
-    if candidate.status not in {
+    return candidate.status in {
         CivicCandidateStatus.DRAFTED, CivicCandidateStatus.RESEARCHING,
         CivicCandidateStatus.VERIFYING,
-    }:
+    }
+
+
+def _source_hold_expired(
+    conn: sqlite3.Connection, candidate: CivicCandidate, fingerprint: str, now: datetime,
+) -> bool:
+
+    if not _holdable(candidate):
         return False
     started = conn.execute(
         "SELECT MIN(reserved_at) FROM civic_hydration_attempts "
@@ -671,7 +680,8 @@ def _source_hold_expired(
     return started is not None and now - datetime.fromisoformat(started) >= SOURCE_HOLD_LIFETIME
 
 
-def _expire_source_hold_locked(conn, candidate, batch, reason: str, now: datetime) -> None:
+def _expire_source_hold_locked(conn, candidate, batch, reason: str, now: datetime,
+                               *, rejection_code: str = "source_hold_expired") -> None:
     from beehive.domain.civic import (CivicCandidateStatus, require_candidate_source_hold,
                                       require_candidate_transition)
 
@@ -679,8 +689,8 @@ def _expire_source_hold_locked(conn, candidate, batch, reason: str, now: datetim
     require_candidate_transition(candidate.status, CivicCandidateStatus.REJECTED)
     conn.execute(
         "UPDATE civic_candidates SET status = 'rejected', settled_at = ?, "
-        "rejection_code = 'source_hold_expired', ai_refresh_reason = ? WHERE id = ?",
-        (now.isoformat(), f"source_refresh:{reason}", candidate.id))
+        "rejection_code = ?, ai_refresh_reason = ? WHERE id = ?",
+        (now.isoformat(), rejection_code, f"source_refresh:{reason}", candidate.id))
 
 
 def defer_evidence_refresh_if_claimed(
@@ -733,7 +743,12 @@ def defer_evidence_refresh_if_claimed(
                         (plan.run_id, candidate.id, key, claim_token, candidate.ai_revision,
                          plan.expected_capture_fingerprint, _hash(asdict(plan)),
                          now.isoformat(), now.isoformat(), reason))
-            if _source_hold_expired(conn, candidate, plan.expected_capture_fingerprint, now):
+            if reason == UNCAPTURABLE_SOURCE_REASON and _holdable(candidate):
+                _expire_source_hold_locked(conn, candidate, batch, reason, now,
+                                           rejection_code="source_uncapturable")
+                result = CivicEvidenceApplyResult(
+                    "rejected", candidate.id, candidate.ai_revision, reason=reason)
+            elif _source_hold_expired(conn, candidate, plan.expected_capture_fingerprint, now):
                 _expire_source_hold_locked(conn, candidate, batch, reason, now)
                 result = CivicEvidenceApplyResult(
                     "rejected", candidate.id, candidate.ai_revision, reason=reason)

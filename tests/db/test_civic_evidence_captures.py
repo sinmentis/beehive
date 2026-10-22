@@ -1160,4 +1160,60 @@ def test_an_uncapturable_outlets_feed_date_cannot_clear_the_source_date_gate(con
 
     plan = candidate_source_plan(conn, candidate.id)
     assert plan.targets == ()
-    assert (plan.status.value, plan.reason) == ("deferred", "source_refresh_date_unavailable")
+    assert (plan.status.value, plan.reason) == ("deferred", "source_refresh_uncapturable")
+
+
+def _add_stuff_only_evidence(conn, candidate):
+    from beehive.civic.source_extraction import publication_witness
+
+    url = "https://www.stuff.co.nz/politics/361038702/fixture-report"
+    published = datetime(2026, 9, 6, 3, 13, tzinfo=timezone.utc)
+    add_candidate_evidence(
+        conn, candidate.id, "stuff", f"stuff:{url}", url, "A fixture report",
+        CivicEvidenceTier.REPUTABLE_MEDIA, CivicEvidenceStance.CORROBORATING, NOW,
+        publisher="Stuff", publisher_id="stuff", source_kind="independent-news",
+        subject_id="national", claim_category="party-timeline-event",
+        event_date=date(2026, 9, 6), canonical_url=url,
+        excerpt="A feed summary of the fixture report.", published_at=published,
+        source_metadata={"publication": publication_witness(
+            published.isoformat(), source="feed-published").as_metadata()},
+    )
+
+
+def test_a_candidate_with_only_uncapturable_sources_is_settled_at_once(context):
+    """No later Run can capture a Stuff-only Candidate, so it is not held for the lifetime."""
+    from beehive.db.civic_evidence_captures import (
+        candidate_source_plan, defer_evidence_refresh_if_claimed,
+    )
+
+    conn, run, batch, candidate, root = context
+    _add_stuff_only_evidence(conn, candidate)
+    plan = candidate_source_plan(conn, candidate.id)
+
+    result = defer_evidence_refresh_if_claimed(
+        conn, plan=plan, reservation=None, claim_token=run.claim_token,
+        reason=plan.reason, now=NOW)
+
+    assert (result.status, result.reason) == ("rejected", "source_refresh_uncapturable")
+    settled = get_candidate(conn, candidate.id)
+    assert settled.status is CivicCandidateStatus.REJECTED
+    assert settled.rejection_code == "source_uncapturable"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM civic_capacity_deferrals WHERE candidate_id = ? "
+        "AND adopted_at IS NULL", (candidate.id,)).fetchone()[0] == 0
+
+
+def test_a_capturable_source_without_a_date_is_still_held(context):
+    from beehive.db.civic_evidence_captures import (
+        candidate_source_plan, defer_evidence_refresh_if_claimed,
+    )
+
+    conn, run, batch, candidate, root = context
+    add_evidence(conn, candidate)
+    plan = candidate_source_plan(conn, candidate.id)
+    result = defer_evidence_refresh_if_claimed(
+        conn, plan=plan, reservation=None, claim_token=run.claim_token,
+        reason="source_refresh_date_unavailable", now=NOW)
+
+    assert result.status == "deferred"
+    assert get_candidate(conn, candidate.id).status is not CivicCandidateStatus.REJECTED

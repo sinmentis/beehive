@@ -175,7 +175,7 @@ def test_partymap_low_level_seal_defers_missing_qualification_without_bypassing_
     assert get_frozen_publication(conn, sealed.id) is not None
     settled = get_candidate(conn, candidate.id)
     assert settled.status is CivicCandidateStatus.DEFERRED_AI
-    assert settled.ai_refresh_reason == "source_refresh:source_refresh_date_unavailable"
+    assert settled.ai_refresh_reason == "source_refresh:source_refresh_uncapturable"
     assert settled.ai_revision == 0
     assert list_publication_rejections(conn, sealed.id) == []
     assert conn.execute(

@@ -190,6 +190,24 @@ def captured_refreshable_documents(
     return tuple(documents)
 
 
+def has_capturable_evidence(captures: Sequence[EvidenceCaptureInput]) -> bool:
+    """Whether any citable evidence is captured or could ever be captured.
+
+    False when every source is an outlet whose articles are never captured (Stuff, The Post):
+    such a Candidate can never pass the source date gate, so holding it only wastes Runs."""
+    for capture in captures:
+        if not is_refreshable_evidence(capture.evidence):
+            continue
+        document = _document(capture)
+        if has_current_article_capture(document) or has_current_official_capture(document):
+            return True
+        if document.source_key in PARTY_MEDIA_CATALOG.keys:
+            entry = PARTY_MEDIA_CATALOG.get(document.source_key)
+            if entry.may_be_evidence and entry.article_capture:
+                return True
+    return False
+
+
 def plan_evidence_refresh(
     candidate: CivicCandidate,
     batch: CivicBatch,
