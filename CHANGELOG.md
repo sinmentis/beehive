@@ -138,6 +138,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Certificates that chain to the compromised eMudhra intermediate CAs are rejected. The shared
+  image upgrades `ca-certificates` when it is built, and the Civic image pins patched Python and
+  uv images and certifi 2026.10.19.
 - Civic notices are now emailed (one combined message at most every six hours) instead of
   piling up unsent. Notices older than 48 hours are suppressed.
 - A Civic Candidate backed only by Stuff or The Post is rejected at once instead of being held

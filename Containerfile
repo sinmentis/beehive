@@ -3,6 +3,10 @@
 # role via Exec=, following a "one image, Exec-selected roles" design.
 # ENTRYPOINT is bare `python`; each unit supplies the `-m scripts...` module invocation.
 FROM python:3.12-slim
+# Take CA trust store fixes even when the cached base image predates them.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY pyproject.toml ./
 COPY README.md ./
