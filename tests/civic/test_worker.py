@@ -309,6 +309,53 @@ async def test_failed_party_hydration_stays_unconsumed_for_a_later_run(tmp_path)
     ]
 
 
+async def test_a_refused_detail_host_is_not_retried_within_the_run(tmp_path):
+    conn = connect(str(tmp_path / "party-hydration-refused.db"))
+    init_schema(conn)
+    create_partymap_watch(conn)
+    titles = (
+        "Green Party housing policy release",
+        "Rent caps for every tenant in new housing bill",
+        "Warrant of fitness rules for rental housing stock",
+    )
+    documents = tuple(
+        CivicDocument(
+            source_key=GREEN_ENTRY.source_key,
+            external_key=f"green-release-{index}",
+            canonical_url=f"https://www.greens.org.nz/green-release-{index}",
+            title=title,
+            tier=CivicEvidenceTier.PARTY_PRIMARY,
+            publisher=GREEN_ENTRY.publisher,
+            first_seen_at=T0,
+            published_at=T0,
+        )
+        for index, title in enumerate(titles)
+    )
+
+    async def fetch(entry, _now):
+        return CivicFetchResult(
+            source_key=entry.source_key, documents=documents,
+            health=CivicSourceHealth.OK, fetched_at=T0)
+
+    calls = []
+
+    def refused(item, _now):
+        calls.append(item.external_key)
+        return CivicHydrationResult(
+            document=item, status=CivicHydrationStatus.UNAVAILABLE,
+            error_code="detail_fetch_access_denied")
+
+    worker = CivicWorker(
+        conn, passing_green_gateway(), source_entries=(GREEN_ENTRY,),
+        source_executor=fetch, evidence_hydrator=refused, now_fn=lambda: T0)
+
+    execution = (await worker.run_due_cycle()).runs[0]
+
+    assert execution.status is CivicRunExecutionStatus.COMPLETED
+    assert len(calls) == 1
+    assert list_run_candidates(conn, execution.run_id) == []
+
+
 @pytest.mark.parametrize("has_dated_source", [True, False])
 async def test_hydration_date_requirement_is_cluster_local(tmp_path, has_dated_source):
     conn = connect(str(tmp_path / "cluster-source-dates.db"))

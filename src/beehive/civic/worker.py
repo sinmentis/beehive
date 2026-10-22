@@ -145,6 +145,9 @@ MAX_EVIDENCE_HYDRATIONS_PER_RUN = 25
 MAX_ERROR_DETAIL_CHARS = 500
 
 
+_DETAIL_REFUSED_REASON = "detail_fetch_access_denied"
+
+
 class CivicSourceExecutor(Protocol):
     def __call__(
         self, entry: object, now: datetime
@@ -1889,12 +1892,23 @@ class CivicWorker:
         attempted = 0
         unavailable = 0
         replayed = 0
+        # A host that refused one detail page refuses the rest; skip it for the rest of the Run
+        # so it cannot spend the shared hydration budget other sources need.
+        refused_sources: set[str] = set()
         for cluster in plan.clusters:
             targets = [
                 document
                 for document in cluster.documents
                 if self._requires_evidence_hydration(document)
             ]
+            if any(document.source_key in refused_sources for document in targets):
+                hydration_deferred.append(cluster)
+                self.event_logger.emit(
+                    "civic.evidence.hydration.deferred",
+                    watch_id=watch_id, run_id=run_id, batch_id=batch_id,
+                    phase=CivicRunPhase.GATHERING, status="deferred",
+                    reason=_DETAIL_REFUSED_REASON)
+                continue
             if len(targets) > MAX_EVIDENCE_HYDRATIONS_PER_RUN:
                 hydration_deferred.append(cluster)
                 self.event_logger.emit(
@@ -1977,6 +1991,9 @@ class CivicWorker:
                     ),
                     elapsed_ms=(monotonic() - started_at) * 1000,
                 )
+                if result.error_code == _DETAIL_REFUSED_REASON:
+                    refused_sources.add(document.source_key)
+                    break
             if reservation is not None and reservation.status != "completed":
                 if cluster_available:
                     completed = complete_hydration_if_claimed(
