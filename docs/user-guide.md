@@ -12,19 +12,24 @@ made-up data.
 A channel collects items about one topic from the sources you pick, and the AI scores each new item
 against what you tell it you care about.
 
-1. In the admin, open **Channels** and select **New channel**.
-2. Pick a **Channel type** (see the next section). You can't change it later.
-3. Describe what you want under **What to focus on**, in your own words. Say what to skip too, for
-   example "Open-source developer tools. Skip funding news."
-4. Set the **Fetch schedule**: **After a fixed interval**, such as every 3 hours, or **Once a day at
-   a local time**.
-5. Optional: set **Highlights per channel**, the number of top stories shown first, and a
-   **Minimum AI score** to hide items below it.
-6. Select **Create channel**, then **Add source**.
+1. In the admin, open **Channels** and select **New channel**. Pick a **Channel type**, give it a
+   name, then **Save and continue**. The type cannot change later.
+2. In **Sources**, select **Add source**. Fill in its connection details, use **Test connection**
+   to inspect a sample, then save.
+3. In **Organization rules**, describe what to keep and skip under **What to focus on**. Set
+   **Minimum AI score** and **Highlights per channel**, then **Save and continue**.
+4. In **Email**, choose **Website only**, join an existing group, or create a daily email.
+5. In **Review and start**, check the arrangement and fetch schedule. Open **Settings** to choose
+   a fixed interval or a daily local time. Select **Start this channel** when ready.
 
-The channel's admin page shows **Finish setting up this Channel** with the steps that are left.
+Setup is saved as a draft. Its sources stay paused, and no content is collected until you select
+**Start this channel**. Starting queues the first collection.
 
-<img src="assets/channel-configuration.png" alt="A channel's settings page: what to focus on, fetch cadence, email group, and its three sources with their last fetch" width="100%">
+Each channel has five task tabs: **Overview**, **Sources**, **Organization rules**, **Email**, and
+**Settings**. They remain available on a phone. Each task saves its own settings without replacing
+unrelated settings. Unsaved edits are restored when you return in the same browser tab; save them
+to make them permanent. If the saved configuration changed meanwhile, choose whether to restore
+or discard the local draft.
 
 ## Choose a channel type
 
@@ -55,8 +60,32 @@ Each source works with one channel type, so **Add source** only offers the ones 
 For an RSS or Atom feed, paste the feed's URL or just the site's address. Beehive follows the
 site's feed link, and names the source after the feed unless you give it a name.
 
-Select **Test** next to a source to see a sample of what it returns, without saving anything.
-**Pause** stops a source without removing it.
+Use **Test connection** while adding or editing a source. It tests the values currently in the
+form without saving the source, collecting items, or changing its health history. Errors stay
+beside the relevant field. Existing sources also have a **Test** action in **Sources**.
+**Pause** stops collection without removing the source; it does not cancel pending emails or
+watched-lot reminders.
+
+## Change organization rules
+
+Saving **What to focus on** changes future ranking, not existing scores or summaries.
+**Fetch now** collects content and retries unscored items; it does not rewrite already-scored items.
+
+1. Edit the rules and select **Preview 5 items** to compare results on up to five recent eligible
+   items. The preview uses the draft rules and AI, but leaves saved rules, items and email state
+   unchanged. The sample count shows how many results meet the draft score cutoff.
+2. Select **Save current rules** beside the results, or save the rules form. Editing the draft
+   after a preview marks that preview as out of date.
+3. To update existing results, expand **Reprocess existing content**, confirm the scope, and start
+   it. This uses saved rules on unread Editorial items or current Monitor and Tracker listings.
+   Progress and cancellation are available on the same page.
+
+Reprocessing preserves item identity, read state, votes, watches and source history. Items that
+change while processing are skipped. Cancelling keeps results already applied.
+
+The score cutoff filters current results and pending emails without another AI call. A cutoff of
+`0` includes score-zero items. Raising it can exclude pending content; lowering it or reprocessing
+does not resend delivered emails or restore deliveries previously excluded.
 
 ## Read your highlights
 
@@ -108,16 +137,26 @@ failed.
 Sending email needs the email settings in [Configuration](configuration.md#environment-variables).
 Without them, Beehive prints each email in the terminal instead.
 
-1. Open **Email groups** and select **New email group**.
-2. Pick the **Channels in this group**. A group can mix news, store and auction channels.
-3. Set the **Delivery schedule**: after a fixed interval, or on selected days at a local time.
-4. Select **Preview** to see what the next email would hold, or **Send test email** to get a copy.
-   Neither one marks anything as sent.
+1. Open a channel's **Email** tab to create a daily email or join an existing group. Use
+   **Email groups** to manage a shared group, its members and more detailed schedules. A group can
+   mix news, store and auction channels; a channel belongs to at most one group.
+2. Set the recipient and **Delivery schedule**. The first or next due time updates before saving.
+   A new interval-based group can be due at the next worker check, not after a full interval.
+3. Select **Preview** to see the actual HTML email, with a plain-text alternative and counts
+   explaining which content is included or excluded.
+4. **Send test email** sends immediately to the displayed recipient. It uses the current digest
+   when one exists, otherwise a diagnostic message. Preview and test sends neither consume pending
+   content nor move the regular delivery checkpoint. With log-only delivery, no email is sent.
 
 A group only sends when it has something new. A story that was already emailed isn't sent again,
 even when its feed republishes it under a new link. Email goes to the group's own recipient if it
 has one, otherwise to the **Default email address** at the top of **Email groups**. A channel's
 **Failure alert email** gets that channel's failure alerts.
+
+The displayed schedule is a due time, not a delivery guarantee. The worker sends at its next check
+if eligible content exists. Delivery diagnostics distinguish current items, unscored items,
+eligible updates, score exclusions, age limits, holds, caps and duplicates. A store's first
+collection establishes a baseline, so current listings do not necessarily mean a pending email.
 
 ## Research a question
 

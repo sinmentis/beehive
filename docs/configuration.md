@@ -43,12 +43,21 @@ Keep credentials out of the repository. The server setup passes them in as Podma
 **Email groups**: the **Default email address**, and for each group its channels, recipient and
 **Delivery schedule**. A schedule is either a fixed interval, or selected weekdays at a local
 `HH:MM` time in a timezone such as `Pacific/Auckland`. Each group shows its last check, last send,
-next send and latest error.
+next send and latest error. Schedule forms show a read-only first/next-send forecast before
+saving. New interval groups can be due immediately if content is eligible.
 
-**Each channel**: **What to focus on**, **Fetch schedule**, **Highlights per channel**, **Minimum AI
-score**, its email group and a **Failure alert email**. The schedule is every 3 or 6 hours, or once
-a day at a time in a timezone. A daily fetch keeps to its time: a late run doesn't push the next
-one back, and **Fetch now** doesn't move it.
+**Each channel** uses task tabs. **Organization rules** holds **What to focus on**,
+**Highlights per channel** and **Minimum AI score**. **Sources** manages and tests connections.
+**Email** chooses website-only delivery, an existing group or a new daily email. **Settings**
+holds the name, **Fetch schedule** and **Failure alert email**. The schedule is every 3 or 6 hours,
+or once a day at a time in a timezone. A daily fetch keeps to its time: a late run doesn't push the
+next one back, and **Fetch now** doesn't move it.
+
+New channels remain drafts until **Start this channel**. Existing channels and their schedules
+are unchanged by the upgrade. Saving rules does not rewrite existing results; use **Preview 5
+items** and the separate confirmed **Reprocess existing content** action when needed. These
+operations require the jobs worker. The current score cutoff also filters pending emails, but
+lowering it does not restore previously excluded deliveries.
 
 ## Commands
 
@@ -59,7 +68,7 @@ them for you.
 | --- | --- | --- |
 | `python -m scripts.set_admin_password` | Sets or changes the admin password, and creates the database if it doesn't exist. | Once |
 | `python -m scripts.run_web` | Runs the web app on port 8000, on all network interfaces. | Always on |
-| `python -m scripts.run_jobs` | Runs every background job: each channel's scheduled fetch (a new channel is due at once), **Fetch now**, deep reads, email and reminders. | Always on |
+| `python -m scripts.run_jobs` | Runs active channels' scheduled fetches, **Fetch now**, rule previews/reprocessing, deep reads, email and reminders. Draft channels wait for activation. | Always on |
 | `python -m scripts.run_research_worker` | Runs research sessions and chat replies, and loads the model list. | Always on |
 | `python -m scripts.run_collector --mode fetch` | One fetch pass over every channel that is due, now. | By hand |
 | `python -m scripts.run_collector --mode digest` | One pass of due email groups and research-finished emails, now. | By hand |
@@ -73,7 +82,8 @@ Use the Python in your virtual environment, such as `.venv/bin/python`.
 
 The buttons in the web app only queue work, and the two workers pick it up. Run the web app,
 `scripts.run_jobs` and `scripts.run_research_worker`, and Beehive behaves the same as on a server:
-channels stay current, and **Fetch now**, **Deep read**, research and **Refresh list** all work.
+channels stay current, and **Fetch now**, rule previews/reprocessing, **Deep read**, research and
+**Refresh list** all work.
 The `run_collector` job modes run one pass by hand, which helps when testing a change. They only
 run while the jobs worker is stopped, so the two never fetch the same channel at once. The admin's
 **System** chapter says when the jobs worker last checked in.

@@ -80,7 +80,7 @@
     const selectAll = channelForm.querySelector("[data-channel-select-all]");
     const channelCheckboxes = [
       ...channelForm.querySelectorAll("[data-channel-checkbox]"),
-    ];
+    ].filter(checkbox => !checkbox.disabled);
     const countLabel = channelForm.querySelector(".channel-selection-count");
     const submitButton = channelForm.querySelector("button[type='submit']");
     const countTemplate = channelForm.dataset.selectedTemplate || "__COUNT__";
@@ -143,6 +143,73 @@
     });
   });
 
+  document.querySelectorAll("select[data-source-type]").forEach((select) => {
+    const form = select.closest("form");
+    if (!form) return;
+    const syncSourcePanels = () => {
+      form.querySelectorAll("[data-source-panel]").forEach((panel) => {
+        const active = panel.dataset.sourcePanel === select.value;
+        panel.hidden = !active;
+        if (panel instanceof HTMLFieldSetElement) panel.disabled = !active;
+        panel.querySelectorAll("[data-source-required] input, [data-source-required] textarea, [data-source-required] select").forEach((field) => {
+          field.required = active;
+        });
+      });
+    };
+    select.addEventListener("change", syncSourcePanels);
+    form.addEventListener("reset", () => window.setTimeout(syncSourcePanels, 0));
+    syncSourcePanels();
+  });
+
+  document.querySelectorAll("[data-error-focus]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const id = (link.dataset.errorFocus || link.getAttribute("href") || "").replace(/^#/, "");
+      const field = document.getElementById(id);
+      if (field instanceof HTMLElement) {
+        event.preventDefault();
+        field.focus();
+        field.scrollIntoView({ block: "center" });
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-delivery-builder]").forEach((builder) => {
+    const radios = [...builder.querySelectorAll("[name='delivery_mode']")];
+    const syncDelivery = () => {
+      const mode = radios.find((radio) => radio.checked)?.value || "none";
+      builder.querySelectorAll("[data-delivery-panel]").forEach((panel) => {
+        const active = panel.dataset.deliveryPanel === mode;
+        panel.hidden = !active;
+        panel.querySelectorAll("input, select, textarea").forEach((field) => {
+          field.disabled = !active;
+        });
+        if (mode !== "new") {
+          builder.closest("form")?.querySelectorAll("[data-email-schedule-summary]").forEach(summary => {
+            summary.hidden = true;
+          });
+        }
+      });
+    };
+    radios.forEach((radio) => radio.addEventListener("change", syncDelivery));
+    builder.closest("form")?.addEventListener("reset", () => window.setTimeout(syncDelivery, 0));
+    syncDelivery();
+  });
+
+  const channelWorkspace = document.querySelector("[data-channel-workspace]");
+  if (channelWorkspace) {
+    const legacySections = { "#sources": "sources", "#settings": "settings", "#danger": "settings" };
+    const legacy = legacySections[window.location.hash];
+    if (legacy) {
+      const address = new URL(window.location.href);
+      address.searchParams.set("section", legacy);
+      if (address.hash !== "#danger") address.hash = "";
+      if (address.href !== window.location.href) {
+        window.location.replace(address);
+        return;
+      }
+    }
+  }
+
   document.querySelectorAll("[data-schedule-builder]").forEach((builder) => {
     // The radio group's field name differs per surface (Email Group delivery uses
     // "schedule_mode", Channel fetching "fetch_schedule_mode"), so the builder names its own.
@@ -163,83 +230,157 @@
     syncScheduleFields();
   });
 
-  const shouldRestoreDraft = new URLSearchParams(window.location.search).get("reauth") === "1";
+  const draftKeyFor = (form) => `beehive:draft:${window.location.pathname}:${form.action}`;
+  const isTaskAdmin = document.body.classList.contains("page-admin");
+  const pendingDraftKey = "beehive:draft:submitted";
+  const previewDraftKey = "beehive:draft:previewed";
+  let previewedDraft = "";
+  try {
+    previewedDraft = window.sessionStorage.getItem(previewDraftKey) || "";
+    window.sessionStorage.removeItem(previewDraftKey);
+    const pending = window.sessionStorage.getItem(pendingDraftKey);
+    if (pending && document.querySelector("[data-save-confirmation]")
+      && !document.querySelector("form[data-dirty-force]")) {
+      window.sessionStorage.removeItem(pending);
+    }
+    window.sessionStorage.removeItem(pendingDraftKey);
+  } catch (error) {
+    console.warn("Could not finish saving the form draft", error);
+  }
+
+  const readDraftValues = (form, defaults = false) => {
+    const values = {};
+    [...form.elements].forEach((control) => {
+      if (
+        !(control instanceof HTMLInputElement
+          || control instanceof HTMLTextAreaElement
+          || control instanceof HTMLSelectElement)
+        || !control.name
+        || ["csrf_token", "password", "next"].includes(control.name)
+        || control instanceof HTMLInputElement && ["hidden", "password", "file"].includes(control.type)
+      ) {
+        return;
+      }
+      if (control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type)) {
+        values[control.name] ||= [];
+        if (defaults ? control.defaultChecked : control.checked) {
+          values[control.name].push(control.value);
+        }
+        return;
+      }
+      const value = defaults
+        ? control instanceof HTMLSelectElement
+          ? [...control.options].find((option) => option.defaultSelected)?.value || control.value
+          : control.defaultValue
+        : control.value;
+      if (Object.hasOwn(values, control.name)) {
+        values[control.name] = (
+          Array.isArray(values[control.name])
+            ? [...values[control.name], value]
+            : [values[control.name], value]
+        );
+      } else {
+        values[control.name] = value;
+      }
+    });
+    return values;
+  };
+
   document.querySelectorAll("form[data-preserve-draft]").forEach((form) => {
     if (!(form instanceof HTMLFormElement)) {
       return;
     }
-    const storageKey = `beehive:draft:${window.location.pathname}:${form.action}`;
-    const saveDraft = () => {
-      const values = {};
+    const storageKey = draftKeyFor(form);
+    let baseline = readDraftValues(form, true);
+    const restoreValues = (values) => {
       [...form.elements].forEach((control) => {
         if (
           !(control instanceof HTMLInputElement
             || control instanceof HTMLTextAreaElement
             || control instanceof HTMLSelectElement)
-          || !control.name
-          || ["csrf_token", "password", "next"].includes(control.name)
-          || control instanceof HTMLInputElement && control.type === "file"
-        ) {
-          return;
+          || !control.name || !Object.hasOwn(values, control.name)
+          || control instanceof HTMLInputElement && ["hidden", "password", "file"].includes(control.type)
+        ) return;
+        const value = values[control.name];
+        if (control instanceof HTMLInputElement && ["checkbox", "radio"].includes(control.type)) {
+          control.checked = (Array.isArray(value) ? value : [value]).includes(control.value);
+        } else if (typeof value === "string") {
+          control.value = value;
         }
-        if (
-          control instanceof HTMLInputElement
-          && ["checkbox", "radio"].includes(control.type)
-        ) {
-          if (!Object.hasOwn(values, control.name)) {
-            values[control.name] = [];
-          }
-          if (control.checked) {
-            values[control.name].push(control.value);
-          }
-          return;
-        }
-        const value = control.value;
-        if (Object.hasOwn(values, control.name)) {
-          values[control.name] = (
-            Array.isArray(values[control.name])
-              ? [...values[control.name], value]
-              : [values[control.name], value]
-          );
-        } else {
-          values[control.name] = value;
-        }
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new Event("change", { bubbles: true }));
       });
+    };
+    const saveDraft = () => {
       try {
-        window.sessionStorage.setItem(storageKey, JSON.stringify(values));
+        const values = readDraftValues(form);
+        if (JSON.stringify(values) === JSON.stringify(baseline)
+          && !form.hasAttribute("data-dirty-force")) {
+          window.sessionStorage.removeItem(storageKey);
+        } else {
+          window.sessionStorage.setItem(storageKey, JSON.stringify({ baseline, values }));
+        }
       } catch (error) {
         console.warn("Could not preserve the form draft", error);
       }
     };
 
-    if (shouldRestoreDraft) {
+    const reauth = new URLSearchParams(window.location.search).get("reauth") === "1";
+    if (!form.closest("[hidden]") && (isTaskAdmin || reauth)) {
       try {
         const stored = window.sessionStorage.getItem(storageKey);
-        const values = stored ? JSON.parse(stored) : null;
+        const draft = stored ? JSON.parse(stored) : null;
+        const matchesBaseline = draft?.baseline
+          && JSON.stringify(draft.baseline) === JSON.stringify(baseline);
+        const returnedSubmission = draft?.values && (
+          form.hasAttribute("data-dirty-force") || previewedDraft === storageKey
+        )
+          && JSON.stringify(draft.values) === JSON.stringify(readDraftValues(form));
+        const values = matchesBaseline || returnedSubmission
+          ? draft.values
+          : reauth && draft && !draft.baseline ? draft : null;
+        if (returnedSubmission) {
+          baseline = draft.baseline;
+          form.setAttribute("data-dirty-force", "");
+        }
         if (values && typeof values === "object") {
-          [...form.elements].forEach((control) => {
-            if (
-              !(control instanceof HTMLInputElement
-                || control instanceof HTMLTextAreaElement
-                || control instanceof HTMLSelectElement)
-              || !control.name
-              || !Object.hasOwn(values, control.name)
-            ) {
-              return;
-            }
-            const storedValue = values[control.name];
-            if (
-              control instanceof HTMLInputElement
-              && ["checkbox", "radio"].includes(control.type)
-            ) {
-              const selected = Array.isArray(storedValue) ? storedValue : [storedValue];
-              control.checked = selected.includes(control.value);
-            } else if (typeof storedValue === "string") {
-              control.value = storedValue;
-            }
-            control.dispatchEvent(new Event("input", { bubbles: true }));
-            control.dispatchEvent(new Event("change", { bubbles: true }));
-          });
+          restoreValues(values);
+          const message = form.dataset.draftRestored;
+          if (message) {
+            const notice = document.createElement("p");
+            notice.className = "draft-notice";
+            notice.setAttribute("role", "status");
+            notice.textContent = message;
+            form.prepend(notice);
+          }
+        } else if (draft?.values) {
+          const messages = form.querySelector("[data-draft-messages]");
+          if (messages instanceof HTMLElement) {
+            const notice = document.createElement("div");
+            notice.className = "draft-notice";
+            notice.setAttribute("role", "status");
+            const text = document.createElement("p");
+            text.textContent = messages.dataset.conflict || "";
+            const restore = document.createElement("button");
+            restore.type = "button";
+            restore.className = "btn btn-sm";
+            restore.textContent = messages.dataset.restore || "";
+            restore.addEventListener("click", () => {
+              restoreValues(draft.values);
+              saveDraft();
+              notice.remove();
+            });
+            const discard = document.createElement("button");
+            discard.type = "button";
+            discard.className = "btn btn-sm";
+            discard.textContent = messages.dataset.discard || "";
+            discard.addEventListener("click", () => {
+              window.sessionStorage.removeItem(storageKey);
+              notice.remove();
+            });
+            notice.append(text, restore, discard);
+            form.prepend(notice);
+          }
         }
       } catch (error) {
         console.warn("Could not restore the form draft", error);
@@ -247,7 +388,47 @@
     }
     form.addEventListener("input", saveDraft);
     form.addEventListener("change", saveDraft);
+    if (form.hasAttribute("data-dirty-force")) saveDraft();
+    form.addEventListener("submit", (event) => {
+      saveDraft();
+      form.dataset.submitting = "true";
+      const submitter = event.submitter;
+      const isPreview = submitter instanceof HTMLElement && (
+        submitter.hasAttribute("data-keep-draft")
+        || ["test", "preview"].includes(submitter.getAttribute("value"))
+        || submitter.hasAttribute("formaction")
+      );
+      if (!isTaskAdmin) return;
+      if (isPreview) {
+        try {
+          window.sessionStorage.setItem(previewDraftKey, storageKey);
+        } catch (error) {
+          console.warn("Could not mark the previewed draft", error);
+        }
+      } else {
+        try {
+          window.sessionStorage.setItem(pendingDraftKey, storageKey);
+        } catch (error) {
+          console.warn("Could not mark the submitted draft", error);
+        }
+      }
+    });
   });
+
+  const syncRuleSaveButtons = () => {
+    document.querySelectorAll("[data-save-rules-for]").forEach((button) => {
+      const form = document.getElementById(button.dataset.saveRulesFor);
+      button.disabled = !form || form.dataset.dirty !== "true";
+    });
+    document.querySelectorAll("[data-requires-saved-notice]").forEach((notice) => {
+      const form = document.getElementById(notice.dataset.requiresSavedNotice);
+      notice.hidden = !form || form.dataset.dirty !== "true";
+    });
+    const profile = document.getElementById("channel-profile");
+    document.querySelectorAll("[data-preview-stale]").forEach((notice) => {
+      notice.hidden = !profile || profile.value.trim() === notice.dataset.previewProfile.trim();
+    });
+  };
 
   // Admin forms mark each parameter row the Owner has changed but not saved, and count them in
   // the sticky save bar, so leaving a long settings page never silently drops an edit.
@@ -261,7 +442,7 @@
     // After a rejected save the page shows the submitted values as its defaults, so nothing
     // looks changed. The form is still unsaved: say so, and let "discard" reload the saved page.
     const forced = form.hasAttribute("data-dirty-force");
-    const draftKey = `beehive:draft:${window.location.pathname}:${form.action}`;
+    const draftKey = draftKeyFor(form);
     const controls = [...form.elements].filter((control) => (
       (control instanceof HTMLInputElement
         || control instanceof HTMLTextAreaElement
@@ -298,6 +479,19 @@
         row.dataset.dirty = "";
       });
       const count = dirtyRows.size;
+      form.dataset.dirty = String(forced || controls.some((control) => (
+        isChanged(control) && isShown(control) && !control.disabled
+      )));
+      if (form.hasAttribute("data-save-when-dirty")) {
+        const save = form.querySelector(".savebar .btn-primary");
+        if (save instanceof HTMLButtonElement) save.disabled = form.dataset.dirty !== "true";
+      }
+      document.querySelectorAll("[data-requires-saved-form]").forEach((button) => {
+        if (button instanceof HTMLButtonElement && button.dataset.requiresSavedForm === form.id) {
+          button.disabled = form.dataset.dirty === "true" || button.hasAttribute("data-operation-busy");
+        }
+      });
+      syncRuleSaveButtons();
       if (status instanceof HTMLElement) {
         status.hidden = count === 0 && !forced;
         status.textContent = count === 0 && forced
@@ -316,11 +510,15 @@
         } catch (error) {
           console.warn("Could not clear the form draft", error);
         }
-        window.location.assign(form.getAttribute("action") || window.location.pathname);
+        window.location.assign(form.dataset.resetUrl || form.getAttribute("action") || window.location.pathname);
       });
     }
-    form.addEventListener("input", syncDirtyState);
-    form.addEventListener("change", syncDirtyState);
+    const changed = () => {
+      delete form.dataset.submitting;
+      syncDirtyState();
+    };
+    form.addEventListener("input", changed);
+    form.addEventListener("change", changed);
     // "reset" fires before the browser restores the defaults, so read the state a tick later, and
     // let the schedule builders re-show the panel for the restored mode.
     form.addEventListener("reset", () => window.setTimeout(() => {
@@ -332,6 +530,199 @@
       syncDirtyState();
     }, 0));
     syncDirtyState();
+  });
+
+  window.addEventListener("beforeunload", (event) => {
+    if (!isTaskAdmin) return;
+    const dirty = [...document.querySelectorAll("form[data-dirty-track]")].some((form) => (
+      form.dataset.dirty === "true" && !form.dataset.submitting && !form.closest("[hidden]")
+    ));
+    if (dirty) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      document.querySelectorAll("form[data-dirty-track]").forEach((form) => {
+        delete form.dataset.submitting;
+        form.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+  });
+
+  document.addEventListener("focusin", (event) => {
+    const field = event.target;
+    if (!isTaskAdmin || !(field instanceof HTMLInputElement
+      || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) return;
+    requestAnimationFrame(() => {
+      if (document.activeElement !== field) return;
+      const bar = field.closest("form")?.querySelector(".savebar");
+      if (!bar || !bar.getClientRects().length) return;
+      const inputBox = field.getBoundingClientRect();
+      const barBox = bar.getBoundingClientRect();
+      if (barBox.top < window.innerHeight && inputBox.bottom > barBox.top
+        && inputBox.top < window.innerHeight) {
+        field.scrollIntoView({ block: "center" });
+      }
+    });
+  });
+  const invalidField = document.querySelector("form [aria-invalid='true']:not([disabled])");
+  if (invalidField instanceof HTMLElement && !invalidField.closest("[hidden]")) {
+    invalidField.focus();
+  } else {
+    const sourcePreview = document.getElementById("source-preview");
+    if (sourcePreview) {
+      sourcePreview.focus();
+      sourcePreview.scrollIntoView({ block: "start" });
+    }
+  }
+
+  const syncScorePreview = () => {
+    const cutoff = Number(document.getElementById("minimum-score")?.value || 0);
+    document.querySelectorAll(".rule-operation").forEach((operation) => {
+      const samples = [...operation.querySelectorAll("[data-preview-score]")];
+      const output = operation.querySelector("[data-score-preview-count]");
+      if (output) {
+        const matched = samples.filter(sample => Number(sample.dataset.previewScore) >= cutoff).length;
+        output.textContent = (output.dataset.template || "")
+          .replace("__MATCHED__", String(matched)).replace("__COUNT__", String(samples.length));
+      }
+    });
+  };
+  document.getElementById("minimum-score")?.addEventListener("input", syncScorePreview);
+  syncScorePreview();
+
+  document.querySelectorAll("[data-task-poll]").forEach((operation) => {
+    let failures = 0;
+    let stopped = false;
+    const poll = async () => {
+      if (stopped || !operation.isConnected) return;
+      if (document.hidden || operation.closest("[hidden]")) {
+        window.setTimeout(poll, 5000);
+        return;
+      }
+      try {
+        const response = await fetch(operation.dataset.taskPoll, {
+          credentials: "same-origin", headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error("Progress request failed");
+        const result = await response.json();
+        failures = 0;
+        const progress = operation.querySelector("[data-task-progress]");
+        if (progress && progress.textContent !== result.progress) progress.textContent = result.progress;
+        if (!["queued", "running"].includes(result.status)) {
+          const resultRegion = operation.closest("#ranking-result");
+          if (resultRegion) {
+            const documentFragment = new DOMParser().parseFromString(result.html, "text/html");
+            resultRegion.replaceChildren(...documentFragment.body.childNodes);
+            syncScorePreview();
+            syncRuleSaveButtons();
+          }
+          document.querySelectorAll("[data-operation-busy]").forEach((button) => {
+            button.removeAttribute("data-operation-busy");
+            const form = document.getElementById(button.dataset.requiresSavedForm || "");
+            button.disabled = Boolean(form && form.dataset.dirty === "true");
+          });
+          return;
+        }
+      } catch (error) {
+        failures += 1;
+        if (failures >= 3) {
+          const progress = operation.querySelector("[data-task-progress]");
+          if (progress) progress.textContent = operation.dataset.pollError || "";
+          return;
+        }
+      }
+      window.setTimeout(poll, 2000);
+    };
+    window.addEventListener("pagehide", () => { stopped = true; }, { once: true });
+    window.setTimeout(poll, 1500);
+  });
+
+  document.querySelectorAll("[data-collection-watch]").forEach((workspace) => {
+    let stopped = false;
+    const poll = async () => {
+      if (stopped || !workspace.isConnected) return;
+      try {
+        const response = await fetch(workspace.dataset.collectionWatch, {
+          credentials: "same-origin", headers: { Accept: "application/json" },
+        });
+        if (!response.ok) return;
+        const result = await response.json();
+        const progress = workspace.querySelector("[data-collection-progress]");
+        if (progress) progress.textContent = result.progress;
+        if (!["queued", "running"].includes(result.state)) {
+          workspace.querySelectorAll("[data-fetch-button]").forEach((button) => {
+            button.disabled = false;
+            button.textContent = button.dataset.readyLabel;
+          });
+          const dirty = [...workspace.querySelectorAll("form[data-dirty-track]")].some(form => (
+            form.dataset.dirty === "true" && !form.closest("[hidden]")
+          ));
+          if (!dirty) {
+            const address = new URL(window.location.href);
+            address.searchParams.delete("activated");
+            address.searchParams.delete("fetch_requested");
+            window.location.replace(address);
+          }
+          return;
+        }
+      } catch (error) {
+        return;
+      }
+      window.setTimeout(poll, document.hidden ? 10000 : 2000);
+    };
+    window.addEventListener("pagehide", () => { stopped = true; }, { once: true });
+    window.setTimeout(poll, 1500);
+  });
+
+  document.querySelectorAll("[data-email-schedule-preview]").forEach((builder) => {
+    const output = builder.querySelector("[data-schedule-preview-result]");
+    if (!output) return;
+    let timer;
+    let revision = 0;
+    const refresh = async () => {
+      if (builder.closest("[hidden]")) return;
+      const ownRevision = ++revision;
+      const scope = builder.closest("form") || builder;
+      const mode = builder.dataset.fixedMode
+        || scope.querySelector("[name='schedule_mode']:checked")?.value || "interval";
+      const params = new URLSearchParams({
+        schedule_mode: mode,
+        send_interval_hours: scope.querySelector("[name='send_interval_hours']")?.value || "24",
+        schedule_time: scope.querySelector("[name='schedule_time']")?.value ?? "09:00",
+        schedule_timezone: scope.querySelector("[name='schedule_timezone']")?.value ?? "Pacific/Auckland",
+        schedule_weekdays: scope.querySelector("[name='schedule_weekdays']")
+          ? [...scope.querySelectorAll("[name='schedule_weekdays']:checked")].map(e => e.value).join(",")
+          : "0,1,2,3,4,5,6",
+      });
+      if (builder.dataset.groupId) params.set("group_id", builder.dataset.groupId);
+      try {
+        const response = await fetch(`/admin/email-schedule-preview?${params}`, {
+          credentials: "same-origin", headers: { Accept: "application/json" },
+        });
+        const result = await response.json();
+        if (ownRevision === revision) {
+          output.textContent = result.label || result.error || "";
+          output.classList.toggle("field-error", !response.ok);
+          scope.querySelectorAll("[data-email-schedule-summary]").forEach(summary => {
+            summary.textContent = output.textContent;
+            summary.hidden = !output.textContent;
+            summary.classList.toggle("field-error", !response.ok);
+          });
+        }
+      } catch (error) {
+        if (ownRevision === revision) output.textContent = "";
+      }
+    };
+    const changed = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, 250);
+    };
+    (builder.closest("form") || builder).addEventListener("input", changed);
+    (builder.closest("form") || builder).addEventListener("change", changed);
+    refresh();
   });
 
   // Long one-line values (URLs, queries, address lists) are wrapping textareas, so the whole

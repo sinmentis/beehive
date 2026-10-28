@@ -25,7 +25,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # Raise COMPATIBLE_SCHEMA_VERSION to the new version only when older code cannot safely use the
 # new shape (a dropped or renamed column, a changed meaning). Additive changes leave it alone, so
 # rolling back to an older image keeps working.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 COMPATIBLE_SCHEMA_VERSION = 1
 _COMPATIBLE_VERSION_KEY = "schema_compatible_version"
 
@@ -80,6 +80,11 @@ _COLUMNS_TO_ENSURE = [
     ("channels", "digest_email", "TEXT"),
     ("channels", "last_digest_sent_at", "TEXT"),
     ("channels", "last_digest_date", "TEXT"),
+    (
+        "channels",
+        "setup_stage",
+        "TEXT CHECK (setup_stage IN ('sources', 'rules', 'delivery', 'review'))",
+    ),
     (
         "channels",
         "highlight_count",
@@ -294,13 +299,14 @@ CREATE TABLE channels_kind_migration (
     digest_email TEXT,
     last_digest_sent_at TEXT,
     last_digest_date TEXT,
+    setup_stage TEXT CHECK (setup_stage IN ('sources', 'rules', 'delivery', 'review')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 )
 """
 _CHANNELS_REBUILD_COLUMNS = (
     "id, name, profile, kind, fetch_interval_hours, fetch_schedule_mode, "
     "fetch_schedule_timezone, fetch_schedule_time, highlight_count, minimum_score, "
-    "digest_email, last_digest_sent_at, last_digest_date, created_at"
+    "digest_email, last_digest_sent_at, last_digest_date, setup_stage, created_at"
 )
 # Same column order as above, but defensively fills a NULL created_at (a shape older than the
 # NOT NULL DEFAULT) so the copy into the rebuilt NOT NULL column can never fail. The schedule
@@ -308,7 +314,7 @@ _CHANNELS_REBUILD_COLUMNS = (
 _CHANNELS_REBUILD_SELECT = (
     "id, name, profile, kind, fetch_interval_hours, fetch_schedule_mode, "
     "fetch_schedule_timezone, fetch_schedule_time, highlight_count, minimum_score, "
-    "digest_email, last_digest_sent_at, last_digest_date, "
+    "digest_email, last_digest_sent_at, last_digest_date, setup_stage, "
     "COALESCE(created_at, strftime('%Y-%m-%dT%H:%M:%S', 'now'))"
 )
 

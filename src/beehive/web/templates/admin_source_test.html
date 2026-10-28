@@ -2,17 +2,18 @@
 {% import "_admin_macros.html" as ui with context %}
 {% block title %}{{ t('web.title.source_test', product=t('common.product_name')) }}{% endblock %}
 {% set current_chapter = "channels" %}
-{% set crumbs = [(channel.name, "/admin/channels/" ~ channel.id ~ "/edit"), (t('web.admin.source_test.crumb'), None)] %}
+{% set crumbs = [(channel.name, "/admin/channels/" ~ channel.id ~ "/edit?section=sources"), (t('web.admin.source_test.crumb'), None)] %}
 {% set toc_sections = [("1.1", t('web.admin.source_test.result_heading'), "#result")] if error else [("1.1", t('web.admin.source_test.result_heading'), "#result"), ("1.2", t('web.admin.source_test.preview_heading'), "#preview")] %}
 {% block content %}
 <div class="adm-head">
   <div><h1>{{ t('web.admin.source_test.heading', source=source_label) }}</h1><p class="adm-meta">{{ t('web.admin.source_test.lede') }}</p></div>
   <div class="adm-actions">
+    <a class="btn{{ ' btn-primary' if error }}" href="/admin/sources/{{ source.id }}/edit">{{ t('web.admin.source_edit.heading') }}</a>
     <form method="post" action="/admin/sources/{{ source.id }}/test" data-source-test-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="btn" type="submit">{{ t('web.admin.source_test.again') }}</button>
     </form>
-    <a class="btn" href="/admin/channels/{{ channel.id }}/edit#sources">{{ t('web.admin.source_test.back', channel=channel.name) }}</a>
+    <a class="btn" href="/admin/channels/{{ channel.id }}/edit?section=sources">{{ t('web.admin.source_test.back', channel=channel.name) }}</a>
   </div>
 </div>
 

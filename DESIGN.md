@@ -476,6 +476,30 @@ components:
     width: "560px"
   error-code:
     textColor: "{colors.ink-3}"
+  admin-button:
+    height: "36px"
+  admin-button-small:
+    height: "32px"
+  admin-button-touch:
+    height: "44px"
+  admin-task-tab:
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.control}"
+    padding: "6px 14px"
+    height: "40px"
+  admin-task-tab-current:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.ink}"
+  admin-task-tab-mobile:
+    padding: "6px 10px"
+    height: "44px"
+  admin-task-form:
+    width: "60rem"
+  admin-param-row:
+    padding: "20px 0"
+  admin-savebar:
+    backgroundColor: "{colors.sheet}"
+    padding: "14px 0"
 ---
 
 # Design System: Beehive Datasheet
@@ -486,7 +510,7 @@ components:
 
 **Creative North Star: "The Owner's Datasheet"**
 
-The admin and the Owner's workspace read like a technical datasheet for one person's pipeline, set dark. A graphite sheet lies on a darker desk. A contents rail on the left numbers the chapters. A running head gives the location and the Auckland clock that every schedule is read against, and each section carries a number that matches the rail. Every setting is a parameter row with its value and a note. Every list is a banded table under a heavy ink rule. The density is working density, with 15px body text, 32px controls and hairlines between rows. Nothing is padded out for show.
+Beehive reads like a technical datasheet for one person's pipeline, set dark. A graphite sheet lies on a darker desk. A contents rail numbers the chapters, and a running head gives the location and the Auckland clock that every schedule is read against. The admin Channel workspace separates five persistent tasks, using stacked fields and purposeful tables rather than a long configuration sheet. Legacy parameter forms retain their label, value and note structure. Shared body type remains 15px; admin task controls and spacing are roomier than the reading and research shells.
 
 The workspace is the same sheet with its own rail of two chapters, 1 研究 and 2 关注列表. A research session reads like a notebook. The conclusion is the first turn of a transcript, follow-up questions continue below it, and on a desktop window wider than 1180px a sticky side column shows the source behind a citation. Long AI text sits at a 72ch reading measure, and citations are small blue numbers. The watch list is a banded table of lots by deadline. Each lot's reminder state sits under its deadline, and failed reminders are boxed above the list.
 
@@ -501,7 +525,8 @@ The system refuses the card-grid SaaS console and the chat window, so there are 
 **Key Characteristics:**
 - Graphite sheet on a darker desk, flat and tonal.
 - One document, three shells: the admin (管理), the Owner's workspace (工作区) and the reading pages (阅读), each with its own numbered rail and footer.
-- Every form is a parameter table (参数 | 设置 | 说明) and every list is a banded table under a heavy ink rule.
+- Admin Channel tasks use stacked forms with nearby hints and errors; legacy parameter layouts remain documented below. Lists retain banded tables under a heavy ink rule.
+- Admin ranking saves affect future ranking by default; sample preview and explicitly confirmed reprocessing are separate actions.
 - A research conversation is a transcript with a label column, conclusion first, beside a sticky side column for the cited source.
 - The home page is a channel desk: a numbered section per Channel, its state in the heading and its best rows beneath. Every other reading page is numbered sections too, listed in the rail under its chapter.
 - A story leads with its AI summary. A score is a bare tabular numeral, and unread is a small blue square that is also the read toggle.
@@ -516,6 +541,8 @@ The system refuses the card-grid SaaS console and the chat window, so there are 
 - 2px corners on controls, square containers.
 - Nothing overflows at 390, 1024, 1440, 2560 or 3840px, units never split, and nothing on a reading page is cut short.
 
+**Admin record (2026-10-28).** This is a CODE-LED extension of the existing world, preserving seed `9e52a516`, not a new identity or an approved comp. The update records the finished local Channel, Source, rules and Email implementation. The supplied ship verdict covers eight resolved material corrections, not every admin route. Public reading and research/workspace authority and existing global tokens are unchanged. Capture and validation provenance lives in `.impeccable/surfaces/src-beehive-web-templates-admin-base-html.md`; this is not a deployed-release record.
+
 ## Colors
 
 A restrained graphite palette with three functional signals, and each signal has one meaning.
@@ -525,7 +552,7 @@ A restrained graphite palette with three functional signals, and each signal has
 - **Pale Datasheet Blue** (#A9CEFF): link hover, and hover on names in tables, lot titles, citation numbers and cited titles. On the reading pages it is also the hover on a story's summary, the channel column, the unread square and the best-comment and history disclosures.
 
 ### Secondary
-- **Attention Amber** (#F0B44C): something waits on the Owner. It marks paused sources, warnings, caution notes (注意) and the attention counts on the contents rail, such as failed reminders on 2 关注列表. On the watch list it also marks the deadline of a lot that closes within the hour. A healthy page doesn't show it.
+- **Attention Amber** (#F0B44C): something waits on the Owner. It marks paused sources, warnings, caution notes (注意) and the attention counts on the contents rail, such as failed reminders on 2 关注列表. On the watch list it also marks the deadline of a lot that closes within the hour. Admin state legends may show it on a healthy page to explain the paused mark.
 
 ### Tertiary
 - **Fault Red** (#FF6E61): failure and destruction. It marks failed fetches, failed runs and reminders, a run's failure reason, error lines, danger notes (警告), danger buttons and links, the removal popover, invalid fields and field errors. On the reading pages it also marks a failed deep read's 重试 and a pressed 不相关 toggle, the Owner's rejection of an item.
@@ -549,7 +576,7 @@ A restrained graphite palette with three functional signals, and each signal has
 A few component states use fixed values that are deliberately not tokens: primary hover #FFFFFF, danger link hover #FF9A90, text selection #28507F under white text, the popover backdrop `rgba(5,6,7,.6)`, link underlines at 40% of their link colour, a closed lot's photo in grayscale at 65% opacity, and a read toggle or two-state toggle at 60% opacity while its request runs. Reuse them only in those states.
 
 ### Named Rules
-**The Owner-Needed Rule.** Colour appears only where something needs the Owner. Amber means attention, red means failure, a destructive action or the Owner's own 不相关 once pressed, and blue means a link, focus, an unsaved edit, an unread result or story, a listing's latest change or work in progress. Everything else is ink on graphite, so a healthy page shows no amber, and no red outside its danger rows and pressed 不相关 toggles.
+**The Owner-Needed Rule.** Colour appears only where something needs the Owner. Amber means attention, red means failure, a destructive action or the Owner's own 不相关 once pressed, and blue means a link, focus, an unsaved edit, an unread result or story, a listing's latest change or work in progress. Everything else is ink on graphite. Admin state legends may show amber and red on a healthy page to explain the marks; they are not decoration.
 
 **The Solid Ink Rule.** The primary action is a solid block of ink with dark text. Blue never fills a control, and amber never fills a button.
 
@@ -561,7 +588,7 @@ A few component states use fixed values that are deliberately not tokens: primar
 
 **Display Font:** Archivo, self-hosted variable (weight 100–900, width 62–125%), falling back to the platform CJK sans (PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Microsoft YaHei, then the Japanese and Korean equivalents) and system-ui
 **Body Font:** the same stack
-**Label/Mono Font:** the ui-monospace stack (SF Mono, Cascadia Mono, DejaVu Sans Mono, Menlo, Consolas), for raw errors and the plain-text email preview only
+**Label/Mono Font:** the ui-monospace stack (SF Mono, Cascadia Mono, DejaVu Sans Mono, Menlo, Consolas), for raw errors, plain-text email and the admin's immutable run-rule snapshot
 
 **Character:** One grotesque in several widths and weights, set like a spec sheet. Bold full-width heads name things, and condensed semibold column heads and numbers pack the data.
 
@@ -583,8 +610,10 @@ Archivo covers Latin only. In the zh-CN interface, Chinese text in headings, lab
 - **Caption** (400, 0.78rem/12.5px): secondary lines under table values, the running head, footnote strips, stacked-row labels, error and caution lines, the auction line under a lot and price-fact lines. On the reading pages it also sets the original title under a story's summary, the change line under a price (at 600), the best-comment disclosure, and a story's byline and age on phones.
 - **Tag** (700, 0.7rem/11.2px, 15px line): the outlined tags beside a label, 已修改 on a changed row and the unread tag on a session.
 - **Numeric** (400, 0.875rem/14px, tabular, 88% width): numeric table columns, right-aligned. Scores use it at 600, at 700 for 90 and above and at 400 under 60. Prices and discounts keep full width with tabular figures, and a brief's figure values are 17px at 700 with tabular figures.
-- **Mono** (400, 0.8125rem/13px, 1.75): the plain-text email preview. Raw error text uses 0.75rem at 1.55.
+- **Mono** (400, 0.8125rem/13px, 1.75): the plain-text email preview and the admin's Rules used for this run disclosure. Raw error text uses 0.75rem at 1.55.
 - Rail counts sit at 0.72rem and 700. The rail's quiet tally sits at 0.78rem and 400, and keycaps at 0.72rem and 600. Citation numbers are 0.75rem at 600 with tabular figures, and 0.8125rem where one leads the citation card's title. Footnote references use 0.68rem.
+
+The admin extension reuses this ramp: unnumbered task headings use Title, task tabs use 14px semibold, and field hints and comparison labels use Note-sized text. Preview summaries remain Body-sized. Integer display scores are bare tabular numerals, not a new badge or type scale.
 
 ### Named Rules
 **The Condensed Head Rule.** Width marks data. Column heads, fact labels, transcript labels, side-column box heads, group rows and filter-field labels set at 85% width, and numeric columns and scores at 88%. Headings and body text stay at full width.
@@ -599,9 +628,13 @@ All three shells use one document (`datasheet_base.html`) with two columns, a 21
 
 Because the sheet has no maximum width, what sits on it takes its width from its own content. Prose stops at 72ch. A free-text filter field flexes from 16rem to 40rem, a select stops at 20rem, a multiselect's summary runs from 10rem to 22rem, and the reason field stops at 44rem. Sections that stand alone flow into `.cols`, a grid of as many columns as fit at 60rem or more each (`repeat(auto-fit,minmax(min(100%,60rem),1fr))`) with a 48px gutter, so a lone section takes the full width. Two columns need a sheet about 1970px wide inside its inset, so the home desk shows one Channel per row at 1440, two at 2560 and three at 3840. A news channel sets its top stories beside the rest, an auction channel its watched, ending and upcoming lots, and search its Channels. A long list that has the width to itself splits into two lanes, and sections side by side become lanes of their own (see Lanes).
 
-Every sheet opens with the running head. The location sits on the left (chapter number and name, then crumbs separated by ›) and the Auckland clock on the right, with a 2px ink rule under both and 20px of space below. The page head comes next, with the h1 and its meta line on the left and actions on the right, wrapping under the title when space runs out. Sections follow as numbered heads (N.M, matching the rail's sub-entries), with 32px above and 10px below. A chapter's attention notes come before the list they concern.
+Every sheet opens with the running head. The location sits on the left (chapter number and name, then crumbs separated by ›) and the Auckland clock on the right, with a 2px ink rule under both and 20px of space below. The page head comes next, with the h1 and its meta line on the left and actions on the right, wrapping under the title when space runs out. Legacy sheets use numbered heads (N.M, matching the rail's sub-entries), with 32px above and 10px below. The admin Channel workspace instead uses persistent task navigation and unnumbered task headings. A chapter's attention notes come before the list they concern.
 
 Parameter tables use three columns: label at 140–190px, control fluid, and note at 200–290px. The gutter is 24px, the side inset 10px, and each row has 14px of padding above and below. Controls in a row sit 8px apart and wrap when they run out of room.
+
+**Admin task layout.** The `.page-admin` extension gives the sheet a 22px top inset. Its parameter containers and task forms stop at 60rem; parameter rows stack label, control and note with a 7px gap and 20px vertical padding, without a parameter header band. Notes stop at 74ch. These are selector-scoped overrides, not a claim that every legacy admin form has been rebuilt: existing parameter markup, inline single-setting saves, selection tables and nested schedule rows remain. The shared three-column layout above still applies outside this scope.
+
+Channel task navigation sticks at the viewport top on the sheet tone, 22px below the head. All five links remain visible at 390px, wrapping rather than hiding behind a menu. The main commitment sits in the head or the current form's sticky bottom save bar. Overview facts use three ruled columns with a 24px gap; rule comparisons use two columns with the same gap. Neither is a decorative card grid.
 
 A research session's conclusion page is a notebook. The reading column is fluid, and a 300px side column sits 36px to its right, sticky 16px from the top, with its boxes 18px apart. Inside the reading column the transcript runs as turns, each with a 104px label column and the words 20px beside it, and 16px above and below (20px above the conclusion). A session's four parts (1.1 conclusion and follow-ups, 1.2 evidence, 1.3 sources and plan, 1.4 runs) are separate pages under the same head, listed in the rail as sub-pages, or as tabs under the head at the narrow rule. The watch list puts its attention notes (2.1) above the list (2.2). Irreversible clean-ups (delete the session, clear closed watches) sit at the foot of the page, 36px below the content.
 
@@ -613,11 +646,14 @@ The archive puts its filter bar under the head, then one section per Auckland da
 
 Error and 404 pages skip the shell. One sheet, at most 560px wide, sits centred on the desk as the admin login does.
 
-Breakpoints are container queries, not media queries. Most read the `adm` container (the body), and lanes read each reading table's own box (`ledger`) or a section group's (`cols`).
+Shared shell, reading and research breakpoints are container queries. Most read the `adm` container (the body), and lanes read each reading table's own box (`ledger`) or a section group's (`cols`). The admin extension also has viewport and pointer media queries.
 - **Mid (1180px and below):** the desk margin drops to 8px and the sheet inset to 14px 18px 32px. Table cells take 8px at the sides, no-wrap cells relax, and operation columns wrap. Parameter columns become 120–160px, fluid and 180–240px, with an 18px gutter. The notebook drops to one column. The side column follows the transcript as a static block 28px below it, and its citation box hides, because a citation opens its source in a new tab at this width. On the reading pages a story's summary column drops its minimum width from 20em to 14em, and the channel column from 7em to 5em.
 - **Narrow (880px and below):** the rail becomes a wrapping top bar, with chapters in a row, sub-sections hidden and footer links at the right. The shell's rows become `auto 1fr`, so a short page starts right under the bar. The sheet runs edge to edge without a border at 14px 14px 28px. Parameter rows stack label, control and note, and the head row hides. Banded tables become labelled stacked rows, and notes move their tag above the body. Transcript turns stack, and the label column becomes a wrapping line above the words. A lot photo keeps its 80px square, a gallery sets its plates at 10rem or more (two to a row on a phone), the lot cell leaves 28px on the right for the row checkbox, and the filter form takes a full line under the segments. A research session lists its four pages as a 2×2 tab grid under the page head, and the watch list's select-all moves into the section tools, because the table head is hidden. The reading rail keeps its chapters on one line that scrolls sideways inside the bar. The home page's search takes a full line, its field flexing beside the button, and the keyboard hint hides. Story tables become headline rows rather than labelled rows (see Story Row), while listing and lot tables stack as labelled rows, with the Owner's toggles in a row at the bottom. A filter bar's free-text field takes a full line, and a multiselect's summary drops its maximum width.
 - **Wide (1800px and above):** parameter columns become 160–220px, up to 960px and at least 290px, so a field stops at a comfortable width and the note takes the rest. The notebook's reading column stops at 960px with a 300–440px side column beside it, both held to the left.
 - **Lanes (a table box of 115.5rem, 1848px, and more, in a window at least 40rem tall):** on a reading page every table wrapper is its own size container (`ledger`), so a long story, listing or lot list splits into two lanes when its own box reaches 115.5rem, exactly the width of two 56rem lanes and their 3.5rem gutter, whatever the window. Narrower boxes keep the table, so a table in a section beside another stays a table. A section group (`.cols.lanes`) whose box reaches 123rem, room for two 60rem sections and their gap, makes each of its sections a lane. A shorter window, and print, keep the plain page.
+- **Admin records (viewport 1100px and below):** admin stacking tables become label/value records before the shared narrow breakpoint. Labels are 86px wide inside a 94px indent; rows have 14px vertical padding and operations follow the values.
+- **Admin phone layout (viewport 700px and below):** overview facts and comparisons become one column with an 18px gap; parameter rows take 18px vertical padding. Task links and header buttons have 44px minimum height, and the head's actions take a full line. The shared rail still becomes a top bar at 880px.
+- **Admin touch (`pointer: coarse`):** buttons, small buttons, source-operation links and option labels have 44px minimum height; operation links gain 8px side padding and native checkboxes/radios become 20px. This is a pointer rule, not a promise that every legacy control has a 44px target.
 
 ### Named Rules
 **The No-Overflow Rule.** No text leaves its box at 390, 1024, 1440, 2560 or 3840px, in Chinese or English. Free-length values wrap (one-line fields, break-anywhere cells), and bounded values ellipsize. No layout depends on sideways scrolling. The table wrapper's scroll is a guard, not a layout. The one sideways scroll drawn on purpose is the reading rail's chapter line at the narrow rule, which scrolls inside its bar and never widens the page.
@@ -626,13 +662,15 @@ Breakpoints are container queries, not media queries. Most read the `adm` contai
 
 **The Whole Unit Rule.** In a table a unit never splits, whether it is a count with its word, a day with its time or an email address. Lines break between units, and URLs break only before a slash. At the narrow rule these holds relax so stacked rows can wrap.
 
-**The Stacked Row Rule.** At 880px and below, every multi-column list becomes labelled rows. Each value is led by its column name in a 76px faint-ink label column, the row checkbox moves to the top right, and operations drop to the bottom. Story tables are the exception. A story reads as a headline row, summary first, with its byline, age and deep read beneath, because column labels would outweigh the story. Its toggle and score hang in a lead on the left, and everything else wraps inside the indent, so no wrapped line starts left of the summary.
+**The Stacked Row Rule.** Shared stacking tables become labelled rows at 880px and below; admin stacking tables do so at 1100px. Each value is led by its column name in a faint-ink label column (76px shared, 86px admin), the row checkbox moves to the top right, and operations drop to the bottom. Story tables are the exception. A story reads as a headline row, summary first, with its byline, age and deep read beneath, because column labels would outweigh the story. Its toggle and score hang in a lead on the left, and everything else wraps inside the indent, so no wrapped line starts left of the summary.
 
 **The Side Column Rule.** On a desktop window wider than 1180px, a citation shows its source in the side column beside the text, so checking it never leaves the page. At 1180px and narrower, the side column follows the transcript, its citation box hides, and a citation opens the source in a new tab. A brief's figures and source follow the same widths.
 
 **The Readable Shape Rule.** The sheet has no maximum width, so nothing on it takes its width from the sheet alone. Prose holds 72ch, a free-text field 40rem and a select 20rem, and sections that stand alone flow into columns of at least 60rem rather than stretch.
 
 **The Lane Rule.** On a wide sheet no list makes the reader scroll back up. A long list whose own box is at least 115.5rem (1848px) wide, room for two 56rem lanes and their gutter, splits at its middle row into two lanes, and sections side by side become lanes too. Each lane fits the window below where it starts and scrolls on its own without moving the page or another lane, so the top of the next lane is always in view. The order runs down the first lane, then the second, so reading and keyboard order stay as listed. Narrower boxes keep the table.
+
+**The Five-Task Rule.** In the admin Channel workspace, Overview, Sources, Organization rules, Email and Settings remain visible on desktop and phone. Keep the current task's commitment in its header or save bar; Sources are never buried under the rule profile.
 
 ## Elevation & Depth
 
@@ -650,18 +688,18 @@ The system is flat. Depth is three steps of graphite. The desk sits lowest, the 
 
 ## Shapes
 
-Everything is a rectangle, ruled like a datasheet. Controls and counters take a 2px corner. That covers buttons, two-state toggles, fields, a multiselect and its open checklist with its option rows, rail entries, weekday chips, prefix cells, segmented filters, session tabs, the read toggle, rail counts, keycaps, and the 已修改 and unread tags. The rail's quiet tally is a bare numeral with no box. The sheet, the error sheet, tables, notes, the popover, facts strips, side-column boxes, lot photos, empty states, skeleton lines and code blocks are square. Lines do the structural work. A 2px ink rule sits under the running head. A 1.5px ink rule opens every table, parameter table, selection table, facts strip, transcript and side-column box, and the newest plan. Notes and the popover take 1.5px borders in their tone, and 1px lines in the hairline and rule-stroke tones do everything else. Two 2px rule-stroke bars group things, one on the first cell of grouped evidence rows and one beside an older plan's source list. Controls are outlined apart from all of this, in 1px of the control stroke. Empty states use a dashed rule-stroke border. Two lanes are split by a 1px hairline rule in the middle of their 3.5rem gutter, each opens with the ink rule and each entry closes with a hairline. Gallery plates are square cells of a hairline grid under the ink rule, with no shadow and no corner. State marks are 9px squares, the unread square on a story row is 8px, a two-state toggle's square is 7px, and the citation number in view takes a 1px blue outline at a 1px offset. The one non-rectangular form is the product's hexagon mark from `favicon.svg`, drawn as an 18px stroked outline beside the product name. The favicon itself sets the mark on a tile with 12-unit corners (of 64), an icon convention that sits outside the page's corner rules.
+The sheet is rectangular and ruled like a datasheet. Rectangular controls and counters take a 2px corner. That covers buttons, two-state toggles, fields, a multiselect and its open checklist with its option rows, rail entries, weekday chips, prefix cells, segmented filters, session tabs, the read toggle, rail counts, keycaps, and the 已修改 and unread tags. The rail's quiet tally is a bare numeral with no box. The sheet, the error sheet, tables, notes, the popover, facts strips, side-column boxes, lot photos, empty states, skeleton lines and code blocks are square. Lines do the structural work. A 2px ink rule sits under the running head. A 1.5px ink rule opens tables, legacy parameter tables, selection tables, facts strips, transcripts and side-column boxes, and the newest plan; admin task forms omit the parameter header and top rule. Notes and the popover take 1.5px borders in their tone, and 1px lines in the hairline and rule-stroke tones do everything else. Two 2px rule-stroke bars group things, one on the first cell of grouped evidence rows and one beside an older plan's source list. Controls are outlined apart from all of this, in 1px of the control stroke. Empty states use a dashed rule-stroke border. Two lanes are split by a 1px hairline rule in the middle of their 3.5rem gutter, each opens with the ink rule and each entry closes with a hairline. Gallery plates are square cells of a hairline grid under the ink rule, with no shadow and no corner. State marks are 9px squares, the unread square on a story row is 8px, a two-state toggle's square is 7px, and the citation number in view takes a 1px blue outline at a 1px offset. The product's hexagon mark from `favicon.svg` is drawn as an 18px stroked outline beside the product name. Admin setup also uses circled step numbers to convey sequence, alongside native radio choices; neither changes the rectangular container language. The favicon itself sets the mark on a tile with 12-unit corners (of 64), an icon convention that sits outside the page's corner rules.
 
 ### Named Rules
-**The Two Corner Rule.** Controls, counters, tags and keycaps get 2px, and containers get none. A multiselect's open checklist is part of its control and takes 2px.
+**The Two Corner Rule.** Rectangular controls, counters, tags and keycaps get 2px, and containers get none. A multiselect's open checklist is part of its control and takes 2px. Admin setup step numbers use circles to convey their sequence, not a new container shape.
 
-**The Heavy Ink Rule.** A 1.5px ink rule opens every table, parameter table, transcript and side-column box. Hairlines do everything else.
+**The Heavy Ink Rule.** A 1.5px ink rule opens tables, legacy parameter tables, transcripts and side-column boxes. Admin task forms omit the parameter header and top rule. Hairlines separate their fields.
 
 ## Components
 
 ### Buttons
 Quiet rectangles, labelled in words.
-- **Shape:** 2px corners, 32px tall, 12px sides, never wrapping.
+- **Shape:** 2px corners, 32px minimum height and 12px sides in the shared base. Admin buttons use 36px, small admin buttons 32px, and touch targets 44px as scoped in Layout. Labels do not wrap.
 - **Primary:** a solid block of sheet ink with fill-ink text, brightening to pure white on hover and dimming to the ink rule tone while pressed, by mouse or keyboard. It is reserved for the page's main commitment, such as create, save, sign in, send a test, preview or start a research run, refresh a session, send a follow-up, start a deep read, run a search, or go home from an error page.
 - **Hover / Focus:** colour-only transitions at 150ms ease-out. Focus is the global 2px blue outline at a 2px offset.
 - **Secondary (default):** transparent, with a 1px control-stroke border and ink text. On hover the border moves to secondary ink and the hover wash fills it. Active uses the band.
@@ -671,7 +709,7 @@ Quiet rectangles, labelled in words.
 
 ### Links
 - Links are datasheet blue with a 40% blue underline at a 3px offset. On hover they turn pale blue with a full underline. Danger links are red.
-- Row operations in tables are links, even when they post a form, so five operations (test, edit, pause, copy, remove) stay one quiet line. The workspace does the same for exclude and restore, stop watching and retry a reminder, and sets its older-plan disclosure as a link.
+- Row operations in tables are links, even when they post a form. Admin source operations (test, edit, pause, copy, remove) can wrap within their 17rem operations column and form a touch-sized row under mobile records. The workspace uses links for exclude and restore, stop watching and retry a reminder, and sets its older-plan disclosure as a link.
 - **Title links:** a story's summary is an ink link, like a name in a table. It turns pale blue with an underline on hover and opens the story in a new tab. The ranked list's channel column links to the Channel the same way.
 - **Quiet links:** the home page's counts are links in secondary ink with a rule-stroke underline at a 3px offset, the device a cited title uses. On hover they turn ink with a full underline.
 - **Deep read:** a plain datasheet link in a story row's last cell. 深度阅读 starts one (a form button set as a link) and 打开简报 opens the brief. A running one reads 生成中… in secondary ink with a rule-stroke underline, and a failed one offers a red 重试.
@@ -687,9 +725,9 @@ Quiet rectangles, labelled in words.
 ### Inputs / Fields
 - **Style:** 34px minimum height, 6px 10px padding, a 1px control-stroke border, 2px corners, the recessed field fill, and 15px text at 1.4. Placeholders use faint ink. On hover the border moves to faint ink. Selects, textareas and one-line fields share the same border.
 - **Focus:** the border turns blue and a 1px blue ring doubles it. There is no outline.
-- **Error:** an invalid field takes a red border, and the message sits in the row's note column in red 13px semibold.
+- **Error:** an invalid field takes a red border, and the message uses red 13px semibold. Legacy parameter forms use the note column; stacked admin fields keep hints and errors beside the control in reading order, below it.
 - **Bounded and free-length values:** names, numbers, times and selects are inputs, and input text ellipsizes. Values of any length (URLs, queries, email addresses, subject templates, source names) use the one-line field (`ui.line_field`). It is a one-row textarea that wraps and grows with its content (`field-sizing: content`, with a script fallback). Enter submits the form and pasted line breaks are dropped. Literal values turn off spellcheck, autocapitalize and autocorrect.
-- **Multi-line:** the channel profile is a textarea at least 132px tall at 1.65 line height, growing with its content.
+- **Multi-line:** the shared textarea starts at 132px with 1.65 line height and grows with its content. The admin rule editor instead has a 12rem minimum and 28rem maximum height with internal scrolling and fixed field sizing.
 - **Sizes and variants:** number fields are 96px, time fields 132px, and mid selects up to 260px. Growing fields flex from 220px. Selects draw a 12px chevron in secondary ink. A prefix cell (such as `r/`) joins its field in band fill under the same control-stroke border. Checkboxes and radios are 16px native controls tinted ink. Weekday chips are 30px labels with a control-stroke border, and a checked chip takes a secondary-ink border and band fill.
 - **Workspace sizes:** filter fields drop to 32px to sit level with the segments and buttons. The composer's textarea starts at 92px. The pager's page field is 80px wide and 28px tall.
 - **Reading sizes:** the search field in the head of the home page and of a news channel is 260px wide at 32px, level with its 搜索 button, and flexes to fill its line at the narrow rule. Filter bars, the multiselect and the reason field have their own entries below.
@@ -714,7 +752,7 @@ One outlined control that switches a list's view, such as the watch list's 进�
 - **News channel:** for the Owner, 未读 and 全部 with their counts, 18px under the criteria note. While the Channel is searched, a faint hint (正在搜索“…”) with a 清除 link sits beside the segments, and that hint is all a reader sees.
 
 ### Parameter Table
-The signature form, 参数 | 设置 | 说明 (Parameter | Setting | Notes).
+The retained legacy form, 参数 | 设置 | 说明 (Parameter | Setting | Notes). These dimensions describe the shared base; the `.page-admin` stack is described in Admin Task Layout and below.
 - A 1.5px ink rule sits on top, then an optional band head row in label type over a rule-stroke line. The head row is hidden from assistive tech because every row labels itself.
 - Each row has a 14px semibold label (with an optional 可选 line in faint caption), a control column with 10px between stacked controls, and a 13px secondary-ink note. Fixed values, such as a channel's type, sit in the control column as plain text. A hairline closes each row.
 - A changed row shows the 已修改 tag after its label, a blue outlined 11px bold tag with 2px corners. Radio and checkbox groups carry the tag in their section head instead.
@@ -722,6 +760,39 @@ The signature form, 参数 | 设置 | 说明 (Parameter | Setting | Notes).
 - Single-setting forms (language, model, featured window, default recipient) put their own secondary button in the row instead of a save bar.
 - Workspace forms (new research, source form) use the table without change tracking. There are no 已修改 tags, and the bar holds the primary action, a cancel and a faint hint. The new-research form puts its sources in a selection table between two parameter tables.
 - At 1800px and wider the control column stops at 960px and the note column takes the rest.
+
+### Admin Channel Tasks
+One Channel, five persistent task links; no configuration card grid.
+- **Navigation:** 14px semibold links on the sticky sheet-tone strip, with a hover wash, a banded current task and control-stroke boundary. Shared blue keyboard focus remains visible.
+- **Creation:** choose the immutable type and a name, then continue through Source → Rules → Email → Review/Start. The draft stays paused; collection starts only after explicit Start. Circled step numbers indicate this real sequence.
+- **Review:** show source count and pending state, collection schedule, Email choice, the saved rule summary, score cutoff and highlight cap. Start or Continue stays in the header, including on phone.
+
+### Admin Task Forms and Drafts
+Stacked, task-local fields preserve the parameter form's label/value/explanation relationship.
+- Rules, Email and Settings save independently without overwriting unrelated settings. The sheet-tone save bar has no shadow; changed rows carry blue modified tags and a counted unsaved message.
+- Forms marked for draft preservation keep values in session storage by page path and form action. Normal navigation restores a matching draft; a changed saved baseline offers restore or discard rather than silently replacing server values. Hidden fields, passwords and CSRF tokens are not draft values.
+- Tracked unsaved forms protect navigation with before-unload handling. Failed saves remain unsaved; discard clears the draft and returns to saved values. Focused inputs scroll clear of the sticky footer.
+
+### Source Preflight
+Test the connection before committing it.
+- Source type selects the applicable connection fields. Test connection uses the current unsaved values without saving a Source or collecting items.
+- Results follow Test connection immediately, before the optional display name. The result receives focus and scroll alignment; an invalid field takes priority and keeps its nearby error and recovery message.
+- Source lists retain shape-plus-word state, last fetch, counts and word-labelled operations. Mobile records and touch targets follow the admin rules in Layout.
+
+### Rules Preview and Reprocessing
+Saving, trying and applying are visibly different commitments.
+- Saving the profile affects future ranking, not existing summaries. The cutoff filters current results and pending Email selection; it does not restore already suppressed events.
+- Preview uses up to five eligible existing items without mutating the saved profile, items or delivery state. Compare before/after summaries and integer display scores, with rationale below. Python supplies separate display-score fields; templates do not round, and raw numeric scores remain the cutoff inputs.
+- Show the cutoff sample count with its sample-only qualification, **Edit rules**, **Rules used for this run**, and **Save current rules**. The saved action submits the current editor, not the historical run's profile. An edited profile makes the preview stale; save availability tracks the current draft.
+- Reprocessing sits behind its own disclosure and explicit confirmation. It uses saved rules on unread Editorial items or current listings, preserves history and delivery exclusions, and does not replay sent content. Unsaved-rule feedback and the disabled action stay synchronized, including after polling.
+- Progress, recent operations, refresh and cancellation remain visible. Cancellation stops remaining work but keeps results already applied.
+
+### Channel Email
+Delivery choices stay in the Channel task, with shared scope made explicit.
+- Choose website-only, an existing shared group, or a contextual new daily email. The current group's member count and link to shared-group settings explain that group's scope; a Channel save does not silently reconfigure other Channels.
+- A live first/next-due forecast sits by schedule fields and repeats in the save bar. It describes the schedule, not a guarantee of transport or eligible content.
+- Preview the real HTML email in a sandboxed iframe with a plain-text alternative. Preview and explicit test-send do not consume pending delivery. Diagnostics distinguish current items, waiting ranking, eligible content and source/transport problems.
+- The email document's light canvas and internal styling are embedded output, not additions to the graphite admin palette or a decorative card pattern.
 
 ### Banded Table
 The signature list.
@@ -969,9 +1040,13 @@ The mark and the share images are drawn from the datasheet's own tokens, with no
 - **Share metadata:** every reading page carries a description, `og:site_name`, `og:title` (the page title), `og:description`, `og:type`, the card as `og:image` with its width, height and alt text, and `twitter:card` as `summary_large_image`. A brief is an `article`, and its description is the brief's bottom line, or the story's summary until the brief is ready, cut to 200 characters. Other pages are a `website`. The image URL uses the origin the visitor used, with the scheme from `X-Forwarded-Proto` (http or https only). The pages still send `noindex, nofollow`, so a shared link previews but the pages stay out of search results.
 
 ### Named Rules
-**The Parameter Row Rule.** Every form is a parameter table. The label names the parameter, the control holds the value, and the note says what it does, what is in effect now and what went wrong.
+**The Parameter Row Rule.** Legacy parameter forms keep label, control and note columns. Admin task forms stack the same relationship: the label names the parameter, the control holds the value, and the nearby note says what it does, what is in effect now and what went wrong.
 
 **The Counted Save Rule.** A changed row is tagged 已修改 in blue and counted in the sticky save bar. After a rejected save the bar stays unsaved and says so.
+
+**The Preview-before-Apply Rule.** In admin, testing a Source does not save it, and rule preview leaves saved rules, items and delivery unchanged. Saving rules changes future ranking; updating eligible existing results requires a separate, explicitly confirmed reprocessing action.
+
+**The Saved-Rules Boundary Rule.** Reprocessing uses saved rules, never an unsaved draft. Its disabled state and explanatory notice follow draft changes and polling; cancellation retains results already applied.
 
 **The In-Place Confirmation Rule.** A destructive action opens in place (or, for a source, in a popover) into a confirmation that names what goes, gives the counts and says whether it can be undone. Deleting data is typed. Admin removals, which can be undone for 7 days, ask for the name, and deleting a research session, which can't, asks for the word 删除. A list cleanup that keeps the records behind it, such as clearing closed watches, asks once, in words.
 
@@ -998,7 +1073,8 @@ The mark and the share images are drawn from the datasheet's own tokens, with no
 ## Do's and Don'ts
 
 ### Do:
-- **Do** build every form as a parameter table (参数 | 设置 | 说明) with `ui.param`, and put hints, the value in effect and errors in the note column.
+- **Do** preserve label, value and explanation together: use stacked admin task fields with nearby hints/errors, and retain the documented parameter layout for legacy forms and other shells.
+- **Do** keep admin saves section-local, distinguish preview from reprocessing, and keep draft recovery and unsaved-rule feedback synchronized with the available actions.
 - **Do** use the one-line field (`ui.line_field`) for any value without a length limit, such as URLs, queries, email addresses, subject templates and source names. Keep bounded values as inputs.
 - **Do** keep units whole in table cells with `ui.units`, `ui.keep` and `.nw`, and break URL paths with `ui.url_path`. Mark multi-column list tables to stack at the narrow rule (`.tbl-stack`, with `data-label` on each cell), except story tables, which take `.tbl-feed` and read as headline rows. On a reading page a long list's table also takes `.tbl-lanes` and renders its rows through `rd.lane_rows`, which makes them two lanes on a wide sheet, so keep each row's cells in reading order.
 - **Do** pair every state with a square mark and a word, and add amber or red only when the Owner has to act.
@@ -1022,7 +1098,7 @@ The mark and the share images are drawn from the datasheet's own tokens, with no
 - **Do** re-render the social card from `docs/assets/social-card.html` at both sizes (1200×630 and 1280×640), with the commands in its header comment, whenever the reading design changes. It styles itself with the live `admin.css`, so a shared link never previews a design the site has left behind.
 
 ### Don't:
-- **Don't** build card grids, tiles or dashboards of boxes. Lists are banded tables and settings are parameter rows, and a row of figures is a ruled facts strip. The one grid is a store's or auction's gallery, which the Owner can switch to or from, and it stays a flat ruled plate page.
+- **Don't** build card grids, tiles or dashboards of boxes. Lists are banded tables, admin task settings are stacked fields, legacy settings retain parameter rows, and figures use ruled facts. The one catalogue grid is a store's or auction's gallery, which the Owner can switch to or from, and it stays a flat ruled plate page.
 - **Don't** set a conversation as chat bubbles or cards. Turns are rows with a label column.
 - **Don't** fill a control, tag or mark with blue. The one blue fill is the 8px unread square on a story row. Blue is for links, focus, unsaved edits, unread results and stories, a listing's latest change and work in progress, and the primary action is solid ink.
 - **Don't** use amber or red for emphasis or decoration.

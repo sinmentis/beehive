@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 import re
 
 import pytest
@@ -83,6 +84,7 @@ def test_source_test_uses_bounded_preview_without_persisting_items(
     conn = connect(db_path)
     channel_id = create_channel(conn, "Auctions", "tools", kind="tracker")
     source_id = create_source(conn, channel_id, "all_about_auctions", {})
+    before = tuple(conn.iterdump())
     conn.close()
     calls = []
 
@@ -110,9 +112,8 @@ def test_source_test_uses_bounded_preview_without_persisting_items(
     conn = connect(db_path)
     assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
     assert get_source(conn, source_id)["last_attempt_at"] is None
-    activity = authed_client.get("/admin/?tab=system")
-    assert "Fetched 1 live items in" in activity.text
-    assert "0 Sources · 1 items" not in activity.text
+    assert tuple(conn.iterdump()) == before
+    conn.close()
 
 
 def test_create_source_succeeds_and_redirects(authed_client, db_path):
@@ -130,7 +131,7 @@ def test_create_source_succeeds_and_redirects(authed_client, db_path):
     )
     assert resp.status_code == 303
     assert resp.headers["location"] == (
-        f"/admin/channels/{channel_id}/edit?source_saved=1"
+        f"/admin/channels/{channel_id}/edit?section=sources&source_saved=1"
     )
 
     conn = connect(db_path)
@@ -139,16 +140,21 @@ def test_create_source_succeeds_and_redirects(authed_client, db_path):
     ).fetchone()
     assert row["type"] == "reddit_subreddit"
     assert json.loads(row["config"])["subreddit"] == "PersonalFinanceNZ"
+    assert row["paused_at"] is None
 
 
-def test_create_source_rejects_wrong_csrf(authed_client, db_path):
+@pytest.mark.parametrize("operation", ["save", "test"])
+def test_create_source_rejects_wrong_csrf(authed_client, db_path, operation):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     conn.close()
 
     resp = authed_client.post(
         f"/admin/channels/{channel_id}/sources/new",
-        data={"type": "reddit_subreddit", "subreddit": "xx", "csrf_token": "wrong"},
+        data={
+            "type": "reddit_subreddit", "subreddit": "xx",
+            "csrf_token": "wrong", "operation": operation,
+        },
     )
     assert resp.status_code == 403
 
@@ -167,7 +173,7 @@ def test_delete_source_removes_it_and_redirects_to_parent_channel(
     )
     assert resp.status_code == 303
     assert resp.headers["location"].startswith(
-        f"/admin/channels/{channel_id}/edit?source_removed=1&undo_action="
+        f"/admin/channels/{channel_id}/edit?section=sources&source_removed=1&undo_action="
     )
 
     conn = connect(db_path)
@@ -223,7 +229,7 @@ def test_create_google_news_source_succeeds_and_redirects(authed_client, db_path
     )
     assert resp.status_code == 303
     assert resp.headers["location"] == (
-        f"/admin/channels/{channel_id}/edit?source_saved=1"
+        f"/admin/channels/{channel_id}/edit?section=sources&source_saved=1"
     )
 
     conn = connect(db_path)
@@ -453,7 +459,7 @@ def test_invalid_hackernews_query_preserves_selected_type_and_entered_query(
 
     assert 'value="hackernews_query"' in resp.text
     assert '>python</textarea>' in resp.text
-    assert re.search(r'id="type-hn-query"\s+checked', resp.text)
+    assert re.search(r'id="type-hn-query"\s+selected', resp.text)
 
 
 def test_add_source_page_lists_three_official_options(authed_client, db_path):
@@ -472,14 +478,15 @@ def test_add_source_page_lists_three_official_options(authed_client, db_path):
     assert "Official news from the Reserve Bank of New Zealand." in html
 
 
-def test_official_source_persists_with_empty_config(authed_client, db_path):
+@pytest.mark.parametrize("source_type", ["rbnz_news", "nz_government_news", "federal_reserve_news"])
+def test_official_source_persists_with_empty_config(authed_client, db_path, source_type):
     conn = connect(db_path)
     channel_id = create_channel(conn, "Official", "profile")
     conn.close()
 
     response = authed_client.post(
         f"/admin/channels/{channel_id}/sources/new",
-        data={"type": "rbnz_news", "csrf_token": "csrf1"},
+        data={"type": source_type, "csrf_token": "csrf1"},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -488,7 +495,7 @@ def test_official_source_persists_with_empty_config(authed_client, db_path):
         "SELECT type, config FROM sources WHERE channel_id = ?",
         (channel_id,),
     ).fetchone()
-    assert source["type"] == "rbnz_news"
+    assert source["type"] == source_type
     assert source["config"] == "{}"
 
 
@@ -533,7 +540,7 @@ def test_create_shopify_collection_source_succeeds_and_redirects(
     )
     assert resp.status_code == 303
     assert resp.headers["location"] == (
-        f"/admin/channels/{channel_id}/edit?source_saved=1"
+        f"/admin/channels/{channel_id}/edit?section=sources&source_saved=1"
     )
 
     conn = connect(db_path)
@@ -667,7 +674,7 @@ def test_create_land_sea_collection_source_succeeds_and_redirects(
     )
     assert resp.status_code == 303
     assert resp.headers["location"] == (
-        f"/admin/channels/{channel_id}/edit?source_saved=1"
+        f"/admin/channels/{channel_id}/edit?section=sources&source_saved=1"
     )
 
     conn = connect(db_path)
@@ -972,11 +979,9 @@ def test_add_source_page_for_monitor_channel_lists_only_monitor_types(
     # Editorial and tracker Source types are not offered on a monitor Channel.
     assert 'value="reddit_subreddit"' not in html
     assert 'value="all_about_auctions"' not in html
-    # The Phase 3 (twitter) editorial placeholder is hidden for a monitor Channel too.
-    assert 'class="pick-row is-disabled"' not in html
     # The first compatible type is pre-selected by default.
     assert re.search(
-        r'value="shopify_collection"\s+id="type-shopify"\s+checked', html
+        r'value="shopify_collection"\s+id="type-shopify"\s+selected', html
     )
 
 
@@ -992,7 +997,7 @@ def test_add_source_page_for_tracker_channel_lists_only_all_about_auctions(
     assert 'value="all_about_auctions"' in html
     assert 'value="reddit_subreddit"' not in html
     assert 'value="shopify_collection"' not in html
-    assert 'class="pick-row is-disabled"' not in html
+    assert 'id="source-type"' in html
 
 
 def test_add_source_page_for_editorial_channel_still_lists_editorial_types(
@@ -1008,8 +1013,8 @@ def test_add_source_page_for_editorial_channel_still_lists_editorial_types(
     assert 'value="hackernews_stories"' in html
     assert 'value="shopify_collection"' not in html
     assert 'value="all_about_auctions"' not in html
-    # The editorial Phase 3 (twitter) placeholder is still shown on an editorial Channel.
-    assert 'class="pick-row is-disabled"' in html
+    assert 'id="source-type"' in html
+    assert 'value="twitter_account"' not in html
 
 
 def test_create_source_rejects_incompatible_type_with_localized_400(
@@ -1065,7 +1070,7 @@ def test_edit_source_form_prefills_existing_config_and_name(authed_client, db_pa
 
     assert 'value="PersonalFinanceNZ"' in html
     assert '>Kiwi money</textarea>' in html
-    assert re.search(r'value="reddit_subreddit"\s+id="type-reddit"\s+checked', html)
+    assert re.search(r'value="reddit_subreddit"\s+id="type-reddit"\s+selected', html)
 
 
 def test_edit_source_updates_config_and_redirects(authed_client, db_path):
@@ -1085,7 +1090,7 @@ def test_edit_source_updates_config_and_redirects(authed_client, db_path):
     )
     assert resp.status_code == 303
     assert resp.headers["location"] == (
-        f"/admin/channels/{channel_id}/edit?source_saved=1"
+        f"/admin/channels/{channel_id}/edit?section=sources&source_saved=1"
     )
 
     conn = connect(db_path)
@@ -1133,7 +1138,8 @@ def test_edit_source_rejects_incompatible_type_with_localized_400(authed_client,
     conn.close()
 
 
-def test_edit_source_rejects_wrong_csrf(authed_client, db_path):
+@pytest.mark.parametrize("operation", ["save", "test"])
+def test_edit_source_rejects_wrong_csrf(authed_client, db_path, operation):
     conn = connect(db_path)
     channel_id = create_channel(conn, "NZ Finance", "profile")
     source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "old"})
@@ -1141,7 +1147,10 @@ def test_edit_source_rejects_wrong_csrf(authed_client, db_path):
 
     resp = authed_client.post(
         f"/admin/sources/{source_id}/edit",
-        data={"type": "reddit_subreddit", "subreddit": "new", "csrf_token": "wrong"},
+        data={
+            "type": "reddit_subreddit", "subreddit": "new",
+            "csrf_token": "wrong", "operation": operation,
+        },
     )
     assert resp.status_code == 403
 
@@ -1241,7 +1250,7 @@ def test_pause_source_sets_paused_and_redirects(authed_client, db_path):
         f"/admin/sources/{source_id}/pause", data={"csrf_token": "csrf1"}
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit"
+    assert resp.headers["location"] == f"/admin/channels/{channel_id}/edit?section=sources"
 
     conn = connect(db_path)
     assert get_source(conn, source_id)["paused_at"] is not None
@@ -1516,3 +1525,369 @@ def test_rss_source_is_offered_to_editorial_channels_only(authed_client, db_path
 
     assert 'id="type-rss"' in authed_client.get(f"/admin/channels/{editorial_id}/sources/new").text
     assert 'id="type-rss"' not in authed_client.get(f"/admin/channels/{monitor_id}/sources/new").text
+
+
+class _SourceFormMarkup(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.elements = {}
+        self.controls = {}
+        self.panels = {}
+        self.current_panel = None
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if "id" in attrs:
+            self.elements[attrs["id"]] = attrs
+        if tag == "fieldset" and "data-source-panel" in attrs:
+            self.current_panel = attrs["data-source-panel"]
+            self.panels[self.current_panel] = attrs
+        if tag in {"input", "select", "textarea"} and "id" in attrs:
+            self.controls[attrs["id"]] = (attrs, self.current_panel)
+
+    def handle_endtag(self, tag):
+        if tag == "fieldset":
+            self.current_panel = None
+
+
+def _database_snapshot(db_path):
+    conn = connect(db_path)
+    try:
+        return tuple(conn.iterdump())
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("editing", [False, True])
+@pytest.mark.parametrize("supports_preview", [False, True])
+def test_source_preflight_uses_submitted_values_without_writes(
+    authed_client, db_path, monkeypatch, editing, supports_preview
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "News", "profile", setup_stage="sources")
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "old"}, name="Saved label",
+        paused_at="2026-07-01T00:00:00+00:00",
+    )
+    record_fetch_success(conn, source_id, "2026-06-01T00:00:00+00:00", 12, 4)
+    record_fetch_error(conn, source_id, "Saved failure", "2026-06-02T00:00:00+00:00")
+    conn.close()
+    before = _database_snapshot(db_path)
+    calls = []
+    validator = admin_routes.get_connector("reddit_subreddit").validate_config
+    items = [
+        RawItem(external_id=str(i), title=f"Sample {i}", url=f"https://example.com/{i}")
+        for i in range(13)
+    ]
+    items[0] = RawItem(
+        external_id="unsafe", title="<script>alert(1)</script>", url="javascript:alert(1)"
+    )
+
+    class FetchConnector:
+        validate_config = staticmethod(validator)
+
+        def fetch(self, config):
+            calls.append(("fetch", config))
+            return items
+
+    class PreviewConnector(FetchConnector):
+        def fetch_preview(self, config, *, limit):
+            calls.append(("preview", config, limit))
+            return items
+
+    connector = PreviewConnector() if supports_preview else FetchConnector()
+    monkeypatch.setattr(admin_routes, "get_connector", lambda source_type: connector)
+    path = (
+        f"/admin/sources/{source_id}/edit" if editing
+        else f"/admin/channels/{channel_id}/sources/new"
+    )
+
+    response = authed_client.post(path, data={
+        "csrf_token": "csrf1", "operation": "test", "type": "reddit_subreddit",
+        "subreddit": "fresh", "source_name": "  Draft label  ",
+    })
+
+    assert response.status_code == 200
+    assert calls == [
+        ("preview", {"subreddit": "fresh"}, 10) if supports_preview
+        else ("fetch", {"subreddit": "fresh"})
+    ]
+    assert f'action="{path}"' in response.text
+    assert 'value="fresh"' in response.text
+    assert ">  Draft label  </textarea>" in response.text
+    assert "Sample items: 10. Nothing was saved." in response.text
+    assert 'id="source-preview" tabindex="-1"' in response.text
+    assert response.text.index('id="source-preview"') < response.text.index('id="source-name"')
+    assert "Save and continue" in response.text
+    assert "Sample 9" in response.text and "Sample 10" not in response.text
+    assert 'href="https://example.com/1"' in response.text
+    assert 'href="javascript:' not in response.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in response.text
+    assert "<script>alert(1)</script>" not in response.text
+    assert ("data-dirty-force" in response.text) == editing
+    assert _database_snapshot(db_path) == before
+
+
+@pytest.mark.parametrize("editing", [False, True])
+def test_rss_preflight_resolves_the_draft_without_saving_it(
+    authed_client, db_path, monkeypatch, editing
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Outdoors", "gear")
+    source_id = create_source(
+        conn, channel_id, "rss_feed", {"feed_url": "https://old.example/feed"}, name="Saved"
+    )
+    conn.close()
+    before = _database_snapshot(db_path)
+    calls = []
+    connector = _rss_connector({
+        "https://trail.example/blog": _TRAIL_PAGE,
+        "https://trail.example/feed.xml": _TRAIL_FEED,
+    }, calls)
+    monkeypatch.setattr(admin_routes, "get_connector", lambda source_type: connector)
+    path = (
+        f"/admin/sources/{source_id}/edit" if editing
+        else f"/admin/channels/{channel_id}/sources/new"
+    )
+
+    response = authed_client.post(path, data={
+        "csrf_token": "csrf1", "operation": "test", "type": "rss_feed",
+        "rss_feed_url": " trail.example/blog ", "source_name": "My draft",
+    })
+
+    assert response.status_code == 200
+    assert calls == [
+        "https://trail.example/blog",
+        "https://trail.example/feed.xml",
+        "https://trail.example/feed.xml",
+    ]
+    assert "> trail.example/blog </textarea>" in response.text
+    assert ">My draft</textarea>" in response.text
+    assert 'href="https://trail.example/boots"' in response.text
+    assert "Nothing was saved." in response.text
+    assert _database_snapshot(db_path) == before
+
+
+@pytest.mark.parametrize("editing", [False, True])
+@pytest.mark.parametrize(("kind", "data", "field_id", "entered"), [
+    (
+        "editorial",
+        {"type": "hackernews_query", "hn_query": "python", "hn_sort": "popular"},
+        "hn-sort", "popular",
+    ),
+    (
+        "editorial",
+        {"type": "rss_feed", "rss_feed_url": "ftp://example.com/feed"},
+        "rss-feed-url", "ftp://example.com/feed",
+    ),
+    (
+        "monitor",
+        {
+            "type": "international_clearance", "international_clearance_retailer": "end",
+            "international_clearance_minimum_discount_percent": "not-a-number",
+        },
+        "international-clearance-minimum-discount", "not-a-number",
+    ),
+    (
+        "monitor",
+        {
+            "type": "international_clearance",
+            "international_clearance_retailer": "mytheresa",
+            "international_clearance_minimum_discount_percent": "80",
+        },
+        "international-clearance-minimum-discount", "80",
+    ),
+])
+def test_source_preflight_keeps_invalid_values_and_links_errors_to_active_fields(
+    authed_client, db_path, editing, kind, data, field_id, entered
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Draft", "profile", kind=kind)
+    source_type, config = (
+        ("reddit_subreddit", {"subreddit": "old"}) if kind == "editorial"
+        else ("shopify_collection", {"collection_url": "https://example.com/sale"})
+    )
+    source_id = create_source(conn, channel_id, source_type, config)
+    conn.close()
+    before = _database_snapshot(db_path)
+    path = (
+        f"/admin/sources/{source_id}/edit" if editing
+        else f"/admin/channels/{channel_id}/sources/new"
+    )
+
+    response = authed_client.post(path, data={
+        **data, "csrf_token": "csrf1", "operation": "test", "source_name": "Keep this name",
+    })
+
+    assert response.status_code == 400
+    markup = _SourceFormMarkup(response.text)
+    control = markup.elements[field_id]
+    assert control["aria-invalid"] == "true"
+    assert f"{field_id}-error" in control["aria-describedby"].split()
+    assert "autofocus" in control
+    assert "required" in control
+    assert f"{field_id}-error" in markup.elements
+    assert f'href="#{field_id}"' in response.text
+    assert "hidden" not in markup.panels[data["type"]]
+    assert "disabled" not in markup.panels[data["type"]]
+    assert entered in response.text
+    if field_id == "international-clearance-minimum-discount":
+        assert control["value"] == entered
+        assert control["type"] == ("number" if entered.isdigit() else "text")
+    assert ">Keep this name</textarea>" in response.text
+    assert _database_snapshot(db_path) == before
+
+
+@pytest.mark.parametrize("source_type", ["reddit_subreddit", "unknown", ""])
+def test_source_preflight_rejects_incompatible_or_missing_type_before_fetching(
+    authed_client, db_path, monkeypatch, source_type
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Deals", "profile", kind="monitor")
+    conn.close()
+    before = _database_snapshot(db_path)
+
+    class NoFetchConnector:
+        def fetch(self, config):
+            pytest.fail("An incompatible source must not fetch")
+
+    monkeypatch.setattr(admin_routes, "get_connector", lambda source_type: NoFetchConnector())
+    response = authed_client.post(f"/admin/channels/{channel_id}/sources/new", data={
+        "csrf_token": "csrf1", "operation": "test", "type": source_type, "subreddit": "old",
+    })
+
+    assert response.status_code == 400
+    control = _SourceFormMarkup(response.text).elements["source-type"]
+    assert control["aria-invalid"] == "true"
+    assert "source-type-error" in control["aria-describedby"].split()
+    assert _database_snapshot(db_path) == before
+
+
+@pytest.mark.parametrize("mode", ["new", "edit", "saved"])
+def test_source_preview_failure_preserves_state_and_offers_recovery(
+    authed_client, db_path, monkeypatch, mode
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "News", "profile")
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "old"})
+    record_fetch_error(conn, source_id, "Saved error", "2026-06-01T00:00:00+00:00")
+    conn.close()
+    before = _database_snapshot(db_path)
+    validator = admin_routes.get_connector("reddit_subreddit").validate_config
+
+    class FailedConnector:
+        validate_config = staticmethod(validator)
+
+        def fetch(self, config):
+            raise RuntimeError("The feed is temporarily unavailable.")
+
+    monkeypatch.setattr(admin_routes, "get_connector", lambda source_type: FailedConnector())
+    path = {
+        "new": f"/admin/channels/{channel_id}/sources/new",
+        "edit": f"/admin/sources/{source_id}/edit",
+        "saved": f"/admin/sources/{source_id}/test",
+    }[mode]
+
+    response = authed_client.post(path, data={
+        "csrf_token": "csrf1", "operation": "test", "type": "reddit_subreddit",
+        "subreddit": "fresh",
+    })
+
+    assert response.status_code == 502
+    assert "The feed is temporarily unavailable." in response.text
+    assert f'href="/admin/channels/{channel_id}/edit?section=sources"' in response.text
+    if mode == "saved":
+        assert f'href="/admin/sources/{source_id}/edit"' in response.text
+        assert 'name="csrf_token" value="csrf1"' in response.text
+    else:
+        markup = _SourceFormMarkup(response.text)
+        assert markup.elements["subreddit"]["aria-invalid"] == "true"
+        assert markup.elements["subreddit"]["value"] == "fresh"
+        assert "subreddit-error" in markup.elements["subreddit"]["aria-describedby"].split()
+        assert "without saving the source or collecting items" in response.text
+    assert _database_snapshot(db_path) == before
+
+
+@pytest.mark.parametrize(("kind", "active_type", "required_fields"), [
+    ("editorial", "reddit_subreddit", {"source-type", "subreddit"}),
+    ("monitor", "shopify_collection", {"source-type", "shopify-collection-url"}),
+    ("tracker", "all_about_auctions", {"source-type"}),
+])
+def test_source_form_requires_only_active_fields(
+    authed_client, db_path, kind, active_type, required_fields
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Draft", "profile", kind=kind)
+    conn.close()
+
+    response = authed_client.get(f"/admin/channels/{channel_id}/sources/new")
+
+    assert response.status_code == 200
+    markup = _SourceFormMarkup(response.text)
+    assert {
+        field_id for field_id, (attrs, _) in markup.controls.items() if "required" in attrs
+    } == required_fields
+    for source_type, attrs in markup.panels.items():
+        assert ("hidden" in attrs) == (source_type != active_type)
+        assert ("disabled" in attrs) == (source_type != active_type)
+
+
+@pytest.mark.parametrize("editing", [False, True])
+@pytest.mark.parametrize("stage", ["sources", "delivery"])
+def test_saving_a_setup_source_keeps_it_paused_and_advances_only_forward(
+    authed_client, db_path, editing, stage
+):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Setup", "profile", setup_stage=stage)
+    paused_at = "2026-07-01T00:00:00+00:00"
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "old"}, paused_at=paused_at
+    ) if editing else None
+    conn.close()
+    path = (
+        f"/admin/sources/{source_id}/edit" if editing
+        else f"/admin/channels/{channel_id}/sources/new"
+    )
+
+    response = authed_client.post(path, data={
+        "csrf_token": "csrf1", "type": "reddit_subreddit", "subreddit": "fresh",
+    })
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"/admin/channels/{channel_id}/edit?section=rules&source_saved=1"
+    )
+    conn = connect(db_path)
+    source = dict(conn.execute(
+        "SELECT * FROM sources WHERE channel_id = ?", (channel_id,)
+    ).fetchone())
+    setup_stage = conn.execute(
+        "SELECT setup_stage FROM channels WHERE id = ?", (channel_id,)
+    ).fetchone()[0]
+    conn.close()
+    assert setup_stage == ("rules" if stage == "sources" else stage)
+    assert json.loads(source["config"]) == {"subreddit": "fresh"}
+    assert datetime.fromisoformat(source["paused_at"]).tzinfo == timezone.utc
+    assert source["last_attempt_at"] is None
+    if editing:
+        assert source["paused_at"] == paused_at
+
+
+def test_source_resume_cannot_start_a_pending_setup_channel(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Setup", "profile", setup_stage="sources")
+    source_id = create_source(
+        conn, channel_id, "reddit_subreddit", {"subreddit": "old"},
+        paused_at="2026-07-01T00:00:00+00:00",
+    )
+    conn.close()
+    before = _database_snapshot(db_path)
+
+    response = authed_client.post(
+        f"/admin/sources/{source_id}/resume", data={"csrf_token": "csrf1"}
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/admin/channels/{channel_id}/edit?section=sources"
+    assert _database_snapshot(db_path) == before

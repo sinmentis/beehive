@@ -3,7 +3,7 @@ research, which keeps its own worker (ADR-0009). It replaced the fetch, digest, 
 deep-read timers, the "Fetch now" and deep-read marker files, and their oneshot containers.
 
 === Lanes ===
-Five lanes, each running at most one job at a time on its own thread (collector/threads.py), each
+Six lanes, each running at most one job at a time on its own thread (collector/threads.py), each
 job with its own SQLite connection:
   * manual_fetch: "Fetch now" requests (db/fetch_requests.py), oldest first. The worker holds a
     lease on the request and renews it while the fetch runs.
@@ -13,10 +13,12 @@ job with its own SQLite connection:
     soon as this one ends.
   * deep_read: the oldest pending deep read (db/deep_reads.py), claimed here and processed on the
     thread; its lease is renewed like a fetch request's.
+  * ranking: durable rule previews and explicit existing-item reprocessing, with batch progress
+    and guarded writes. Applies yield between batches. Never shares a Channel with either fetch lane.
   * digest: research completion emails and due Email group digests, every 15 minutes.
   * reminders: due Tracker reminders, every 5 minutes.
 Interval lanes run at start-up too, which catches up after downtime: what is due is database
-state, not the clock. The two fetch lanes never work on the same Channel at once.
+state, not the clock. Fetching and rule jobs never work on the same Channel at once.
 
 === One process at a time ===
 The worker only runs its lanes while it holds the jobs lock (collector/jobs_lock.py), which it
@@ -58,7 +60,13 @@ from datetime import datetime, timezone
 
 from beehive.collector.deep_read_worker import LEASE_SECONDS as DEEP_READ_LEASE_SECONDS
 from beehive.collector.deep_read_worker import claim_next_deep_read
-from beehive.collector.jobs import run_deep_read_job, run_digest_job, run_fetch_job, run_reminder_job
+from beehive.collector.jobs import (
+    run_deep_read_job,
+    run_digest_job,
+    run_fetch_job,
+    run_ranking_job,
+    run_reminder_job,
+)
 from beehive.collector.jobs_lock import JobsLock
 from beehive.collector.jobs_status import LaneStatus, save_status
 from beehive.collector.threads import run_in_thread
@@ -78,6 +86,13 @@ from beehive.db.fetch_requests import (
     heartbeat_fetch_request,
     recover_expired_fetch_requests,
     requeue_fetch_request,
+)
+from beehive.db.ranking_requests import (
+    RankingClaim,
+    claim_next_ranking_request,
+    heartbeat_ranking_request,
+    recover_expired_ranking_requests,
+    requeue_ranking_request,
 )
 from beehive.db.tracker_watches import release_tracker_reminder_claim
 
@@ -107,12 +122,16 @@ class JobsWorkerConfig:
     deep_read_limit_seconds: float = 1800.0
     digest_limit_seconds: float = 1800.0
     reminder_limit_seconds: float = 900.0
+    ranking_lease_seconds: float = 180.0
+    ranking_limit_seconds: float = 3600.0
 
     def __post_init__(self) -> None:
         if not self.db_path:
             raise ValueError("db_path must be non-empty")
         if self.lease_heartbeat_seconds >= self.fetch_lease_seconds:
             raise ValueError("lease_heartbeat_seconds must be shorter than fetch_lease_seconds")
+        if self.lease_heartbeat_seconds >= self.ranking_lease_seconds:
+            raise ValueError("lease_heartbeat_seconds must be shorter than ranking_lease_seconds")
 
 
 class _Lane:
@@ -124,7 +143,7 @@ class _Lane:
         self.renewed_at: datetime | None = None
         self.doing: str | None = None
         self.channel_id: int | None = None
-        self.claim: FetchClaim | DeepRead | None = None
+        self.claim: FetchClaim | DeepRead | RankingClaim | None = None
         # Set from the job's thread once the reminders it is sending are claimed.
         self.reminder_token: str | None = None
         self.last_finished_at: datetime | None = None
@@ -167,6 +186,7 @@ class JobsWorker:
         thread_runner: ThreadRunner = run_in_thread,
         fetch_runner: Callable[..., None] = run_fetch_job,
         deep_read_runner: Callable[..., object] = run_deep_read_job,
+        ranking_runner: Callable[..., object] = run_ranking_job,
         digest_runner: Callable[[str], None] = run_digest_job,
         reminder_runner: Callable[..., None] = run_reminder_job,
         exit_process: Callable[[int], None] = os._exit,
@@ -181,6 +201,7 @@ class JobsWorker:
         self._thread_runner = thread_runner
         self._fetch_runner = fetch_runner
         self._deep_read_runner = deep_read_runner
+        self._ranking_runner = ranking_runner
         self._digest_runner = digest_runner
         self._reminder_runner = reminder_runner
         self._exit_process = exit_process
@@ -188,6 +209,7 @@ class JobsWorker:
         self._lanes = {
             "manual_fetch": _Lane("manual_fetch", config.fetch_limit_seconds),
             "scheduled_fetch": _Lane("scheduled_fetch", config.fetch_limit_seconds),
+            "ranking": _Lane("ranking", config.ranking_limit_seconds),
             "deep_read": _Lane("deep_read", config.deep_read_limit_seconds),
             "digest": _Lane("digest", config.digest_limit_seconds),
             "reminders": _Lane("reminders", config.reminder_limit_seconds),
@@ -264,6 +286,7 @@ class JobsWorker:
             self._recover(conn, now)
         if not self._stopping.is_set():
             self._start_manual_fetch(conn, now)
+            self._start_ranking(conn, now)
             self._start_scheduled_fetch(conn, now)
             self._start_deep_read(conn, now)
             self._start_interval_job(
@@ -291,12 +314,11 @@ class JobsWorker:
         lane = self._lanes["manual_fetch"]
         if lane.busy:
             return
-        scheduled = self._lanes["scheduled_fetch"]
         claim = claim_next_fetch_request(
             conn,
             now,
             lease_seconds=self._config.fetch_lease_seconds,
-            exclude_channel_ids=(scheduled.channel_id,) if scheduled.busy else (),
+            exclude_channel_ids=self._busy_channels("scheduled_fetch", "ranking"),
         )
         if claim is None:
             return
@@ -311,6 +333,33 @@ class JobsWorker:
             on_done=lambda: finish_fetch_request(self._coordinator(), claim, self._clock()),
         )
 
+    def _busy_channels(self, *names: str) -> tuple[int, ...]:
+        return tuple(
+            lane.channel_id for name in names
+            if (lane := self._lanes[name]).busy and lane.channel_id is not None
+        )
+
+    def _start_ranking(self, conn: sqlite3.Connection, now: datetime) -> None:
+        lane = self._lanes["ranking"]
+        if lane.busy:
+            return
+        scheduled = self._lanes["scheduled_fetch"]
+        claim = claim_next_ranking_request(
+            conn, now, lease_seconds=self._config.ranking_lease_seconds,
+            exclude_channel_ids=self._busy_channels("manual_fetch", "scheduled_fetch"),
+            # Give this Channel's waiting collection a turn between apply slices, but do not
+            # hold ranking idle while the scheduled lane is busy on an unrelated Channel.
+            defer_apply_channel_ids=self._sweep if not scheduled.busy else (),
+        )
+        if claim is None:
+            return
+        self._spawn(
+            lane, now,
+            functools.partial(self._ranking_runner, self._config.db_path, claim),
+            doing=f"Channel {claim.channel_id} (rule job, try {claim.attempt})",
+            channel_id=claim.channel_id, claim=claim,
+        )
+
     def _start_scheduled_fetch(self, conn: sqlite3.Connection, now: datetime) -> None:
         lane = self._lanes["scheduled_fetch"]
         slot = _slot(now, self._config.sweep_minutes)
@@ -319,16 +368,24 @@ class JobsWorker:
             self._sweep_again = True
         if lane.busy:
             return
-        if not self._sweep and self._sweep_again:
+        if self._sweep_again:
             self._sweep_again = False
-            self._sweep.extend(channel["id"] for channel in list_channels(conn))
+            # Deferred ranking Channels must not keep the next sweep from admitting other work.
+            pending = set(self._sweep)
+            self._sweep.extend(
+                channel["id"] for channel in list_channels(conn) if channel["id"] not in pending
+            )
             self._last_sweep_started_at = now
             self._status_dirty = True
         manual = self._lanes["manual_fetch"]
-        while self._sweep:
+        ranking = self._lanes["ranking"]
+        for _ in range(len(self._sweep)):
             channel_id = self._sweep.popleft()
             if manual.busy and manual.channel_id == channel_id:
                 continue  # "Fetch now" is fetching it this minute
+            if ranking.busy and ranking.channel_id == channel_id:
+                self._sweep.append(channel_id)
+                continue
             self._spawn(
                 lane,
                 now,
@@ -386,7 +443,7 @@ class JobsWorker:
         *,
         doing: str | None = None,
         channel_id: int | None = None,
-        claim: FetchClaim | DeepRead | None = None,
+        claim: FetchClaim | DeepRead | RankingClaim | None = None,
         on_done: Callable[[], object] | None = None,
     ) -> None:
         lane.started_at = lane.renewed_at = now
@@ -422,7 +479,9 @@ class JobsWorker:
     # -- leases, recovery and limits ---------------------------------------------------------
 
     def _renew_leases(self, conn: sqlite3.Connection, now: datetime) -> None:
-        for lane in (self._lanes["manual_fetch"], self._lanes["deep_read"]):
+        for lane in (
+            self._lanes["manual_fetch"], self._lanes["deep_read"], self._lanes["ranking"],
+        ):
             if not lane.busy or lane.claim is None or lane.renewed_at is None:
                 continue
             if (now - lane.renewed_at).total_seconds() < self._config.lease_heartbeat_seconds:
@@ -431,6 +490,9 @@ class JobsWorker:
             if isinstance(claim, FetchClaim):
                 kept = heartbeat_fetch_request(
                     conn, claim, now, lease_seconds=self._config.fetch_lease_seconds)
+            elif isinstance(claim, RankingClaim):
+                kept = heartbeat_ranking_request(
+                    conn, claim, now, lease_seconds=self._config.ranking_lease_seconds)
             else:
                 kept = heartbeat_deep_read(
                     conn, claim.item_id, claim.request_version, claim.claim_token, now,
@@ -453,6 +515,9 @@ class JobsWorker:
         deep_reads = recover_expired_deep_reads(conn, now)
         if deep_reads:
             self._log(f"[jobs] requeued {deep_reads} deep read(s) after their worker stopped")
+        rankings = recover_expired_ranking_requests(conn, now)
+        if rankings:
+            self._log(f"[jobs] recovered {rankings} interrupted rule job(s)")
         self._last_recover = now
 
     def _release_claims(
@@ -463,6 +528,9 @@ class JobsWorker:
         manual = self._lanes["manual_fetch"]
         if manual.busy and isinstance(manual.claim, FetchClaim):
             requeue_fetch_request(conn, manual.claim, now, failed=manual is stuck)
+        ranking = self._lanes["ranking"]
+        if ranking.busy and isinstance(ranking.claim, RankingClaim):
+            requeue_ranking_request(conn, ranking.claim, now, failed=ranking is stuck)
         deep = self._lanes["deep_read"]
         if deep.busy and isinstance(deep.claim, DeepRead):
             claim = deep.claim

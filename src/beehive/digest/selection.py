@@ -11,9 +11,11 @@ database.
 2. Held: in a snapshot Channel, events from a Source whose data is stale
    (source_health.is_stale) stay open but are left out, because the prices and stock behind them
    are out of date. They go out once the Source recovers, or expire.
-3. Duplicates: an editorial headline already delivered, or already picked for this email, is
+3. Current cutoff: an already-ready event below the Channel's current minimum_score stays open
+   but is not delivered or counted as "more". This does not re-rank items or reopen closed events.
+4. Duplicates: an editorial headline already delivered, or already picked for this email, is
    closed unsent.
-4. Ranked by AI score, newest first on ties. The first highlight_count are delivered; the rest
+5. Ranked by AI score, newest first on ties. The first highlight_count are delivered; the rest
    stay open for a later email (until they expire) and are reported as "N more"."""
 from __future__ import annotations
 
@@ -40,6 +42,7 @@ class ChannelSelection:
     duplicate_ids: list[int]
     held_count: int
     fingerprints: frozenset[Fingerprint]
+    below_cutoff_count: int = 0
 
 
 def _fingerprint_part(value: object) -> str | None:
@@ -109,6 +112,8 @@ def select_channel_events(
     expired_ids: list[int] = []
     eligible: list[dict] = []
     held_count = 0
+    below_cutoff_count = 0
+    minimum_score = channel.get("minimum_score", 0) or 0
     minimum_max_age = delivery_period + DELIVERY_SLACK
     for event in events:
         max_age = definition.event_max_age.get(EmailEventType(event["event_type"]))
@@ -120,6 +125,8 @@ def select_channel_events(
             expired_ids.append(event["id"])
         elif event.get("source_id") in stale_source_ids:
             held_count += 1
+        elif minimum_score > 0 and (event.get("item_ai_score") or 0) < minimum_score:
+            below_cutoff_count += 1
         else:
             eligible.append(event)
 
@@ -152,4 +159,5 @@ def select_channel_events(
         duplicate_ids=duplicate_ids,
         held_count=held_count,
         fingerprints=frozenset(picked),
+        below_cutoff_count=below_cutoff_count,
     )

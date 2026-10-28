@@ -64,7 +64,7 @@ def _assert_source_allowed_for_channel(conn: sqlite3.Connection, channel_id: int
 
 
 def create_source(conn: sqlite3.Connection, channel_id: int, type: str, config: dict,
-                  name: str | None = None) -> int:
+                  name: str | None = None, *, paused_at: str | None = None) -> int:
     """Persist a Source, gating on Source/Channel compatibility first (the persistence safety
     seam): the target Channel's kind is loaded and the shared policy must allow this Source type
     before the INSERT. A missing Channel or an incompatible Source type raises ValueError, so an
@@ -72,8 +72,8 @@ def create_source(conn: sqlite3.Connection, channel_id: int, type: str, config: 
     duplication, a test) asks for it."""
     _assert_source_allowed_for_channel(conn, channel_id, type)
     cur = conn.execute(
-        "INSERT INTO sources (channel_id, type, config, name) VALUES (?, ?, ?, ?)",
-        (channel_id, type, json.dumps(config), _normalized_name(name)))
+        "INSERT INTO sources (channel_id, type, config, name, paused_at) VALUES (?, ?, ?, ?, ?)",
+        (channel_id, type, json.dumps(config), _normalized_name(name), paused_at))
     conn.commit()
     return cur.lastrowid
 

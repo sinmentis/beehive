@@ -6,6 +6,7 @@ on the old shape, because init_schema skips the reconcile once user_version matc
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 
 import pytest
 
@@ -27,6 +28,7 @@ _FINGERPRINTS = {
     3: "29cf7c0842653dda73c9341eb37fc2e347f88702843645fc779debc5c9d2a750",
     4: "db77e1552a75aa61e515ae2a71faca130d39293271adac067d8300ce30f93d2d",
     5: "16c1cda6559fc9703e6607aa2bf83757204fc60629d6e539ae4ce478d76693bd",
+    6: "05f544b1e62d427055a97ead3759cc35cb54037483392a39c30bb1d18519290c",
 }
 
 
@@ -96,6 +98,35 @@ def test_current_database_skips_the_reconcile(conn):
     assert conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'votes'"
     ).fetchone() is None
+
+
+@pytest.mark.parametrize("old_version", [0, 5])
+def test_upgrade_adds_setup_and_ranking_without_changing_existing_channels(conn, old_version):
+    init_schema(conn)
+    conn.execute("INSERT INTO channels (name, profile) VALUES ('Existing', 'Saved rules')")
+    conn.execute("INSERT INTO sources (channel_id, type) VALUES (1, 'rss')")
+    conn.execute("INSERT INTO items (source_id, external_id, title, url, ai_score, is_read) "
+                 "VALUES (1, 'old', 'Kept item', 'https://example.com', 81, 1)")
+    conn.execute("DROP TABLE ranking_request_items")
+    conn.execute("DROP TABLE ranking_requests")
+    conn.execute("ALTER TABLE channels DROP COLUMN setup_stage")
+    conn.execute(f"PRAGMA user_version = {old_version}")
+    conn.commit()
+
+    init_schema(conn)
+
+    channel = dict(conn.execute("SELECT * FROM channels").fetchone())
+    assert channel["setup_stage"] is None
+    assert channel["profile"] == "Saved rules"
+    item = dict(conn.execute("SELECT * FROM items").fetchone())
+    assert (item["id"], item["ai_score"], item["is_read"]) == (1, 81, 1)
+    assert conn.execute("SELECT COUNT(*) FROM ranking_requests").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM ranking_request_items").fetchone()[0] == 0
+    assert schema_version(conn) == SCHEMA_VERSION
+    assert _compatible_version(conn) == COMPATIBLE_SCHEMA_VERSION
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE channels SET setup_stage = 'invalid'")
+    conn.rollback()
 
 
 def test_newer_but_compatible_database_is_used_without_downgrading(conn):

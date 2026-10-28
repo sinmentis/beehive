@@ -126,6 +126,11 @@ deploy/release.sh promote rollback
 
 ## One-time upgrade tasks
 
+The task-based admin requires schema version 6. Use the normal backed-up release migration above.
+It adds nullable draft setup state and durable rule-operation tables; existing channel IDs,
+source configuration, interactions, schedules and email membership remain unchanged. Upgrade the
+web app and jobs worker together: an older worker will not process the new rule queue.
+
 These only apply to an install from an older release. New installs never need them.
 
 ### Move to the jobs worker (ADR-0012)
@@ -322,9 +327,12 @@ fixed interval or selected weekdays plus a local time and IANA timezone. The che
 send and delivery error. It also sends pending Research completion notifications to the
 configured default recipient before evaluating Email Groups.
 
-The Owner can inspect next-due times and delivery failures in Admin, preview current pending
-content, and send a test copy without consuming events. System Health summarizes missing
-recipients and recent delivery errors.
+The Owner can inspect next-due times and delivery failures in Admin, see a first-send forecast
+before saving, preview current pending content as HTML, and send a test copy without consuming
+events or advancing the delivery checkpoint. An empty test sends a diagnostic message; log-only
+transport is not reported as a successful email delivery. Selection and diagnostics both apply
+the current channel score cutoff. Lowering a cutoff does not resurrect suppressed deliveries.
+System Health summarizes missing recipients and recent delivery errors.
 
 ```bash
 journalctl --user -u beehive-jobs.service -n 200 --no-pager | grep -i -e digest -e email
@@ -332,27 +340,38 @@ journalctl --user -u beehive-jobs.service -n 200 --no-pager | grep -i -e digest 
 
 ## Jobs worker (ADR-0012)
 
-`beehive-jobs.container` runs `scripts/run_jobs.py`, one process with five lanes. Each lane runs
+`beehive-jobs.container` runs `scripts/run_jobs.py`, one process with six lanes. Each lane runs
 one job at a time on its own thread:
 
 | Lane | What it runs | When |
 |------|--------------|------|
 | Fetch now | The Channels the admin queued, forced past their schedules | Within 5 seconds of the request |
 | Scheduled fetching | Every Channel in turn; each Source's schedule decides whether it is due | At start-up and every quarter hour |
+| Organization rules | Draft previews and explicit reprocessing of eligible existing items | On each worker poll, with previews first |
 | Deep reads | The oldest queued article brief | Within 5 seconds of the request |
 | Email | Research-completion emails and due Email Group digests | At start-up and every 15 minutes |
 | Reminders | Due Tracker reminders | At start-up and every 5 minutes |
 
-The two fetch lanes never work on the same Channel at once, and only one process runs jobs at a
-time: the worker holds an flock on `beehive.db.jobs.lock` beside the database until it exits, and a
-second worker started against the same database waits until the first stops. A job that
-fails is logged and its lane moves on; the Channel's Sources show the error in the admin. A job
-that runs past its lane's limit (60 minutes for a fetch, 30 for a deep read or an email pass, 15
-for reminders) makes the worker hand back its claims and exit, and systemd restarts it. The stuck
+The two fetch lanes and rule lane never work on the same Channel at once. Draft Channels wait for
+explicit activation. Applies yield after each batch without using failure retries, rotate fairly,
+and allow their Channel's waiting scheduled fetch between batches. Other Channels continue across
+sweep boundaries even while an apply is running.
+
+Only one process runs jobs at a time: the worker holds a file lock (`flock`) on
+`beehive.db.jobs.lock` beside the database until it exits, and a second worker started against the
+same database waits until the first stops. A job that fails is logged and its lane moves on; the
+Channel's Sources show the error in the admin. A job that runs past its lane's limit (60 minutes
+for a fetch or rule batch, 30 for a deep read or an email pass, 15 for reminders) makes the worker
+hand back its claims and exit, and systemd restarts it. The stuck
 job's own claim counts as a failed try: a "Fetch now" request is dropped after three tries, and
 a deep read is marked failed so it can be retried from its page. The admin's **System** chapter
 shows when the worker last checked in, what is waiting, and any lane that has been busy for too
 long.
+
+Rule requests keep progress and leased claims in SQLite. Recovery retries interrupted work;
+cancellation retains results already applied. Profile and content checks prevent stale updates,
+and reprocessing does not create discovery events or resend delivered notifications. A healthy
+apply can span many batches without a total elapsed-time cap.
 
 A Channel whose AI ranking keeps failing sends its **Failure alert email** at most once every six
 hours, however many cycles fail in between.

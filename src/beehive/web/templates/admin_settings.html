@@ -68,12 +68,15 @@
 <form class="channel-bulk-form" method="post" action="/admin/channels/trigger-fetch"
       data-selected-template="{{ t('web.admin.settings.selected_count', count='__COUNT__') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <h2 id="channel-list"><span class="no">1.2</span><span>{{ t('web.admin.channels.list_heading') }}</span>
+  <h2 id="channel-list"><span class="no">1.2</span><span>{{ t('web.admin.channels.list_heading') }}</span></h2>
+  <div class="channel-bulk-tools">
+    <label class="opt"><input type="checkbox" data-channel-select-all aria-label="{{ t('web.admin.settings.select_all') }}">{{ t('web.admin.task.show_all') }}</label>
     <span class="tools"><span class="channel-selection-count" aria-live="polite">{{ t('web.admin.settings.selected_count', count=0) }}</span>
-      <button class="btn btn-sm" type="submit">{{ t('web.admin.channels.fetch_selected') }}</button></span></h2>
+      <button class="btn btn-sm" type="submit">{{ t('web.admin.channels.fetch_selected') }}</button></span>
+  </div>
   <div class="tbl-wrap"><table class="tbl tbl-stack">
     <thead><tr>
-      <th class="c-check"><input type="checkbox" data-channel-select-all aria-label="{{ t('web.admin.settings.select_all') }}"></th>
+      <th class="c-check"><span class="sr-only">{{ t('web.admin.task.show_all') }}</span></th>
       <th>{{ t('web.admin.channels.col_channel') }}</th><th>{{ t('web.admin.settings.kind_column') }}</th>
       <th>{{ t('web.admin.settings.sources_column') }}</th><th>{{ t('web.admin.channels.col_schedule') }}</th>
       <th>{{ t('web.admin.channels.col_last_fetch') }}</th><th>{{ t('web.admin.channels.col_group') }}</th>
@@ -82,12 +85,13 @@
     <tbody>
     {% for channel in channels %}
     <tr>
-      <td class="c-check"><input type="checkbox" name="channel_ids" value="{{ channel.id }}" data-channel-checkbox aria-label="{{ t('web.admin.channels.select_one', channel=channel.name) }}"></td>
+      <td class="c-check"><label class="checkbox-target"><input type="checkbox" name="channel_ids" value="{{ channel.id }}" data-channel-checkbox aria-label="{{ t('web.admin.channels.select_one', channel=channel.name) }}"{{ ' disabled' if channel.setup_stage }}></label></td>
       <td class="c-name"><a href="/admin/channels/{{ channel.id }}/edit">{{ channel.name }}</a>
-        {% if channel.fetch_status_label %}<small class="st {{ 'st-error' if channel.fetch_status_kind == 'stale' else 'st-busy' }}" role="{{ 'alert' if channel.fetch_status_kind == 'stale' else 'status' }}">{{ channel.fetch_status_label }}</small>
+        {% if channel.setup_stage %}<small class="st st-busy">{{ t('web.admin.task.waiting_setup') }}</small>
+        {% elif channel.fetch_status_label %}<small class="st {{ 'st-error' if channel.fetch_status_kind == 'stale' else 'st-busy' }}" role="{{ 'alert' if channel.fetch_status_kind == 'stale' else 'status' }}">{{ channel.fetch_status_label }}</small>
         {% elif triggered == channel.id %}<small class="st st-busy" role="status">{{ t('web.admin.settings.trigger_flash') }}</small>{% endif %}</td>
       <td class="c-keep" data-label="{{ t('web.admin.settings.kind_column') }}">{{ channel.kind_label }}</td>
-      <td data-label="{{ t('web.admin.settings.sources_column') }}"><span class="st st-{{ channel.source_state }}">{{ channel.source_summary }}</span></td>
+      <td data-label="{{ t('web.admin.settings.sources_column') }}"><span class="st st-{{ 'busy' if channel.setup_stage else channel.source_state }}">{{ t('web.admin.task.waiting_setup') if channel.setup_stage else channel.source_summary }}</span></td>
       <td class="c-nw c-sched" data-label="{{ t('web.admin.channels.col_schedule') }}" title="{{ channel.fetch_interval_label }}"><span class="nw">{{ channel.schedule_short }}</span>{% if channel.next_fetch_short %}<small title="{{ t('web.admin.channel_schedule.next_fetch', time=channel.next_fetch_label) }}">{{ ui.keep(t('web.admin.channels.next_short', time=channel.next_fetch_short), channel.next_fetch_short) }}</small>{% endif %}</td>
       <td class="c-nw" data-label="{{ t('web.admin.channels.col_last_fetch') }}" title="{{ channel.freshness_exact_label }}"><span class="nw">{{ channel.last_fetch_relative or t('web.admin.source_state.never') }}</span>{% if channel.fetch_counts_label %}<small>{{ ui.units(channel.fetch_counts_label) }}</small>{% endif %}</td>
       <td class="c-words" data-label="{{ t('web.admin.channels.col_group') }}">{% if channel.group_name %}<a class="lnk" href="/admin/email-groups/{{ channel.group_id }}/edit">{{ channel.group_name }}</a>{% else %}<span class="muted">{{ t('web.admin.channels.no_group') }}</span>{% endif %}</td>
@@ -98,7 +102,7 @@
   </table></div>
 </form>
 <div class="fn"><div class="legend">{% for state in ("ok", "paused", "error", "never") %}<span class="st st-{{ state }}">{{ t('web.admin.source_state.' ~ state) }}</span>{% endfor %}</div>
-  <p>{{ t('web.admin.channels.manual_note') }}</p></div>
+  <p>{{ t('web.admin.task.collection_schedule_hint') }}</p></div>
 {% else %}
 <h2 id="channel-list"><span class="no">1.2</span><span>{{ t('web.admin.channels.list_heading') }}</span></h2>
 <div class="empty"><b>{{ t('web.admin.settings.empty_channels_heading') }}</b>{{ t('web.admin.settings.empty_channels_body') }}

@@ -3,25 +3,43 @@
 {% block title %}{{ t('web.title.channel_edit', product=t('common.product_name'), channel=channel.name) }}{% endblock %}
 {% set current_chapter = "channels" %}
 {% set crumbs = [(channel.name, None)] %}
-{% set toc_sections = [("1.1", t('web.admin.channel_edit.settings_heading'), "#settings"), ("1.2", t('web.admin.channel_edit.sources_heading'), "#sources"), ("1.3", t('web.admin.danger.heading'), "#danger")] %}
+{% set toc_sections = [] %}
 {% block content %}
+{% set workspace_source_summary = t('web.admin.task.pending_sources', count=sources|length) if channel.setup_stage else source_summary %}
+<div class="channel-workspace" data-channel-workspace data-active-section="{{ section }}"{% if fetch_state in ("queued", "running") %} data-collection-watch="/admin/channels/{{ channel.id }}/workspace-status"{% endif %}>
 <div class="adm-head">
   <div><h1>{{ channel.name }}</h1>
-    <p class="adm-meta">{{ kind_display.label }} · {{ source_summary }} · {{ schedule_short }}{% if next_fetch_short %} · {{ t('web.admin.channels.next_short', time=next_fetch_short) }}{% endif %}{% if current_group %} · {{ t('web.admin.channel_edit.meta_group', group=current_group.name) }}{% endif %}</p></div>
+    <p class="adm-meta">{{ kind_display.label }} · {{ workspace_source_summary }} · {{ schedule_short }}</p></div>
   <div class="adm-actions">
-    <a class="btn" href="/channels/{{ channel.id }}">{{ t('web.admin.channel_edit.open_channel') }}</a>
+    {% if not channel.setup_stage %}<a class="btn{{ ' btn-primary' if section == 'overview' and setup.ranked_item_count }}" href="/channels/{{ channel.id }}">{{ t('web.admin.channel_edit.open_channel') }}</a>{% endif %}
+    {% if channel.setup_stage and section == "overview" %}
+    {% if channel.setup_stage == "review" %}
+    <form class="start-channel" method="post" action="/admin/channels/{{ channel.id }}/activate">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-primary" type="submit">{{ t('web.admin.task.start') }}</button>
+    </form>
+    {% else %}
+    <a class="btn btn-primary" href="/admin/channels/{{ channel.id }}/edit?section={{ channel.setup_stage }}">{{ t('web.admin.task.continue') }}</a>
+    {% endif %}
+    {% elif section == "sources" %}
+    <a class="btn btn-primary" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a>
+    {% elif not channel.setup_stage and sources %}
     <form method="post" action="/admin/channels/{{ channel.id }}/trigger-fetch">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit">
-      <button class="btn" type="submit">{{ t('web.admin.channel_edit.fetch_now') }}</button>
+      <input type="hidden" name="return_url" value="/admin/channels/{{ channel.id }}/edit?section={{ section }}">
+      <button class="btn" type="submit" data-fetch-button data-ready-label="{{ t('web.admin.channel_edit.fetch_now') }}"{{ ' disabled' if fetch_state in ("queued", "running") }}>{{ t('web.admin.settings.fetch_queued') if fetch_state == "queued" else t('web.admin.settings.fetch_running') if fetch_state == "running" else t('web.admin.channel_edit.fetch_now') }}</button>
     </form>
-    <form method="post" action="/admin/channels/{{ channel.id }}/duplicate">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn" type="submit">{{ t('web.admin.channel_edit.duplicate') }}</button>
-    </form>
+    {% endif %}
   </div>
 </div>
+<nav class="workspace-tabs" aria-label="{{ t('web.admin.task.navigation') }}">
+  {% for key, label in [("overview", t('web.admin.task.overview')), ("sources", t('web.admin.channel_edit.sources_heading')), ("rules", t('web.admin.task.rules')), ("delivery", t('web.admin.task.delivery')), ("settings", t('web.admin.task.advanced'))] %}
+  <a href="/admin/channels/{{ channel.id }}/edit?section={{ key }}" data-section-link="{{ key }}"{% if section == key %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
 {% if default_error %}{{ ui.flash(t('web.admin.settings.default_recipient_error', error=default_error), 'danger') }}{% endif %}
+{% if workspace_error %}<div id="workspace-error">{{ ui.flash(workspace_error, 'danger') }}</div>{% endif %}
+{% if activated %}{{ ui.flash(t('web.admin.task.activated') if fetch_state else t('web.admin.task.channel_enabled')) }}{% endif %}
 {% if created %}{{ ui.flash(t('web.admin.channel_edit.created')) }}{% endif %}
 {% if saved %}{{ ui.flash(t('web.admin.channel_edit.saved')) }}{% endif %}
 {% if source_saved %}{{ ui.flash(t('web.admin.channel_edit.source_saved')) }}{% endif %}
@@ -48,7 +66,17 @@
 </form></div>
 {% endcall %}</div>
 {% endif %}
-{% if not setup.complete %}
+{% if channel.setup_stage %}
+<div class="setup-path">
+  <h2>{{ t('web.admin.task.setup') }}</h2>
+  <p class="adm-lede">{{ t('web.admin.task.setup_hint') }}</p>
+  <ol>
+    {% for key, label, target in [("sources", t('web.admin.channel_edit.sources_heading'), "sources"), ("rules", t('web.admin.task.rules'), "rules"), ("delivery", t('web.admin.task.delivery'), "delivery"), ("review", t('web.admin.task.review'), "overview")] %}
+    <li><a href="/admin/channels/{{ channel.id }}/edit?section={{ target }}"{% if channel.setup_stage == key %} aria-current="step"{% endif %}><span>{{ loop.index }}</span>{{ label }}</a></li>
+    {% endfor %}
+  </ol>
+</div>
+{% elif not setup.complete %}
 <div class="adm-flash">{% call ui.note('info') %}
 <div class="note-body"><b>{{ t('web.admin.onboarding.heading') }}</b><small>{{ t('web.admin.onboarding.lede') }}</small>
   <ol class="setup-steps">
@@ -71,8 +99,131 @@
 {% endcall %}</div>
 {% endif %}
 
-<h2 id="settings"><span class="no">1.1</span><span>{{ t('web.admin.channel_edit.settings_heading') }}</span></h2>
-<form method="post" action="/admin/channels/{{ channel.id }}/edit" data-preserve-draft data-dirty-track{% if unsaved_submission %} data-dirty-force{% endif %}>
+<section class="workspace-section" data-workspace-section="overview"{% if section != "overview" %} hidden{% endif %}>
+  <div class="workspace-heading"><h2>{{ t('web.admin.task.overview') }}</h2>
+    <a class="btn{{ ' btn-primary' if not sources }}" href="/admin/channels/{{ channel.id }}/edit?section=sources">{{ t('web.admin.task.manage_sources') }}</a></div>
+  <p class="adm-lede" data-collection-progress aria-live="polite">{{ t('web.admin.task.collected', count=setup.item_count, ranked=setup.ranked_item_count) }}</p>
+  {% if setup.item_count > setup.ranked_item_count and not fetch_state %}<p class="form-help">{{ t('web.admin.task.unranked_hint') }} <a class="lnk" href="/admin/?tab=system">{{ t('web.admin.chapter.system') }}</a></p>{% endif %}
+  <dl class="workspace-facts">
+    <div><dt>{{ t('web.admin.channel_edit.sources_heading') }}</dt><dd>{{ workspace_source_summary }}</dd></div>
+    <div><dt>{{ t('web.admin.channel_schedule.heading') }}</dt><dd>{{ schedule_label }}{% if next_fetch_label and not channel.setup_stage %}<small>{{ t('web.admin.channel_schedule.next_fetch', time=next_fetch_label) }}</small>{% endif %}</dd></div>
+    <div><dt>{{ t('web.admin.task.delivery') }}</dt><dd>{% if current_group %}<a class="lnk" href="/admin/channels/{{ channel.id }}/edit?section=delivery">{{ current_group.name }}</a><small>{{ t('web.admin.task.next_email', time=next_email_label) }}</small>{% else %}{{ t('web.admin.task.website_only') }}{% endif %}</dd></div>
+    {% if channel.setup_stage == "review" %}
+    <div class="setup-rule-fact"><dt>{{ t('web.admin.task.rules') }}</dt><dd>{{ channel.profile.splitlines()[0] if channel.profile else '' }}<small>{{ t('web.admin.channel_new.minimum_score_label') }}: {{ channel.minimum_score }} · {{ t('web.admin.channel_new.highlight_count_label') }}: {{ channel.highlight_count }}</small></dd></div>
+    {% endif %}
+  </dl>
+  <div class="workspace-links">
+    <a href="/admin/channels/{{ channel.id }}/edit?section=rules">{{ t('web.admin.task.rules') }}</a>
+    <a href="/admin/channels/{{ channel.id }}/edit?section=delivery">{{ t('web.admin.task.delivery') }}</a>
+    <a href="/admin/channels/{{ channel.id }}/edit?section=settings">{{ t('web.admin.channel_schedule.heading') }}</a>
+  </div>
+</section>
+
+<section class="workspace-section" data-workspace-section="rules"{% if section != "rules" %} hidden{% endif %}>
+  <h2>{{ t('web.admin.task.rules') }}</h2>
+  <p class="adm-lede">{{ t('web.admin.task.rules_hint') }}</p>
+  <form id="channel-rules" class="task-form" method="post" action="/admin/channels/{{ channel.id }}/rules"
+        data-preserve-draft data-dirty-track data-reset-url="/admin/channels/{{ channel.id }}/edit?section=rules"
+        data-draft-restored="{{ t('web.admin.task.draft_restored') }}"{% if not channel.setup_stage %} data-save-when-dirty{% endif %}{% if unsaved_submission and (section == "rules" or legacy_dirty_rules) %} data-dirty-force{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="params">
+      {% call ui.param(t('web.admin.channel_new.profile_label'), for_id="channel-profile", note=kind_display.profile_hint) %}
+      <textarea class="inp rule-editor" id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
+      {% endcall %}
+      {% call ui.param(t('web.admin.channel_new.minimum_score_label'), for_id="minimum-score", note=t('web.admin.task.cutoff_hint')) %}
+      <input class="inp inp-num" id="minimum-score" type="number" name="minimum_score" value="{{ channel.minimum_score }}" min="0" max="100" required>
+      {% endcall %}
+      {% call ui.param(t('web.admin.channel_new.highlight_count_label'), for_id="highlight-count", note=kind_display.highlight_count_hint) %}
+      <input class="inp inp-num" id="highlight-count" type="number" name="highlight_count" value="{{ channel.highlight_count }}" min="1" max="50" required>
+      {% endcall %}
+    </div>
+    {% call ui.savebar(t('web.admin.task.continue') if channel.setup_stage else t('web.admin.channel_edit.save')) %}
+    <button class="btn" type="submit" formaction="/admin/channels/{{ channel.id }}/rules/preview" data-keep-draft{% if ranking_busy and ranking_candidate_count %} data-operation-busy{% endif %}{% if not ranking_candidate_count or ranking_busy %} disabled{% endif %}>{{ t('web.admin.task.preview_rules') }}</button>
+    {% endcall %}
+    <p class="form-help">{{ t('web.admin.task.preview_hint') if ranking_candidate_count else t('web.admin.task.no_candidates') }}</p>
+  </form>
+  <div id="ranking-result" tabindex="-1">{% include "_admin_ranking_result.html" %}</div>
+  {% if ranking_candidate_count and not channel.setup_stage %}
+  <details class="reprocess-action">
+    <summary>{{ t('web.admin.task.reprocess') }}</summary>
+    <p>{{ t('web.admin.task.reprocess_hint', count=ranking_candidate_count) }}</p>
+    <p>{{ t('web.admin.task.scope_unread') if channel.kind == "editorial" else t('web.admin.task.scope_current') }}</p>
+    <form method="post" action="/admin/channels/{{ channel.id }}/rules/apply">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="opt"><input type="checkbox" name="confirmation" value="true" required>{{ t('web.admin.task.reprocess_confirm') }}</label>
+      <button class="btn" type="submit" data-requires-saved-form="channel-rules"{% if ranking_busy %} data-operation-busy disabled{% endif %}>{{ t('web.admin.task.reprocess') }}</button>
+      <p class="form-help" data-requires-saved-notice="channel-rules" hidden>{{ t('web.admin.task.saved_rules_required') }}</p>
+    </form>
+  </details>
+  {% endif %}
+  {% if ranking_requests %}
+  <h3>{{ t('web.admin.task.job_history') }}</h3>
+  <ul class="operation-history">{% for operation in ranking_requests %}
+    <li><a class="lnk" href="/admin/channels/{{ channel.id }}/edit?section=rules&amp;ranking_request={{ operation.id }}">{{ t('web.admin.task.preview_rules') if operation.mode == "preview" else t('web.admin.task.reprocess') }}</a><span><time datetime="{{ operation.created_at }}" title="{{ operation.created_at }}">{{ operation.created_at|short_time }}</time> · {{ t('web.admin.task.job_' ~ operation.status) }}</span></li>
+  {% endfor %}</ul>
+  {% endif %}
+</section>
+
+<section class="workspace-section" data-workspace-section="delivery"{% if section != "delivery" %} hidden{% endif %}>
+  <h2>{{ t('web.admin.task.delivery') }}</h2>
+  <p class="adm-lede">{{ t('web.admin.task.delivery_hint') }}</p>
+  {% if current_group %}
+  <div class="delivery-summary">
+    <h3>{{ current_group.name }}</h3>
+    <p>{{ t('web.admin.task.next_email', time=next_email_label) }}</p>
+    <p>{{ group_recipient or t('web.admin.settings.not_configured') }}</p>
+    <p class="form-help">{{ t('web.admin.task.group_scope', count=group_channel_count) }}</p>
+    <div class="row">
+      <a class="btn" href="/admin/email-groups/{{ current_group.id }}/preview">{{ t('web.admin.email_group.preview_action') }}</a>
+      <a class="lnk" href="/admin/email-groups/{{ current_group.id }}/edit">{{ t('web.admin.task.group_settings') }}</a>
+    </div>
+    {% if delivery_status %}{% include "_admin_delivery_status.html" %}{% endif %}
+  </div>
+  {% endif %}
+  <form class="task-form" method="post" action="/admin/channels/{{ channel.id }}/delivery" data-preserve-draft data-dirty-track
+        data-reset-url="/admin/channels/{{ channel.id }}/edit?section=delivery"
+        data-draft-restored="{{ t('web.admin.task.draft_restored') }}"{% if unsaved_submission and section == "delivery" %} data-dirty-force{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <fieldset class="delivery-choices" data-param-group data-delivery-builder>
+      <legend class="sr-only">{{ t('web.admin.task.delivery') }}</legend>
+      {% for value, label in [("none", t('web.admin.task.website_only')), ("existing", t('web.admin.task.existing_email')), ("new", t('web.admin.task.new_email'))] %}
+      <label class="opt"><input type="radio" name="delivery_mode" value="{{ value }}"{{ " checked" if delivery_form.delivery_mode == value }}>{{ label }}</label>
+      {% endfor %}
+      <div data-delivery-panel="existing">
+        <label for="delivery-group">{{ t('web.admin.channel_edit.group_label') }}</label>
+        <select class="inp" id="delivery-group" name="group_id"{% if workspace_error_field == "delivery-group" %} aria-invalid="true" aria-describedby="workspace-error" autofocus{% endif %}>
+          <option value="">{{ t('web.admin.task.choose_group') }}</option>
+          {% for group in email_groups %}<option value="{{ group.id }}"{{ " selected" if delivery_form.group_id == group.id }}>{{ group.name }} · {{ group.schedule_label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="params" data-delivery-panel="new" data-email-schedule-preview data-fixed-mode="calendar">
+        {% call ui.param(t('web.admin.email_group.name_label'), for_id="new-group-name") %}
+        <input class="inp" id="new-group-name" name="group_name" value="{{ delivery_form.group_name }}"{% if workspace_error_field == "new-group-name" %} aria-invalid="true" aria-describedby="workspace-error" autofocus{% endif %}>
+        {% endcall %}
+        {% call ui.param(t('web.admin.email_group.subject_label'), for_id="new-group-subject") %}
+        {{ ui.line_field("new-group-subject", "subject_template", delivery_form.subject_template) }}
+        {% endcall %}
+        {% call ui.param(t('web.admin.email_group.time_label'), for_id="new-group-time") %}
+        <input class="inp inp-time" type="time" id="new-group-time" name="schedule_time" value="{{ delivery_form.schedule_time }}"{% if workspace_error_field == "new-group-time" %} aria-invalid="true" aria-describedby="workspace-error" autofocus{% endif %}>
+        {% endcall %}
+        {% call ui.param(t('web.admin.email_group.timezone_label'), for_id="new-group-zone") %}
+        <select class="inp" id="new-group-zone" name="schedule_timezone"{% if workspace_error_field == "new-group-zone" %} aria-invalid="true" aria-describedby="workspace-error" autofocus{% endif %}>{% for zone in delivery_timezones %}<option value="{{ zone }}"{{ " selected" if zone == delivery_form.schedule_timezone }}>{{ zone }}</option>{% endfor %}</select>
+        {% endcall %}
+        {% call ui.param(t('web.admin.email_group.recipient_label'), for_id="new-group-recipient", note=t('web.admin.email_group.recipient_hint', email=(default_recipient or t('web.admin.settings.not_configured')))) %}
+        {{ ui.line_field("new-group-recipient", "recipient_email", delivery_form.recipient_email, inputmode="email", autocomplete="email", placeholder=(default_recipient or 'owner@example.com'), invalid=workspace_error_field == "new-group-recipient", describedby="workspace-error" if workspace_error_field == "new-group-recipient" else None, autofocus=workspace_error_field == "new-group-recipient") }}
+        {% endcall %}
+        <p class="schedule-preview" data-schedule-preview-result aria-live="polite"></p>
+      </div>
+    </fieldset>
+    {{ ui.savebar(t('web.admin.task.continue') if channel.setup_stage else t('web.admin.channel_edit.save')) }}
+  </form>
+</section>
+
+<section class="workspace-section" data-workspace-section="settings"{% if section != "settings" %} hidden{% endif %}>
+<h2 id="settings">{{ t('web.admin.task.advanced') }}</h2>
+<form class="task-form" method="post" action="/admin/channels/{{ channel.id }}/settings" data-preserve-draft data-dirty-track
+      data-reset-url="/admin/channels/{{ channel.id }}/edit?section=settings"
+      data-draft-restored="{{ t('web.admin.task.draft_restored') }}"{% if unsaved_submission and section == "settings" %} data-dirty-force{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="params">
     {{ ui.params_head() }}
@@ -81,11 +232,8 @@
     {% endcall %}
     {% set kind_note %}<p>{{ t('web.admin.channel_edit.kind_note') }}</p><p>{{ kind_display.hint }}</p>{% endset %}
     {% call ui.param(t('web.admin.channel_new.kind_label'), note=kind_note, static=True, track=False) %}{{ kind_display.label }}{% endcall %}
-    {% call ui.param(t('web.admin.channel_new.profile_label'), for_id="channel-profile", note=kind_display.profile_hint) %}
-    <textarea class="inp" id="channel-profile" name="profile" required>{{ channel.profile }}</textarea>
-    {% endcall %}
     {% set schedule_note %}<p>{{ t('web.admin.channel_schedule.current_summary', schedule=schedule_label) }}{% if next_fetch_label %} · <b>{{ t('web.admin.channel_schedule.next_fetch', time=next_fetch_label) }}</b>{% endif %}</p>
-      <p>{{ t('web.admin.channel_schedule.hint') }}</p>{% if schedule_error %}<p class="field-error" role="alert">{{ schedule_error }}</p>{% endif %}{% endset %}
+      <p>{{ t('web.admin.task.collection_schedule_hint') }}</p>{% if schedule_error %}<p class="field-error" role="alert">{{ schedule_error }}</p>{% endif %}{% endset %}
     {% call ui.param(t('web.admin.channel_schedule.heading'), note=schedule_note) %}
     <fieldset class="param-ctl" data-schedule-builder="fetch_schedule_mode">
       <legend class="sr-only">{{ t('web.admin.channel_schedule.heading') }}</legend>
@@ -109,12 +257,6 @@
       </div>
     </fieldset>
     {% endcall %}
-    {% call ui.param(t('web.admin.channel_new.highlight_count_label'), for_id="highlight-count", note=kind_display.highlight_count_hint) %}
-    <div class="row"><input class="inp inp-num" id="highlight-count" type="number" name="highlight_count" value="{{ channel.highlight_count }}" min="1" max="50" required><span class="unit">{{ t('web.admin.form.items_unit') }}</span></div>
-    {% endcall %}
-    {% call ui.param(t('web.admin.channel_new.minimum_score_label'), for_id="minimum-score", note=kind_display.minimum_score_hint) %}
-    <div class="row"><input class="inp inp-num" id="minimum-score" type="number" name="minimum_score" value="{{ channel.minimum_score }}" min="0" max="100" required><span class="unit">{{ t('web.admin.form.score_unit') }}</span></div>
-    {% endcall %}
     {% call ui.param(t('web.admin.channel_edit.group_label'), note=t('web.admin.channel_edit.group_hint'), static=True, track=False) %}
     {% if current_group %}<a class="lnk" href="/admin/email-groups/{{ current_group.id }}/edit">{{ current_group.name }}</a>
     {% else %}<span class="muted">{{ t('web.admin.channel_edit.group_none') }}</span> <a class="lnk" href="/admin/?tab=groups">{{ t('web.admin.channel_edit.manage_groups_link') }}</a>{% endif %}
@@ -126,9 +268,21 @@
   </div>
   {{ ui.savebar(t('web.admin.channel_edit.save')) }}
 </form>
+{% if not channel.setup_stage %}<form class="workspace-secondary" method="post" action="/admin/channels/{{ channel.id }}/duplicate">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="btn" type="submit">{{ t('web.admin.channel_edit.duplicate') }}</button>
+</form>{% endif %}
+<h2 id="danger">{{ t('web.admin.danger.heading') }}</h2>
+{{ ui.danger("clear-data", t('web.admin.channel_edit.clear_data_heading'),
+   t('web.admin.channel_edit.clear_data_warning_full', channel=channel.name, items=impact['items']|count(locale), votes=impact.votes|count(locale), deep_reads=impact.deep_reads|count(locale), watches=impact.watches|count(locale), events=impact.events|count(locale)),
+   t('web.admin.channel_edit.clear_data_action'), "/admin/channels/" ~ channel.id ~ "/clear-data", channel.name, t('web.admin.channel_edit.clear_data_confirm_action')) }}
+{{ ui.danger("delete-channel", t('web.admin.channel_edit.delete_heading'),
+   t('web.admin.channel_edit.delete_warning_full', channel=channel.name, sources=impact.sources, items=impact['items']|count(locale), votes=impact.votes|count(locale), deep_reads=impact.deep_reads|count(locale), watches=impact.watches|count(locale), events=impact.events|count(locale)),
+   t('web.admin.channel_edit.delete_action'), "/admin/channels/" ~ channel.id ~ "/delete", channel.name, t('web.admin.channel_edit.delete_confirm_action')) }}
+</section>
 
-<h2 id="sources"><span class="no">1.2</span><span>{{ t('web.admin.channel_edit.sources_count_heading', count=sources|length) }}</span>
-  <span class="tools"><a class="btn btn-sm" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a></span></h2>
+<section class="workspace-section" data-workspace-section="sources"{% if section != "sources" %} hidden{% endif %}>
+<h2 id="sources">{{ t('web.admin.channel_edit.sources_count_heading', count=sources|length) }}</h2>
 {% if sources %}
 <div class="tbl-wrap"><table class="tbl tbl-stack">
   <thead><tr><th>{{ t('web.admin.sources.col_state') }}</th><th>{{ t('web.admin.sources.col_source') }}</th>
@@ -137,7 +291,7 @@
   <tbody>
   {% for source in sources %}
   <tr id="source-{{ source.id }}">
-    <td class="c-nw" data-label="{{ t('web.admin.sources.col_state') }}"><span class="st st-{{ source.state }}">{{ source.state_label }}</span></td>
+    <td class="c-nw" data-label="{{ t('web.admin.sources.col_state') }}"><span class="st st-{{ 'busy' if channel.setup_stage else source.state }}">{{ t('web.admin.task.waiting_setup') if channel.setup_stage else source.state_label }}</span></td>
     <td class="c-name c-wide">
       {% if source.name %}<span class="source-name">{{ source.name }}</span><small>{{ source.type_label }} · {{ source.label }}</small>
       {% else %}<span class="source-name url"><b>{{ source.host }}</b>{{ ui.url_path(source.path) }}</span><small>{{ source.type_label }}</small>{% endif %}
@@ -154,10 +308,10 @@
         <button class="lnk" type="submit">{{ t('web.admin.channel_edit.test_source') }}</button>
       </form>
       <a class="lnk" href="/admin/sources/{{ source.id }}/edit">{{ t('web.admin.channel_edit.edit_source') }}</a>
-      <form class="inline-form" method="post" action="/admin/sources/{{ source.id }}/{{ 'resume' if source.paused else 'pause' }}">
+      {% if not channel.setup_stage %}<form class="inline-form" method="post" action="/admin/sources/{{ source.id }}/{{ 'resume' if source.paused else 'pause' }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="lnk" type="submit">{{ t('web.admin.channel_edit.resume_source') if source.paused else t('web.admin.channel_edit.pause_source') }}</button>
-      </form>
+      </form>{% endif %}
       <button type="button" class="lnk copy-source-btn" data-copy-value="{{ source.copy_value }}"
               data-copy-label="{{ t('web.admin.channel_edit.copy_source') }}"
               data-copied-label="{{ t('web.admin.channel_edit.copy_source_done') }}">{{ t('web.admin.channel_edit.copy_source') }}</button>
@@ -190,12 +344,6 @@
 <div class="empty"><b>{{ t('web.admin.channel_edit.empty_sources_heading') }}</b>{{ t('web.admin.channel_edit.empty_sources_body') }}
   <div><a class="btn btn-primary" href="/admin/channels/{{ channel.id }}/sources/new">{{ t('web.admin.channel_edit.add_source') }}</a></div></div>
 {% endif %}
-
-<h2 id="danger"><span class="no">1.3</span><span>{{ t('web.admin.danger.heading') }}</span></h2>
-{{ ui.danger("clear-data", t('web.admin.channel_edit.clear_data_heading'),
-   t('web.admin.channel_edit.clear_data_warning_full', channel=channel.name, items=impact['items']|count(locale), votes=impact.votes|count(locale), deep_reads=impact.deep_reads|count(locale), watches=impact.watches|count(locale), events=impact.events|count(locale)),
-   t('web.admin.channel_edit.clear_data_action'), "/admin/channels/" ~ channel.id ~ "/clear-data", channel.name, t('web.admin.channel_edit.clear_data_confirm_action')) }}
-{{ ui.danger("delete-channel", t('web.admin.channel_edit.delete_heading'),
-   t('web.admin.channel_edit.delete_warning_full', channel=channel.name, sources=impact.sources, items=impact['items']|count(locale), votes=impact.votes|count(locale), deep_reads=impact.deep_reads|count(locale), watches=impact.watches|count(locale), events=impact.events|count(locale)),
-   t('web.admin.channel_edit.delete_action'), "/admin/channels/" ~ channel.id ~ "/delete", channel.name, t('web.admin.channel_edit.delete_confirm_action')) }}
+</section>
+</div>
 {% endblock %}

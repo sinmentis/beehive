@@ -3,13 +3,23 @@
 {% block title %}{{ t('web.title.channel_new', product=t('common.product_name')) }}{% endblock %}
 {% set current_chapter = "channels" %}
 {% set crumbs = [(t('web.admin.channel_new.heading'), None)] %}
-{% set toc_sections = [("1.1", t('web.admin.channel_new.kind_label'), "#kind"), ("1.2", t('web.admin.channel_edit.settings_heading'), "#settings")] %}
+{% set toc_sections = [] %}
 {% block content %}
-<div class="adm-head"><div><h1>{{ t('web.admin.channel_new.heading') }}</h1><p class="adm-meta">{{ t('web.admin.channel_new.lede') }}</p></div></div>
-<form method="post" action="/admin/channels/new" class="channel-form" data-preserve-draft>
+<div class="adm-head"><div><h1>{{ t('web.admin.channel_new.heading') }}</h1><p class="adm-meta">{{ t('web.admin.task.setup_hint') }}</p></div></div>
+<form method="post" action="/admin/channels/new" class="channel-form task-form" data-preserve-draft data-dirty-track data-draft-restored="{{ t('web.admin.task.draft_restored') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <h2 id="kind"><span class="no">1.1</span><span>{{ t('web.admin.channel_new.kind_label') }}</span></h2>
-  <fieldset>
+  <input type="hidden" name="setup" value="true">
+  <input type="hidden" name="profile" value="{{ profile }}">
+  <input type="hidden" name="fetch_interval_hours" value="{{ fetch_interval_hours }}">
+  <input type="hidden" name="highlight_count" value="{{ highlight_count }}">
+  <input type="hidden" name="minimum_score" value="{{ minimum_score }}">
+  {% if not schedule_error %}
+  <input type="hidden" name="fetch_schedule_mode" value="{{ fetch_schedule_mode }}">
+  <input type="hidden" name="fetch_schedule_timezone" value="{{ fetch_schedule_timezone }}">
+  <input type="hidden" name="fetch_schedule_time" value="{{ fetch_schedule_time }}">
+  {% endif %}
+  <h2 id="kind">{{ t('web.admin.channel_new.kind_label') }}</h2>
+  <fieldset data-param-group>
     <legend class="sr-only">{{ t('web.admin.channel_new.kind_label') }}</legend>
     <div class="pick">
       {% for option in kind_options %}
@@ -20,49 +30,23 @@
   </fieldset>
   <div class="fn"><p>{{ t('web.admin.channel_edit.kind_note') }}</p></div>
 
-  <h2 id="settings"><span class="no">1.2</span><span>{{ t('web.admin.channel_edit.settings_heading') }}</span></h2>
   <div class="params">
-    {{ ui.params_head() }}
-    {% call ui.param(t('web.admin.channel_new.name_label'), for_id="new-channel-name", note=t('web.admin.channel_edit.name_note'), track=False) %}
-    <input class="inp" id="new-channel-name" type="text" name="name" value="{{ name }}" placeholder="{{ t('web.admin.channel_new.name_placeholder') }}" required autocomplete="off">
+    {% call ui.param(t('web.admin.channel_new.name_label'), for_id="new-channel-name", note=t('web.admin.channel_edit.name_note')) %}
+    <input class="inp" id="new-channel-name" type="text" name="name" value="{{ name }}" placeholder="{{ t('web.admin.channel_new.name_placeholder') }}" required autocomplete="off"{% if name_error %} aria-invalid="true" aria-describedby="channel-name-error" autofocus{% endif %}>
+    {% if name_error %}<p class="field-error" id="channel-name-error" role="alert">{{ name_error }}</p>{% endif %}
     {% endcall %}
-    {% set profile_note %}<span class="kind-only-editorial">{{ t('web.admin.channel_new.profile_hint') }}</span><span class="kind-only-monitor">{{ t('web.admin.channel_new.profile_hint_monitor') }}</span><span class="kind-only-tracker">{{ t('web.admin.channel_new.profile_hint_tracker') }}</span>{% endset %}
-    {% call ui.param(t('web.admin.channel_new.profile_label'), for_id="new-channel-profile", note=profile_note, track=False) %}
-    <textarea class="inp" id="new-channel-profile" name="profile" placeholder="{{ t('web.admin.channel_new.profile_placeholder') }}" required>{{ profile }}</textarea>
+    {% if schedule_error %}
+    {% call ui.param(t('web.admin.channel_schedule.heading'), note=schedule_error) %}
+    <label class="opt"><input type="radio" name="fetch_schedule_mode" value="interval"{{ ' checked' if fetch_schedule_mode == "interval" }}>{{ t('web.admin.channel_schedule.interval') }}</label>
+    <label class="opt"><input type="radio" name="fetch_schedule_mode" value="calendar"{{ ' checked' if fetch_schedule_mode == "calendar" }}>{{ t('web.admin.channel_schedule.calendar') }}</label>
+    <label for="new-fetch-time">{{ t('web.admin.channel_schedule.time_label') }}</label>
+    <input class="inp inp-time" id="new-fetch-time" type="time" name="fetch_schedule_time" value="{{ fetch_schedule_time }}" required>
+    <label for="new-fetch-zone">{{ t('web.admin.channel_schedule.timezone_label') }}</label>
+    <input class="inp" id="new-fetch-zone" name="fetch_schedule_timezone" value="{{ fetch_schedule_timezone }}" required>
     {% endcall %}
-    {% set schedule_note %}<p>{{ t('web.admin.channel_schedule.hint') }}</p>{% if schedule_error %}<p class="field-error" role="alert">{{ schedule_error }}</p>{% endif %}{% endset %}
-    {% call ui.param(t('web.admin.channel_schedule.heading'), note=schedule_note, track=False) %}
-    <fieldset class="param-ctl" data-schedule-builder="fetch_schedule_mode">
-      <legend class="sr-only">{{ t('web.admin.channel_schedule.heading') }}</legend>
-      <div class="row">
-        <label class="opt"><input type="radio" name="fetch_schedule_mode" value="interval" {{ "checked" if fetch_schedule_mode == "interval" }}>{{ t('web.admin.channel_schedule.interval') }}</label>
-        <label class="opt"><input type="radio" name="fetch_schedule_mode" value="calendar" {{ "checked" if fetch_schedule_mode == "calendar" }}>{{ t('web.admin.channel_schedule.calendar') }}</label>
-      </div>
-      <div class="row" data-schedule-panel="interval">
-        <label class="field-inline" for="new-fetch-interval">{{ t('web.admin.channel_new.interval_label') }}</label>
-        <select class="inp inp-mid" id="new-fetch-interval" name="fetch_interval_hours">
-          {% for option in fetch_interval_options %}<option value="{{ option.value }}"{{ " selected" if option.selected }}>{{ option.label }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="row" data-schedule-panel="calendar">
-        <label class="field-inline" for="new-fetch-time">{{ t('web.admin.channel_schedule.time_label') }}</label>
-        <input class="inp inp-time" id="new-fetch-time" type="time" name="fetch_schedule_time" value="{{ fetch_schedule_time }}">
-        <label class="field-inline" for="new-fetch-timezone">{{ t('web.admin.channel_schedule.timezone_label') }}</label>
-        <select class="inp inp-mid" id="new-fetch-timezone" name="fetch_schedule_timezone">
-          {% for timezone in schedule_timezones %}<option value="{{ timezone }}"{{ " selected" if timezone == fetch_schedule_timezone }}>{{ timezone }}</option>{% endfor %}
-        </select>
-      </div>
-    </fieldset>
-    {% endcall %}
-    {% set highlight_note %}<span class="kind-only-editorial">{{ t('web.admin.channel_new.highlight_count_hint') }}</span><span class="kind-only-monitor">{{ t('web.admin.channel_new.highlight_count_hint_monitor') }}</span><span class="kind-only-tracker">{{ t('web.admin.channel_new.highlight_count_hint_tracker') }}</span>{% endset %}
-    {% call ui.param(t('web.admin.channel_new.highlight_count_label'), for_id="new-highlight-count", note=highlight_note, track=False) %}
-    <div class="row"><input class="inp inp-num" id="new-highlight-count" type="number" name="highlight_count" value="{{ highlight_count }}" min="1" max="50" required><span class="unit">{{ t('web.admin.form.items_unit') }}</span></div>
-    {% endcall %}
-    {% set minimum_note %}<span class="kind-only-editorial">{{ t('web.admin.channel_new.minimum_score_hint') }}</span><span class="kind-only-monitor">{{ t('web.admin.channel_new.minimum_score_hint_monitor') }}</span><span class="kind-only-tracker">{{ t('web.admin.channel_new.minimum_score_hint_tracker') }}</span>{% endset %}
-    {% call ui.param(t('web.admin.channel_new.minimum_score_label'), for_id="new-minimum-score", note=minimum_note, track=False) %}
-    <div class="row"><input class="inp inp-num" id="new-minimum-score" type="number" name="minimum_score" value="{{ minimum_score }}" min="0" max="100" required><span class="unit">{{ t('web.admin.form.score_unit') }}</span></div>
-    {% endcall %}
+    {% endif %}
   </div>
-  {{ ui.savebar(t('web.admin.channel_new.submit'), cancel_url="/admin/") }}
+  {% if schedule_error %}{{ ui.flash(schedule_error, 'danger') }}{% endif %}
+  {{ ui.savebar(t('web.admin.task.continue'), cancel_url="/admin/") }}
 </form>
 {% endblock %}

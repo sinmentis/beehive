@@ -147,6 +147,7 @@ def _build_admin_channel_rows(
             {
                 "id": channel["id"],
                 "name": channel["name"],
+                "setup_stage": channel.get("setup_stage"),
                 "kind": kind.value,
                 "kind_label": _channel_kind_label(kind, t),
                 "source_count": len(sources),
@@ -154,8 +155,8 @@ def _build_admin_channel_rows(
                 "source_summary": source_summary,
                 "fetch_interval_label": _channel_fetch_schedule_label(channel, t),
                 "schedule_short": _channel_schedule_short(channel, t),
-                "next_fetch_label": _channel_next_fetch_label(channel, sources, now),
-                "next_fetch_short": _channel_next_fetch_short(channel, sources, now, t),
+                "next_fetch_label": None if channel.get("setup_stage") else _channel_next_fetch_label(channel, sources, now),
+                "next_fetch_short": None if channel.get("setup_stage") else _channel_next_fetch_short(channel, sources, now, t),
                 "freshness_label": freshness_label(sources, t),
                 "freshness_exact_label": freshness_exact_time(sources),
                 "last_fetch_relative": relative_time(max(fetch_times), t) if fetch_times else None,

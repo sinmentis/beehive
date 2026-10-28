@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from beehive.db.connection import commit_unless_nested
+
 
 def create_email_group(conn: sqlite3.Connection, name: str, subject_template: str = "",
                         recipient_email: str | None = None,
@@ -35,7 +37,7 @@ def create_email_group(conn: sqlite3.Connection, name: str, subject_template: st
             schedule_weekdays,
         ),
     )
-    conn.commit()
+    commit_unless_nested(conn)
     return cur.lastrowid
 
 
@@ -96,7 +98,7 @@ def assign_channel(conn: sqlite3.Connection, group_id: int, channel_id: int) -> 
     conn.execute(
         "INSERT INTO email_group_channels (email_group_id, channel_id) VALUES (?, ?)",
         (group_id, channel_id))
-    conn.commit()
+    commit_unless_nested(conn)
 
 
 def unassign_channel(conn: sqlite3.Connection, channel_id: int) -> None:

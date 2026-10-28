@@ -2,33 +2,68 @@
 version: 1
 slug: "src-beehive-web-templates-admin-base-html"
 primary_target: "src/beehive/web/templates/admin_base.html"
-related_targets: ["src/beehive/web/templates/admin_settings.html","src/beehive/web/templates/admin_edit_channel.html","src/beehive/web/static/admin.css"]
+related_targets: ["src/beehive/web/templates/admin_settings.html","src/beehive/web/templates/admin_new_channel.html","src/beehive/web/templates/admin_edit_channel.html","src/beehive/web/templates/admin_add_source.html","src/beehive/web/templates/admin_source_test.html","src/beehive/web/templates/_admin_ranking_result.html","src/beehive/web/templates/_admin_group_fields.html","src/beehive/web/templates/_admin_delivery_status.html","src/beehive/web/templates/admin_new_email_group.html","src/beehive/web/templates/admin_edit_email_group.html","src/beehive/web/templates/admin_email_group_preview.html","src/beehive/web/static/admin.css","src/beehive/web/static/beehive.js"]
 ---
 
 ## Scope and mode
 
-Every signed-in page under `/admin/` plus the admin login. Operate mode.
+Operate mode. The surface covers signed-in `/admin/` and the admin login. This record updates the finished local Channel, Source, rules and Email tasks; it does not assert that every legacy admin route was reviewed or redesigned. Public reading and the research/watchlist workspace retain their existing design authority.
 
 ## Audience, job and task
 
-The Owner, on desktop, visiting rarely and only when something needs changing: check that fetching and delivery are healthy, add or fix a source, tune a channel, manage email groups, switch model or language, review or undo recent actions. Each page must read correctly without remembering how it worked last time. Phone use must work but is secondary.
+The Owner visits infrequently to check collection and delivery, connect or repair a Source, refine rules and arrange Email. Complete one task without remembering a configuration maze. Desktop is primary; all five Channel tasks and the current commitment remain available on a 390px phone.
 
 ## Structure
 
-Four numbered chapters in a left contents rail: 1 频道 (channels), 2 邮件组 (email groups, including the default recipient), 3 全局设置 (language, model, featured window), 4 系统 (health, activity log). Old tab names `ai` and `delivery` still resolve. Amber counts on the rail mark where attention is needed; each problem is counted once, in the chapter where it is fixed.
+The compact rail retains four chapters: Channels, Email groups, Global settings and System, with attention counts beside the place to act. The shared running head retains location and Auckland time.
+
+- **Channel workspace:** heading and operational state, header actions, then persistent Overview, Sources, Organization rules, Email and Settings links. Task navigation sticks at the top; saves stay in the current form's sticky footer. Sources are not below a profile form.
+- **Creation:** type and name only, then paused Source → Rules → Email → Review/Start setup. No collection before explicit Start. Review shows source count/pending state, schedule, Email choice, saved rule summary, cutoff and highlight cap. Start/Continue is in the header on desktop and phone.
+- **Forms:** stacked task fields with nearby hints/errors. `.page-admin .param` supplies the stack; `.page-admin .params` and task forms stop at 60rem. Existing parameter markup, single-setting saves, selection tables and nested schedule rows remain; the shared legacy three-column parameter layout is not retired.
+- **Sources:** preflight tests unsaved connection values without persisting. Results follow Test connection before optional display name; focus/scroll goes to the result unless an invalid field needs attention. Source rows stack into label/value records at viewport 1100px; coarse-pointer operations have 44px targets.
+- **Rules:** profile saves affect future ranking. Preview up to five eligible existing items without changing saved rules, items or delivery; compare before/after summaries with integer display scores, rationale and cutoff sample count. Keep Edit rules, Rules used for this run, Save current rules and stale-profile feedback explicit. Python normalizes separate display fields; raw scores drive cutoff and templates do not round.
+- **Reprocessing:** a separate disclosure and explicit confirmation apply saved rules to unread Editorial items/current listings. Unsaved-rule notice and disabled action synchronize, including after polling. Cancellation retains applied results; history and delivery exclusions remain.
+- **Recovery:** section-local saves preserve unrelated settings. Session-local drafts restore on normal navigation when the baseline matches; conflicts offer restore/discard. Modified rows/counts, before-unload protection and input clearance above sticky footers remain.
+- **Email:** website-only, existing shared group or contextual new daily email. Shared-group scope is stated. Live first/next-due forecasts repeat in the save bar. Real HTML preview is sandboxed and non-consuming, with plain text, explicit test-send and delivery diagnostics.
 
 ## Direction
 
-Datasheet, dark (seed 9e52a516, the model's pick, chosen by the Owner with "make it dark"). Forms are parameter tables (参数 | 设置 | 说明), lists are banded tables under a heavy ink rule, state is a shape plus a word, callouts are boxed 说明 / 注意 / 警告 notes. Colour only where the Owner is needed.
+CODE-LED extension of the existing dark datasheet; preserved seed `9e52a516`. No approved comp or decision comp and no new seed roll. The built source and final captures are authority.
+
+- **THESIS:** Complete one pipeline task without navigating a configuration maze.
+- **OWN-WORLD:** Preserve graphite, Archivo, restrained blue links, amber attention, red danger and the Beehive mark. Use readable forms and purposeful data tables, not decorative cards.
+- **STORY:** Connect sources, inspect results, refine rules and arrange delivery. Changes affect future ranking unless the Owner explicitly requests reprocessing. Preserve history and recovery.
+- **FIRST VIEWPORT:** Compact rail, channel heading, operational status, persistent task navigation and the current task's primary action. Sources never hide below a profile form.
+- **FORM:** The approved channel workspace inside the existing dark identity; no new visual-world roll. Preview-before-apply is its signature interaction. Preserved seed `9e52a516`.
+- **FINISH:** Review, verdict, design documentation and raster provenance, scoped as recorded below.
 
 ## Memorable moment
 
-Unsaved parameter rows are tagged 已修改 and counted in the sticky save bar; destructive rows open in place into a typed confirmation that names what will be deleted and that it can be undone for 7 days.
+Preview before apply: inspect connection values or a rule sample without saving the Source or changing saved rules, items or delivery, then save future rules or explicitly confirm reprocessing. Modified rows remain counted. Destructive removal still names its impact, asks for typed confirmation and offers the supported seven-day undo.
 
 ## Constraints
 
-No text may overflow its box at 1440, 1024 or 390 px. Fields for values of any length (URLs, queries, addresses, subjects) use `ui.line_field`, a one-line textarea that wraps and grows; short fields stay inputs. In tables a unit (a count with its word, a day with its time, an address) never splits: use `.nw`, `ui.units` or `ui.keep`, and `ui.url_path` so URLs break before a slash. Chinese UI says 频道 and 信源, never Channel. CSP is `default-src 'self'`, so fonts are self-hosted and there is no inline script; templates carry no inline styles.
+Retain graphite `#0A0C0E`/`#111417`, self-hosted variable Archivo with CJK fallback, blue links/focus, amber attention, red danger and the SVG Beehive mark. State is shape plus word; legends can explain all states on a healthy page. No decorative cards or new raster assets. The embedded email document is output, not a new admin visual world.
+
+Shared 24px headings, 16px task heads, 15px body/fields and 13px hints remain. Admin buttons are at least 36px (small 32px); phone header actions/task links and coarse-pointer controls use 44px. Facts and comparisons stack at 700px; the shared rail becomes a top bar at 880px. Keep long values wrapping, hints near controls and all five tasks visible at 390px. Free-length values use `ui.line_field`; the rule editor scrolls within 12–28rem. Keep Chinese product terms localized, self-hosted fonts, CSRF form posts and no inline scripts/styles.
+
+## Evidence and finish
+
+Final synthetic captures in `.impeccable/review/`, rewritten on 2026-10-28 at 15:02 and individually opened/validated:
+- Sources: `desktop.png`, `mobile.png`.
+- Overview: `overview-desktop.png`, `overview-mobile.png`.
+- Compact creation: `new-channel-desktop.png`, `new-channel-mobile.png`.
+- Paused review/start: `setup-review-desktop.png`, `setup-review-mobile.png`.
+- Rules: `rules-preview-desktop.png`, `rules-preview-mobile.png`, `rules-actions-desktop.png`.
+- Delivery: `delivery-desktop.png`, `email-preview-desktop.png`.
+- Source validation/preflight: `source-error-mobile.png`, `source-preview-mobile.png`, `source-preview-focus-mobile.png`.
+
+The last capture is the actual focused post-test viewport, not a full-page shot. Blue region outlines show keyboard/fragment focus. Full-page captures can place sticky footers mid-document; this is not a permanent obstruction or layout token. These are QA captures only; no new shipping raster assets or provenance obligations were introduced.
+
+The supplied finish verdict is **ship**, with all eight material corrections resolved, not a blanket review of every admin route. Reported validation: 7,146 integration tests passed before final presentation fixes; 297 admin/localization tests plus Ruff, JS and whitespace checks passed afterward. One detector run emitted five inherited-Jinja line-0 colour advisories contradicted by rendered light-on-graphite headings; this is not a clean-scan claim and the detector was not rerun here.
+
+This records built local source, not a live release. No production access, migration, deployment, commit or push occurred in this documentation pass.
 
 ## Open decisions
 
-None recorded.
+None for this record. No boundary blocker.

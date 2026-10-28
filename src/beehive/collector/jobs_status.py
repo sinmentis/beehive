@@ -14,13 +14,14 @@ from datetime import datetime, timedelta
 from beehive.db import app_state
 
 STATUS_KEY = "jobs_worker_status"
-LANES = ("manual_fetch", "scheduled_fetch", "deep_read", "digest", "reminders")
+LANES = ("manual_fetch", "scheduled_fetch", "ranking", "deep_read", "digest", "reminders")
 # The worker checks in at least every 30 seconds, so three minutes of silence means it stopped.
 DOWN_AFTER = timedelta(minutes=3)
 # A job running longer than this is worth a warning, well before the lane's hard limit.
 SLOW_AFTER = {
     "manual_fetch": timedelta(minutes=30),
     "scheduled_fetch": timedelta(minutes=30),
+    "ranking": timedelta(minutes=30),
     "deep_read": timedelta(minutes=20),
     "digest": timedelta(minutes=10),
     "reminders": timedelta(minutes=10),
@@ -110,4 +111,3 @@ def load_status(conn: sqlite3.Connection) -> JobsWorkerStatus | None:
         )
     except (KeyError, TypeError, ValueError):
         return None
-

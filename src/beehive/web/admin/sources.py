@@ -21,6 +21,7 @@ from beehive.db.admin_actions import (
     record_admin_action,
 )
 from beehive.db.channels import (
+    advance_channel_setup,
     get_channel,
 )
 from beehive.db.sources import (
@@ -61,8 +62,7 @@ def _source_type_options(t: Localizer) -> tuple[dict, ...]:
     """Built per-request (not module-level) since every label is a translated string --
     Reddit/Google News/Hacker News/RBNZ/Federal Reserve stay in their own proper names in every
     language; only the descriptor after the em dash (e.g. "Subreddit", "Keyword query") changes
-    per locale. Each input_id is the id admin.css keys the matching config fields to, and each
-    hint is the one-line description shown beside the radio."""
+    per locale. Each hint appears beside the selected type's parameters."""
     return (
         {
             "type_key": "reddit_subreddit",
@@ -168,6 +168,28 @@ def _source_error_message(error: ValueError, t: Localizer) -> str:
         return t.text("web.source_error.rss_feed_unreachable", reason=reason)
     key = _SOURCE_ERROR_KEYS.get(message)
     return t.text(key) if key is not None else message
+
+
+def _source_error_field(source_type: str, error: Exception | None = None) -> str:
+    message = str(error or "")
+    if source_type == "hackernews_query" and "'sort'" in message:
+        return "hn-sort"
+    if source_type == "international_clearance" and (
+        "'minimum_discount_percent'" in message or "discounts up to" in message
+    ):
+        return "international-clearance-minimum-discount"
+    if source_type == "shopify_collection" and "'vendors'" in message:
+        return "shopify-collection-vendors"
+    return {
+        "reddit_subreddit": "subreddit",
+        "google_news_query": "google-query",
+        "rss_feed": "rss-feed-url",
+        "hackernews_stories": "hn-feed",
+        "hackernews_query": "hn-query",
+        "shopify_collection": "shopify-collection-url",
+        "land_sea_collection": "land-sea-collection-url",
+        "international_clearance": "international-clearance-retailer",
+    }.get(source_type, "source-type")
 
 
 def _source_config_from_form(
@@ -298,6 +320,41 @@ class _SourceCheck(NamedTuple):
     config: dict | None
     error: str | None
     suggested_name: str = ""
+    error_field: str | None = None
+
+
+class _SourcePreview(NamedTuple):
+    items: list[dict]
+    total_count: int
+    duration_ms: int
+    error: str | None
+
+
+def _preview_source(source_type: str, config: dict | str, t: Localizer) -> _SourcePreview:
+    """Fetch samples through the connector, without entering the collection/write pipeline."""
+    started = time.monotonic()
+    error = None
+    raw_items = []
+    try:
+        connector = get_connector(source_type)
+        if isinstance(config, str):
+            config = json.loads(config)
+        raw_items = (
+            connector.fetch_preview(config, limit=10)
+            if isinstance(connector, PreviewSourceConnector)
+            else connector.fetch(config)
+        )
+    except Exception as exc:
+        error = _source_error_message(exc, t) if isinstance(exc, ValueError) else str(exc)
+    return _SourcePreview(
+        items=[
+            {"title": item.title, "url": safe_external_href(item.url)}
+            for item in raw_items[:10]
+        ],
+        total_count=len(raw_items),
+        duration_ms=round((time.monotonic() - started) * 1000),
+        error=error,
+    )
 
 
 def _validated_source_config(
@@ -323,16 +380,24 @@ def _validated_source_config(
         config = _source_config_from_form(source_type, **form_values)
         connector = get_connector(source_type)
     except ValueError as exc:
-        return _SourceCheck(None, _source_error_message(exc, t))
+        return _SourceCheck(
+            None, _source_error_message(exc, t),
+            error_field=_source_error_field(source_type, exc),
+        )
     # Reject a Source type incompatible with this Channel's kind with the same localized 400 flow
     # as a bad config -- persistence would reject it anyway (db.sources), this just turns that into
     # a friendly re-render instead of a 500.
     if not connector_supports_kind(source_type, channel_kind):
-        return _SourceCheck(None, t.text("web.source_error.incompatible_kind"))
+        return _SourceCheck(
+            None, t.text("web.source_error.incompatible_kind"), error_field="source-type"
+        )
     try:
         connector.validate_config(config)
     except ValueError as exc:
-        return _SourceCheck(None, _source_error_message(exc, t))
+        return _SourceCheck(
+            None, _source_error_message(exc, t),
+            error_field=_source_error_field(source_type, exc),
+        )
     suggested_name = ""
     unchanged = (
         current is not None
@@ -343,13 +408,19 @@ def _validated_source_config(
         try:
             resolved = connector.resolve_config(config)
         except ValueError as exc:
-            return _SourceCheck(None, _source_error_message(exc, t))
+            return _SourceCheck(
+                None, _source_error_message(exc, t),
+                error_field=_source_error_field(source_type, exc),
+            )
         config, suggested_name = resolved.config, resolved.suggested_name
     exclude_source_id = current["id"] if current is not None else None
     if find_duplicate_source(
         conn, channel["id"], source_type, config, exclude_source_id=exclude_source_id
     ) is not None:
-        return _SourceCheck(None, t.text("web.source_error.duplicate"))
+        return _SourceCheck(
+            None, t.text("web.source_error.duplicate"),
+            error_field=_source_error_field(source_type),
+        )
     return _SourceCheck(config, None, suggested_name)
 
 
@@ -363,14 +434,16 @@ def _render_source_form_page(
     form_action: str,
     cancel_url: str,
     error: str | None = None,
+    error_field: str | None = None,
     selected_type: str | None = None,
     form_values: dict | None = None,
     status_code: int = 200,
     source_name: str = "",
     source: dict | None = None,
+    preview: _SourcePreview | None = None,
 ) -> HTMLResponse:
     """Renders admin_add_source.html for either a brand-new Source (mode="new") or an edit of an
-    existing one (mode="edit"). Both modes share the same compatible-type radios, per-type config
+    existing one (mode="edit"). Both modes share the same compatible-type picker, per-type config
     fields, and optional display-name field; only the form target, page copy, and submit label
     differ, so the validation/prefill pipeline is written once and reused by both routes."""
     values = {**_SOURCE_FORM_DEFAULTS, **(form_values or {})}
@@ -378,9 +451,11 @@ def _render_source_form_page(
     options = _compatible_source_type_options(t, channel_kind)
     option_keys = {option["type_key"] for option in options}
     # Default (and fall back after an incompatible submission) to the first compatible type, so a
-    # radio is always pre-selected with something this Channel can actually accept.
+    # type is always pre-selected with something this Channel can actually accept.
     default_type = options[0]["type_key"] if options else ""
     effective_selected = selected_type if selected_type in option_keys else default_type
+    if error and selected_type not in option_keys:
+        error_field = "source-type"
     if mode == "edit":
         page_heading = t.text("web.admin.source_edit.heading")
         page_lede = (
@@ -397,6 +472,8 @@ def _render_source_form_page(
         page_heading = t.text("web.admin.source_new.heading")
         page_lede = t.text("web.admin.source_new.lede", channel=channel["name"])
         submit_label = t.text("web.admin.source_new.submit")
+    if channel.get("setup_stage"):
+        submit_label = t.text("web.admin.task.continue")
     return _render_admin(
         request,
         t,
@@ -405,15 +482,16 @@ def _render_source_form_page(
             "channel": channel,
             "csrf_token": session["csrf_token"],
             "error": error,
+            "error_field": error_field,
+            "preview": preview,
             "source_type_options": options,
             "selected_type": effective_selected,
-            # The Phase 3 "coming soon" placeholder is an editorial source, so only editorial
-            # Channels show it -- a monitor/tracker Channel lists only its own compatible types.
-            "show_twitter_soon": channel_kind is ChannelKind.EDITORIAL,
             "form_action": form_action,
             "cancel_url": cancel_url,
             "is_edit": mode == "edit",
-            "unsaved_submission": mode == "edit" and status_code >= 400,
+            "unsaved_submission": mode == "edit" and (
+                status_code >= 400 or preview is not None
+            ),
             # Editing shows the label an empty name falls back to; a new Source has none yet.
             "name_placeholder": (
                 _admin_source_label(source, t)
@@ -438,10 +516,12 @@ def _render_new_source_page(
     t: Localizer,
     *,
     error: str | None = None,
+    error_field: str | None = None,
     selected_type: str | None = None,
     form_values: dict | None = None,
     status_code: int = 200,
     source_name: str = "",
+    preview: _SourcePreview | None = None,
 ) -> HTMLResponse:
     return _render_source_form_page(
         request,
@@ -450,12 +530,14 @@ def _render_new_source_page(
         t,
         mode="new",
         form_action=f"/admin/channels/{channel['id']}/sources/new",
-        cancel_url=f"/admin/channels/{channel['id']}/edit",
+        cancel_url=f"/admin/channels/{channel['id']}/edit?section=sources",
         error=error,
+        error_field=error_field,
         selected_type=selected_type,
         form_values=form_values,
         status_code=status_code,
         source_name=source_name,
+        preview=preview,
     )
 
 
@@ -467,10 +549,12 @@ def _render_edit_source_page(
     t: Localizer,
     *,
     error: str | None = None,
+    error_field: str | None = None,
     selected_type: str | None = None,
     form_values: dict | None = None,
     status_code: int = 200,
     source_name: str | None = None,
+    preview: _SourcePreview | None = None,
 ) -> HTMLResponse:
     return _render_source_form_page(
         request,
@@ -480,12 +564,14 @@ def _render_edit_source_page(
         mode="edit",
         form_action=f"/admin/sources/{source['id']}/edit",
         source=source,
-        cancel_url=f"/admin/channels/{channel['id']}/edit",
+        cancel_url=f"/admin/channels/{channel['id']}/edit?section=sources",
         error=error,
+        error_field=error_field,
         selected_type=selected_type,
         form_values=form_values,
         status_code=status_code,
         source_name=(source["name"] or "") if source_name is None else source_name,
+        preview=preview,
     )
 
 
@@ -507,7 +593,7 @@ def new_source_form(
 def new_source_submit(
     channel_id: int,
     request: Request,
-    type: str = Form(...),
+    type: str = Form(""),
     subreddit: str = Form(""),
     query: str = Form(""),
     hn_feed: str = Form("top"),
@@ -520,6 +606,7 @@ def new_source_submit(
     international_clearance_minimum_discount_percent: str = Form("70"),
     rss_feed_url: str = Form(""),
     source_name: str = Form(""),
+    operation: str = Form("save"),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
@@ -544,24 +631,40 @@ def new_source_submit(
         ),
         "rss_feed_url": rss_feed_url,
     }
-    config, error, suggested_name = _validated_source_config(
-        conn, channel, type, form_values, t
-    )
-    if error is not None:
+    check = _validated_source_config(conn, channel, type, form_values, t)
+    if check.error is not None:
         return _render_new_source_page(
             request,
             channel,
             session,
             t,
-            error=error,
+            error=check.error,
+            error_field=check.error_field,
             selected_type=type,
             form_values=form_values,
             status_code=400,
             source_name=source_name,
         )
+    if operation == "test":
+        preview = _preview_source(type, check.config, t)
+        return _render_new_source_page(
+            request, channel, session, t,
+            error=preview.error,
+            error_field=_source_error_field(type) if preview.error is not None else None,
+            selected_type=type,
+            form_values=form_values,
+            status_code=502 if preview.error is not None else 200,
+            source_name=source_name,
+            preview=preview,
+        )
+    pending_setup = bool(channel.get("setup_stage"))
     source_id = create_source(
-        conn, channel_id, type, config, name=source_name.strip() or suggested_name
+        conn, channel_id, type, check.config,
+        name=source_name.strip() or check.suggested_name,
+        paused_at=datetime.now(timezone.utc).isoformat() if pending_setup else None,
     )
+    if pending_setup:
+        advance_channel_setup(conn, channel_id, "rules")
     record_admin_action(
         conn,
         action_type="source_created",
@@ -570,8 +673,9 @@ def new_source_submit(
         target_label=source_display_name(get_source(conn, source_id), t),
         detail={"channel_id": channel_id},
     )
+    section = "rules" if pending_setup else "sources"
     return RedirectResponse(
-        f"/admin/channels/{channel_id}/edit?source_saved=1",
+        f"/admin/channels/{channel_id}/edit?section={section}&source_saved=1",
         status_code=303,
     )
 
@@ -605,7 +709,7 @@ def edit_source_form(
 def edit_source_submit(
     source_id: int,
     request: Request,
-    type: str = Form(...),
+    type: str = Form(""),
     subreddit: str = Form(""),
     query: str = Form(""),
     hn_feed: str = Form("top"),
@@ -618,6 +722,7 @@ def edit_source_submit(
     international_clearance_minimum_discount_percent: str = Form("70"),
     rss_feed_url: str = Form(""),
     source_name: str = Form(""),
+    operation: str = Form("save"),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
@@ -645,23 +750,46 @@ def edit_source_submit(
         ),
         "rss_feed_url": rss_feed_url,
     }
-    config, error, suggested_name = _validated_source_config(
+    check = _validated_source_config(
         conn, channel, type, form_values, t, current=source
     )
-    if error is not None:
+    if check.error is not None:
         return _render_edit_source_page(
             request,
             channel,
             source,
             session,
             t,
-            error=error,
+            error=check.error,
+            error_field=check.error_field,
             selected_type=type,
             form_values=form_values,
             status_code=400,
             source_name=source_name,
         )
-    update_source(conn, source_id, type, config, name=source_name.strip() or suggested_name)
+    if operation == "test":
+        preview = _preview_source(type, check.config, t)
+        return _render_edit_source_page(
+            request, channel, source, session, t,
+            error=preview.error,
+            error_field=_source_error_field(type) if preview.error is not None else None,
+            selected_type=type,
+            form_values=form_values,
+            status_code=502 if preview.error is not None else 200,
+            source_name=source_name,
+            preview=preview,
+        )
+    pending_setup = bool(channel.get("setup_stage"))
+    if pending_setup and source["paused_at"] is None:
+        set_source_paused(
+            conn, source_id, True, now_iso=datetime.now(timezone.utc).isoformat()
+        )
+    update_source(
+        conn, source_id, type, check.config,
+        name=source_name.strip() or check.suggested_name,
+    )
+    if pending_setup:
+        advance_channel_setup(conn, channel["id"], "rules")
     record_admin_action(
         conn,
         action_type="source_updated",
@@ -670,8 +798,9 @@ def edit_source_submit(
         target_label=source_display_name(get_source(conn, source_id), t),
         detail={"channel_id": channel["id"]},
     )
+    section = "rules" if pending_setup else "sources"
     return RedirectResponse(
-        f"/admin/channels/{channel['id']}/edit?source_saved=1",
+        f"/admin/channels/{channel['id']}/edit?section={section}&source_saved=1",
         status_code=303,
     )
 
@@ -698,7 +827,7 @@ def delete_source_submit(
         target_label=source_display_name(source, t),
     )
     return RedirectResponse(
-        f"/admin/channels/{channel_id}/edit?source_removed=1"
+        f"/admin/channels/{channel_id}/edit?section=sources&source_removed=1"
         f"&undo_action={action_id}",
         status_code=303,
     )
@@ -721,28 +850,7 @@ def test_source_submit(
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
 
-    started = time.monotonic()
-    error = None
-    raw_items = []
-    try:
-        connector = get_connector(source["type"])
-        config = json.loads(source["config"])
-        raw_items = (
-            connector.fetch_preview(config, limit=10)
-            if isinstance(connector, PreviewSourceConnector)
-            else connector.fetch(config)
-        )
-    except Exception as exc:
-        error = str(exc)
-    duration_ms = round((time.monotonic() - started) * 1000)
-    record_admin_action(
-        conn,
-        action_type="source_tested",
-        target_type="source",
-        target_id=source_id,
-        target_label=source_display_name(source, t),
-        detail={"items": len(raw_items), "duration_ms": duration_ms, "success": error is None},
-    )
+    preview = _preview_source(source["type"], source["config"], t)
     return _render_admin(
         request,
         t,
@@ -750,19 +858,14 @@ def test_source_submit(
         {
             "channel": channel,
             "source": source,
+            "csrf_token": session["csrf_token"],
             "source_label": _admin_source_label(source, t),
-            "items": [
-                {
-                    "title": item.title,
-                    "url": safe_external_href(item.url),
-                }
-                for item in raw_items[:10]
-            ],
-            "total_count": len(raw_items),
-            "duration_ms": duration_ms,
-            "error": error,
+            "items": preview.items,
+            "total_count": preview.total_count,
+            "duration_ms": preview.duration_ms,
+            "error": preview.error,
         },
-        status_code=200 if error is None else 502,
+        status_code=200 if preview.error is None else 502,
     )
 
 
@@ -790,7 +893,7 @@ def pause_source_submit(
         target_label=source_display_name(source, t),
         detail={"channel_id": source["channel_id"]},
     )
-    fallback = f"/admin/channels/{source['channel_id']}/edit"
+    fallback = f"/admin/channels/{source['channel_id']}/edit?section=sources"
     return RedirectResponse(
         _safe_return_path(return_url, fallback) if return_url else fallback,
         status_code=303,
@@ -810,6 +913,10 @@ def resume_source_submit(
     source = get_source(conn, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
+    fallback = f"/admin/channels/{source['channel_id']}/edit?section=sources"
+    channel = get_channel(conn, source["channel_id"])
+    if channel is not None and channel.get("setup_stage"):
+        return RedirectResponse(fallback, status_code=303)
     set_source_paused(conn, source_id, False)
     record_admin_action(
         conn,
@@ -819,7 +926,6 @@ def resume_source_submit(
         target_label=source_display_name(source, t),
         detail={"channel_id": source["channel_id"]},
     )
-    fallback = f"/admin/channels/{source['channel_id']}/edit"
     return RedirectResponse(
         _safe_return_path(return_url, fallback) if return_url else fallback,
         status_code=303,

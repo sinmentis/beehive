@@ -2,9 +2,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from beehive.collector.jobs import run_fetch_job
+from beehive.collector.jobs import run_fetch_job, run_ranking_job
+from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
+from beehive.db.items import insert_new
+from beehive.db.ranking_requests import claim_next_ranking_request, create_ranking_request
+from beehive.db.sources import create_source
 from beehive.localization import save_language
 
 
@@ -58,3 +62,29 @@ def test_a_channel_with_an_invalid_alert_address_is_skipped_not_raised(db_path, 
 
     cycle.assert_not_awaited()
     assert "Bad Channel" in capsys.readouterr().out
+
+
+def test_rule_jobs_use_the_workers_stored_language_and_model_without_email_setup(db_path):
+    from datetime import datetime, timezone
+
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Rules", "profile")
+    source_id = create_source(conn, channel_id, "reddit_subreddit", {"subreddit": "news"})
+    insert_new(conn, source_id, RawItem(external_id="a", title="A", url="https://example.com/a"))
+    create_ranking_request(conn, channel_id, mode="preview", profile="draft")
+    claim = claim_next_ranking_request(conn, datetime.now(timezone.utc), lease_seconds=180)
+    save_language(conn, "ja")
+    conn.close()
+
+    with (
+        patch("beehive.collector.ranking_worker.process_claimed_ranking_request", new=AsyncMock()) as run,
+        patch("beehive.collector.jobs.load_model", return_value="offline-model"),
+        patch("beehive.collector.jobs.delivery_context") as email,
+    ):
+        run_ranking_job(db_path, claim)
+
+    run.assert_awaited_once()
+    assert run.await_args.args[1] == claim
+    assert run.await_args.kwargs["localizer"].code == "ja"
+    assert run.await_args.kwargs["model"] == "offline-model"
+    email.assert_not_called()

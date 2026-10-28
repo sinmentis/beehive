@@ -11,8 +11,9 @@ import pytest
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
-from beehive.db.email_groups import assign_channel, create_email_group, mark_sent
+from beehive.db.email_groups import assign_channel, create_email_group, get_email_group, mark_sent
 from beehive.db.item_events import (
+    mark_events_delivered,
     mark_item_events_ready,
     record_or_coalesce_event,
     suppress_item_events,
@@ -25,7 +26,11 @@ from beehive.db.sources import (
     set_retire_hold,
     set_source_paused,
 )
-from beehive.digest.send import send_email_group_digests
+from beehive.digest.send import (
+    build_email_group_delivery_status,
+    build_email_group_digest_preview,
+    send_email_group_digests,
+)
 from beehive.email_routing import ResolvedRecipient
 from beehive.localization import localizer_for
 
@@ -84,6 +89,162 @@ def _group_row(conn, group_id):
 def _delivered_at(conn, event_id):
     return conn.execute(
         "SELECT delivered_at FROM item_events WHERE id = ?", (event_id,)).fetchone()["delivered_at"]
+
+
+def test_a_changed_cutoff_filters_ready_mail_consistently_in_preview_and_delivery(conn):
+    channel_id = create_channel(conn, "News", "profile", minimum_score=0, highlight_count=1)
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    _, high = _stage_event(conn, source_id, "high", score=90, summary="Included item")
+    _, low = _stage_event(conn, source_id, "low", score=70, summary="Below current cutoff")
+    group_id = _make_group(conn, channel_id)
+    conn.execute("UPDATE channels SET minimum_score = 80 WHERE id = ?", (channel_id,))
+    conn.commit()
+    before = [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")]
+
+    preview = build_email_group_digest_preview(
+        conn, get_email_group(conn, group_id), _EN, now=RUN_TIME,
+    )
+
+    assert preview.event_count == 1
+    assert preview.below_cutoff_count == 1
+    assert "Included item" in preview.plain_text
+    assert "Below current cutoff" not in preview.plain_text
+    assert "more" not in preview.plain_text
+    assert [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")] == before
+    notifier = MagicMock()
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+    assert notifier.send.call_args.args[1] == preview.plain_text
+    assert _delivered_at(conn, high) == _SENT_AT
+    assert _delivered_at(conn, low) is None
+
+
+def test_all_ready_mail_below_the_current_cutoff_sends_nothing(conn):
+    channel_id = create_channel(conn, "News", "profile", minimum_score=95)
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    _, event_id = _stage_event(conn, source_id, "low", score=90)
+    group_id = _make_group(conn, channel_id)
+    notifier = MagicMock()
+
+    assert build_email_group_delivery_status(conn, get_email_group(conn, group_id), RUN_TIME) == {
+        "current_item_count": 1, "unranked_count": 0, "eligible_count": 0,
+        "below_cutoff_count": 1, "expired_count": 0, "held_count": 0,
+        "capped_count": 0, "duplicate_count": 0, "warning_count": 0,
+    }
+    assert build_email_group_digest_preview(
+        conn, get_email_group(conn, group_id), _EN, now=RUN_TIME,
+    ) is None
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_not_called()
+    assert _delivered_at(conn, event_id) is None
+    assert _group_row(conn, group_id)["last_checked_at"] == _SENT_AT
+    assert _group_row(conn, group_id)["last_sent_at"] is None
+
+
+@pytest.mark.parametrize("has_history", [False, True])
+def test_delivery_status_without_events_reports_counts_without_inventing_a_baseline(conn, has_history):
+    channel_id = create_channel(conn, "News", "profile")
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    group_id = _make_group(conn, channel_id)
+    if has_history:
+        item_id = insert_new_returning_id(
+            conn, source_id, RawItem(external_id="old", title="Existing item", url="https://example.com"),
+        )
+        update_ai_ranking_by_id(conn, item_id, 90, "Existing summary", "Existing reason")
+    group = get_email_group(conn, group_id)
+
+    status = build_email_group_delivery_status(conn, group, now=RUN_TIME)
+
+    assert status == {
+        "current_item_count": int(has_history), "unranked_count": 0, "eligible_count": 0,
+        "below_cutoff_count": 0, "expired_count": 0, "held_count": 0,
+        "capped_count": 0, "duplicate_count": 0, "warning_count": 0,
+    }
+    assert build_email_group_digest_preview(conn, group, _EN, now=RUN_TIME) is None
+    assert get_email_group(conn, group_id) == group
+
+
+def test_delivery_status_reuses_the_mail_policy_and_is_read_only(conn):
+    editorial = create_channel(conn, "News", "profile", minimum_score=75, highlight_count=1)
+    monitor = create_channel(conn, "Outlet", "profile", kind="monitor")
+    editorial_source = create_source(conn, editorial, *_REDDIT)
+    monitor_source = create_source(conn, monitor, *_SHOPIFY)
+    record_fetch_success(conn, monitor_source, "2026-07-10T00:00:00+00:00")
+    group_id = _make_group(conn, editorial, monitor)
+    _stage_event(conn, editorial_source, "eligible", score=95)
+    _stage_event(conn, editorial_source, "capped", score=90)
+    _stage_event(conn, editorial_source, "below", score=60)
+    _stage_event(conn, editorial_source, "expired", observed_at="2026-07-01T00:00:00")
+    _, delivered = _stage_event(
+        conn, editorial_source, "delivered", title="Repeated headline",
+        raw_metadata={"source_name": "Publisher"},
+    )
+    mark_events_delivered(conn, [delivered], RUN_TIME.isoformat())
+    _stage_event(
+        conn, editorial_source, "duplicate", title="Repeated headline",
+        raw_metadata={"source_name": "Publisher"},
+    )
+    suppressed, _ = _stage_event(conn, editorial_source, "suppressed")
+    suppress_item_events(conn, suppressed, RUN_TIME.isoformat())
+    insert_new_returning_id(
+        conn, editorial_source, RawItem(external_id="unranked", title="Pending AI", url="https://pending"),
+    )
+    _stage_event(conn, monitor_source, "held")
+    for field in ("inactive_at", "superseded_at"):
+        item_id = insert_new_returning_id(
+            conn, monitor_source, RawItem(external_id=field, title="History", url="https://history"),
+        )
+        conn.execute(f"UPDATE items SET {field} = ? WHERE id = ?", (RUN_TIME.isoformat(), item_id))
+        conn.commit()
+    outside = create_channel(conn, "Outside group", "profile")
+    outside_source = create_source(conn, outside, *_REDDIT)
+    insert_new_returning_id(
+        conn, outside_source, RawItem(external_id="outside", title="Unrelated", url="https://outside"),
+    )
+    group = get_email_group(conn, group_id)
+    events_before = [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")]
+    changes_before = conn.total_changes
+    conn.execute("PRAGMA query_only = ON")
+    try:
+        status = build_email_group_delivery_status(conn, group, now=RUN_TIME)
+        preview = build_email_group_digest_preview(conn, group, _EN, now=RUN_TIME)
+    finally:
+        conn.execute("PRAGMA query_only = OFF")
+
+    assert status == {
+        "current_item_count": 9, "unranked_count": 1, "eligible_count": 1,
+        "below_cutoff_count": 1, "expired_count": 1, "held_count": 1,
+        "capped_count": 1, "duplicate_count": 1, "warning_count": 1,
+    }
+    assert preview.event_count == status["eligible_count"]
+    assert preview.warning_count == status["warning_count"]
+    assert preview.below_cutoff_count == status["below_cutoff_count"]
+    assert conn.total_changes == changes_before
+    assert [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")] == events_before
+    assert get_email_group(conn, group_id) == group
+
+
+def test_lowering_the_cutoff_does_not_revive_suppressed_or_delivered_history(conn):
+    channel_id = create_channel(conn, "News", "profile", minimum_score=95)
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    suppressed_item, suppressed = _stage_event(conn, source_id, "suppressed", score=90)
+    suppress_item_events(conn, suppressed_item, RUN_TIME.isoformat())
+    _, delivered = _stage_event(conn, source_id, "delivered", score=99)
+    mark_events_delivered(conn, [delivered], RUN_TIME.isoformat())
+    group_id = _make_group(conn, channel_id)
+    before = [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")]
+    conn.execute("UPDATE channels SET minimum_score = 0 WHERE id = ?", (channel_id,))
+    conn.commit()
+    notifier = MagicMock()
+
+    assert build_email_group_digest_preview(
+        conn, get_email_group(conn, group_id), _EN, now=RUN_TIME,
+    ) is None
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_not_called()
+    assert [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")] == before
+    assert _delivered_at(conn, suppressed) is None
 
 
 # --- No historical backfill -------------------------------------------------------------------

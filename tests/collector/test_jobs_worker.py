@@ -1,11 +1,15 @@
 import asyncio
+import functools
 import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from beehive.ai.response_parser import RankedItem
+from beehive.collector.jobs import run_ranking_job
 from beehive.collector.jobs_status import load_status
 from beehive.collector.jobs_worker import EXIT_STUCK, JobsWorker, JobsWorkerConfig
+from beehive.collector.ranking_worker import process_claimed_ranking_request
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
@@ -16,6 +20,14 @@ from beehive.db.fetch_requests import (
     request_fetch,
 )
 from beehive.db.items import insert_new, update_ai_ranking_by_id
+from beehive.db.ranking_requests import (
+    claim_next_ranking_request,
+    complete_ranking_batch,
+    create_ranking_request,
+    get_ranking_request,
+    prepare_ranking_batch,
+    requeue_ranking_request,
+)
 from beehive.db.sources import create_source
 
 START = datetime(2026, 9, 30, 8, 1, tzinfo=timezone.utc)
@@ -38,6 +50,7 @@ class Runners:
     def __init__(self):
         self.fetches = []
         self.deep_reads = []
+        self.rankings = []
         self.digests = 0
         self.reminders = 0
         self.block = {}
@@ -60,6 +73,12 @@ class Runners:
 
     def digest(self, db_path):
         self.digests += 1
+
+    def ranking(self, db_path, claimed):
+        self.rankings.append(claimed)
+        gate = self.block.get("ranking")
+        if gate is not None:
+            gate.wait(timeout=10)
 
     def reminder(self, db_path, on_claim=None):
         self.reminders += 1
@@ -86,12 +105,13 @@ def conn(db_path):
     connection.close()
 
 
-def _worker(db_path, runners, clock, exits=None, **config):
+def _worker(db_path, runners, clock, exits=None, *, ranking_runner=None, **config):
     return JobsWorker(
         JobsWorkerConfig(db_path=db_path, **config),
         clock=clock,
         fetch_runner=runners.fetch,
         deep_read_runner=runners.deep_read,
+        ranking_runner=ranking_runner or runners.ranking,
         digest_runner=runners.digest,
         reminder_runner=runners.reminder,
         exit_process=(exits.append if exits is not None else lambda code: None),
@@ -319,9 +339,13 @@ async def test_the_status_shows_what_each_lane_is_doing(db_path, conn):
     worker.close()
 
 
-def _ranked_item(conn):
-    channel = create_channel(conn, "News", "p")
-    source = create_source(conn, channel, "reddit_subreddit", {"subreddit": "nz"})
+def _ranked_item(conn, name="News", *, kind="editorial"):
+    channel = create_channel(conn, name, "p", kind=kind)
+    source_type, config = {
+        "editorial": ("reddit_subreddit", {"subreddit": "nz"}),
+        "tracker": ("all_about_auctions", {"url": "https://example.com"}),
+    }[kind]
+    source = create_source(conn, channel, source_type, config)
     insert_new(conn, source, RawItem(external_id="a", title="A", url="https://example.com/a"))
     item_id = conn.execute("SELECT MAX(id) FROM items").fetchone()[0]
     update_ai_ranking_by_id(conn, item_id, 80, "Summary", "Why")
@@ -392,3 +416,344 @@ async def test_a_second_worker_waits_until_the_first_stops(db_path, conn):
     await _drain(second)
     assert second_runners.digests == 1
     second.close()
+
+
+def _ranking_request(conn, item_id, now=START):
+    channel_id = conn.execute(
+        "SELECT sources.channel_id FROM sources JOIN items ON items.source_id = sources.id "
+        "WHERE items.id = ?", (item_id,),
+    ).fetchone()[0]
+    return create_ranking_request(conn, channel_id, mode="apply", profile="p", now=now)
+
+
+@pytest.mark.asyncio
+async def test_ranking_excludes_both_fetch_lanes_but_other_channels_keep_running(db_path, conn):
+    request = _ranking_request(conn, _ranked_item(conn))
+    busy = request["channel_id"]
+    other = create_channel(conn, "Other", "p")
+    runners, clock = Runners(), Clock(START)
+    gate = runners.block["ranking"] = threading.Event()
+    worker = _worker(db_path, runners, clock)
+    try:
+        await worker.poll_once()
+        await asyncio.sleep(0.05)
+        assert [claim.channel_id for claim in runners.rankings] == [busy]
+        assert runners.fetches == [(other, False)]
+        request_fetch(conn, [busy, other], START)
+        await worker.poll_once()
+        await _drain_lane(worker, "manual_fetch")
+        assert fetch_request_states(conn, START) == {busy: "queued"}
+        assert (other, True) in runners.fetches
+        assert all(channel_id != busy for channel_id, _ in runners.fetches)
+        status = load_status(conn)
+        assert next(lane for lane in status.lanes if lane.name == "ranking").busy_since == START
+
+        gate.set()
+        await _drain(worker)
+        await worker.poll_once()
+        await _drain(worker)
+        assert (busy, True) in runners.fetches
+    finally:
+        gate.set()
+        await _drain(worker)
+        worker.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("manual", [False, True])
+async def test_ranking_waits_for_a_channel_fetch_and_can_process_another_channel(
+    db_path, conn, manual,
+):
+    busy_item = _ranked_item(conn)
+    free_item = _ranked_item(conn, name="Free")
+    busy = conn.execute("SELECT id FROM channels WHERE name = 'News'").fetchone()[0]
+    if manual:
+        request_fetch(conn, [busy], START)
+    runners, clock = Runners(), Clock(START)
+    gate = runners.block[busy] = threading.Event()
+    worker = _worker(db_path, runners, clock)
+    try:
+        await worker.poll_once()
+        await asyncio.sleep(0.05)
+        waiting = _ranking_request(conn, busy_item)
+        free = _ranking_request(conn, free_item)
+        await worker.poll_once()
+        await _drain_lane(worker, "ranking")
+        assert get_ranking_request(conn, waiting["id"])["status"] == "queued"
+        assert [claim.request_id for claim in runners.rankings] == [free["id"]]
+        gate.set()
+        await _drain(worker)
+        await worker.poll_once()
+        await _drain(worker)
+        assert runners.rankings[-1].request_id == waiting["id"]
+    finally:
+        gate.set()
+        await _drain(worker)
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_ranking_defers_rather_than_drops_the_same_channels_scheduled_fetch(db_path, conn):
+    request = _ranking_request(conn, _ranked_item(conn))
+    runners, clock = Runners(), Clock(START)
+    worker = _worker(db_path, runners, clock)
+    try:
+        await worker.poll_once()
+        await _drain(worker)
+        assert runners.fetches == []
+        await worker.poll_once()
+        await _drain(worker)
+        assert runners.fetches == [(request["channel_id"], False)]
+    finally:
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_a_deferred_ranking_channel_cannot_block_later_sweep_boundaries(db_path, conn):
+    request = _ranking_request(conn, _ranked_item(conn))
+    busy = request["channel_id"]
+    others = [create_channel(conn, name, "p") for name in ("Other", "Third")]
+    runners, clock, exits = Runners(), Clock(START), []
+    gate = runners.block["ranking"] = threading.Event()
+    worker = _worker(db_path, runners, clock, exits, ranking_limit_seconds=7200)
+    try:
+        for minute in range(61):
+            clock.now = START + timedelta(minutes=minute)
+            await worker.poll_once()
+            for name in ("scheduled_fetch", "digest", "reminders"):
+                await _drain_lane(worker, name)
+        assert exits == []
+        assert all(channel_id != busy for channel_id, _ in runners.fetches)
+        for channel_id in others:
+            assert runners.fetches.count((channel_id, False)) == 5
+        assert list(worker._sweep) == [busy]
+
+        gate.set()
+        await _drain(worker)
+        await worker.poll_once()
+        await _drain(worker)
+        assert runners.fetches.count((busy, False)) == 1
+    finally:
+        gate.set()
+        await _drain(worker)
+        worker.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["editorial", "tracker"])
+async def test_large_apply_yields_to_preview_and_finishes_without_restarts_or_repeat_work(
+    db_path, conn, monkeypatch, kind,
+):
+    first_item = _ranked_item(conn, name="Large apply", kind=kind)
+    source_id = conn.execute("SELECT source_id FROM items WHERE id = ?", (first_item,)).fetchone()[0]
+    for index in range(79):
+        insert_new(
+            conn, source_id,
+            RawItem(external_id=f"extra-{index}", title=f"Item {index}", url=f"https://example.com/{index}"),
+        )
+    apply_ids = {row[0] for row in conn.execute("SELECT id FROM items WHERE source_id = ?", (source_id,))}
+    request = _ranking_request(conn, first_item)
+    preview_item = _ranked_item(conn, name="Preview")
+    preview_channel = conn.execute(
+        "SELECT sources.channel_id FROM sources JOIN items ON items.source_id = sources.id "
+        "WHERE items.id = ?", (preview_item,),
+    ).fetchone()[0]
+    runners, clock, exits = Runners(), Clock(START), []
+    claims = []
+    ranked_apply_ids = []
+    own_fetches = []
+    original_fetch = runners.fetch
+
+    def observe_fetch(path, channel_id, *, force):
+        original_fetch(path, channel_id, force=force)
+        if channel_id == request["channel_id"]:
+            reader = connect(path)
+            try:
+                progress = get_ranking_request(reader, request["id"])
+                own_fetches.append((clock.now, progress["status"], progress["processed_count"]))
+            finally:
+                reader.close()
+
+    async def rank(**kwargs):
+        if kwargs["profile"] == "p":
+            ranked_apply_ids.extend(int(candidate.item_key) for candidate in kwargs["candidates"])
+        return [
+            RankedItem(candidate.item_key, 85, "Updated summary", "Updated reason")
+            for candidate in kwargs["candidates"]
+        ]
+
+    monkeypatch.setattr("beehive.collector.ranking_worker.rank_channel", rank)
+    monkeypatch.setattr("beehive.collector.ranking_worker.rank_monitor_channel", rank)
+    monkeypatch.setattr(runners, "fetch", observe_fetch)
+    monkeypatch.setattr(
+        "beehive.collector.ranking_worker.process_claimed_ranking_request",
+        functools.partial(process_claimed_ranking_request, clock=clock),
+    )
+
+    def run_slice(path, claim):
+        claims.append(claim)
+        run_ranking_job(path, claim)
+
+    worker = _worker(db_path, runners, clock, exits, ranking_runner=run_slice)
+    try:
+        await worker.poll_once()
+        await _drain(worker)
+        partial = get_ranking_request(conn, request["id"])
+        assert partial["status"] == "queued"
+        assert 0 < partial["processed_count"] < partial["total_count"]
+
+        clock.advance(minutes=10)
+        preview = create_ranking_request(
+            conn, preview_channel, mode="preview", profile="Draft preview", now=clock.now,
+        )
+        await worker.poll_once()
+        await _drain(worker)
+        assert get_ranking_request(conn, preview["id"])["status"] == "completed"
+        assert get_ranking_request(conn, request["id"])["processed_count"] == partial["processed_count"]
+
+        for _ in range(20):
+            clock.advance(minutes=10)
+            await worker.poll_once()
+            await _drain(worker)
+            if get_ranking_request(conn, request["id"])["status"] == "completed":
+                break
+        complete = get_ranking_request(conn, request["id"])
+        assert (complete["status"], complete["processed_count"], complete["skipped_count"]) == (
+            "completed", len(apply_ids), 0,
+        )
+        assert len(ranked_apply_ids) == len(set(ranked_apply_ids)) == len(apply_ids)
+        assert set(ranked_apply_ids) == apply_ids
+        assert all(claim.attempt == 1 for claim in claims)
+        assert len(claims) > 3
+        assert clock.now - START > timedelta(hours=1)
+        partial_fetches = [
+            (at, count) for at, status, count in own_fetches
+            if status == "queued" and 0 < count < len(apply_ids)
+        ]
+        assert len({int(at.timestamp() // 900) for at, _ in partial_fetches}) >= 3
+        assert len({count for _, count in partial_fetches}) >= 3
+        assert all(status != "running" for _, status, _ in own_fetches)
+        assert runners.fetches.count((preview_channel, False)) >= 3
+        assert exits == []
+    finally:
+        await _drain(worker)
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_progressed_apply_does_not_wait_for_an_unrelated_busy_scheduled_fetch(db_path, conn):
+    busy = create_channel(conn, "A busy fetch", "p")
+    item_id = _ranked_item(conn, name="B apply")
+    source_id = conn.execute("SELECT source_id FROM items WHERE id = ?", (item_id,)).fetchone()[0]
+    insert_new(conn, source_id, RawItem(external_id="second", title="Second", url="https://example.com/2"))
+    runners, clock = Runners(), Clock(START)
+    gate = runners.block[busy] = threading.Event()
+    worker = _worker(db_path, runners, clock)
+    try:
+        await worker.poll_once()
+        await asyncio.sleep(0.05)
+        request = _ranking_request(conn, item_id)
+        claim = claim_next_ranking_request(conn, START, lease_seconds=180)
+        batch = prepare_ranking_batch(conn, claim, START, limit=1)
+        complete_ranking_batch(
+            conn, claim,
+            [{"item_id": batch[0]["id"], "score": 85, "summary": "Summary", "rationale": "Reason"}],
+            START,
+        )
+        requeue_ranking_request(conn, claim, START, failed=False)
+        assert list(worker._sweep) == [request["channel_id"]]
+
+        await worker.poll_once()
+        await _drain_lane(worker, "ranking")
+
+        assert [claim.request_id for claim in runners.rankings] == [request["id"]]
+        assert "scheduled_fetch" in worker.busy_lanes()
+    finally:
+        gate.set()
+        await _drain(worker)
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_an_abandoned_ranking_request_is_recovered_at_worker_startup(db_path, conn):
+    earlier = START - timedelta(minutes=10)
+    request = _ranking_request(conn, _ranked_item(conn), now=earlier)
+    old_claim = claim_next_ranking_request(conn, earlier, lease_seconds=180)
+    runners, clock = Runners(), Clock(START)
+    worker = _worker(db_path, runners, clock)
+    try:
+        await worker.poll_once()
+        await _drain(worker)
+        assert runners.rankings[0].request_id == request["id"]
+        assert runners.rankings[0].attempt == 2
+        assert runners.rankings[0].claim_token != old_claim.claim_token
+    finally:
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_worker_renews_a_running_ranking_lease(db_path, conn):
+    request = _ranking_request(conn, _ranked_item(conn))
+    runners, clock = Runners(), Clock(START)
+    gate = runners.block["ranking"] = threading.Event()
+    worker = _worker(db_path, runners, clock)
+    try:
+        await worker.poll_once()
+        await asyncio.sleep(0.05)
+        clock.advance(seconds=100)
+        await worker.poll_once()
+        clock.advance(seconds=100)
+        await worker.poll_once()
+        stored = conn.execute(
+            "SELECT status, lease_expires_at, attempts FROM ranking_requests WHERE id = ?",
+            (request["id"],),
+        ).fetchone()
+        assert stored["status"] == "running"
+        assert stored["attempts"] == 1
+        assert stored["lease_expires_at"] == (clock.now + timedelta(seconds=180)).isoformat()
+    finally:
+        gate.set()
+        await _drain(worker)
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_ranking_hard_limit_requeues_the_claim_before_worker_exit(db_path, conn):
+    request = _ranking_request(conn, _ranked_item(conn))
+    runners, clock, exits = Runners(), Clock(START), []
+    gate = runners.block["ranking"] = threading.Event()
+    worker = _worker(db_path, runners, clock, exits, ranking_limit_seconds=60)
+    try:
+        await worker.poll_once()
+        await asyncio.sleep(0.05)
+        clock.advance(seconds=61)
+        await worker.poll_once()
+        assert exits == [EXIT_STUCK]
+        assert get_ranking_request(conn, request["id"])["status"] == "queued"
+        assert claim_next_ranking_request(conn, clock.now, lease_seconds=180).attempt == 2
+    finally:
+        gate.set()
+        await _drain(worker)
+        worker.close()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_hands_back_an_unfinished_ranking_without_consuming_an_attempt(db_path, conn):
+    request = _ranking_request(conn, _ranked_item(conn))
+    runners, clock = Runners(), Clock(START)
+    gate = runners.block["ranking"] = threading.Event()
+    worker = _worker(db_path, runners, clock, shutdown_grace_seconds=0.01)
+
+    async def stop_after_start(seconds):
+        await asyncio.sleep(0.05)
+        worker.request_stop()
+
+    worker._sleep = stop_after_start
+    try:
+        await worker.run()
+        assert get_ranking_request(conn, request["id"])["status"] == "queued"
+        assert claim_next_ranking_request(conn, START, lease_seconds=180).attempt == 1
+    finally:
+        gate.set()
+        await _drain(worker)
+        worker.close()

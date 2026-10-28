@@ -5,7 +5,7 @@
 {%- endmacro %}
 
 {% macro flash(text, tone='done') -%}
-<div class="note note-{{ tone }} adm-flash" role="{{ 'alert' if tone == 'danger' else 'status' }}"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.' ~ tone) }}</span><div class="note-body">{{ text }}</div></div></div>
+<div class="note note-{{ tone }} adm-flash" role="{{ 'alert' if tone == 'danger' else 'status' }}"{% if tone == 'done' %} data-save-confirmation{% endif %}><div class="note-row"><span class="note-tag">{{ t('web.admin.note.' ~ tone) }}</span><div class="note-body">{{ text }}</div></div></div>
 {%- endmacro %}
 
 {% macro param(label, for_id=None, note=None, optional=False, static=False, track=True) -%}
@@ -18,12 +18,14 @@
 
 {#- A one-line value that wraps instead of hiding its end: URLs, queries, address lists.
     beehive.js keeps it one line (Enter submits, pasted line breaks are dropped). -#}
-{% macro line_field(id, name, value, placeholder='', inputmode='', autocomplete='off', literal=False, required=False, invalid=False, extra_class='', maxlength=None) -%}
+{% macro line_field(id, name, value, placeholder='', inputmode='', autocomplete='off', literal=False, required=False, invalid=False, extra_class='', maxlength=None, describedby=None, autofocus=False) -%}
 <textarea class="inp inp-line{{ ' ' ~ extra_class if extra_class }}" id="{{ id }}" name="{{ name }}" rows="1" data-single-line
   {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
   {%- if inputmode %} inputmode="{{ inputmode }}"{% endif %} autocomplete="{{ autocomplete }}"
   {%- if literal %} spellcheck="false" autocapitalize="off" autocorrect="off"{% endif %}
   {%- if maxlength %} maxlength="{{ maxlength }}"{% endif %}
+  {%- if describedby %} aria-describedby="{{ describedby }}"{% endif %}
+  {%- if autofocus %} autofocus{% endif %}
   {%- if required %} required{% endif %}{% if invalid %} aria-invalid="true"{% endif %}>{{ '' if value is none else value }}</textarea>
 {%- endmacro %}
 
@@ -53,12 +55,14 @@
 
 {% macro savebar(submit_label, cancel_url=None) -%}
 <div class="savebar">
+  <span hidden data-draft-messages data-conflict="{{ t('web.admin.task.draft_conflict') }}" data-restore="{{ t('web.admin.task.restore_draft') }}" data-discard="{{ t('web.admin.form.discard') }}"></span>
   <button class="btn btn-primary" type="submit">{{ submit_label }}</button>
   {% if caller is defined %}{{ caller() }}{% endif %}
   <button class="btn" type="reset" data-dirty-reset hidden>{{ t('web.admin.form.discard') }}</button>
   {% if cancel_url %}<a class="btn" href="{{ cancel_url }}">{{ t('web.admin.channel_new.cancel') }}</a>{% endif %}
   <span class="dirty" data-dirty-status data-template="{{ t('web.admin.form.unsaved', count='__COUNT__') }}"
         data-force-message="{{ t('web.admin.form.unsaved_submission') }}" aria-live="polite" hidden></span>
+  <span class="savebar-schedule" data-email-schedule-summary hidden></span>
 </div>
 {%- endmacro %}
 

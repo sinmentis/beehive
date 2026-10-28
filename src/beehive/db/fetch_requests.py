@@ -202,11 +202,14 @@ def requeue_fetch_request(
     return True
 
 
-def clear_stale_fetch_requests(conn: sqlite3.Connection, now: datetime) -> int:
-    """The Owner's recovery for requests whose worker stopped: removes every expired claim."""
+def clear_stale_fetch_requests(
+    conn: sqlite3.Connection, now: datetime, *, channel_id: int | None = None,
+) -> int:
+    """Remove expired claims, optionally limited to the Channel being recovered."""
     cur = conn.execute(
-        "DELETE FROM fetch_requests WHERE claim_token IS NOT NULL AND lease_expires_at <= ?",
-        (now.isoformat(),),
+        "DELETE FROM fetch_requests WHERE claim_token IS NOT NULL AND lease_expires_at <= ?"
+        + (" AND channel_id = ?" if channel_id is not None else ""),
+        (now.isoformat(), channel_id) if channel_id is not None else (now.isoformat(),),
     )
     conn.commit()
     return cur.rowcount

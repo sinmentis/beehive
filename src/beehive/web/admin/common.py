@@ -350,7 +350,7 @@ def _channel_attention_items(conn: sqlite3.Connection, t: Localizer) -> list[dic
     for row in rows:
         source = dict(row)
         channel = channels.get(source["channel_id"])
-        if channel is None:
+        if channel is None or channel.get("setup_stage"):
             continue
         items.append(
             {

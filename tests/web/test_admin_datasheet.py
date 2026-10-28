@@ -178,7 +178,7 @@ def test_pause_ignores_an_off_site_return_url(client, db_path):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/admin/channels/{channel_id}/edit"
+    assert response.headers["location"] == f"/admin/channels/{channel_id}/edit?section=sources"
 
 
 def test_removing_a_shop_source_is_confirmed_with_its_domain(client, db_path):
@@ -303,7 +303,11 @@ def test_a_rejected_save_keeps_the_form_marked_unsaved(client, db_path):
     )
 
     assert response.status_code == 400
-    assert "data-dirty-track data-dirty-force" in response.text
+    assert 'data-active-section="settings"' in response.text
+    assert re.search(
+        rf'<form[^>]+action="/admin/channels/{channel_id}/settings"[^>]+data-dirty-force',
+        response.text,
+    )
     assert "These changes were not saved." in response.text
 
 

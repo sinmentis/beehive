@@ -1,0 +1,41 @@
+{% import "_admin_macros.html" as ui with context %}
+{% if ranking_request %}
+<section class="rule-operation"{% if ranking_request.status in ("queued", "running") %} data-task-poll="/admin/channels/{{ channel.id }}/rules/requests/{{ ranking_request.id }}" data-poll-error="{{ t('web.admin.task.progress_unavailable') }}"{% endif %}>
+  <div class="workspace-heading">
+    <h3>{{ t('web.admin.task.preview_result') if ranking_request.mode == "preview" else t('web.admin.task.reprocess') }}</h3>
+    <div class="operation-meta"><time datetime="{{ ranking_request.created_at }}" title="{{ ranking_request.created_at }}">{{ ranking_request.created_at|short_time }}</time><span class="st st-{{ 'ok' if ranking_request.status == 'completed' else 'error' if ranking_request.status == 'failed' else 'busy' }}">{{ t('web.admin.task.job_' ~ ranking_request.status) }}</span></div>
+  </div>
+  <p data-task-progress aria-live="polite">{{ t('web.admin.task.job_progress', done=ranking_request.processed_count + ranking_request.skipped_count, total=ranking_request.total_count, skipped=ranking_request.skipped_count) }}</p>
+  {% if ranking_request.error %}{{ ui.raw_error(ranking_request.error) }}{% endif %}
+  {% if ranking_request.status in ("queued", "running") %}
+  <form method="post" action="/admin/channels/{{ channel.id }}/rules/requests/{{ ranking_request.id }}/cancel">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-sm" type="submit">{{ t('web.admin.task.cancel_job') }}</button>
+    <a class="lnk" href="/admin/channels/{{ channel.id }}/edit?section=rules&amp;ranking_request={{ ranking_request.id }}">{{ t('web.admin.task.refresh_status') }}</a>
+    <span class="form-help">{{ t('web.admin.task.cancel_hint') }}</span>
+  </form>
+  {% endif %}
+  {% for item in (ranking_request.result or [])[:5] %}
+  <article class="rule-comparison" data-preview-score="{{ item.score }}">
+    <h4>{{ item.title }}</h4>
+    <div class="comparison-columns">
+      <div><h5>{{ t('web.admin.task.previous') }} <span class="score">{{ item.previous_display_score if item.previous_display_score is not none else '—' }}</span></h5><p>{{ item.previous_summary or '—' }}</p></div>
+      <div><h5>{{ t('web.admin.task.preview_result') }} <span class="score">{{ item.display_score if item.display_score is not none else '—' }}</span></h5><p>{{ item.summary }}</p><p class="form-help">{{ item.rationale }}</p></div>
+    </div>
+  </article>
+  {% endfor %}
+  {% if ranking_request.result %}
+  <p class="score-preview-count" data-score-preview-count data-template="{{ t('web.admin.task.score_preview', matched='__MATCHED__', count='__COUNT__') }}" aria-live="polite"></p>
+  <p class="form-help">{{ t('web.admin.task.score_preview_hint') }}</p>
+  {% endif %}
+  {% if ranking_request.mode == "preview" and ranking_request.status == "completed" %}
+  <div class="preview-decision">
+    <p class="form-help" data-preview-profile="{{ ranking_request.requested_profile }}" data-preview-stale hidden>{{ t('web.admin.task.preview_stale') }}</p>
+    <button class="btn btn-primary" type="submit" form="channel-rules" data-save-rules-for="channel-rules">{{ t('web.admin.task.save_rules') }}</button>
+    <a class="lnk" href="#channel-rules">{{ t('web.admin.task.edit_rules') }}</a>
+    <p class="form-help">{{ t('web.admin.task.rules_hint') }}</p>
+  </div>
+  {% endif %}
+  <details class="requested-rules"><summary>{{ t('web.admin.task.rules_used') }}</summary><pre class="plain">{{ ranking_request.requested_profile }}</pre></details>
+</section>
+{% endif %}

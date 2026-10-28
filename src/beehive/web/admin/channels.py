@@ -8,7 +8,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from beehive.channels import all_definitions, require_channel_kind
 from beehive.db.fetch_requests import (
@@ -22,23 +22,42 @@ from beehive.db.admin_actions import (
     record_admin_action,
 )
 from beehive.db.channels import (
+    advance_channel_setup,
     channel_impact_counts,
     create_channel,
     duplicate_channel,
+    finish_channel_setup,
     get_channel,
     update_channel,
 )
+from beehive.db.connection import write_transaction
 from beehive.db.email_groups import (
+    assign_channel,
+    create_email_group,
     get_channel_group,
+    get_email_group,
+    list_email_groups,
+    list_member_channels,
+    unassign_channel,
+)
+from beehive.db.ranking_requests import (
+    RankingRequestError,
+    cancel_ranking_request,
+    create_ranking_request,
+    get_ranking_request,
+    list_ranking_requests_for_channel,
+    ranking_candidate_count,
 )
 from beehive.db.sources import (
     list_by_channel as list_sources,
     source_impact_counts,
 )
 from beehive.domain.channels import ChannelKind
+from beehive.digest.send import build_email_group_delivery_status
 from beehive.email_routing import (
     EmailConfigurationError,
     resolve_channel_email,
+    resolve_group_email,
     validate_email,
 )
 from beehive.localization import (
@@ -48,6 +67,7 @@ from beehive.scheduling import (
     DEFAULT_CHANNEL_FETCH_TIME,
     DEFAULT_SCHEDULE_TIMEZONE,
     ScheduleMode,
+    next_email_group_due_at,
 )
 from beehive.web.deps import (
     get_db,
@@ -70,6 +90,7 @@ from beehive.web.admin.common import (
     _channel_next_fetch_short,
     _channel_schedule_short,
     _email_error_message,
+    _email_group_schedule_label,
     _fetch_error_kind_label,
     _fetch_interval_label,
     _render_admin,
@@ -82,13 +103,28 @@ from beehive.web.admin.common import (
 from beehive.web.admin.home import (
     _render_admin_home_page,
 )
+from beehive.web.admin.email_groups import _normalize_email_schedule
 
 router = APIRouter()
+_WORKSPACE_SECTIONS = ("overview", "sources", "rules", "delivery", "settings")
 
 
 # Interval mode is for frequent polling only; a once-a-day Channel belongs in calendar mode, where
 # it gets a real wall-clock time instead of "24 hours after the last success".
 _FETCH_INTERVAL_CHOICES = (3, 6)
+
+
+def _ranking_request_view(operation: dict | None) -> dict | None:
+    if operation is None:
+        return None
+    results = []
+    for item in operation.get("result") or []:
+        display = dict(item)
+        for field in ("previous_score", "score"):
+            key = "previous_display_score" if field == "previous_score" else "display_score"
+            display[key] = round(item[field]) if item[field] is not None else None
+        results.append(display)
+    return {**operation, "result": results}
 
 
 def _fetch_interval_options(selected_hours: int, t: Localizer) -> tuple[dict, ...]:
@@ -168,6 +204,8 @@ def trigger_channel_fetch(
     channel = get_channel(conn, channel_id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
+    if channel.get("setup_stage"):
+        raise HTTPException(status_code=409, detail="Complete channel setup before fetching")
     request_fetch(conn, [channel_id], datetime.now(timezone.utc))
     record_admin_action(
         conn,
@@ -210,9 +248,19 @@ def trigger_channel_fetch_batch(
             bulk_error=t.text("web.admin.settings.bulk_fetch_empty"),
             status_code=400,
         )
+    active_ids = []
     for channel_id in selected_ids:
-        if get_channel(conn, channel_id) is None:
+        channel = get_channel(conn, channel_id)
+        if channel is None:
             raise HTTPException(status_code=404, detail="Channel not found")
+        if not channel.get("setup_stage"):
+            active_ids.append(channel_id)
+    if not active_ids:
+        return _render_admin_home_page(
+            request, conn, session, t, active_tab="channels",
+            bulk_error=t.text("web.admin.task.setup_incomplete"), status_code=400,
+        )
+    selected_ids = active_ids
     request_fetch(conn, selected_ids, datetime.now(timezone.utc))
     record_admin_action(
         conn,
@@ -280,6 +328,7 @@ def _render_new_channel_page(
     fetch_schedule_timezone: str = DEFAULT_SCHEDULE_TIMEZONE,
     fetch_schedule_time: str = DEFAULT_CHANNEL_FETCH_TIME,
     schedule_error: str | None = None,
+    name_error: str | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
     return _render_admin(
@@ -292,6 +341,7 @@ def _render_new_channel_page(
             "selected_kind": kind,
             "name": name,
             "profile": profile,
+            "fetch_interval_hours": fetch_interval_hours,
             "highlight_count": highlight_count,
             "minimum_score": minimum_score,
             "fetch_schedule_mode": fetch_schedule_mode,
@@ -300,6 +350,7 @@ def _render_new_channel_page(
             "fetch_interval_options": _fetch_interval_options(fetch_interval_hours, t),
             "schedule_timezones": _schedule_timezone_options(fetch_schedule_timezone),
             "schedule_error": schedule_error,
+            "name_error": name_error,
         },
         status_code=status_code,
     )
@@ -318,7 +369,7 @@ def new_channel_form(
 def new_channel_submit(
     request: Request,
     name: str = Form(...),
-    profile: str = Form(...),
+    profile: str = Form(""),
     fetch_interval_hours: int = Form(..., ge=1),
     highlight_count: int = Form(8, ge=1, le=50),
     minimum_score: int = Form(0, ge=0, le=100),
@@ -326,12 +377,15 @@ def new_channel_submit(
     fetch_schedule_mode: str = Form(ScheduleMode.INTERVAL.value),
     fetch_schedule_timezone: str = Form(DEFAULT_SCHEDULE_TIMEZONE),
     fetch_schedule_time: str = Form(DEFAULT_CHANNEL_FETCH_TIME),
+    setup: bool = Form(False),
     csrf_token: str = Form(...),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
 ):
     verify_csrf(session, csrf_token)
+    if not setup and not profile:
+        raise HTTPException(status_code=422, detail="Profile is required")
     try:
         normalized_schedule = _normalize_channel_fetch_schedule(
             fetch_schedule_mode=fetch_schedule_mode,
@@ -355,18 +409,26 @@ def new_channel_submit(
             schedule_error=t.text(str(exc)),
             status_code=400,
         )
-    channel_id = create_channel(
-        conn,
-        name,
-        profile,
-        fetch_interval_hours=fetch_interval_hours,
-        highlight_count=highlight_count,
-        minimum_score=minimum_score,
-        kind=kind,
-        fetch_schedule_mode=normalized_schedule[0],
-        fetch_schedule_timezone=normalized_schedule[1],
-        fetch_schedule_time=normalized_schedule[2],
-    )
+    try:
+        channel_id = create_channel(
+            conn, name, profile, fetch_interval_hours=fetch_interval_hours,
+            highlight_count=highlight_count, minimum_score=minimum_score, kind=kind,
+            fetch_schedule_mode=normalized_schedule[0],
+            fetch_schedule_timezone=normalized_schedule[1],
+            fetch_schedule_time=normalized_schedule[2],
+            setup_stage="sources" if setup else None,
+        )
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        if "channels.name" not in str(exc):
+            raise
+        return _render_new_channel_page(
+            request, session, t, name=name, profile=profile, kind=kind,
+            fetch_interval_hours=fetch_interval_hours, highlight_count=highlight_count,
+            minimum_score=minimum_score, fetch_schedule_mode=fetch_schedule_mode,
+            fetch_schedule_timezone=fetch_schedule_timezone, fetch_schedule_time=fetch_schedule_time,
+            name_error=t.text("web.admin.task.channel_name_taken"), status_code=400,
+        )
     record_admin_action(
         conn,
         action_type="channel_created",
@@ -375,7 +437,8 @@ def new_channel_submit(
         target_label=name,
     )
     return RedirectResponse(
-        f"/admin/channels/{channel_id}/edit?created=1",
+        f"/admin/channels/{channel_id}/edit?created=1"
+        + ("&section=sources" if setup else ""),
         status_code=303,
     )
 
@@ -472,7 +535,17 @@ def _render_edit_channel_page(
     undone: bool = False,
     fetch_requested: bool = False,
     schedule_error: str | None = None,
+    section: str = "overview",
+    workspace_error: str | None = None,
+    workspace_error_field: str | None = None,
+    ranking_request_id: str | None = None,
+    delivery_values: dict | None = None,
+    activated: bool = False,
+    force_dirty: bool | None = None,
 ) -> HTMLResponse:
+    selected_section = section if section in _WORKSPACE_SECTIONS else "overview"
+    if selected_section == "overview" and (error or schedule_error):
+        selected_section = "settings"
     sources = []
     source_rows = list_sources(conn, channel["id"])
     # Mutable-snapshot Channels treat a Source's first successful fetch as a baseline that sends
@@ -524,6 +597,47 @@ def _render_edit_channel_page(
     next_fetch_label = _channel_next_fetch_label(
         source_channel, source_rows, datetime.now(timezone.utc)
     )
+    current_group = get_channel_group(conn, channel["id"])
+    groups = list_email_groups(conn)
+    now = datetime.now(timezone.utc)
+    group_recipient = None
+    next_email_label = None
+    if current_group:
+        try:
+            group_recipient = resolve_group_email(current_group, default_recipient).address
+        except EmailConfigurationError:
+            pass
+        due = next_email_group_due_at(current_group, now)
+        next_email_label = due.astimezone(
+            ZoneInfo(current_group["schedule_timezone"])
+        ).strftime("%Y-%m-%d %H:%M %Z")
+    requests = (
+        list_ranking_requests_for_channel(conn, channel["id"])
+        if selected_section == "rules" else []
+    )
+    ranking_request = None
+    if ranking_request_id:
+        ranking_request = get_ranking_request(conn, ranking_request_id)
+        if ranking_request is None or ranking_request["channel_id"] != channel["id"]:
+            raise HTTPException(status_code=404, detail="Rule operation not found")
+    elif requests:
+        ranking_request = requests[0]
+    default_group_name = f"{channel['name']} Daily"
+    group_names = {group["name"] for group in groups}
+    suffix = 2
+    while default_group_name in group_names:
+        default_group_name = f"{channel['name']} Daily ({suffix})"
+        suffix += 1
+    delivery_form = {
+        "delivery_mode": "existing" if current_group else "none",
+        "group_id": current_group["id"] if current_group else "",
+        "group_name": default_group_name,
+        "subject_template": f"{channel['name']} | {{date}}",
+        "schedule_time": "09:00",
+        "schedule_timezone": channel["fetch_schedule_timezone"],
+        "recipient_email": "",
+    }
+    delivery_form.update(delivery_values or {})
     return _render_admin(
         request,
         t,
@@ -560,9 +674,40 @@ def _render_edit_channel_page(
             "next_fetch_short": _channel_next_fetch_short(
                 source_channel, source_rows, datetime.now(timezone.utc), t
             ),
-            "unsaved_submission": status_code >= 400,
+            "unsaved_submission": status_code >= 400 if force_dirty is None else force_dirty,
+            "legacy_dirty_rules": (
+                status_code >= 400 and request.url.path.endswith("/edit")
+                and effective_channel is not None
+                and any(channel[key] != effective_channel[key]
+                        for key in ("profile", "minimum_score", "highlight_count"))
+            ),
             "stale_recovery": _channel_has_stale_fetch(conn, channel["id"]),
-            "current_group": get_channel_group(conn, channel["id"]),
+            "current_group": current_group,
+            "group_recipient": group_recipient,
+            "group_channel_count": len(list_member_channels(conn, current_group["id"])) if current_group else 0,
+            "next_email_label": next_email_label,
+            "email_groups": [
+                {**group, "schedule_label": _email_group_schedule_label(group, t)}
+                for group in groups
+            ],
+            "delivery_form": delivery_form,
+            "delivery_timezones": _schedule_timezone_options(delivery_form["schedule_timezone"]),
+            "delivery_status": (
+                build_email_group_delivery_status(conn, current_group)
+                if current_group and selected_section == "delivery" else None
+            ),
+            "default_recipient": default_recipient.address,
+            "section": selected_section,
+            "workspace_error": workspace_error,
+            "workspace_error_field": workspace_error_field,
+            "activated": activated,
+            "ranking_request": _ranking_request_view(ranking_request),
+            "ranking_requests": requests,
+            "ranking_busy": any(row["status"] in ("queued", "running") for row in requests),
+            "ranking_candidate_count": (
+                ranking_candidate_count(conn, channel["id"]) if selected_section == "rules" else 0
+            ),
+            "fetch_state": fetch_request_states(conn, now).get(channel["id"]),
             "impact": channel_impact_counts(conn, channel["id"]),
             "setup": _channel_setup_progress(conn, channel["id"]),
         },
@@ -583,6 +728,9 @@ def edit_channel_form(
     undo_action: int | None = None,
     undone: int | None = None,
     fetch_requested: int | None = None,
+    section: str = "overview",
+    ranking_request: str | None = None,
+    activated: int | None = None,
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -600,6 +748,384 @@ def edit_channel_form(
         undo_action_id=undo_action,
         undone=undone == 1,
         fetch_requested=fetch_requested == 1,
+        section=section,
+        ranking_request_id=ranking_request,
+        activated=activated == 1,
+    )
+
+
+def _workspace_channel(conn: sqlite3.Connection, channel_id: int) -> dict:
+    channel = get_channel(conn, channel_id)
+    if channel is None:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    return channel
+
+
+@router.get("/channels/{channel_id}/workspace-status")
+def channel_workspace_status(
+    channel_id: int,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    _workspace_channel(conn, channel_id)
+    progress = _channel_setup_progress(conn, channel_id)
+    return JSONResponse({
+        "state": fetch_request_states(conn, datetime.now(timezone.utc)).get(channel_id),
+        "progress": t.text(
+            "web.admin.task.collected", count=progress["item_count"],
+            ranked=progress["ranked_item_count"],
+        ),
+    })
+
+
+def _workspace_error(t: Localizer, code: str) -> str:
+    known = {
+        "no_candidates", "rules_changed", "request_in_progress", "confirm_required",
+        "setup_incomplete", "source_required", "profile_required", "choose_group",
+    }
+    return t.text(f"web.admin.task.{code if code in known else 'job_failed'}")
+
+
+@router.post("/channels/{channel_id}/rules")
+def save_channel_rules(
+    channel_id: int,
+    request: Request,
+    profile: str = Form(...),
+    highlight_count: int = Form(..., ge=1, le=50),
+    minimum_score: int = Form(..., ge=0, le=100),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    channel = _workspace_channel(conn, channel_id)
+    update_channel(
+        conn, channel_id, channel["name"], profile, channel["fetch_interval_hours"],
+        channel["digest_email"], highlight_count=highlight_count, minimum_score=minimum_score,
+    )
+    if list_sources(conn, channel_id):
+        advance_channel_setup(conn, channel_id, "delivery")
+    record_admin_action(
+        conn, action_type="channel_updated", target_type="channel",
+        target_id=channel_id, target_label=channel["name"],
+    )
+    section = "rules"
+    if channel.get("setup_stage"):
+        next_stage = get_channel(conn, channel_id)["setup_stage"]
+        section = "overview" if next_stage == "review" else next_stage
+    return RedirectResponse(
+        f"/admin/channels/{channel_id}/edit?section={section}&saved=1", status_code=303,
+    )
+
+
+@router.post("/channels/{channel_id}/settings")
+async def save_channel_settings(
+    channel_id: int,
+    request: Request,
+    name: str | None = Form(None),
+    fetch_interval_hours: int | None = Form(None, ge=1),
+    fetch_schedule_mode: str | None = Form(None),
+    fetch_schedule_timezone: str | None = Form(None),
+    fetch_schedule_time: str | None = Form(None),
+    digest_email: str | None = Form(None),
+    clear_alert_email: bool = Form(False),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    channel = _workspace_channel(conn, channel_id)
+    submitted_form = await request.form()
+    submitted = {
+        **channel,
+        "name": name if name is not None else channel["name"],
+        "fetch_interval_hours": fetch_interval_hours if fetch_interval_hours is not None else channel["fetch_interval_hours"],
+        "fetch_schedule_mode": fetch_schedule_mode if fetch_schedule_mode is not None else channel["fetch_schedule_mode"],
+        "fetch_schedule_timezone": fetch_schedule_timezone if fetch_schedule_timezone is not None else channel["fetch_schedule_timezone"],
+        "fetch_schedule_time": fetch_schedule_time if fetch_schedule_time is not None else channel["fetch_schedule_time"],
+        "digest_email": (
+            None if clear_alert_email
+            else (digest_email or "") if "digest_email" in submitted_form
+            else channel["digest_email"]
+        ),
+    }
+    try:
+        normalized = _normalize_channel_fetch_schedule(
+            fetch_schedule_mode=submitted["fetch_schedule_mode"],
+            fetch_schedule_timezone=submitted["fetch_schedule_timezone"],
+            fetch_schedule_time=submitted["fetch_schedule_time"],
+        )
+    except ValueError as exc:
+        return _render_edit_channel_page(
+            request, conn, session, submitted, t, effective_channel=channel, section="settings",
+            schedule_error=t.text(str(exc)), status_code=400,
+        )
+    try:
+        email = validate_email(submitted["digest_email"]) if submitted["digest_email"] else None
+    except EmailConfigurationError as exc:
+        return _render_edit_channel_page(
+            request, conn, session, submitted, t, effective_channel=channel, section="settings",
+            error=_email_error_message(exc, t), status_code=400,
+        )
+    update_channel(
+        conn, channel_id, submitted["name"], channel["profile"],
+        submitted["fetch_interval_hours"], email,
+        fetch_schedule_mode=normalized[0], fetch_schedule_timezone=normalized[1],
+        fetch_schedule_time=normalized[2],
+    )
+    record_admin_action(
+        conn, action_type="channel_updated", target_type="channel",
+        target_id=channel_id, target_label=submitted["name"],
+    )
+    return RedirectResponse(f"/admin/channels/{channel_id}/edit?section=settings&saved=1", 303)
+
+
+@router.post("/channels/{channel_id}/delivery")
+def save_channel_delivery(
+    channel_id: int,
+    request: Request,
+    delivery_mode: Literal["none", "existing", "new"] = Form(...),
+    group_id: int | None = Form(None),
+    group_name: str = Form(""),
+    subject_template: str = Form(""),
+    schedule_time: str = Form("09:00"),
+    schedule_timezone: str = Form(DEFAULT_SCHEDULE_TIMEZONE),
+    recipient_email: str = Form(""),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    channel = _workspace_channel(conn, channel_id)
+    values = {
+        "delivery_mode": delivery_mode, "group_id": group_id or "", "group_name": group_name,
+        "subject_template": subject_template, "schedule_time": schedule_time,
+        "schedule_timezone": schedule_timezone, "recipient_email": recipient_email,
+    }
+    problem = None
+    problem_field = None
+    if delivery_mode == "existing" and (
+        group_id is None or get_email_group(conn, group_id) is None
+    ):
+        problem = t.text("web.admin.task.choose_group")
+        problem_field = "delivery-group"
+    elif delivery_mode == "existing":
+        default, _ = _resolve_default_for_admin(conn, t)
+        try:
+            if resolve_group_email(get_email_group(conn, group_id), default).address is None:
+                problem = t.text("web.admin.task.recipient_required")
+        except EmailConfigurationError:
+            problem = t.text("web.admin.task.recipient_required")
+        if problem:
+            problem_field = "delivery-group"
+    if delivery_mode == "new":
+        try:
+            schedule = _normalize_email_schedule(
+                schedule_mode="calendar", schedule_timezone=schedule_timezone,
+                schedule_time=schedule_time, schedule_weekdays=list(range(7)),
+            )
+            email = validate_email(recipient_email) if recipient_email.strip() else None
+            default, default_error = _resolve_default_for_admin(conn, t)
+            if email is None and (default_error or not default.address):
+                raise EmailConfigurationError("No email recipient is configured")
+        except EmailConfigurationError as exc:
+            problem = _email_error_message(exc, t)
+            problem_field = "new-group-recipient"
+        except ValueError as exc:
+            problem = t.text(str(exc))
+            problem_field = "new-group-zone" if "timezone" in str(exc) else "new-group-time"
+    if problem:
+        return _render_edit_channel_page(
+            request, conn, session, channel, t, section="delivery",
+            workspace_error=problem, workspace_error_field=problem_field,
+            delivery_values=values, status_code=400,
+        )
+    if delivery_mode == "none":
+        unassign_channel(conn, channel_id)
+    elif delivery_mode == "existing":
+        assign_channel(conn, group_id, channel_id)
+    else:
+        new_name = group_name.strip() or f"{channel['name']} Daily"
+        new_subject = subject_template.strip() or f"{channel['name']} | {{date}}"
+        with write_transaction(conn):
+            current = get_channel_group(conn, channel_id)
+            same_arrangement = current and (
+                current["name"] == new_name and current["subject_template"] == new_subject
+                and current["recipient_email"] == email and current["schedule_mode"] == "calendar"
+                and current["schedule_timezone"] == schedule[1]
+                and current["schedule_time"] == schedule[2]
+                and current["schedule_weekdays"] == schedule[3]
+                and len(list_member_channels(conn, current["id"])) == 1
+            )
+            name_conflict = not same_arrangement and conn.execute(
+                "SELECT 1 FROM email_groups WHERE name = ?", (new_name,),
+            ).fetchone() is not None
+            if same_arrangement:
+                group_id = current["id"]
+            elif not name_conflict:
+                group_id = create_email_group(
+                    conn, new_name, new_subject, email, schedule_mode=schedule[0],
+                    schedule_timezone=schedule[1], schedule_time=schedule[2],
+                    schedule_weekdays=schedule[3],
+                )
+                assign_channel(conn, group_id, channel_id)
+        if name_conflict:
+            return _render_edit_channel_page(
+                request, conn, session, channel, t, section="delivery",
+                workspace_error=t.text("web.admin.task.group_name_taken"),
+                workspace_error_field="new-group-name",
+                delivery_values=values, status_code=400,
+            )
+        if not same_arrangement:
+            record_admin_action(
+                conn, action_type="email_group_created", target_type="email_group",
+                target_id=group_id, target_label=new_name, detail={"channel_ids": [channel_id]},
+            )
+    record_admin_action(
+        conn, action_type="channel_updated", target_type="channel",
+        target_id=channel_id, target_label=channel["name"],
+    )
+    if channel["profile"].strip() and list_sources(conn, channel_id):
+        advance_channel_setup(conn, channel_id, "review")
+    section = "delivery"
+    if channel.get("setup_stage"):
+        next_stage = get_channel(conn, channel_id)["setup_stage"]
+        section = "overview" if next_stage == "review" else next_stage
+    return RedirectResponse(
+        f"/admin/channels/{channel_id}/edit?section={section}&saved=1", 303,
+    )
+
+
+@router.post("/channels/{channel_id}/activate")
+def activate_channel(
+    channel_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    channel = _workspace_channel(conn, channel_id)
+    try:
+        activated = finish_channel_setup(conn, channel_id)
+    except ValueError as exc:
+        return _render_edit_channel_page(
+            request, conn, session, channel, t, section="overview", status_code=400,
+            workspace_error=_workspace_error(t, str(exc)),
+        )
+    if activated:
+        request_fetch(conn, [channel_id], datetime.now(timezone.utc))
+        record_admin_action(
+            conn, action_type="channel_fetch_requested", target_type="channel",
+            target_id=channel_id, target_label=channel["name"],
+        )
+    return RedirectResponse(f"/admin/channels/{channel_id}/edit?activated=1", 303)
+
+
+@router.post("/channels/{channel_id}/rules/preview")
+def preview_channel_rules(
+    channel_id: int,
+    request: Request,
+    profile: str = Form(...),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    channel = _workspace_channel(conn, channel_id)
+    try:
+        operation = create_ranking_request(conn, channel_id, mode="preview", profile=profile)
+    except RankingRequestError as exc:
+        return _render_edit_channel_page(
+            request, conn, session, {**channel, "profile": profile}, t, effective_channel=channel,
+            section="rules", workspace_error=_workspace_error(t, exc.code), status_code=400,
+        )
+    return RedirectResponse(
+        f"/admin/channels/{channel_id}/edit?section=rules&ranking_request={operation['id']}#ranking-result", 303,
+    )
+
+
+@router.post("/channels/{channel_id}/rules/apply")
+def apply_channel_rules(
+    channel_id: int,
+    request: Request,
+    confirmation: bool = Form(False),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    channel = _workspace_channel(conn, channel_id)
+    if not confirmation:
+        return _render_edit_channel_page(
+            request, conn, session, channel, t, section="rules", status_code=400,
+            workspace_error=t.text("web.admin.task.confirm_required"), force_dirty=False,
+        )
+    try:
+        operation = create_ranking_request(
+            conn, channel_id, mode="apply", profile=channel["profile"],
+        )
+    except RankingRequestError as exc:
+        return _render_edit_channel_page(
+            request, conn, session, channel, t, section="rules", status_code=400,
+            workspace_error=_workspace_error(t, exc.code), force_dirty=False,
+        )
+    return RedirectResponse(
+        f"/admin/channels/{channel_id}/edit?section=rules&ranking_request={operation['id']}#ranking-result", 303,
+    )
+
+
+def _channel_ranking_request(conn: sqlite3.Connection, channel_id: int, request_id: str) -> dict:
+    operation = get_ranking_request(conn, request_id)
+    if operation is None or operation["channel_id"] != channel_id:
+        raise HTTPException(status_code=404, detail="Rule operation not found")
+    return operation
+
+
+@router.get("/channels/{channel_id}/rules/requests/{request_id}")
+def ranking_request_status(
+    channel_id: int,
+    request_id: str,
+    request: Request,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    operation = _channel_ranking_request(conn, channel_id, request_id)
+    response = request.app.state.templates.TemplateResponse(
+        request=request, name="_admin_ranking_result.html",
+        context={"ranking_request": _ranking_request_view(operation), "channel": _workspace_channel(conn, channel_id),
+                 "csrf_token": session["csrf_token"]},
+    )
+    return JSONResponse({
+        "status": operation["status"], "html": response.body.decode("utf-8"),
+        "progress": t.text(
+            "web.admin.task.job_progress",
+            done=operation["processed_count"] + operation["skipped_count"],
+            total=operation["total_count"], skipped=operation["skipped_count"],
+        ),
+    })
+
+
+@router.post("/channels/{channel_id}/rules/requests/{request_id}/cancel")
+def cancel_channel_ranking(
+    channel_id: int,
+    request_id: str,
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    _channel_ranking_request(conn, channel_id, request_id)
+    cancel_ranking_request(conn, request_id)
+    return RedirectResponse(
+        f"/admin/channels/{channel_id}/edit?section=rules&ranking_request={request_id}#ranking-result", 303,
     )
 
 
@@ -744,7 +1270,9 @@ def recover_stale_fetch_submit(
     verify_csrf(session, csrf_token)
     if get_channel(conn, channel_id) is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-    recovered = clear_stale_fetch_requests(conn, datetime.now(timezone.utc))
+    recovered = clear_stale_fetch_requests(
+        conn, datetime.now(timezone.utc), channel_id=channel_id,
+    )
     if recovered:
         channel = get_channel(conn, channel_id)
         record_admin_action(
@@ -768,8 +1296,11 @@ def duplicate_channel_submit(
     conn: sqlite3.Connection = Depends(get_db),
 ):
     verify_csrf(session, csrf_token)
-    if get_channel(conn, channel_id) is None:
+    channel = get_channel(conn, channel_id)
+    if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
+    if channel.get("setup_stage"):
+        raise HTTPException(status_code=409, detail="Complete channel setup before duplicating")
     new_channel_id = duplicate_channel(conn, channel_id)
     new_channel = get_channel(conn, new_channel_id)
     record_admin_action(

@@ -196,9 +196,9 @@ def test_new_channel_form_shows_all_three_kind_options(authed_client):
     assert 'id="kind-editorial"' in resp.text
     assert 'id="kind-monitor"' in resp.text
     assert 'id="kind-tracker"' in resp.text
-    # Editorial is the default selection; the tracker hint is rendered for live toggling.
+    # All workflows remain available in the compact first setup step.
     assert 'id="kind-editorial" checked' in resp.text
-    assert "kind-only-tracker" in resp.text
+    assert 'name="setup" value="true"' in resp.text
 
 
 def test_create_channel_with_tracker_kind(authed_client, db_path):
@@ -1365,8 +1365,11 @@ def test_edit_channel_shows_hackernews_icons_and_prefixed_labels(
     assert "HN search · local-first" in resp.text
 
 
-def test_new_channel_form_shows_both_schedule_modes(authed_client):
-    resp = authed_client.get("/admin/channels/new")
+def test_channel_settings_shows_both_schedule_modes(authed_client, db_path):
+    conn = connect(db_path)
+    channel_id = create_channel(conn, "Schedule", "profile")
+    conn.close()
+    resp = authed_client.get(f"/admin/channels/{channel_id}/edit?section=settings")
 
     assert 'data-schedule-builder="fetch_schedule_mode"' in resp.text
     # The builder hides the panel for the mode that is not selected, which only works when the

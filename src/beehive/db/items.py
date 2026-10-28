@@ -348,6 +348,28 @@ def count_active_items_by_channel(conn: sqlite3.Connection, channel_id: int) -> 
     ).fetchone()[0]
 
 
+def count_current_item_state_for_channels(
+    conn: sqlite3.Connection, channel_ids: list[int],
+) -> dict[str, int]:
+    """Current inventory and its unscored subset, using the delivery query's item lifecycle gate.
+
+    Read state and Source pause state do not remove existing items from that gate.
+    Closed or absent events do not remove their items from these inventory counts.
+    """
+    if not channel_ids:
+        return {"current_item_count": 0, "unranked_count": 0}
+    placeholders = ", ".join("?" for _ in channel_ids)
+    row = conn.execute(
+        "SELECT COUNT(*) AS current_item_count, "
+        "COALESCE(SUM(items.ai_score IS NULL), 0) AS unranked_count "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        f"WHERE sources.channel_id IN ({placeholders}) "
+        "AND items.superseded_at IS NULL AND items.inactive_at IS NULL",
+        channel_ids,
+    ).fetchone()
+    return dict(row)
+
+
 def mark_absent_items_inactive(
     conn: sqlite3.Connection,
     source_id: int,

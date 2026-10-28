@@ -12,6 +12,7 @@ import asyncio
 import os
 import sqlite3
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from beehive.ai.model_selection import load_model
@@ -20,6 +21,7 @@ from beehive.collector.run_cycle import run_channel_cycle
 from beehive.db.channels import get_channel
 from beehive.db.connection import connect
 from beehive.db.deep_reads import DeepRead
+from beehive.db.ranking_requests import RankingClaim, fail_ranking_request
 from beehive.digest.send import send_email_group_digests
 from beehive.email_routing import (
     EmailConfigurationError,
@@ -112,6 +114,29 @@ def run_deep_read_job(db_path: str, claimed: DeepRead) -> DeepReadOutcome:
         return asyncio.run(process_claimed_deep_read(conn, claimed, fetcher=fetcher))
     finally:
         fetcher.close()
+        conn.close()
+
+
+def run_ranking_job(db_path: str, claim: RankingClaim) -> None:
+    """Thread entry: process a bounded slice using the worker's credentials and AI settings."""
+    from beehive.collector.ranking_worker import (
+        APPLY_BATCHES_PER_CLAIM,
+        process_claimed_ranking_request,
+    )
+
+    conn = connect(db_path)
+    try:
+        asyncio.run(process_claimed_ranking_request(
+            conn, claim, localizer=load_localizer(conn), model=load_model(conn),
+            max_batches=APPLY_BATCHES_PER_CLAIM,
+        ))
+    except Exception as exc:
+        fail_ranking_request(
+            conn, claim, datetime.now(timezone.utc), error_code="ranking_failed",
+            error=f"{type(exc).__name__}: {exc}"[:1000],
+        )
+        raise
+    finally:
         conn.close()
 
 

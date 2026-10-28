@@ -40,7 +40,7 @@ from beehive.db.item_events import (
     mark_events_delivered,
     suppress_events,
 )
-from beehive.db.items import count_active_items_by_channel
+from beehive.db.items import count_active_items_by_channel, count_current_item_state_for_channels
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.digest.compose import (
     compose_channel_digest,
@@ -54,7 +54,7 @@ from beehive.email_routing import (
     ResolvedRecipient,
     resolve_group_email,
 )
-from beehive.localization import Localizer
+from beehive.localization import Localizer, load_localizer
 from beehive.notify import Notifier
 from beehive.scheduling import (
     DEFAULT_SCHEDULE_TIMEZONE,
@@ -82,6 +82,7 @@ class EmailGroupDigestPreview:
     event_count: int
     warning_count: int
     channel_count: int
+    below_cutoff_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -90,8 +91,12 @@ class _GroupDigestContent:
     delivered_event_ids: list[int]
     duplicate_event_ids: list[int]
     expired_event_ids: list[int]
+    member_channel_ids: list[int]
     included_channel_ids: list[int]
     warning_count: int
+    below_cutoff_count: int
+    held_count: int
+    capped_count: int
 
 
 def _format_subject(template: str, digest_date: str) -> str:
@@ -257,6 +262,9 @@ def _build_group_content(
     expired_event_ids: list[int] = []
     included_channel_ids: list[int] = []
     warning_count = 0
+    below_cutoff_count = 0
+    held_count = 0
+    capped_count = 0
     for channel in member_channels:
         sources = list_sources(conn, channel["id"])
         selection = select_channel_events(
@@ -270,6 +278,9 @@ def _build_group_content(
         seen_fingerprints |= selection.fingerprints
         duplicate_event_ids.extend(selection.duplicate_ids)
         expired_event_ids.extend(selection.expired_ids)
+        below_cutoff_count += selection.below_cutoff_count
+        held_count += selection.held_count
+        capped_count += selection.remaining_count
         warnings = _channel_warnings(channel, sources, localizer, group_timezone, now)
         has_content = bool(selection.delivered or warnings)
         sections.append(
@@ -306,9 +317,37 @@ def _build_group_content(
         delivered_event_ids=delivered_event_ids,
         duplicate_event_ids=duplicate_event_ids,
         expired_event_ids=expired_event_ids,
+        member_channel_ids=channel_ids,
         included_channel_ids=included_channel_ids,
         warning_count=warning_count,
+        below_cutoff_count=below_cutoff_count,
+        held_count=held_count,
+        capped_count=capped_count,
     )
+
+
+def build_email_group_delivery_status(
+    conn: sqlite3.Connection, group: dict, now: datetime | None = None,
+) -> dict[str, int]:
+    """Read-only diagnostics, including when a digest preview would be empty.
+
+    Inventory counts include non-inactive, non-superseded items and their unranked
+    subset. Event counts use exactly the preview/send selection, with eligible_count
+    measured after the highlight cap. Items without open events do not prove a
+    baseline was taken, so this reports counts rather than an inferred reason.
+    """
+    run_time = now or datetime.now(timezone.utc)
+    content = _build_group_content(conn, group, load_localizer(conn), now=run_time)
+    return {
+        **count_current_item_state_for_channels(conn, content.member_channel_ids),
+        "eligible_count": len(content.delivered_event_ids),
+        "below_cutoff_count": content.below_cutoff_count,
+        "expired_count": len(content.expired_event_ids),
+        "held_count": content.held_count,
+        "capped_count": content.capped_count,
+        "duplicate_count": len(content.duplicate_event_ids),
+        "warning_count": content.warning_count,
+    }
 
 
 def build_email_group_digest_preview(
@@ -343,6 +382,7 @@ def build_email_group_digest_preview(
         event_count=len(content.delivered_event_ids),
         warning_count=content.warning_count,
         channel_count=len(content.included_channel_ids),
+        below_cutoff_count=content.below_cutoff_count,
     )
 
 
@@ -404,6 +444,11 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
     group with real content cannot be delivered. A group with nothing deliverable advances only
     last_checked_at and returns normally."""
     content = _build_group_content(conn, group, localizer, now=run_time)
+    if content.below_cutoff_count:
+        _LOGGER.info(
+            'Email group "%s" excluded %d ready event(s) below the current score cutoff',
+            group["name"], content.below_cutoff_count,
+        )
     if not content.channel_digests:
         # No ready events and no Source warnings anywhere (including a group with no member
         # Channels): nothing to send, but the group was genuinely evaluated, so pace it forward

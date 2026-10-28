@@ -145,3 +145,37 @@ def test_a_weekly_group_still_expires_what_is_older_than_a_week_and_a_day():
     selection = _select([_event(1, age_hours=9 * 24)], _channel(), period=timedelta(days=7))
 
     assert selection.expired_ids == [1]
+
+
+def test_current_minimum_score_filters_already_ready_events_before_the_highlight_cap():
+    channel = {**_channel(highlight_count=1), "minimum_score": 75}
+    selection = _select([_event(1, score=70), _event(2, score=80)], channel)
+
+    assert [event["id"] for event in selection.delivered] == [2]
+    assert selection.remaining_count == 0
+    assert selection.below_cutoff_count == 1
+
+
+def test_current_cutoff_keeps_expiry_and_stale_holds_and_includes_the_boundary():
+    selection = _select(
+        [_event(1, age_hours=100, score=40), _event(2, score=74), _event(3, score=75)],
+        {**_channel(), "minimum_score": 75},
+    )
+
+    assert selection.expired_ids == [1]
+    assert [event["id"] for event in selection.delivered] == [3]
+    assert selection.below_cutoff_count == 1
+    held = _select(
+        [_event(4, score=60, kind="monitor")],
+        {**_channel("monitor"), "minimum_score": 75},
+        _sources(last_fetch_at=(NOW - timedelta(days=3)).isoformat()),
+    )
+    assert held.held_count == 1
+    assert held.expired_ids == []
+
+
+def test_zero_cutoff_preserves_ready_unscored_event_behavior():
+    selection = _select([_event(1, score=None)], {**_channel(), "minimum_score": 0})
+
+    assert [event["id"] for event in selection.delivered] == [1]
+    assert selection.below_cutoff_count == 0

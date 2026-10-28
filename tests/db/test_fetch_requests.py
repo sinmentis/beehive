@@ -109,6 +109,18 @@ def test_the_owner_clears_only_stale_requests(conn):
     }
 
 
+def test_channel_recovery_does_not_clear_other_channels(conn):
+    first, second = _channels(conn, 2)
+    request_fetch(conn, [first, second], NOW)
+    claim_next_fetch_request(conn, NOW, lease_seconds=60)
+    claim_next_fetch_request(conn, NOW, lease_seconds=60)
+
+    assert clear_stale_fetch_requests(
+        conn, NOW + timedelta(seconds=120), channel_id=first,
+    ) == 1
+    assert fetch_request_states(conn, NOW + timedelta(seconds=120)) == {second: "stale"}
+
+
 def test_deleting_a_channel_removes_its_request(conn):
     (channel,) = _channels(conn, 1)
     request_fetch(conn, [channel], NOW)

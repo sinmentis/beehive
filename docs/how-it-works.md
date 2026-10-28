@@ -31,16 +31,45 @@ retried on the next fetch, and a channel whose ranking keeps failing sends at mo
 alert every six hours.
 
 Two always-on workers do everything that doesn't answer a web request. The jobs worker fetches
-every channel on its schedule, runs **Fetch now** and deep reads, and sends email and reminders;
-the research worker runs research sessions. Both poll their queues in SQLite, so a restart loses
-nothing and local runs behave like a server ([ADR-0012](adr/0012-one-jobs-worker.md)). When it scores news stories, the AI reads your **Relevant** and **Not
-relevant** votes as examples ([ADR-0001](adr/0001-vote-feedback-as-fewshot-prompt-context.md)).
+every active channel on its schedule, runs **Fetch now**, rule operations and deep reads, and sends
+email and reminders; the research worker runs research sessions. Both poll their queues in SQLite,
+so a restart loses nothing and local runs behave like a server
+([ADR-0012](adr/0012-one-jobs-worker.md)). When it scores news stories, the AI reads your
+**Relevant** and **Not relevant** votes as examples
+([ADR-0001](adr/0001-vote-feedback-as-fewshot-prompt-context.md)).
 
 ## Channel types
 
 A channel's type is chosen when it is created and never changes. Each connector declares which
 types it supports. The admin only offers compatible sources, and storage and collection reject a
 mismatch instead of treating every channel the same.
+
+New channels use a draft setup stage. Their sources are inserted paused, and both manual and
+scheduled collection refuse to run until explicit activation. Existing channels remain active
+when the schema is upgraded. Source preflight uses submitted connection values without persisting
+the source, content, events or health state.
+
+## Rule previews and reprocessing
+
+Saving a channel profile changes future ranking only. Preview and reprocessing are separate
+durable requests in SQLite, executed by a sixth jobs-worker lane. A preview uses draft rules on up
+to five recent eligible items and stores comparison results without changing the saved profile or
+items. An apply request snapshots eligible unread news items or current listings and uses the
+saved rules to update their scores and summaries in place.
+
+Claims have leases and recover after interruption. Each result is checked against the saved
+profile, current item content and eligibility before it is applied. Changed, read or retired items
+are skipped rather than overwritten. Cancellation preserves completed results. IDs, interactions,
+timestamps and source state stay intact; reprocessing creates no discovery events and does not
+revive delivered or suppressed notifications.
+
+Previews have queue priority. Applies yield after each batch without consuming retries, rotate
+fairly, and let their channel's waiting scheduled fetch run between batches. Fetching and rule
+processing never run concurrently for the same channel, while other channels continue normally.
+
+Email selection reapplies the current channel score cutoff to pending events. The HTML preview,
+delivery diagnostics and actual send use the same selection policy. Preview and test send are
+non-consuming; an empty test sends a diagnostic message instead of pretending there is a digest.
 
 ## Deep reads
 

@@ -11,7 +11,7 @@
   {% endcall %}
   {% set schedule_note %}<p>{{ t('web.admin.email_group.schedule_hint') }}</p>{% if schedule_error %}<p class="field-error" role="alert">{{ schedule_error }}</p>{% endif %}{% endset %}
   {% call ui.param(t('web.admin.email_group.schedule_heading'), note=schedule_note) %}
-  <fieldset class="param-ctl" data-schedule-builder="schedule_mode">
+  <fieldset class="param-ctl" data-schedule-builder="schedule_mode" data-email-schedule-preview{% if group %} data-group-id="{{ group.id }}"{% endif %}>
     <legend class="sr-only">{{ t('web.admin.email_group.schedule_heading') }}</legend>
     <div class="row">
       <label class="opt"><input type="radio" name="schedule_mode" value="calendar" {{ "checked" if schedule_mode == "calendar" }}>{{ t('web.admin.email_group.schedule_calendar') }}</label>
@@ -32,6 +32,7 @@
     <div class="days" data-schedule-panel="calendar" role="group" aria-label="{{ t('web.admin.email_group.days_label') }}">
       {% for day in schedule_weekdays %}<label title="{{ day.label }}"><input type="checkbox" name="schedule_weekdays" value="{{ day.value }}" aria-label="{{ day.label }}"{{ " checked" if day.selected }}>{{ day.short_label }}</label>{% endfor %}
     </div>
+    <p class="schedule-preview" data-schedule-preview-result aria-live="polite">{{ initial_send_label }}</p>
   </fieldset>
   {% endcall %}
   {% set recipient_note %}<p>{{ t('web.admin.email_group.recipient_hint', email=(effective_email or t('web.admin.settings.not_configured'))) }}</p>{% if error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}{% endset %}

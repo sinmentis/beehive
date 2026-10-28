@@ -26,6 +26,8 @@
 -- intended wall-clock slot rather than on the previous completion, so latency cannot make the
 -- daily fetch drift later day after day. fetch_interval_hours stays populated in either mode --
 -- switching back to 'interval' restores the cadence the Owner last chose.
+-- setup_stage is NULL for normal Channels, including every legacy row. A non-NULL stage marks
+-- unfinished setup: even a forced collection cycle does nothing until review clears it.
 CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -41,6 +43,7 @@ CREATE TABLE IF NOT EXISTS channels (
     digest_email          TEXT,
     last_digest_sent_at   TEXT,
     last_digest_date      TEXT,
+    setup_stage TEXT CHECK (setup_stage IN ('sources', 'rules', 'delivery', 'review')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
 
@@ -727,6 +730,56 @@ CREATE TABLE IF NOT EXISTS fetch_requests (
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     rerun INTEGER NOT NULL DEFAULT 0 CHECK (rerun IN (0, 1)),
     CHECK ((claim_token IS NULL) = (lease_expires_at IS NULL))
+);
+
+-- Owner-requested previews and explicit, non-destructive reprocessing share one worker lane.
+-- A fixed candidate snapshot and per-candidate progress let an interrupted apply resume without
+-- rescoring completed rows. Item ids deliberately have no foreign key: deletion becomes a skip,
+-- rather than silently removing work from the request's original count.
+CREATE TABLE IF NOT EXISTS ranking_requests (
+    id TEXT PRIMARY KEY,
+    channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL CHECK (mode IN ('preview', 'apply')),
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
+    requested_profile TEXT NOT NULL,
+    saved_profile TEXT NOT NULL,
+    channel_kind TEXT NOT NULL CHECK (channel_kind IN ('editorial', 'monitor', 'tracker')),
+    total_count INTEGER NOT NULL CHECK (total_count > 0),
+    processed_count INTEGER NOT NULL DEFAULT 0 CHECK (processed_count >= 0),
+    skipped_count INTEGER NOT NULL DEFAULT 0 CHECK (skipped_count >= 0),
+    error TEXT,
+    error_code TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    claim_token TEXT,
+    lease_expires_at TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    CHECK (processed_count + skipped_count <= total_count),
+    CHECK (
+        (status = 'running' AND claim_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+        OR (status != 'running' AND claim_token IS NULL AND lease_expires_at IS NULL)
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ranking_requests_active_channel
+    ON ranking_requests(channel_id) WHERE status IN ('queued', 'running');
+CREATE INDEX IF NOT EXISTS idx_ranking_requests_channel_history
+    ON ranking_requests(channel_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ranking_requests_queue
+    ON ranking_requests(status, created_at);
+
+CREATE TABLE IF NOT EXISTS ranking_request_items (
+    request_id TEXT NOT NULL REFERENCES ranking_requests(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK (position >= 0),
+    item_id INTEGER NOT NULL,
+    snapshot TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processed', 'skipped')),
+    result TEXT,
+    skip_reason TEXT,
+    PRIMARY KEY (request_id, position),
+    UNIQUE (request_id, item_id)
 );
 
 -- Beehive Civic persistence. A third, additive table family alongside the feed tables and the

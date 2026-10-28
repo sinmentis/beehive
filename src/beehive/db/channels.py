@@ -4,6 +4,7 @@ import json
 import sqlite3
 
 from beehive.channels import require_channel_kind
+from beehive.db.connection import write_transaction
 from beehive.db.email_groups import assign_channel, get_channel_group
 from beehive.db.sources import create_source, list_by_channel
 from beehive.scheduling import (
@@ -13,6 +14,8 @@ from beehive.scheduling import (
     ScheduleMode,
     require_schedule_mode,
 )
+
+SETUP_STAGES = ("sources", "rules", "delivery", "review")
 
 
 def _validate_display_settings(highlight_count: int, minimum_score: int) -> None:
@@ -55,16 +58,19 @@ def create_channel(conn: sqlite3.Connection, name: str, profile: str,
                     minimum_score: int = 0, kind: str = "editorial", *,
                     fetch_schedule_mode: str = ScheduleMode.INTERVAL.value,
                     fetch_schedule_timezone: str = DEFAULT_SCHEDULE_TIMEZONE,
-                    fetch_schedule_time: str = DEFAULT_CHANNEL_FETCH_TIME) -> int:
+                    fetch_schedule_time: str = DEFAULT_CHANNEL_FETCH_TIME,
+                    setup_stage: str | None = None) -> int:
     _validate_display_settings(highlight_count, minimum_score)
     normalized_kind = _validate_kind(kind)
+    if setup_stage is not None and setup_stage not in SETUP_STAGES:
+        raise ValueError("Invalid channel setup stage")
     schedule_mode, schedule_timezone, schedule_time = _validate_fetch_schedule(
         fetch_schedule_mode, fetch_schedule_timezone, fetch_schedule_time)
     cur = conn.execute(
         "INSERT INTO channels "
         "(name, profile, fetch_interval_hours, highlight_count, minimum_score, kind, "
-        "fetch_schedule_mode, fetch_schedule_timezone, fetch_schedule_time) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "fetch_schedule_mode, fetch_schedule_timezone, fetch_schedule_time, setup_stage) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             name,
             profile,
@@ -75,9 +81,40 @@ def create_channel(conn: sqlite3.Connection, name: str, profile: str,
             schedule_mode,
             schedule_timezone,
             schedule_time,
+            setup_stage,
         ))
     conn.commit()
     return cur.lastrowid
+
+
+def advance_channel_setup(conn: sqlite3.Connection, channel_id: int, stage: str) -> None:
+    if stage not in SETUP_STAGES:
+        raise ValueError("Invalid channel setup stage")
+    channel = get_channel(conn, channel_id)
+    if channel is None:
+        raise ValueError("Channel not found")
+    current = channel.get("setup_stage")
+    if current and SETUP_STAGES.index(stage) > SETUP_STAGES.index(current):
+        conn.execute("UPDATE channels SET setup_stage = ? WHERE id = ?", (stage, channel_id))
+        conn.commit()
+
+
+def finish_channel_setup(conn: sqlite3.Connection, channel_id: int) -> bool:
+    with write_transaction(conn):
+        channel = get_channel(conn, channel_id)
+        if channel is None:
+            raise ValueError("Channel not found")
+        if not channel.get("setup_stage"):
+            return False
+        if channel["setup_stage"] != "review":
+            raise ValueError("setup_incomplete")
+        if not channel["profile"].strip():
+            raise ValueError("profile_required")
+        if not list_by_channel(conn, channel_id):
+            raise ValueError("source_required")
+        conn.execute("UPDATE sources SET paused_at = NULL WHERE channel_id = ?", (channel_id,))
+        conn.execute("UPDATE channels SET setup_stage = NULL WHERE id = ?", (channel_id,))
+    return True
 
 
 def get_channel(conn: sqlite3.Connection, channel_id: int) -> dict | None:

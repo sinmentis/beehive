@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from beehive.channels import require_channel_kind
 from beehive.db.admin_actions import (
@@ -27,7 +27,7 @@ from beehive.db.email_groups import (
     unassign_channel,
     update_email_group,
 )
-from beehive.digest.send import build_email_group_digest_preview
+from beehive.digest.send import build_email_group_delivery_status, build_email_group_digest_preview
 from beehive.email_routing import (
     EmailConfigurationError,
     resolve_default_email,
@@ -37,8 +37,9 @@ from beehive.email_routing import (
 from beehive.localization import (
     Localizer,
 )
-from beehive.notify import build_notifier
+from beehive.notify import LogNotifier, build_notifier
 from beehive.scheduling import (
+    email_group_is_due,
     next_email_group_due_at,
 )
 from beehive.web.deps import (
@@ -61,6 +62,75 @@ from beehive.web.admin.common import (
 )
 
 router = APIRouter()
+
+
+def _schedule_preview_label(group: dict, t: Localizer) -> str:
+    now = datetime.now(timezone.utc)
+    try:
+        due = next_email_group_due_at(group, now)
+        time = due.astimezone(ZoneInfo(group["schedule_timezone"])).strftime("%Y-%m-%d %H:%M %Z")
+        label = t.text(
+            "web.admin.task.next_email" if group.get("id") else "web.admin.task.first_email",
+            time=time,
+        )
+        if email_group_is_due(group, now):
+            label += " " + t.text("web.admin.task.immediate_email")
+        return label
+    except (ValueError, OverflowError, ZoneInfoNotFoundError):
+        return ""
+
+
+def _email_timezone_options(selected: str) -> tuple[str, ...]:
+    if selected in _SCHEDULE_TIMEZONES:
+        return _SCHEDULE_TIMEZONES
+    try:
+        ZoneInfo(selected)
+    except (ValueError, ZoneInfoNotFoundError):
+        return _SCHEDULE_TIMEZONES
+    return (*_SCHEDULE_TIMEZONES, selected)
+
+
+@router.get("/email-schedule-preview")
+def preview_email_schedule(
+    schedule_mode: str = "calendar",
+    send_interval_hours: str = "24",
+    schedule_timezone: str = "Pacific/Auckland",
+    schedule_time: str = "09:00",
+    schedule_weekdays: str = "0,1,2,3,4,5,6",
+    group_id: int | None = None,
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    group = get_email_group(conn, group_id) if group_id is not None else None
+    if group_id is not None and group is None:
+        raise HTTPException(status_code=404, detail="Email group not found")
+    try:
+        hours = int(send_interval_hours)
+        if hours < 1:
+            raise ValueError("web.admin.email_group.schedule_error_time")
+        normalized = _normalize_email_schedule(
+            schedule_mode=schedule_mode, schedule_timezone=schedule_timezone,
+            schedule_time=schedule_time,
+            schedule_weekdays=[int(day) for day in schedule_weekdays.split(",") if day],
+        )
+    except ValueError as exc:
+        key = str(exc)
+        if not key.startswith("web.admin."):
+            key = "web.admin.email_group.schedule_error_time"
+        return JSONResponse({"error": t.text(key)}, status_code=400)
+    proposed = {
+        **(group or {"created_at": datetime.now(timezone.utc).isoformat()}),
+        "send_interval_hours": hours, "schedule_mode": normalized[0],
+        "schedule_timezone": normalized[1], "schedule_time": normalized[2],
+        "schedule_weekdays": normalized[3],
+    }
+    label = _schedule_preview_label(proposed, t)
+    if not label:
+        return JSONResponse(
+            {"error": t.text("web.admin.email_group.schedule_error_time")}, status_code=400,
+        )
+    return JSONResponse({"label": label})
 
 
 def _email_weekday_rows(t: Localizer, selected: set[int]) -> list[dict]:
@@ -180,7 +250,7 @@ def _render_new_email_group_page(
             "schedule_mode": schedule_mode,
             "schedule_timezone": schedule_timezone,
             "schedule_time": schedule_time,
-            "schedule_timezones": _SCHEDULE_TIMEZONES,
+            "schedule_timezones": _email_timezone_options(schedule_timezone),
             "schedule_weekdays": _email_weekday_rows(
                 t,
                 set(range(7)) if schedule_weekdays is None else schedule_weekdays,
@@ -189,6 +259,13 @@ def _render_new_email_group_page(
             "default_error": default_error,
             "error": error,
             "schedule_error": schedule_error,
+            "initial_send_label": _schedule_preview_label({
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "schedule_mode": schedule_mode, "send_interval_hours": send_interval_hours,
+                "schedule_timezone": schedule_timezone, "schedule_time": schedule_time,
+                "schedule_weekdays": ",".join(str(day) for day in sorted(
+                    set(range(7)) if schedule_weekdays is None else schedule_weekdays)),
+            }, t),
             "channel_rows": _build_group_channel_rows(
                 conn, t, group_id=None, selected_ids=selected_channel_ids
             ),
@@ -359,7 +436,9 @@ def _render_edit_email_group_page(
             "schedule_time": (
                 group["schedule_time"] if schedule_time is None else schedule_time
             ),
-            "schedule_timezones": _SCHEDULE_TIMEZONES,
+            "schedule_timezones": _email_timezone_options(
+                group["schedule_timezone"] if schedule_timezone is None else schedule_timezone
+            ),
             "schedule_weekdays": _email_weekday_rows(
                 t,
                 (
@@ -394,6 +473,7 @@ def _render_edit_email_group_page(
                 t,
             ),
             "unsaved_submission": status_code >= 400,
+            "initial_send_label": _schedule_preview_label(group, t),
         },
         status_code=status_code,
     )
@@ -552,9 +632,13 @@ def preview_email_group(
         {
             "group": group,
             "preview": preview,
+            "delivery_status": build_email_group_delivery_status(conn, group),
             "recipient": recipient,
             "recipient_error": default_error,
             "csrf_token": session["csrf_token"],
+            "transport_ready": not isinstance(
+                build_notifier(os.environ, default_to_addr=recipient), LogNotifier
+            ),
         },
     )
 
@@ -572,8 +656,6 @@ def test_send_email_group(
     if group is None:
         raise HTTPException(status_code=404, detail="Email group not found")
     preview = build_email_group_digest_preview(conn, group, t)
-    if preview is None:
-        raise HTTPException(status_code=409, detail="Email group has no content to preview")
     default_recipient = resolve_default_email(
         conn,
         os.environ.get("DIGEST_EMAIL_TO"),
@@ -582,10 +664,12 @@ def test_send_email_group(
     if recipient.address is None:
         raise HTTPException(status_code=409, detail="Email recipient is not configured")
     notifier = build_notifier(os.environ, default_to_addr=default_recipient.address)
+    if isinstance(notifier, LogNotifier):
+        raise HTTPException(status_code=409, detail=t.text("web.admin.task.transport_missing"))
     notifier.send(
-        f"[Test] {preview.subject}",
-        preview.plain_text,
-        preview.html,
+        f"[Test] {preview.subject if preview else group['name']}",
+        preview.plain_text if preview else t.text("web.admin.task.test_email_body", group=group["name"]),
+        preview.html if preview else None,
         to_addr=recipient.address,
     )
     record_admin_action(
@@ -595,8 +679,8 @@ def test_send_email_group(
         target_id=group_id,
         target_label=group["name"],
         detail={
-            "channels": preview.channel_count,
-            "events": preview.event_count,
+            "channels": preview.channel_count if preview else 0,
+            "events": preview.event_count if preview else 0,
         },
     )
     return RedirectResponse(

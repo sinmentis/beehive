@@ -1,0 +1,8 @@
+<dl class="email-diagnostics">
+  {% for key, label in [("current_item_count", "diag_current"), ("unranked_count", "diag_unranked"), ("eligible_count", "diag_eligible"), ("below_cutoff_count", "diag_cutoff"), ("expired_count", "diag_expired"), ("held_count", "diag_held"), ("capped_count", "diag_capped"), ("duplicate_count", "diag_duplicate"), ("warning_count", "diag_warnings")] %}
+  {% if delivery_status[key] or key in ("current_item_count", "unranked_count", "eligible_count") %}
+  <div><dt>{{ t("web.admin.task." ~ label) }}</dt><dd>{{ delivery_status[key]|count(locale) }}</dd></div>
+  {% endif %}
+  {% endfor %}
+</dl>
+<p class="form-help">{{ t('web.admin.task.delivery_events_hint') }}</p>

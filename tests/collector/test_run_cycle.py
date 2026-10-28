@@ -11,7 +11,7 @@ from beehive.connectors.base import RawItem, TruncatedSnapshotError
 from beehive.connectors.registry import register
 from beehive.db.channels import create_channel, get_channel
 from beehive.db.connection import connect, init_schema
-from beehive.db.items import list_by_channel
+from beehive.db.items import insert_new_returning_id, list_by_channel
 from beehive.db.sources import create_source, record_fetch_success, set_source_paused
 from beehive.db.sources import list_by_channel as list_sources
 from beehive.domain.channels import ChannelKind
@@ -146,6 +146,34 @@ def conn(tmp_path):
 def channel(conn):
     channel_id = create_channel(conn, "NZ Finance", "economic news")
     return get_channel(conn, channel_id)
+
+
+@pytest.mark.parametrize("setup_stage", ["sources", "rules", "delivery", "review"])
+@pytest.mark.parametrize("forced", [False, True])
+async def test_setup_channels_do_not_collect_or_rank_even_when_forced(
+    conn, channel, setup_stage, forced,
+):
+    connector = _StubConnector(items=[RawItem(external_id="new", title="New", url="https://new")])
+    register(connector)
+    source_id = create_source(conn, channel["id"], connector.type_key, {})
+    insert_new_returning_id(
+        conn, source_id, RawItem(external_id="old", title="Existing backlog", url="https://old"),
+    )
+    conn.execute("UPDATE channels SET setup_stage = ? WHERE id = ?", (setup_stage, channel["id"]))
+    conn.commit()
+    channel = get_channel(conn, channel["id"])
+    before_sources = list_sources(conn, channel["id"])
+    before_items = list_by_channel(conn, channel["id"])
+
+    with patch("beehive.collector.run_cycle.rank_channel", new=AsyncMock()) as ranker:
+        await run_channel_cycle(
+            conn, channel, LogNotifier(), localizer=_EN_LOCALIZER, force_fetch=forced,
+        )
+
+    assert connector.fetch_calls == []
+    ranker.assert_not_awaited()
+    assert list_sources(conn, channel["id"]) == before_sources
+    assert list_by_channel(conn, channel["id"]) == before_items
 
 
 @pytest.mark.asyncio
