@@ -39,7 +39,7 @@ from beehive.db.deep_reads import request_deep_read
 from beehive.db.item_events import record_or_coalesce_event, suppress_item_events
 from beehive.db.items import get_item, insert_new, update_ai_ranking, update_best_comment
 from beehive.db.sources import create_source
-from beehive.db.tracker_watches import add_tracker_watch, get_watched_item_ids
+from beehive.db.tracker_watches import add_tracker_watch, get_tracker_watch_states
 from beehive.db.votes import upsert_vote
 from beehive.localization import localizer_for
 
@@ -1216,14 +1216,17 @@ def test_tracker_item_views_show_the_owners_watches_to_the_owner_only(conn, monk
     add_tracker_watch(conn, watched, _NOW)
     # Watched while it was still open.
     add_tracker_watch(conn, closed, _NOW - timedelta(hours=2))
+    conn.execute("UPDATE auction_watches SET last_error='delivery failed' WHERE item_id=?", (watched,))
+    conn.execute("UPDATE auction_watches SET last_error='   ' WHERE item_id=?", (closed,))
+    conn.commit()
     rows = [get_item(conn, item_id) for item_id in (watched, unwatched, closed)]
     lookups = []
 
     def _recording_lookup(connection, item_ids):
         lookups.append(list(item_ids))
-        return get_watched_item_ids(connection, item_ids)
+        return get_tracker_watch_states(connection, item_ids)
 
-    monkeypatch.setattr("beehive.channels.views.get_watched_item_ids", _recording_lookup)
+    monkeypatch.setattr("beehive.channels.views.get_tracker_watch_states", _recording_lookup)
 
     owner = build_tracker_item_views(conn, rows, t=_EN, now=_NOW, is_owner=True)
     anonymous = build_tracker_item_views(conn, rows, t=_EN, now=_NOW, is_owner=False)
@@ -1233,6 +1236,8 @@ def test_tracker_item_views_show_the_owners_watches_to_the_owner_only(conn, monk
         (True, True), (False, True), (True, True),
     ]
     assert [(view.is_watched, view.is_watchable) for view in anonymous] == [(False, False)] * 3
+    assert [view.reminder_failed for view in owner] == [True, False, False]
+    assert not any(view.reminder_failed for view in anonymous)
     # One lookup for the Owner's whole list, and none at all for an anonymous reader.
     assert lookups == [[watched, unwatched, closed]]
 

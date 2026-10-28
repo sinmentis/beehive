@@ -329,7 +329,8 @@ def test_deep_read_route_regenerate_from_ready_requeues(conn, authed_client):
     deep_read = get_deep_read(c, item_id)
     assert deep_read.status == "pending"
     assert deep_read.request_version == 2
-    assert deep_read.result_json is None
+    assert deep_read.result_json is not None
+    assert deep_read.result_completed_at == _NOW.isoformat()
 
 
 def test_deep_read_route_regenerate_from_failed_requeues(conn, authed_client):
@@ -927,7 +928,7 @@ def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origi
     assert f'href="/items/{item_id}/brief?origin=channel' in row
     assert f'channel_id={channel_id}"' in row
 
-    # 4. failed (via regenerate) -> the "retry" control.
+    # 4. failed replacement -> the saved brief remains reachable.
     request_deep_read(c, item_id, _NOW, regenerate=True)
     _fail(c, item_id)
     page, row = _vote_and_follow(authed_client, item_id, channel_id)
@@ -937,10 +938,10 @@ def test_vote_route_keeps_deep_read_action_across_every_state_with_channel_origi
     assert dr.can_regenerate is True
     assert dr.origin == "channel"
     assert dr.channel_id == channel_id
-    assert "deep-read-chip-retry" in row
-    assert 'name="regenerate" value="true"' in row
-    assert 'name="origin" value="channel"' in row
-    assert f'name="channel_id" value="{channel_id}"' in row
+    assert dr.has_saved_result is True
+    assert "deep-read-chip-open" in row
+    assert "Update failed" in row
+    assert f'href="/items/{item_id}/brief?origin=channel' in row
 
 
 def test_vote_route_derives_the_item_actual_channel_not_any_channel(conn, authed_client):

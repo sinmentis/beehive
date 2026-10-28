@@ -29,6 +29,7 @@ _FINGERPRINTS = {
     4: "db77e1552a75aa61e515ae2a71faca130d39293271adac067d8300ce30f93d2d",
     5: "16c1cda6559fc9703e6607aa2bf83757204fc60629d6e539ae4ce478d76693bd",
     6: "05f544b1e62d427055a97ead3759cc35cb54037483392a39c30bb1d18519290c",
+    7: "e3b8fbd4fed14bcb06e6bfb201fc0c9dcdf016a479d9c94d2ad4f94fd52c10de",
 }
 
 
@@ -137,6 +138,31 @@ def test_newer_but_compatible_database_is_used_without_downgrading(conn):
     init_schema(conn)
 
     assert schema_version(conn) == SCHEMA_VERSION + 1
+
+
+def test_upgrade_preserves_the_successful_brief_and_its_generation_time(conn):
+    init_schema(conn)
+    conn.execute("INSERT INTO channels (name) VALUES ('Existing')")
+    conn.execute("INSERT INTO sources (channel_id,type) VALUES (1,'rss_feed')")
+    conn.execute("INSERT INTO items (source_id,external_id,title,url) "
+                 "VALUES (1,'old','Kept item','https://example.com')")
+    conn.execute(
+        "INSERT INTO deep_reads (item_id,status,requested_at,completed_at,result_json,language_code) "
+        "VALUES (1,'ready','2026-07-01T00:00:00+00:00','2026-07-01T00:01:00+00:00',"
+        "'{\"summary\":\"kept\"}','en')"
+    )
+    conn.execute("ALTER TABLE deep_reads DROP COLUMN result_completed_at")
+    conn.execute("PRAGMA user_version = 6")
+    conn.commit()
+
+    init_schema(conn)
+
+    row = conn.execute("SELECT * FROM deep_reads WHERE item_id=1").fetchone()
+    assert row["result_json"] == '{"summary":"kept"}'
+    assert row["language_code"] == "en"
+    assert row["result_completed_at"] == row["completed_at"] == "2026-07-01T00:01:00+00:00"
+    assert schema_version(conn) == SCHEMA_VERSION
+    assert _compatible_version(conn) == COMPATIBLE_SCHEMA_VERSION
 
 
 def test_newer_incompatible_database_is_refused_without_writing(conn):

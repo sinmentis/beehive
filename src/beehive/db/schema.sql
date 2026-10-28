@@ -307,6 +307,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- worker attempt this row is currently waiting on" (matched alongside status = 'processing'
 -- in complete_deep_read_success/fail_deep_read) so a stale worker that is still finishing a
 -- previous attempt can never overwrite a newer regenerate or a different worker's claim.
+-- Result fields retain the last successful brief while another attempt is queued or fails.
+-- result_completed_at belongs to that saved result; completed_at belongs to the latest attempt.
 CREATE TABLE IF NOT EXISTS deep_reads (
     item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'pending'
@@ -321,7 +323,8 @@ CREATE TABLE IF NOT EXISTS deep_reads (
     error_detail TEXT,
     requested_at TEXT NOT NULL,
     started_at TEXT,
-    completed_at TEXT
+    completed_at TEXT,
+    result_completed_at TEXT
 );
 
 -- Append-only audit trail for db/summary_rewrites.py + collector/summary_rewrite.py's

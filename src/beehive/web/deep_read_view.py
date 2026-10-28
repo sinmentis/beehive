@@ -255,20 +255,25 @@ def build_brief_context(*, item: EditorialItemView, deep_read: DeepRead | None, 
     warning_text = None
     failure = None
 
-    if raw_status == "ready" and deep_read is not None and deep_read.result_json is not None:
+    if deep_read is not None and deep_read.result_json is not None:
         try:
             brief = parse_deep_read_result(deep_read.result_json, item.id)
         except DeepReadCacheError:
-            status = "failed"
-            failure = failure_explanation(t, "unavailable", item.safe_url)
+            if raw_status == "ready":
+                status = "failed"
+                failure = failure_explanation(t, "unavailable", item.safe_url)
         else:
             if deep_read.warning_code == "stored_source_content":
                 warning_text = t.text("web.deep_read.stored_source_warning")
             elif deep_read.warning_code == "content_incomplete":
                 warning_text = t.text("web.deep_read.incomplete_warning")
-    elif raw_status == "failed" and deep_read is not None:
+    if status == "failed" and failure is None and deep_read is not None:
         failure = failure_explanation(t, deep_read.error_code, item.safe_url)
 
+    result_completed_at = (
+        deep_read.completed_at if deep_read is not None and raw_status == "ready"
+        else deep_read.result_completed_at if deep_read is not None else None
+    )
     return {
         "item": item,
         "status": status,
@@ -279,8 +284,8 @@ def build_brief_context(*, item: EditorialItemView, deep_read: DeepRead | None, 
         "language_display_name": _language_display_name(
             deep_read.language_code if deep_read is not None else None),
         "generated_at": (
-            host_local_time_label(deep_read.completed_at)
-            if deep_read is not None and deep_read.completed_at is not None else None
+            host_local_time_label(result_completed_at)
+            if brief is not None and result_completed_at is not None else None
         ),
         "is_owner": is_owner,
         "csrf_token": csrf_token,

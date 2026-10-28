@@ -1,6 +1,6 @@
 {% extends "reading_base.html" %}
 {% block title %}{{ t('web.title.deep_read_brief', product=t('common.product_name'), title=item.ai_summary or item.title) }}{% endblock %}
-{% block meta_description %}{{ (brief.bottom_line if status == 'ready' and brief else (item.ai_summary or item.title))|truncate(200, end='…') }}{% endblock %}
+{% block meta_description %}{{ (brief.bottom_line if brief else (item.ai_summary or item.title))|truncate(200, end='…') }}{% endblock %}
 {% block og_type %}article{% endblock %}
 {% set crumbs = [(t('web.deep_read.eyebrow'), none)] %}
 {% block content %}
@@ -24,7 +24,8 @@
   {% endif %}
 </div>
 
-{% if status == 'ready' and brief %}
+{% if status != 'ready' %}{% include "_deep_read_status.html" %}{% endif %}
+{% if brief %}
 <div class="nb brief">
   <article class="read brief-body" aria-labelledby="deep-read-heading">
     {% if warning_text %}
@@ -59,8 +60,6 @@
     </div>
   </aside>
 </div>
-{% else %}
-{% include "_deep_read_status.html" %}
 {% endif %}
 {% endblock %}
 {% block scripts %}

@@ -7,17 +7,24 @@
   <p class="sr-only">{{ t('web.deep_read.ready_announcement') }}</p>
 </section>
 {% else %}
-{% if is_pending %}{% set state = t('web.reading.brief.state_pending') %}
-{% elif status == 'failed' %}{% set state = t('web.reading.brief.state_failed') %}
+{% if status == 'pending' %}{% set state = t('web.reading.brief.state_queued') %}
+{% elif is_pending %}{% set state = t('web.reading.brief.state_pending') %}
+{% elif status == 'failed' %}{% set state = t('web.deep_read.update_failed') if brief else t('web.reading.brief.state_failed') %}
 {% elif can_start %}{% set state = t('web.reading.brief.state_not_started') %}
 {% else %}{% set state = t('web.reading.brief.state_unavailable') %}{% endif %}
 <section id="deep-read-status" class="brief-status" role="status" aria-live="polite" aria-labelledby="deep-read-status-h"
          {%- if is_pending %} hx-get="{{ status_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  {% if brief %}
+  <p id="deep-read-status-h"><b>{{ state }}</b> · {{ t('web.deep_read.saved_brief_notice') }}</p>
+  {% else %}
   <h2 id="deep-read-status-h"><span class="no">{{ sec.status }}</span><span>{{ t('web.deep_read.eyebrow') }}</span><span class="tools"><span class="desk-state nw">{{ state }}</span></span></h2>
+  {% endif %}
   {% if is_pending %}
+  {% if not brief %}
   <p class="adm-lede">{{ t('web.deep_read.pending_body') }}</p>
   <div class="skel brief-skel" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-  <p class="sr-only">{{ t('web.deep_read.pending_live_region') }}</p>
+  {% endif %}
+  <p class="sr-only">{{ state }}</p>
   {% elif status == 'failed' %}
   <div class="note note-danger"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.danger') }}</span>
     <div class="note-body"><b>{{ failure.heading }}</b> {{ failure.explanation }}<small>{{ failure.next_step }}</small></div>

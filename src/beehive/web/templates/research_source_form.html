@@ -8,7 +8,10 @@
 {% block content %}
 <div class="adm-head"><div><h1>{{ heading }}</h1><p class="adm-meta">{{ t('web.research.source_form.body') }}</p></div></div>
 {% if error %}{{ ui.flash(error, 'danger') }}{% endif %}
-<form method="post" action="{{ '/research/' ~ session_id ~ '/sources/' ~ source.id ~ '/edit' if source else '/research/' ~ session_id ~ '/sources/new' }}">
+<form method="post" action="{{ '/research/' ~ session_id ~ '/sources/' ~ source.id ~ '/edit' if source else '/research/' ~ session_id ~ '/sources/new' }}"
+      data-preserve-draft data-dirty-track
+      data-draft-key="research-{{ session_id }}-source-{{ source.id if source else 'new' }}"
+      data-draft-restored="{{ t('web.admin.task.draft_restored') }}"{% if error %} data-dirty-force{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="params">
     {{ ui.params_head() }}
@@ -30,6 +33,7 @@
   <div class="savebar">
     <button type="submit" class="btn btn-primary">{{ t('common.save') }}</button>
     <a class="btn" href="{{ plan_url }}">{{ t('common.cancel') }}</a>
+    {{ ui.draft_controls() }}
   </div>
 </form>
 {% endblock %}

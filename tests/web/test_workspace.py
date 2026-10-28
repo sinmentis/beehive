@@ -15,7 +15,7 @@ from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.evidence_items import upsert_evidence_item
 from beehive.db.evidence_state import create_evidence_state_revision
-from beehive.db.items import insert_new
+from beehive.db.items import insert_new, update_ai_ranking_by_id
 from beehive.db.evidence_state import get_latest_evidence_state_revision
 from beehive.db.research_plan_revisions import create_plan_revision
 from beehive.db.research_runs import claim_research_run, complete_research_run, enqueue_research_run
@@ -179,12 +179,82 @@ def test_rail_counts_failed_reminders_in_amber_and_unread_results_in_blue(conn, 
     assert 'class="toc-count is-info"' in research_link
 
 
+def test_reading_surfaces_expose_reminder_failures_only_to_the_owner(conn, authed_client):
+    _, c = conn
+    item_id = _lot(c, "failing", closes_in_hours=0.5)
+    update_ai_ranking_by_id(c, item_id, 95, "Useful lot", "Matches")
+    _fail_reminder(c, item_id, "private transport diagnostic")
+    channel_id = c.execute("SELECT id FROM channels WHERE name='Auctions'").fetchone()[0]
+
+    for path in ("/", f"/channels/{channel_id}", f"/channels/{channel_id}?view=gallery", "/search?q=failing"):
+        page = authed_client.get(path)
+        assert page.status_code == 200
+        assert "Reminder failed" in page.text
+        assert 'id="reading-watchlist-link"' in page.text
+        assert 'class="foot-count is-caution"' in page.text
+        assert 'href="/watchlist#attention"' in page.text
+        assert "private transport diagnostic" not in page.text
+
+    with TestClient(authed_client.app) as anonymous:
+        for path in ("/", f"/channels/{channel_id}", "/search?q=failing"):
+            page = anonymous.get(path)
+            assert page.status_code == 200
+            assert "Reminder failed" not in page.text
+            assert "Reminder failures" not in page.text
+            assert 'id="reading-watchlist-link"' not in page.text
+
+
+def test_home_failure_count_includes_watches_outside_its_short_list(conn, authed_client):
+    _, c = conn
+    ids = [_lot(c, f"lot-{index}", closes_in_hours=1 + index) for index in range(6)]
+    for item_id in ids:
+        update_ai_ranking_by_id(c, item_id, 95, "Useful lot", "Matches")
+    _fail_reminder(c, ids[-1])
+
+    page = authed_client.get("/")
+
+    section = page.context["desk"][0]
+    assert section.failed_reminder_count == 1
+    assert ids[-1] not in [lot.id for lot in section.lots]
+    assert "Reminder failures: 1" in page.text
+
+
+def test_unwatching_a_failed_lot_updates_the_reading_failure_badge(conn, authed_client):
+    _, c = conn
+    item_id = _lot(c, "failing", closes_in_hours=0.5)
+    _fail_reminder(c, item_id)
+    response = authed_client.post(
+        f"/items/{item_id}/watch",
+        data={"csrf_token": "csrf1", "origin": "channel"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert 'id="reading-watchlist-link" hx-swap-oob="outerHTML"' in response.text
+    assert "foot-count is-caution" not in response.text
+    assert "Reminder failed" not in response.text
+    assert count_failed_tracker_reminders(c) == 0
+
+
 def test_session_subpage_is_current_in_the_rail_under_its_chapter(conn, authed_client):
     _, c = conn
     session_id = _session(c)
     page = authed_client.get(f"/research/{session_id}?tab=evidence").text
     assert f'<a href="/research/{session_id}?tab=evidence" aria-current="page">' in page
     assert '<a href="/research" aria-current="true">' in page
+
+
+def test_followup_draft_feedback_names_sending_without_changing_source_save_copy(conn, authed_client):
+    _, c = conn
+    session_id = _session(c)
+    _run(c, session_id, ResearchRunStatus.COMPLETED)
+    page = authed_client.get(f"/research/{session_id}")
+    composer = re.search(r'<form class="composer".*?</form>', page.text, re.S).group(0)
+    assert 'data-template="Message not sent"' in composer
+    assert 'data-draft-restored="Unsent message restored in this tab."' in composer
+    source = authed_client.get(f"/research/{session_id}/sources/new")
+    assert "Message not sent" not in source.text
+    assert localizer_for("en").text("web.admin.form.unsaved", count="__COUNT__") in source.text
 
 
 # ============================================================================

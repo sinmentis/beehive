@@ -27,6 +27,8 @@ On a wide screen the sheet fills the window. Independent sections flow side by s
 
 ## Constraints
 
+Reliability states preserve this layout. A regenerating or failed replacement keeps the last successful brief, its generation time and limitations visible; only successful replacement swaps it. Initial generation still uses a labelled status/skeleton. Owner-only reminder failures appear in the reading footer, Tracker desk heading and affected watch controls, linking to the Watch List. Counts include failed watches beyond the home shortlist and update when a watch is removed. Long warning/control labels wrap within the existing gallery cells; no new gallery layout or filter redesign is implied.
+
 Everything in the admin brief applies: no overflow at 390, 1024, 1440, 2560 or 3840 px in Chinese or English, whole units (`.nw`), CSP with no inline script or style. The sheet has no maximum width; prose keeps its measure (72ch), form fields a sane width, sections flow into `.cols` columns of at least 60rem, and a long list whose own table box fits two 56rem lanes and their gutter (115.5rem, 1848px) splits into two lanes that scroll on their own, order running down the first lane and then the second so reading and keyboard order stay as listed. The gallery is the one grid of boxes, kept flat and ruled. Pages never build more than they show: the home desk picks rows in SQL, and the archive's day totals come from one grouped count. Times are Auckland time, including the archive's days and its date filter.
 
 ## Open decisions

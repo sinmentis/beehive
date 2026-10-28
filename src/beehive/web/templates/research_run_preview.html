@@ -17,7 +17,7 @@
 </dl>
 <div class="fn"><p>{{ t('web.research.preview.cost_note') }}</p></div>
 
-<form method="post" action="{{ '/research/new' if mode == 'new' else '/research/' ~ session_id ~ '/refresh' }}" class="savebar">
+<form method="post" action="{{ '/research/new' if mode == 'new' else '/research/' ~ session_id ~ '/refresh' }}" class="savebar"{% if mode == 'new' %} data-submit-draft="research-new"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   {% if mode == 'new' %}
   <input type="hidden" name="question" value="{{ question }}">

@@ -1,4 +1,5 @@
 {% extends "datasheet_base.html" %}
+{% import "_reading_macros.html" as rd with context %}
 {% block body_class %}page-reading{% endblock %}
 {% block head %}
 {#- Share metadata for link previews. The pages stay out of search results (noindex, see
@@ -26,7 +27,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 {% endblock %}
 {% block rail_foot %}
       {% if is_owner %}
-      <a href="/watchlist">{{ t('web.nav.watchlist') }}</a>
+      {{ rd.watchlist_link() }}
       <a href="/research">{{ t('web.nav.research') }}{% if research_unread_count %}<span class="foot-count"><span aria-hidden="true">{{ research_unread_count }}</span><span class="sr-only">{{ t('web.research.unread_count', count=research_unread_count) }}</span></span>{% endif %}</a>
       <a href="/admin/">{{ t('web.nav.admin') }}</a>
       <form method="post" action="/admin/logout">

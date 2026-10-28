@@ -8,7 +8,7 @@ interactive control inside another, that the pending state is a structural skele
 spinner), and that the CSS backs the responsive/reduced-motion/target-size claims."""
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -398,6 +398,44 @@ def test_brief_page_omits_empty_limitations_section(conn, client):
     assert '<h2 id="brief-why"><span class="no">1.3</span><span>Why it matters</span></h2>' in resp.text
 
 
+@pytest.mark.parametrize("state", ["pending", "processing", "failed"])
+def test_saved_brief_remains_readable_during_a_replacement_attempt(
+    conn, client, authed_client, state,
+):
+    _, c = conn
+    _, item_id = _create_ranked_item(c)
+    request_deep_read(c, item_id, _NOW)
+    _complete_ready(c, item_id)
+    generated_at = authed_client.get(f"/items/{item_id}/brief").context["generated_at"]
+    retry_at = _NOW + timedelta(minutes=5)
+    request_deep_read(c, item_id, retry_at, regenerate=True)
+    if state != "pending":
+        claimed = claim_deep_read(c, item_id, retry_at, lease_seconds=1500)
+        if state == "failed":
+            fail_deep_read(
+                c, item_id, claimed.request_version, claimed.claim_token,
+                "llm", "private diagnostic", retry_at + timedelta(seconds=30),
+            )
+
+    for reader in (authed_client, client):
+        response = reader.get(f"/items/{item_id}/brief")
+        assert response.status_code == 200
+        assert response.context["status"] == state
+        assert response.context["generated_at"] == generated_at
+        assert response.context["brief"].bottom_line == _READY_RESULT["bottom_line"]
+        assert 'id="brief-bottom-line"' in response.text
+        assert "Showing your last successful brief." in response.text
+        assert "brief-skel" not in response.text
+        assert "private diagnostic" not in response.text
+        assert 'id="deep-read-status"' in response.text
+        status = reader.get(f"/items/{item_id}/brief/status")
+        assert "HX-Redirect" not in status.headers
+        assert ('hx-trigger="every 3s"' in status.text) == (state != "failed")
+        listing = reader.get("/").text
+        assert f'href="/items/{item_id}/brief?origin=dashboard"' in listing
+        assert "deep-read-chip-open" in listing
+
+
 def test_a_shared_brief_previews_as_an_article_with_its_bottom_line(conn, client):
     _, c = conn
     _, item_id = _create_ranked_item(c)
@@ -459,7 +497,7 @@ def test_brief_sections_are_numbered_under_the_chapter_it_was_opened_from(
         (True, "not_requested", "?origin=channel&channel_id={channel_id}", "2.1", "Not started"),
         (False, "not_requested", "", "1.1", "Unavailable"),
         (True, "failed", "?origin=archive", "3.1", "Failed"),
-        (True, "pending", "?origin=channel&channel_id={channel_id}", "2.1", "Being written"),
+        (True, "pending", "?origin=channel&channel_id={channel_id}", "2.1", "Queued"),
         (False, "processing", "", "1.1", "Being written"),
     ],
 )

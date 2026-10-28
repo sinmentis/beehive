@@ -1,6 +1,6 @@
 """Deep-read persistence: exactly one row per item (schema.sql's deep_reads.item_id is the
 PK), reused in place across attempts rather than inserted-per-attempt -- a regenerate keeps
-the same row and only bumps request_version, clearing the previous attempt's terminal data.
+the same row and only bumps request_version, retaining the last successful result.
 claim_token + lease_expires_at implement a single-worker-at-a-time lease: claim_deep_read
 hands out a fresh token, and heartbeat_deep_read/complete_deep_read_success/fail_deep_read
 all gate their write on status = 'processing' plus an exact (item_id, request_version,
@@ -46,6 +46,7 @@ class DeepRead:
     requested_at: str
     started_at: str | None
     completed_at: str | None
+    result_completed_at: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in _STATUSES:
@@ -68,7 +69,8 @@ def _row_to_deep_read(row: sqlite3.Row) -> DeepRead:
         error_detail=row["error_detail"],
         requested_at=row["requested_at"],
         started_at=row["started_at"],
-        completed_at=row["completed_at"])
+        completed_at=row["completed_at"],
+        result_completed_at=row["result_completed_at"])
 
 
 def _fetch(conn: sqlite3.Connection, item_id: int) -> DeepRead | None:
@@ -107,8 +109,8 @@ def request_deep_read(conn: sqlite3.Connection, item_id: int, now: datetime,
     unless `regenerate` is set. A failed row likewise just reports the failure back unless
     `regenerate` is set -- there is no silent auto-retry. Only from ready/failed with
     `regenerate=True` does this bump request_version and clear the previous attempt's
-    terminal data (result/language/warning/error/started/completed), moving the row back to
-    pending for a worker to pick up.
+    error/start/completion state. The saved result, language and warning remain available
+    until a successful replacement is committed.
 
     The read-then-decide-then-write sequence below runs inside a single BEGIN IMMEDIATE
     transaction, not the sqlite3 module's default deferred one: a deferred transaction takes
@@ -143,8 +145,9 @@ def request_deep_read(conn: sqlite3.Connection, item_id: int, now: datetime,
             conn.execute(
                 "UPDATE deep_reads SET status = 'pending', "
                 "request_version = request_version + 1, claim_token = NULL, "
-                "lease_expires_at = NULL, result_json = NULL, language_code = NULL, "
-                "warning_code = NULL, error_code = NULL, error_detail = NULL, "
+                "lease_expires_at = NULL, error_code = NULL, error_detail = NULL, "
+                "result_completed_at = CASE WHEN status = 'ready' THEN completed_at "
+                "ELSE result_completed_at END, "
                 "requested_at = ?, started_at = NULL, completed_at = NULL "
                 "WHERE item_id = ? AND request_version = ? AND status IN ('ready', 'failed')",
                 (now.isoformat(), item_id, existing.request_version))
@@ -217,10 +220,10 @@ def complete_deep_read_success(conn: sqlite3.Connection, item_id: int, request_v
     cur = conn.execute(
         "UPDATE deep_reads SET status = 'ready', result_json = ?, language_code = ?, "
         "warning_code = ?, error_code = NULL, error_detail = NULL, claim_token = NULL, "
-        "lease_expires_at = NULL, completed_at = ? "
+        "lease_expires_at = NULL, completed_at = ?, result_completed_at = ? "
         "WHERE item_id = ? AND request_version = ? AND claim_token = ? "
         "AND status = 'processing'",
-        (result_json, language_code, warning_code, now.isoformat(), item_id,
+        (result_json, language_code, warning_code, now.isoformat(), now.isoformat(), item_id,
          request_version, claim_token))
     conn.commit()
     return cur.rowcount > 0

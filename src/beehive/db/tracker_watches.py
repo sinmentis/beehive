@@ -167,6 +167,21 @@ def count_failed_tracker_reminders(conn: sqlite3.Connection) -> int:
     return sum(1 for row in rows if str(row[0]).strip())
 
 
+def get_tracker_watch_states(conn: sqlite3.Connection, item_ids: list[int]) -> dict[int, bool]:
+    """Map watched item IDs to whether their latest reminder attempt failed."""
+    if not item_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in item_ids)
+    rows = conn.execute(
+        f"SELECT item_id,last_error FROM auction_watches WHERE item_id IN ({placeholders})",
+        item_ids,
+    ).fetchall()
+    return {
+        row["item_id"]: row["last_error"] is not None and bool(str(row["last_error"]).strip())
+        for row in rows
+    }
+
+
 def list_tracker_watches(conn: sqlite3.Connection, now: datetime) -> list[dict]:
     utc_now = _require_aware(now)
     items = [_row_to_dict(row, utc_now) for row in _joined_rows(conn)]

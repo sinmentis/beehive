@@ -104,7 +104,7 @@ def test_request_deep_read_reuses_failed_without_auto_retry(conn, item_id):
     assert reused.request_version == 1  # no auto-retry without explicit regenerate=True
 
 
-def test_request_deep_read_regenerate_from_ready_bumps_version_and_clears_terminal_data(
+def test_request_deep_read_regenerate_from_ready_preserves_the_successful_result(
         conn, item_id):
     request_deep_read(conn, item_id, T0)
     claimed = claim_deep_read(conn, item_id, T0, lease_seconds=60)
@@ -118,12 +118,48 @@ def test_request_deep_read_regenerate_from_ready_bumps_version_and_clears_termin
 
     assert regenerated.status == "pending"
     assert regenerated.request_version == 2
-    assert regenerated.result_json is None
-    assert regenerated.language_code is None
-    assert regenerated.warning_code is None
+    assert regenerated.result_json == '{"summary": "x"}'
+    assert regenerated.language_code == "en"
+    assert regenerated.warning_code == "short_source"
+    assert regenerated.result_completed_at == T0.isoformat()
     assert regenerated.started_at is None
     assert regenerated.completed_at is None
     assert regenerated.requested_at == (T0 + timedelta(hours=1)).isoformat()
+
+
+def test_failed_regeneration_keeps_the_saved_result_until_success(conn, item_id):
+    request_deep_read(conn, item_id, T0)
+    first = claim_deep_read(conn, item_id, T0, lease_seconds=60)
+    complete_deep_read_success(
+        conn, item_id, first.request_version, first.claim_token,
+        '{"summary":"original"}', "en", T0, warning_code="content_incomplete",
+    )
+    request_deep_read(conn, item_id, T0 + timedelta(hours=1), regenerate=True)
+    second = claim_deep_read(conn, item_id, T0 + timedelta(hours=1), lease_seconds=60)
+    failed_at = T0 + timedelta(hours=1, seconds=10)
+    fail_deep_read(conn, item_id, second.request_version, second.claim_token, "llm", "private", failed_at)
+    failed = get_deep_read(conn, item_id)
+    assert failed.result_json == '{"summary":"original"}'
+    assert failed.result_completed_at == T0.isoformat()
+    assert failed.completed_at == failed_at.isoformat()
+    assert failed.warning_code == "content_incomplete"
+
+    retry_at = T0 + timedelta(hours=2)
+    retried = request_deep_read(conn, item_id, retry_at, regenerate=True)
+    assert retried.result_json == failed.result_json
+    third = claim_deep_read(conn, item_id, retry_at, lease_seconds=60)
+    assert not complete_deep_read_success(
+        conn, item_id, second.request_version, second.claim_token, '{"summary":"stale"}', "de", retry_at,
+    )
+    assert get_deep_read(conn, item_id).result_json == failed.result_json
+    assert complete_deep_read_success(
+        conn, item_id, third.request_version, third.claim_token, '{"summary":"replacement"}', "fr", retry_at,
+    )
+    current = get_deep_read(conn, item_id)
+    assert (current.result_json, current.language_code, current.warning_code) == (
+        '{"summary":"replacement"}', "fr", None,
+    )
+    assert current.result_completed_at == retry_at.isoformat()
 
 
 def test_request_deep_read_regenerate_from_failed_bumps_version_and_clears_error(
@@ -430,7 +466,7 @@ def test_complete_success_prevents_stale_worker_overwrite_after_regenerate(conn,
     current = get_deep_read(conn, item_id)
     assert current.request_version == regenerated.request_version == 2
     assert current.claim_token == reclaimed.claim_token
-    assert current.result_json is None  # stale write never landed
+    assert current.result_json == '{"summary": "fresh"}'
     assert current.status == "processing"
 
 

@@ -27,6 +27,8 @@ Clicking a citation number on a wide screen shows that source in the side column
 
 ## Constraints
 
+New-research questions, source edits and follow-ups preserve drafts in the same browser tab across navigation and reauthentication. Preview keeps the draft; accepted creation/save/send clears only its own form. Failed submissions retain local work, changed server values offer restore/discard, and explicit discard does not ask a second leave-confirmation. Dirty feedback and discard stay beside the existing actions, with Send at the composer's right. This is local recovery, not server-side draft storage or a new workspace layout.
+
 Everything in the admin brief applies: no overflow at 1440, 1024 or 390 px in Chinese or English, whole units in tables (`.nw`, `ui.units`, `ui.keep`; `.c-words` keeps CJK words whole), `ui.line_field` for free-length values, CSP with no inline script or style. AI text sits at a 72ch measure. At 1180 px and narrower the side column moves under the text and citations open the source in a new tab. Times use the shared `short_time` filter in Auckland time. Research session delete and clearing closed watches cannot be undone and ask once, in words, without a typed confirmation.
 
 ## Open decisions

@@ -164,6 +164,10 @@
 {%- endmacro %}
 
 {#- One Monitor listing. A listing that is out of stock or gone reads as closed with its state. -#}
+{% macro watchlist_link(oob=False) -%}
+<a href="/watchlist" id="reading-watchlist-link"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>{{ t('web.nav.watchlist') }}{% if watch_failure_count %}<span class="foot-count is-caution"><span aria-hidden="true">{{ watch_failure_count }}</span><span class="sr-only">{{ t('web.reading.reminder_failed_count', count=watch_failure_count) }}</span></span>{% endif %}</a>
+{%- endmacro %}
+
 {% macro listing_row(listing, channel_name='') %}
 {%- set closed = not (listing.is_present and listing.is_available) %}
 <tr class="kb-row{{ ' is-closed' if closed }}" id="listing-{{ listing.id }}" tabindex="-1" data-channel="{{ channel_name }}">

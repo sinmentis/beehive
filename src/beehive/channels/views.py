@@ -29,7 +29,7 @@ from beehive.channels.tracker import adapter_for_source
 from beehive.db.deep_reads import DeepRead, get_deep_reads_for_items
 from beehive.db.item_events import latest_actionable_events_for_items
 from beehive.db.items import list_by_channel
-from beehive.db.tracker_watches import get_watched_item_ids, list_tracker_watches
+from beehive.db.tracker_watches import get_tracker_watch_states, list_tracker_watches
 from beehive.domain.channels import ChannelKind
 from beehive.localization import Localizer
 from beehive.scheduling import HOST_TZ
@@ -297,6 +297,7 @@ class DeepReadActionView:
     is_pending: bool
     can_start: bool
     can_regenerate: bool
+    has_saved_result: bool = False
 
 
 def _deep_read_action(
@@ -329,6 +330,7 @@ def _deep_read_action(
         is_pending=status in ("pending", "processing"),
         can_start=is_owner and status == "not_requested",
         can_regenerate=is_owner and status in ("ready", "failed"),
+        has_saved_result=deep_read is not None and deep_read.result_json is not None,
     )
 
 
@@ -1004,6 +1006,7 @@ class TrackerItemView:
     is_watched: bool
     is_watchable: bool
     feedback_value: int | None
+    reminder_failed: bool = False
 
 
 class TrackerStatus(str, Enum):
@@ -1098,6 +1101,7 @@ def _tracker_item(
     *,
     is_watched: bool,
     is_owner: bool,
+    reminder_failed: bool = False,
 ) -> TrackerItemView:
     item_id = _req_int(item, "id")
     url = _req_str(item, "url")
@@ -1122,6 +1126,7 @@ def _tracker_item(
     )
     return TrackerItemView(
         id=item_id,
+        reminder_failed=is_owner and is_watched and reminder_failed,
         title=_req_str(item, "title"),
         open_url=_open_url(item_id, url),
         safe_url=_safe_external_href(url),
@@ -1228,18 +1233,19 @@ def _build_tracker_page(
     is_owner: bool,
     criteria: ChannelCriteriaView,
 ) -> TrackerPage:
-    watched_ids = (
-        get_watched_item_ids(conn, [_req_int(item, "id") for item in items])
+    watch_states = (
+        get_tracker_watch_states(conn, [_req_int(item, "id") for item in items])
         if is_owner
-        else set()
+        else {}
     )
     views = [
         _tracker_item(
             item,
             t,
             now,
-            is_watched=_req_int(item, "id") in watched_ids,
+            is_watched=_req_int(item, "id") in watch_states,
             is_owner=is_owner,
+            reminder_failed=watch_states.get(_req_int(item, "id"), False),
         )
         for item in items
     ]
@@ -1340,13 +1346,14 @@ def build_tracker_item_view(
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
     item_id = _req_int(item, "id")
-    watched = item_id in get_watched_item_ids(conn, [item_id]) if is_owner else False
+    watch_states = get_tracker_watch_states(conn, [item_id]) if is_owner else {}
     return _tracker_item(
         item,
         t,
         now,
-        is_watched=watched,
+        is_watched=item_id in watch_states,
         is_owner=is_owner,
+        reminder_failed=watch_states.get(item_id, False),
     )
 
 
@@ -1375,16 +1382,17 @@ def build_tracker_item_views(
     with the Owner's watch state."""
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
-    watched_ids = (
-        get_watched_item_ids(conn, [_req_int(item, "id") for item in items]) if is_owner else set()
+    watch_states = (
+        get_tracker_watch_states(conn, [_req_int(item, "id") for item in items]) if is_owner else {}
     )
     return tuple(
         _tracker_item(
             item,
             t,
             now,
-            is_watched=_req_int(item, "id") in watched_ids,
+            is_watched=_req_int(item, "id") in watch_states,
             is_owner=is_owner,
+            reminder_failed=watch_states.get(_req_int(item, "id"), False),
         )
         for item in items
     )
@@ -1422,18 +1430,19 @@ def build_open_tracker_views(
             open_lots.append((facts.deadline or latest, _req_int(item, "id"), item))
     open_lots.sort(key=lambda lot: (lot[0], lot[1]))
     shown = [item for _, _, item in open_lots[:limit]]
-    watched_ids = (
-        get_watched_item_ids(conn, [_req_int(item, "id") for item in shown])
+    watch_states = (
+        get_tracker_watch_states(conn, [_req_int(item, "id") for item in shown])
         if is_owner
-        else set()
+        else {}
     )
     views = tuple(
         _tracker_item(
             item,
             t,
             now,
-            is_watched=_req_int(item, "id") in watched_ids,
+            is_watched=_req_int(item, "id") in watch_states,
             is_owner=is_owner,
+            reminder_failed=watch_states.get(_req_int(item, "id"), False),
         )
         for item in shown
     )

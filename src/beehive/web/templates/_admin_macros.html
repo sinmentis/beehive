@@ -66,6 +66,13 @@
 </div>
 {%- endmacro %}
 
+{% macro draft_controls(status_text=None) -%}
+<span hidden data-draft-messages data-conflict="{{ t('web.admin.task.draft_conflict') }}" data-restore="{{ t('web.admin.task.restore_draft') }}" data-discard="{{ t('web.admin.form.discard') }}"></span>
+<button class="btn" type="reset" data-dirty-reset hidden>{{ t('web.admin.form.discard') }}</button>
+<span class="dirty" data-dirty-status data-template="{{ status_text if status_text is not none else t('web.admin.form.unsaved', count='__COUNT__') }}"
+      data-force-message="{{ t('web.admin.form.unsaved_submission') }}" aria-live="polite" hidden></span>
+{%- endmacro %}
+
 {#- A destructive row that opens in place. With a confirmation value the Owner types it before
     the button works; without one the open row asks once in words. The hint says whether the
     action can be undone, so pass one whenever the admin's seven-day undo does not apply. -#}

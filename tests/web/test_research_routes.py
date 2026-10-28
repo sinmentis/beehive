@@ -324,7 +324,9 @@ def test_create_session_persists_question_and_sources_atomically(authed_client, 
         "csrf_token": "csrf1",
     })
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/research/1"
+    assert resp.headers["location"] == "/research/1?draft_saved=true"
+    assert "data-save-confirmation" in authed_client.get(resp.headers["location"]).text
+    assert "data-save-confirmation" not in authed_client.get("/research/1").text
 
     c = connect(db_path)
     session_row = c.execute("SELECT * FROM research_sessions").fetchone()
@@ -351,6 +353,8 @@ def test_new_session_preview_shows_enforced_budget_without_writing(
     assert resp.status_code == 200
     assert "20 minutes" in resp.text
     assert "Maximum deep fetches" in resp.text
+    assert 'data-submit-draft="research-new"' in resp.text
+    assert "data-save-confirmation" not in resp.text
     c = connect(db_path)
     assert c.execute("SELECT COUNT(*) FROM research_sessions").fetchone()[0] == 0
 
@@ -371,6 +375,9 @@ def test_create_session_rejects_no_source_selected(authed_client, db_path):
         "question": "A valid question", "connectors": [], "csrf_token": "csrf1",
     })
     assert resp.status_code == 400
+    assert "data-dirty-force" in resp.text
+    assert "data-save-confirmation" not in resp.text
+    assert "A valid question" in resp.text
     c = connect(db_path)
     assert c.execute("SELECT COUNT(*) FROM research_sessions").fetchone()[0] == 0
 
@@ -521,6 +528,8 @@ def test_current_source_can_change_without_deleting_historical_evidence(
     )
 
     assert add.status_code == 303
+    assert "draft_saved=true" in add.headers["location"]
+    assert "data-save-confirmation" in authed_client.get(add.headers["location"]).text
     assert remove.status_code == 303
     assert c.execute(
         "SELECT is_active FROM research_sources WHERE id=?",
@@ -842,7 +851,7 @@ def test_chat_reenabled_once_a_matching_synthesis_is_generated(authed_client, co
     resp = authed_client.post(
         f"/research/{session_id}/messages", data={"content": "What changed?", "csrf_token": "csrf1"})
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/research/{session_id}"
+    assert resp.headers["location"] == f"/research/{session_id}?draft_saved=true"
 
 
 def test_message_submit_succeeds_once_synthesis_exists(authed_client, conn):
@@ -854,7 +863,8 @@ def test_message_submit_succeeds_once_synthesis_exists(authed_client, conn):
     resp = authed_client.post(
         f"/research/{session_id}/messages", data={"content": "What changed?", "csrf_token": "csrf1"})
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/research/{session_id}"
+    assert resp.headers["location"] == f"/research/{session_id}?draft_saved=true"
+    assert "data-save-confirmation" in authed_client.get(resp.headers["location"]).text
     rows = c.execute(
         "SELECT content FROM research_messages WHERE session_id=?", (session_id,)).fetchall()
     assert any(r["content"] == "What changed?" for r in rows)
@@ -869,12 +879,14 @@ def test_one_pending_chat_request_rejects_a_second_submission(authed_client, con
     first = authed_client.post(
         f"/research/{session_id}/messages", data={"content": "First?", "csrf_token": "csrf1"})
     assert first.status_code == 303
-    assert first.headers["location"] == f"/research/{session_id}"
+    assert first.headers["location"] == f"/research/{session_id}?draft_saved=true"
 
     second = authed_client.post(
         f"/research/{session_id}/messages", data={"content": "Second?", "csrf_token": "csrf1"})
     assert second.status_code == 303
     assert "action_error=message" in second.headers["location"]
+    assert "draft_saved" not in second.headers["location"]
+    assert "data-save-confirmation" not in authed_client.get(second.headers["location"]).text
 
 
 def test_latest_synthesis_stays_visible_while_a_refresh_runs(authed_client, conn):

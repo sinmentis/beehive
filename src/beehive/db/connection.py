@@ -25,7 +25,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # Raise COMPATIBLE_SCHEMA_VERSION to the new version only when older code cannot safely use the
 # new shape (a dropped or renamed column, a changed meaning). Additive changes leave it alone, so
 # rolling back to an older image keeps working.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 COMPATIBLE_SCHEMA_VERSION = 1
 _COMPATIBLE_VERSION_KEY = "schema_compatible_version"
 
@@ -52,6 +52,7 @@ _LEGACY_PRICE_SUFFIX_RE = re.compile(r"\d+\.\d{1,2}")
 # just does not re-validate the rows that already exist, which is fine for a column that is
 # being introduced with a valid default.)
 _COLUMNS_TO_ENSURE = [
+    ("deep_reads", "result_completed_at", "TEXT"),
     ("items", "opened_at", "TEXT"),
     ("sources", "last_fetch_raw_count", "INTEGER"),
     ("sources", "last_fetch_new_count", "INTEGER"),
@@ -817,6 +818,10 @@ def _reconcile_schema(conn: sqlite3.Connection) -> None:
     _migrate_default_email_group(conn)
     _migrate_research_completion_notification_baseline(conn)
     _migrate_stable_shopping_external_ids(conn)
+    conn.execute(
+        "UPDATE deep_reads SET result_completed_at = completed_at "
+        "WHERE status = 'ready' AND result_json IS NOT NULL AND result_completed_at IS NULL"
+    )
     conn.commit()
 
 

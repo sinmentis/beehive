@@ -80,6 +80,12 @@ extracts its text and caches the brief. When the source text is partial or paywa
 says so instead of presenting it as complete. Reddit blocks automated page access, so a Reddit
 brief falls back to the stored post text and says what may be missing.
 
+The latest attempt and the last successful result share one row but have separate completion
+timestamps. Regeneration resets the attempt's lease/error state without clearing the saved result,
+language or warning. The existing claim/version fence still governs replacement; only a successful
+completion updates the result and `result_completed_at`. A failed attempt leaves the saved brief
+readable. Schema version 7 backfills that timestamp for existing successful briefs.
+
 ## Research sessions
 
 A research session answers a one-time question outside any channel. Every research route,

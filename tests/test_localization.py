@@ -173,6 +173,7 @@ def test_deep_read_namespace_renders_in_every_supported_language():
         "web.deep_read.pending_heading", "web.deep_read.pending_body",
         "web.deep_read.pending_live_region",
         "web.deep_read.ready_announcement", "web.deep_read.failed_announcement",
+        "web.deep_read.saved_brief_notice", "web.deep_read.update_failed",
     }
     assert deep_read_keys == expected_keys
     assert "web.title.deep_read_brief" in web.CATALOGS["en"]

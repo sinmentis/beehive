@@ -1108,6 +1108,7 @@ def toggle_tracker_watch(
                 "watch_target": "this",
                 "watch_swap": "outerHTML",
                 "watch_remove_mode": False,
+                "update_watch_nav": True,
             },
         )
 
@@ -1596,7 +1597,7 @@ def _brief_sections(
 ) -> tuple[list[tuple[str, str, str]], dict[str, str]]:
     """A brief's numbered sections under its chapter: a finished brief's five parts, or else the
     one status section that says where it stands."""
-    if context["status"] == "ready" and context["brief"] is not None:
+    if context["brief"] is not None:
         sections = [
             ("bottom_line", t.text("web.deep_read.section_bottom_line"), "#brief-bottom-line"),
             ("findings", t.text("web.deep_read.section_key_findings"), "#brief-findings"),

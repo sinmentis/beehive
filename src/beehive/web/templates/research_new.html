@@ -7,7 +7,9 @@
 {% block content %}
 <div class="adm-head"><div><h1>{{ t('web.research.new.heading') }}</h1><p class="adm-meta">{{ t('web.research.new.lede') }}</p></div></div>
 {% if error %}{{ ui.flash(error, 'danger') }}{% endif %}
-<form method="post" action="/research/new/preview" class="research-form">
+<form method="post" action="/research/new/preview" class="research-form"
+      data-preserve-draft data-dirty-track data-keep-draft data-draft-key="research-new"
+      data-reset-url="/research/new" data-draft-restored="{{ t('web.admin.task.draft_restored') }}"{% if error %} data-dirty-force{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <h2 id="question"><span class="no">1.1</span><span>{{ t('web.workspace.new.question_heading') }}</span></h2>
   <div class="params">
@@ -21,7 +23,7 @@
   </div>
 
   <h2 id="sources"><span class="no">1.2</span><span>{{ t('web.research.new.sources_legend') }}</span></h2>
-  <fieldset>
+  <fieldset data-param-group>
     <legend class="sr-only">{{ t('web.research.new.sources_legend') }}</legend>
     <div class="pick">
       {% for option in connector_options %}
@@ -39,6 +41,7 @@
     <button class="btn btn-primary" type="submit">{{ t('web.research.new.preview_action') }}</button>
     <a class="btn" href="/research">{{ t('web.research.new.cancel') }}</a>
     <span class="hint">{{ t('web.workspace.new.preview_hint') }}</span>
+    {{ ui.draft_controls() }}
   </div>
 </form>
 {% endblock %}

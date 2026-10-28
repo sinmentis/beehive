@@ -352,7 +352,7 @@ def new_session_submit(
 
     session_id, _run_id = create_research_session_with_sources(
         conn, question_clean, normalized, research_view.utcnow())
-    return RedirectResponse(f"/research/{session_id}", status_code=303)
+    return RedirectResponse(f"/research/{session_id}?draft_saved=true", status_code=303)
 
 
 def _render_source_form(
@@ -442,7 +442,7 @@ def create_research_source_submit(
             error=t.text("web.research.source_form.invalid"),
             status_code=400,
         )
-    return RedirectResponse(f"/research/{session_id}?tab=plan", status_code=303)
+    return RedirectResponse(f"/research/{session_id}?tab=plan&draft_saved=true", status_code=303)
 
 
 @router.get("/{session_id}/sources/{source_id}/edit", response_class=HTMLResponse)
@@ -529,7 +529,7 @@ def edit_research_source_submit(
             error=t.text("web.research.source_form.invalid"),
             status_code=400,
         )
-    return RedirectResponse(f"/research/{session_id}?tab=plan", status_code=303)
+    return RedirectResponse(f"/research/{session_id}?tab=plan&draft_saved=true", status_code=303)
 
 
 @router.post("/{session_id}/sources/{source_id}/delete")
@@ -574,6 +574,7 @@ def research_detail(
     tab: str = "synthesis",
     page: int = 1,
     action_error: str | None = None,
+    draft_saved: bool = False,
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
     t: Localizer = Depends(get_localizer),
@@ -595,6 +596,7 @@ def research_detail(
     latest_revision = get_latest_evidence_state_revision(conn, session_id)
 
     context = {
+        "draft_saved": draft_saved and action_error is None,
         "session_id": session_id,
         "csrf_token": session["csrf_token"],
         "research_session": research_session,
@@ -907,7 +909,7 @@ def research_messages_submit(
         return RedirectResponse(
             f"/research/{session_id}?action_error=message", status_code=303)
     touch_research_session_activity(conn, session_id, research_view.utcnow())
-    return RedirectResponse(f"/research/{session_id}", status_code=303)
+    return RedirectResponse(f"/research/{session_id}?draft_saved=true", status_code=303)
 
 
 # ============================================================================

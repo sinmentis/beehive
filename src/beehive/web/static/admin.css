@@ -61,6 +61,7 @@ body.adm{min-height:100vh;margin:0}
 .adm-toc-foot a{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .foot-count{min-width:18px;height:18px;padding:0 4px;border:1px solid var(--link);border-radius:2px;color:var(--link);
  font-size:.72rem;font-weight:700;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
+.foot-count.is-caution{color:var(--caution);border-color:var(--caution)}
 .adm-main{min-width:0;padding:16px}
 /* The sheet fills the screen, however wide. What sits on it keeps a readable shape: prose holds
    its measure, form fields their width, independent sections flow into columns (.cols) and a
@@ -148,7 +149,7 @@ select.inp{appearance:none;padding-right:32px;background:var(--field) url("data:
 .days label:has(input:checked){border-color:var(--ink-2);background:var(--band)}
 .savebar{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:12px 10px;
  border-top:1px solid var(--rule-2);background:var(--sheet)}
-.savebar .dirty{color:var(--link);font-size:.8125rem;font-weight:600}
+.savebar .dirty,.composer .dirty{color:var(--link);font-size:.8125rem;font-weight:600}
 .tag-mod{display:none;margin-left:6px;padding:0 5px;border:1px solid var(--link);border-radius:2px;color:var(--link);
  font-size:.7rem;font-weight:700;line-height:15px;vertical-align:1px}
 .param[data-dirty] .tag-mod,[data-param-group][data-dirty] .tag-mod{display:inline-block}
@@ -374,6 +375,7 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .composer label{font-weight:600}
 .composer textarea.inp{min-height:92px}
 .composer .row{justify-content:space-between}
+.composer-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 12px}
 .hint{color:var(--ink-3);font-size:.8125rem;overflow-wrap:anywhere}
 .convo-state{margin-top:16px}
 .msg{white-space:pre-line}
@@ -501,6 +503,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 .adm .deep-read-chip:hover{color:var(--link-2);text-decoration-color:currentColor}
 .adm .deep-read-chip-pending{color:var(--ink-2);text-decoration-color:var(--rule-2)}
 .adm .deep-read-chip-retry{color:var(--danger);text-decoration-color:rgba(255,110,97,.4)}
+.deep-read-cache-state{display:block;color:var(--ink-2);font-size:.8125rem}
 
 /* Keyboard reading: j and k select a row or plate, o opens it. */
 .tbl tr.kb-row:focus,.plate.kb-row:focus{outline:none}
@@ -556,14 +559,19 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 .plate-when small{color:var(--ink-3);font-size:inherit}
 .plate-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;margin-top:auto;padding-top:8px}
 .plate-score{color:var(--ink-3);font-size:.78rem;white-space:nowrap}
-.plate-foot .ops-stack{display:flex;flex-wrap:wrap;gap:6px}
+.plate-foot .ops-stack{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px;min-width:0;max-width:100%}
 .plate-foot :is(.vote,.watch){margin:0}
+.plate-foot .vote{flex-wrap:wrap}
+.plate-foot .watch-has-error{align-items:flex-start}
 .plate.is-closed .plate-img{filter:grayscale(1);opacity:.65}
 .plate.is-closed :is(.lot-title,.price-now,.plate-when){color:var(--ink-2)}
 
 /* A two-state toggle: a word with a square that fills when it is on. The Owner's relevance and
    watch controls use it; the pressed state is read from aria-pressed, never from colour alone. */
 .vote,.watch{display:inline-flex;gap:6px;margin:0;vertical-align:middle}
+.watch-has-error{flex-direction:column;align-items:flex-end;min-width:0;max-width:100%}
+.watch-failure{display:inline-flex;align-items:center;min-height:32px;max-width:100%}
+.watch-failure .st{white-space:normal}
 .c-ops>.deep-read-action+.vote{margin:6px 0 0}
 .c-ops>.vote,.c-ops>.watch{margin-left:12px}
 .c-ops>.watch+.vote{margin-left:6px}
@@ -694,7 +702,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .tbl-stack.tbl-lanes td[data-label]::before{content:attr(data-label);flex:none;color:var(--ink-3);font-size:.78rem}
  .tbl-stack.tbl-lanes td[data-label] small{margin-top:0}
  .tbl-stack.tbl-lanes .c-ops{margin-left:auto}
- .tbl-stack.tbl-lanes .ops-stack{grid-auto-flow:column;align-items:center}
+ .tbl-stack.tbl-lanes .ops-stack{grid-auto-flow:column;align-items:end}
 }
 /* Sections that stand side by side (.cols.lanes: a news Channel's top stories and the rest, an
    auction's watched, ending and upcoming lots) become lanes the same way, each heading pinned
@@ -737,6 +745,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .toc .sub{display:none}
  .toc a{grid-template-columns:auto auto auto;white-space:nowrap}
  .adm-toc-foot{display:flex;margin:0 0 0 auto;padding:0;border:0}
+ .page-reading .adm-toc-foot{flex-wrap:wrap;max-width:100%}
  .adm-toc-foot a,.adm-toc-foot button{width:auto;white-space:nowrap}
  .adm-main{padding:0}
  .adm-page{padding:14px 14px 28px;border:0}
@@ -798,7 +807,8 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .tbl-feed :is(.c-chan,.c-src,.c-age){min-width:0;color:var(--ink-2);font-size:.78rem}
  .tbl-feed .c-ops{width:auto;font-size:.78rem}
  .c-ops>.vote,.c-ops>.watch{margin:4px 0 0}
- .ops-stack{grid-auto-flow:column;justify-content:start;justify-items:start}
+ .ops-stack{grid-auto-flow:column;justify-content:start;justify-items:start;align-items:end}
+ .ops-stack .watch-has-error{align-items:flex-start}
  .fields{gap:10px}
  .fld-grow{flex-basis:100%;max-width:none}
  .ms>summary{max-width:none}
@@ -807,6 +817,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
    相关 never lands on 不相关. */
 @media (pointer:coarse){
  .tg{min-height:40px;padding:0 12px}
+ .watch-failure{min-height:44px}
  .vote,.watch{gap:10px}
  .ops-stack,.plate-foot .ops-stack{gap:10px}
 }

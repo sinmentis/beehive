@@ -126,6 +126,10 @@ deploy/release.sh promote rollback
 
 ## One-time upgrade tasks
 
+The non-admin reliability fixes require schema version 7. The normal backed-up migration adds
+`deep_reads.result_completed_at` and backfills existing successful briefs without changing their
+content. Update the web app and jobs worker together to retain saved briefs during regeneration.
+
 The task-based admin requires schema version 6. Use the normal backed-up release migration above.
 It adds nullable draft setup state and durable rule-operation tables; existing channel IDs,
 source configuration, interactions, schedules and email membership remain unchanged. Upgrade the

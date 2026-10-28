@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-28T15:13:05+13:00",
+  "generatedAt": "2026-10-28T12:07:05Z",
   "title": "Design System: Beehive Datasheet",
   "extensions": {
     "colorMeta": {
@@ -830,6 +830,21 @@
       {
         "name": "The Saved-Rules Boundary Rule",
         "body": "Reprocessing uses saved rules, never an unsaved draft. Its disabled state and explanatory notice follow draft changes and polling; cancellation retains results already applied.",
+        "section": "components"
+      },
+      {
+        "name": "The Draft Boundary Rule",
+        "body": "Research drafts stay local to the browser tab until accepted. Navigation and preview do not consume them; successful creation, saving or sending clears only the submitted draft. Changed server values require an explicit restore or discard decision.",
+        "section": "components"
+      },
+      {
+        "name": "The Saved-Result Rule",
+        "body": "A replacement attempt never removes the last successful brief. Keep its content and provenance visible through queueing and failure, and replace them only when the new result succeeds.",
+        "section": "components"
+      },
+      {
+        "name": "The Reminder Visibility Rule",
+        "body": "For the Owner, show reminder failure where a watched lot is read, and link to the Watch List for recovery. A watch selection is not evidence of delivery; anonymous readers see neither private watch state nor its failure counts.",
         "section": "components"
       },
       {

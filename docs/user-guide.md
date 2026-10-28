@@ -123,6 +123,10 @@ about 500 to 800 words: the bottom line, key findings, important figures, why it
 it could not check. When the brief is ready, the link turns into **Open brief**. If the article was
 cut short or behind a paywall, the brief says so.
 
+**Regenerate** keeps the last successful brief readable while its replacement is queued or being
+written. A failed update keeps that saved brief, its original generation time and its limitations.
+Only a successful replacement changes it. You can still open the saved brief from a story list.
+
 <img src="assets/deep-read-brief.png" alt="A deep-read brief: the bottom line, key findings and why it matters, with important figures and the source beside the text" width="100%">
 
 ## Watch an auction lot
@@ -131,6 +135,10 @@ On a **Tracker** channel, select **Watch** on a lot. It joins your **Watch List*
 emails you about an hour before the lot closes. If the auction pushes the closing time back, the
 reminder moves with it. The Watch List shows each reminder's state and lets you retry one that
 failed.
+
+When a reminder fails, the reading navigation shows an attention count, the homepage marks the
+affected Tracker channel, and the watched lot links to the Watch List's recovery section. These
+signals are Owner-only. Being watched does not mean the reminder was delivered successfully.
 
 ## Set up email digests
 
@@ -169,6 +177,10 @@ with numbered sources.
 - Each piece of evidence keeps its number, so a citation always points at the same item.
 - Leave a piece of evidence out of the answer, or put it back, without deleting it.
 - Ask follow-up questions in a chat that remembers earlier questions, even in long conversations.
+- Unsaved questions, source edits and follow-ups are kept in the same browser tab when you
+  navigate away. Previewing a new research session keeps its draft; successful creation, saving
+  or message submission clears only that form's draft. Use **Discard changes** to abandon it.
+  Drafts are local to the tab, not a server-side backup.
 - Beehive emails you when a run finishes, if email is set up.
 - Archive a session to stop new runs and messages until you unarchive it. Delete it to remove it
   and everything it collected.

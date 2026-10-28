@@ -89,6 +89,7 @@
       {% else %}
       <span class="desk-state nw">{{ t('web.reading.desk.lots', count=section.lot_total, number=section.lot_total|count(locale), score=section.lot_minimum_score) }}</span>
       {% if section.watched_total is not none %}<span class="desk-state nw">{{ t('web.reading.desk.watched', count=section.watched_total, number=section.watched_total|count(locale)) }}</span>{% endif %}
+      {% if section.failed_reminder_count %}<a class="lnk st st-error watch-failure" href="/watchlist#attention">{{ t('web.reading.reminder_failed_count', count=section.failed_reminder_count) }}</a>{% endif %}
       {% endif %}
       <span class="desk-state nw"{% if section.freshness_detail %} title="{{ section.freshness_detail }}"{% endif %}>{{ section.freshness }}</span>
       <a class="btn btn-sm" href="{{ section.href }}">{{ t('web.reading.desk.open_channel') }}<span class="sr-only">: {{ section.name }}</span></a>
@@ -146,7 +147,7 @@
         </div></td>
         <td class="c-when c-words" data-label="{{ t('web.reading.col_closes') }}">
           {%- if lot.deadline %}<span class="nw">{{ lot.deadline_relative_label }}</span><small class="nw">{{ lot.deadline|short_time }}</small>{% else %}<span class="muted">{{ t('web.tracker.no_deadline') }}</span>{% endif %}
-          {%- if lot.is_watched %}<span class="rem"><span class="st st-busy">{{ t('web.tracker.watching') }}</span></span>{% endif -%}
+          {%- if lot.reminder_failed %}<a class="rem lnk watch-failure" href="/watchlist#attention"><span class="st st-error">{{ t('web.reading.reminder_failed') }}</span></a>{% elif lot.is_watched %}<span class="rem"><span class="st st-busy">{{ t('web.tracker.watching') }}</span></span>{% endif -%}
         </td>
         <td class="c-price" data-label="{{ t('web.workspace.watch.col_price') }}">{% if lot.pricing_facts %}<div class="kv">{% for fact in lot.pricing_facts %}<span>{{ fact }}</span>{% endfor %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ rd.score(lot.ai_score) }}</td>

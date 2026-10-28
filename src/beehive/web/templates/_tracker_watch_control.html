@@ -1,13 +1,15 @@
 {#- Watch or stop watching a lot. The watch route re-renders just this form for htmx; without
     JavaScript the post redirects back to the page it came from. -#}
 {% if item.is_watchable %}
-<form class="watch" method="post" action="/items/{{ item.id }}/watch" hx-post="/items/{{ item.id }}/watch" hx-target="this" hx-swap="outerHTML">
+<form class="watch{{ ' watch-has-error' if item.reminder_failed }}" method="post" action="/items/{{ item.id }}/watch" hx-post="/items/{{ item.id }}/watch" hx-target="this" hx-swap="outerHTML">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="origin" value="{{ watch_origin or 'channel' }}">
   {% if return_url %}<input type="hidden" name="next_url" value="{{ return_url }}">{% endif %}
+  {% if item.reminder_failed %}<a class="lnk watch-failure" href="/watchlist#attention"><span class="st st-error">{{ t('web.reading.reminder_failed') }}</span></a>{% endif %}
   <button class="tg tg-watch" type="submit" aria-pressed="{{ 'true' if item.is_watched else 'false' }}"
           aria-label="{{ t('web.tracker.watch_remove_aria' if item.is_watched else 'web.tracker.watch_add_aria', title=item.title) }}"
           data-focus-key="tracker-{{ item.id }}-watch"
           data-feedback-message="{{ t('web.tracker.watch_removed_feedback' if item.is_watched else 'web.tracker.watch_added_feedback') }}">{{ t('web.tracker.watching' if item.is_watched else 'web.tracker.watch') }}</button>
 </form>
 {% endif %}
+{% if update_watch_nav %}{% import "_reading_macros.html" as rd with context %}{{ rd.watchlist_link(oob=True) }}{% endif %}

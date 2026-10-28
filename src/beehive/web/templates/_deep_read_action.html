@@ -5,9 +5,10 @@
 {% set dr_is_owner = dr.csrf_token is not none %}
 <div class="deep-read-action"
      data-deep-read-status="{{ dr.status }}">
-  {% if dr.is_ready %}
+  {% if dr.is_ready or dr.has_saved_result %}
   <a class="deep-read-chip deep-read-chip-open" href="{{ dr.brief_url }}"
      aria-label="{{ t('web.deep_read.button_open_aria', title=dr_title) }}">{{ t('web.deep_read.button_open') }}</a>
+  {% if dr.is_pending or dr.is_failed %}<small class="deep-read-cache-state">{{ t('web.deep_read.update_failed') if dr.is_failed else t('web.reading.brief.state_queued') if dr.status == 'pending' else t('web.reading.brief.state_pending') }}</small>{% endif %}
   {% elif dr.can_start %}
   <form class="deep-read-form" method="post" action="{{ dr.request_url }}">
     <input type="hidden" name="csrf_token" value="{{ dr.csrf_token }}">

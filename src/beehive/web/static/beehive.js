@@ -230,8 +230,12 @@
     syncScheduleFields();
   });
 
-  const draftKeyFor = (form) => `beehive:draft:${window.location.pathname}:${form.action}`;
+  const namedDraftKey = (name) => `beehive:draft:${name}`;
+  const draftKeyFor = (form) => form.dataset.draftKey
+    ? namedDraftKey(form.dataset.draftKey)
+    : `beehive:draft:${window.location.pathname}:${form.action}`;
   const isTaskAdmin = document.body.classList.contains("page-admin");
+  const isDraftPage = isTaskAdmin || document.body.classList.contains("page-workspace");
   const pendingDraftKey = "beehive:draft:submitted";
   const previewDraftKey = "beehive:draft:previewed";
   let previewedDraft = "";
@@ -326,7 +330,7 @@
     };
 
     const reauth = new URLSearchParams(window.location.search).get("reauth") === "1";
-    if (!form.closest("[hidden]") && (isTaskAdmin || reauth)) {
+    if (!form.closest("[hidden]") && (isDraftPage || reauth)) {
       try {
         const stored = window.sessionStorage.getItem(storageKey);
         const draft = stored ? JSON.parse(stored) : null;
@@ -393,12 +397,12 @@
       saveDraft();
       form.dataset.submitting = "true";
       const submitter = event.submitter;
-      const isPreview = submitter instanceof HTMLElement && (
+      const isPreview = form.hasAttribute("data-keep-draft") || submitter instanceof HTMLElement && (
         submitter.hasAttribute("data-keep-draft")
         || ["test", "preview"].includes(submitter.getAttribute("value"))
         || submitter.hasAttribute("formaction")
       );
-      if (!isTaskAdmin) return;
+      if (!isDraftPage) return;
       if (isPreview) {
         try {
           window.sessionStorage.setItem(previewDraftKey, storageKey);
@@ -411,6 +415,16 @@
         } catch (error) {
           console.warn("Could not mark the submitted draft", error);
         }
+      }
+    });
+  });
+
+  document.querySelectorAll("form[data-submit-draft]").forEach((form) => {
+    form.addEventListener("submit", () => {
+      try {
+        window.sessionStorage.setItem(pendingDraftKey, namedDraftKey(form.dataset.submitDraft));
+      } catch (error) {
+        console.warn("Could not mark the submitted draft", error);
       }
     });
   });
@@ -430,8 +444,7 @@
     });
   };
 
-  // Admin forms mark each parameter row the Owner has changed but not saved, and count them in
-  // the sticky save bar, so leaving a long settings page never silently drops an edit.
+  // Opted-in forms keep their dirty state separate from values returned after a rejected save.
   document.querySelectorAll("form[data-dirty-track]").forEach((form) => {
     if (!(form instanceof HTMLFormElement)) {
       return;
@@ -505,6 +518,7 @@
     if (forced && reset instanceof HTMLButtonElement) {
       reset.addEventListener("click", (event) => {
         event.preventDefault();
+        form.dataset.submitting = "true";
         try {
           window.sessionStorage.removeItem(draftKey);
         } catch (error) {
@@ -533,7 +547,7 @@
   });
 
   window.addEventListener("beforeunload", (event) => {
-    if (!isTaskAdmin) return;
+    if (!isDraftPage) return;
     const dirty = [...document.querySelectorAll("form[data-dirty-track]")].some((form) => (
       form.dataset.dirty === "true" && !form.dataset.submitting && !form.closest("[hidden]")
     ));
@@ -553,7 +567,7 @@
 
   document.addEventListener("focusin", (event) => {
     const field = event.target;
-    if (!isTaskAdmin || !(field instanceof HTMLInputElement
+    if (!isDraftPage || !(field instanceof HTMLInputElement
       || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)) return;
     requestAnimationFrame(() => {
       if (document.activeElement !== field) return;

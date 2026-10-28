@@ -67,6 +67,7 @@ class DeskSection:
     lot_total: int = 0
     lot_minimum_score: int = 0
     watched_total: int | None = None
+    failed_reminder_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +185,11 @@ def build_channel_desk(
                     lots=lots,
                     lot_total=lot_total,
                     lot_minimum_score=floor,
+                    failed_reminder_count=sum(
+                        1 for watch in watches
+                        if watch["channel_id"] == channel_id
+                        and str(watch.get("last_error") or "").strip()
+                    ),
                     watched_total=(
                         sum(
                             1

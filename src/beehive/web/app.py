@@ -21,6 +21,7 @@ from starlette.responses import JSONResponse, Response
 
 from beehive.db.connection import connect, init_schema
 from beehive.db.research_sessions import count_unread_completed_research_sessions
+from beehive.db.tracker_watches import count_failed_tracker_reminders
 from beehive.localization import load_localizer
 from beehive.web import admin, public, research
 from beehive.web.client_ip import parse_trusted_proxies
@@ -98,14 +99,17 @@ def _localization_context(request: Request) -> dict:
     localizer = request.state.localizer
     is_owner = getattr(request.state, "is_owner", False)
     research_unread_count = 0
+    watch_failure_count = 0
     if is_owner:
         with _request_db(request) as conn:
             research_unread_count = count_unread_completed_research_sessions(conn)
+            watch_failure_count = count_failed_tracker_reminders(conn)
     return {
         "t": localizer.text, "localizer": localizer, "locale": localizer.code,
         "is_owner": is_owner,
         "global_csrf_token": getattr(request.state, "csrf_token", None),
         "research_unread_count": research_unread_count,
+        "watch_failure_count": watch_failure_count,
         "public_origin": _public_origin(request),
     }
 

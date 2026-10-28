@@ -15,6 +15,7 @@
 {% set short_question = question|truncate(40, True, '…', 0) %}
 {% set crumbs = [(short_question, None)] if active_tab == "synthesis" else [(short_question, base_url), (t('web.workspace.session.title_' ~ active_tab), None)] %}
 {% block content %}
+{% if draft_saved %}<span hidden data-save-confirmation></span>{% endif %}
 <div class="adm-head">
   <div>
     <h1 id="research-question-heading" class="question">{{ question }}</h1>
