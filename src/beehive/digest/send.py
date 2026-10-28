@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 
 from beehive.channels.definitions import get_definition, require_channel_kind
 from beehive.db.channels import mark_digest_sent
+from beehive.db.deep_reads import get_deep_reads_for_items
 from beehive.db.email_groups import (
     list_email_groups,
     list_member_channels,
@@ -63,6 +64,7 @@ from beehive.scheduling import (
 )
 from beehive.source_health import is_stale
 from beehive.source_labels import source_display_name
+from beehive.site_links import load_site_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,6 +85,7 @@ class EmailGroupDigestPreview:
     warning_count: int
     channel_count: int
     below_cutoff_count: int = 0
+    site_url_configured: bool = False
 
 
 @dataclass(frozen=True)
@@ -241,6 +244,7 @@ def _build_group_content(
     listed with their status line when the email goes out for another Channel, but they never make
     an email go out on their own."""
     group_timezone = group.get("schedule_timezone") or DEFAULT_SCHEDULE_TIMEZONE
+    site_url = load_site_url(conn)
     delivery_period = email_group_send_period(group)
     member_channels = list_member_channels(conn, group["id"])
     channel_ids = [channel["id"] for channel in member_channels]
@@ -283,6 +287,10 @@ def _build_group_content(
         capped_count += selection.remaining_count
         warnings = _channel_warnings(channel, sources, localizer, group_timezone, now)
         has_content = bool(selection.delivered or warnings)
+        briefs = (
+            get_deep_reads_for_items(conn, [event["item_id"] for event in selection.delivered])
+            if site_url and channel["kind"] == "editorial" else {}
+        )
         sections.append(
             (
                 compose_channel_digest(
@@ -301,6 +309,12 @@ def _build_group_content(
                         now=now,
                     ),
                     remaining_count=selection.remaining_count,
+                    channel_id=channel["id"],
+                    site_url=site_url,
+                    saved_brief_ids=frozenset(
+                        item_id for item_id, brief in briefs.items() if brief.result_json
+                    ),
+                    timezone_name=group_timezone,
                 ),
                 has_content,
             )
@@ -383,6 +397,7 @@ def build_email_group_digest_preview(
         warning_count=content.warning_count,
         channel_count=len(content.included_channel_ids),
         below_cutoff_count=content.below_cutoff_count,
+        site_url_configured=any(digest.site_url for digest in content.channel_digests),
     )
 
 

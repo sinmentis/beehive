@@ -11,6 +11,7 @@ from beehive.db.connection import connect, init_schema
 from beehive.db.sessions import create_session
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
+from beehive.site_links import load_site_url
 
 
 @pytest.fixture
@@ -63,6 +64,49 @@ def test_settings_page_shows_database_override(
     response = authed_client.get("/admin/?tab=delivery")
     assert '>database@example.com</textarea>' in response.text
     assert "From the database" in response.text
+
+
+def test_website_address_is_saved_separately_and_can_be_cleared(authed_client, db_path):
+    response = authed_client.post(
+        "/admin/site-url", data={"site_url": " https://news.example/beehive/ ", "csrf_token": "csrf1"},
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith("#site-address")
+    conn = connect(db_path)
+    assert load_site_url(conn) == "https://news.example/beehive"
+    assert app_state.get(conn, "default_digest_email") is None
+    cleared = authed_client.post("/admin/site-url", data={"site_url": "", "csrf_token": "csrf1"})
+    assert cleared.status_code == 303
+    assert load_site_url(conn) is None
+    conn.close()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "javascript:alert(1)", "//news.example", "https://user:password@news.example",
+        "https://news.example?token=example", "https://news.example/#part",
+        "https://news.example/\npath",
+    ],
+)
+def test_invalid_website_address_does_not_replace_the_saved_value(authed_client, db_path, value):
+    conn = connect(db_path)
+    app_state.set(conn, "site_url", "https://news.example")
+    response = authed_client.post("/admin/site-url", data={"site_url": value, "csrf_token": "csrf1"})
+    assert response.status_code == 400
+    assert "without login details" in response.text
+    assert load_site_url(conn) == "https://news.example"
+    conn.close()
+
+
+def test_website_address_change_requires_csrf(authed_client, db_path):
+    response = authed_client.post(
+        "/admin/site-url", data={"site_url": "https://news.example", "csrf_token": "wrong"},
+    )
+    assert response.status_code == 403
+    conn = connect(db_path)
+    assert load_site_url(conn) is None
+    conn.close()
 
 
 def test_admin_home_separates_settings_and_channel_management_into_tabs(

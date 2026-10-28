@@ -4,7 +4,7 @@
 {#- A score is a tabular numeral: 90 and above in full ink, under 60 faint, unranked a dash. -#}
 {% macro score(value) -%}
 {%- if value is none %}<span class="score is-low">—</span>
-{%- else %}<span class="score{{ ' is-high' if value >= 90 else (' is-low' if value < 60 else '') }}">{{ value }}</span>{% endif -%}
+{%- else %}<span class="score{{ ' is-high' if value >= 90 else (' is-low' if value < 60 else '') }}" title="{{ t('web.reading.score_help') }}">{{ value }}</span>{% endif -%}
 {%- endmacro %}
 
 {#- The Owner's relevance toggles for one item, as a real form: htmx swaps `target` from the page
@@ -37,7 +37,7 @@
               title="{{ t('web.item.mark_unread' if story.is_read else 'web.item.mark_read') }}"
               aria-label="{{ t('web.item.mark_unread_aria' if story.is_read else 'web.item.mark_read_aria', title=story.title) }}"
               hx-post="/items/{{ story.id }}/read-state" hx-target="#{{ region }}" hx-select="#{{ region }}" hx-swap="outerHTML"
-              hx-select-oob="{{ oob }}" data-feedback-message="{{ t('web.reading.marked_unread' if story.is_read else 'web.reading.marked_read') }}"
+              hx-select-oob="{{ oob }}{% if oob %},{% endif %}#reading-action-notice" data-feedback-message="{{ t('web.reading.marked_unread' if story.is_read else 'web.reading.marked_read') }}"
               {%- if not story.is_read %} data-read-title="{{ t('web.item.mark_unread') }}" data-read-aria="{{ t('web.item.mark_unread_aria', title=story.title) }}" data-read-feedback="{{ t('web.reading.marked_unread') }}"{% endif %}></button>
     </form>
   </td>
@@ -100,19 +100,31 @@
 {%- endif %}
 {%- endmacro %}
 
-{#- The Owner's view of a Channel's match criteria, as a boxed note. -#}
-{% macro criteria(page, toggle_url) -%}
-{#- At a threshold of 0 every row matches, so there is nothing to say. -#}
-{%- if is_admin and (page.criteria.minimum_score or page.criteria.showing_below_threshold) %}
-<div class="note chan-criteria" role="note" aria-label="{{ t('web.channel.criteria_aria') }}"><div class="note-row"><span class="note-tag">{{ t('web.admin.note.info') }}</span>
-  <div class="note-body"><b>{{ t('web.channel.criteria_summary', matched=page.criteria.matched_count|count(locale), total=page.criteria.total_count|count(locale)) }}</b>
-    <small>{{ t('web.channel.criteria_threshold', score=page.criteria.minimum_score) }}{% if page.criteria.unranked_count %} · {{ t('web.channel.criteria_unranked', count=page.criteria.unranked_count) }}{% endif %}</small></div>
+{% macro criteria(page, toggle_url, disclosure=true) -%}
+{% if disclosure %}
+<details class="chan-criteria criteria-disclosure" data-responsive-disclosure open>
+  <summary>{{ t('web.reading.channel_details') }}</summary>
+{% else %}
+<div class="catalog-details">
+{% endif %}
+  <div class="channel-details-body">
+  <div class="channel-facts">
+    <p class="adm-meta chan-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
+    {% if fetch_stats %}<p class="adm-meta">{{ fetch_stats }}</p>{% endif %}
+  </div>
+  <div class="criteria-content">
+  <h3>{{ t('web.reading.score_explanation') }}</h3>
+  <p class="hint">{{ t('web.reading.score_help') }}</p>
+  {% if is_admin and (page.criteria.minimum_score or page.criteria.showing_below_threshold) %}
+  <p class="hint">{{ t('web.channel.criteria_summary', matched=page.criteria.matched_count|count(locale), total=page.criteria.total_count|count(locale)) }} · {{ t('web.channel.criteria_threshold', score=page.criteria.minimum_score) }}{% if page.criteria.unranked_count %} · {{ t('web.channel.criteria_unranked', count=page.criteria.unranked_count) }}{% endif %}</p>
   <div class="note-act">
     {%- if page.criteria.hidden_count %}<a class="btn btn-sm" href="{{ toggle_url }}">{{ t('web.channel.criteria_apply_threshold') if page.criteria.showing_below_threshold else t('web.channel.criteria_show_hidden', count=page.criteria.hidden_count) }}</a>{% endif %}
-    <a class="lnk" href="/admin/channels/{{ page.channel_id }}/edit">{{ t('web.channel.criteria_edit') }}</a>
+    <a class="lnk" href="/admin/channels/{{ page.channel_id }}/edit?section=rules">{{ t('web.channel.criteria_edit') }}</a>
   </div>
-</div></div>
-{%- endif %}
+  {% endif %}
+  </div>
+  </div>
+{% if disclosure %}</details>{% else %}</div>{% endif %}
 {%- endmacro %}
 
 {#- A lot or listing's photo in a square frame, the whole photo shown, or an empty frame of the
@@ -146,9 +158,19 @@
 
 {#- What changed about a listing, in blue: new, a price drop with its prices, back in stock. -#}
 {% macro change_line(listing) -%}
-{%- if listing.change and listing.change.event_type == 'price_drop' %}<small class="chg">{{ t('background.digest_event_price_drop') }}{% if listing.change.old_price_label and listing.change.new_price_label %} · {{ t('background.digest_event_price_detail', old=listing.change.old_price_label, new=listing.change.new_price_label) }}{% endif %}</small>
+{%- if listing.change and listing.change.event_type == 'price_drop' %}<small class="chg">{{ t('web.reading.observed_price_change') }}{% if listing.change.old_price_label and listing.change.new_price_label %} · {{ t('background.digest_event_price_detail', old=listing.change.old_price_label, new=listing.change.new_price_label) }}{% endif %}</small>
 {%- elif listing.change and listing.change.event_type == 'back_in_stock' %}<small class="chg">{{ t('background.digest_event_back_in_stock') }}</small>
 {%- elif listing.change and listing.change.event_type == 'discovered' %}<small class="chg">{{ t('background.digest_event_new') }}</small>{% endif -%}
+{%- endmacro %}
+
+{% macro reference_price(listing, with_discount=false) -%}
+{%- if listing.discount_percent and listing.compare_at_price_label %}
+<small class="price-reference">{{ t('web.reading.merchant_reference') }} <s class="price-was">{{ listing.compare_at_price_label }}</s>{% if with_discount %} · <span class="price-off">{{ t('web.monitor.discount', percent=listing.discount_percent) }}</span>{% endif %}</small>
+{%- endif %}
+{%- endmacro %}
+
+{% macro reference_discount(percent) -%}
+{%- if percent %}<span class="price-off">{{ t('web.monitor.discount', percent=percent) }}</span><small class="price-baseline">{{ t('web.reading.reference_baseline') }}</small>{% else %}<span class="muted">—</span>{% endif -%}
 {%- endmacro %}
 
 {#- When a lot closes: how long is left and the time, closed, or no deadline. -#}
@@ -180,10 +202,10 @@
   </div></td>
   <td class="c-price-now" data-label="{{ t('web.reading.col_price') }}">
     {%- if listing.price_label %}<span class="price-now">{{ listing.price_label }}</span>{% else %}<span class="muted">{{ t('web.monitor.price_unavailable') }}</span>{% endif %}
-    {%- if listing.discount_percent and listing.compare_at_price_label %}<small><span class="sr-only">{{ t('web.reading.was_price') }} </span><s class="price-was">{{ listing.compare_at_price_label }}</s></small>{% endif %}
+    {{- reference_price(listing) }}
     {{- change_line(listing) -}}
   </td>
-  <td class="c-nw" data-label="{{ t('web.reading.col_discount') }}">{% if listing.discount_percent %}<span class="price-off">−{{ listing.discount_percent }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+  <td class="c-discount" data-label="{{ t('web.reading.col_discount') }}">{{ reference_discount(listing.discount_percent) }}</td>
   <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ score(listing.ai_score) }}</td>
   {% if is_admin %}<td class="c-ops"><div class="ops-stack">{% set item = listing %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div></td>{% endif %}
 </tr>
@@ -202,15 +224,18 @@
 {%- set closed = not (listing.is_present and listing.is_available) %}
 <li class="plate kb-row{{ ' is-closed' if closed }}" id="listing-{{ listing.id }}" tabindex="-1" data-channel="{{ channel_name }}">
   <a class="plate-photo" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">{{ plate_img(listing.image_url) }}</a>
+  <div class="plate-facts">
   <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ listing.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   <p class="plate-price">
     {%- if listing.price_label %}<span class="price-now">{{ listing.price_label }}</span>{% else %}<span class="muted">{{ t('web.monitor.price_unavailable') }}</span>{% endif %}
-    {%- if listing.discount_percent and listing.compare_at_price_label %} <span class="sr-only">{{ t('web.reading.was_price') }} </span><s class="price-was">{{ listing.compare_at_price_label }}</s>{% endif %}
-    {%- if listing.discount_percent %} <span class="price-off">−{{ listing.discount_percent }}%</span>{% endif -%}
+    {{- reference_price(listing, with_discount=true) }}
   </p>
   {{- change_line(listing) }}
+  </div>
+  <div class="plate-context">
   <span class="lot-where">{{ [listing.vendor, listing.source_label]|select|join(' · ') }}</span>
   {%- if closed %}<span class="lot-state"><span class="st st-never">{{ t('web.monitor.status_out_of_stock') if listing.is_present else t('web.monitor.status_removed') }}</span></span>{% endif %}
+  </div>
   <div class="plate-foot">{{ plate_score(listing.ai_score) }}{% if is_admin %}<div class="ops-stack">{% set item = listing %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div>{% endif %}</div>
 </li>
 {% endmacro %}
@@ -248,10 +273,12 @@
 {% macro lot_plate(lot, channel_name='') %}
 <li class="plate kb-row{{ ' is-closed' if not lot.is_active }}" id="lot-{{ lot.id }}" tabindex="-1" data-channel="{{ channel_name }}">
   <a class="plate-photo" href="{{ lot.open_url }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">{{ plate_img(lot.image_url) }}</a>
+  <div class="plate-facts">
   <a class="lot-title" href="{{ lot.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ lot.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   {% if lot.pricing_facts %}<div class="kv">{% for fact in lot.pricing_facts %}<span>{{ fact }}</span>{% endfor %}</div>{% endif %}
   <p class="plate-when">{{ lot_when(lot) }}</p>
-  {% if lot.context %}<span class="lot-where">{{ lot.context }}</span>{% endif %}
+  </div>
+  <div class="plate-context">{% if lot.context %}<span class="lot-where">{{ lot.context }}</span>{% endif %}</div>
   <div class="plate-foot">{{ plate_score(lot.ai_score) }}{% if is_admin %}<div class="ops-stack">{% set item = lot %}{% set watch_origin = 'channel' %}{% include "_tracker_watch_control.html" %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div>{% endif %}</div>
 </li>
 {% endmacro %}
@@ -277,18 +304,20 @@
 </section>
 {%- endmacro %}
 
-{#- A store or auction page's display choices: list or gallery, and rows per page. They are
-    plain links, so they work without JavaScript, and the page remembers each choice. -#}
+{#- Display choices are plain links and keep their remembered values. -#}
 {% macro view_controls() -%}
 <div class="view-ctl">
   <nav class="seg" aria-label="{{ t('web.reading.view.aria') }}">
     {%- for value, href in view_links %}<a href="{{ href }}"{% if value == listing_view %} aria-current="page"{% endif %}>{{ t('web.reading.view.' ~ value) }}</a>{% endfor -%}
   </nav>
-  <nav class="seg" aria-label="{{ t('web.reading.per_page.aria') }}">
+</div>
+{%- endmacro %}
+
+{% macro page_size_controls() -%}
+<nav class="seg" aria-label="{{ t('web.reading.per_page.aria') }}">
     <span class="seg-label" aria-hidden="true">{{ t('web.reading.per_page.label') }}</span>
     {%- for size, href in per_page_links %}<a href="{{ href }}"{% if size == per_page %} aria-current="page"{% endif %}>{{ size }}</a>{% endfor -%}
-  </nav>
-</div>
+</nav>
 {%- endmacro %}
 
 {#- The keyboard hint under a reading list and the live region that announces the selected row.

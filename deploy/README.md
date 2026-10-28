@@ -126,6 +126,11 @@ deploy/release.sh promote rollback
 
 ## One-time upgrade tasks
 
+The reading UX follow-up uses the existing schema 7. After release, configure **Email groups >
+Website links** with the site's base HTTP(S) address to enable email return links. This is the
+`site_url` setting, not a value inferred from request headers. Leaving it blank preserves ordinary
+outbound item links but omits site/channel/brief navigation.
+
 The non-admin reliability fixes require schema version 7. The normal backed-up migration adds
 `deep_reads.result_completed_at` and backfills existing successful briefs without changing their
 content. Update the web app and jobs worker together to retain saved briefs during regeneration.

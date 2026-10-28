@@ -6,7 +6,7 @@
 <div class="adm-head">
   <div>
     <h1>{{ t('web.archive.heading') }}</h1>
-    <p class="adm-meta" id="archive-meta"><span class="nw">{{ t('web.reading.results', count=total, number=total|count(locale)) }}</span> · {{ t('web.archive.lede') }}</p>
+    <p class="adm-meta" id="archive-meta">{% if not date_error %}<span class="nw">{{ t('web.reading.results', count=total, number=total|count(locale)) }}</span> · {% endif %}{{ t('web.archive.lede') }}</p>
   </div>
 </div>
 
@@ -16,8 +16,8 @@
   <label class="fld"><span>{{ t('web.archive.channel_label') }}</span>
     <select class="inp" id="archive-channel" name="channel"><option value="">{{ t('web.archive.channel_all') }}</option>{% for c in channels %}<option value="{{ c.id }}"{% if selected_channel == c.id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
   {% endif %}
-  <label class="fld"><span>{{ t('web.archive.from_label') }}</span><input class="inp inp-date" id="archive-from" type="date" name="from" value="{{ selected_from }}"></label>
-  <label class="fld"><span>{{ t('web.archive.to_label') }}</span><input class="inp inp-date" id="archive-to" type="date" name="to" value="{{ selected_to }}"></label>
+  <label class="fld"><span>{{ t('web.archive.from_label') }}</span><input class="inp inp-date" id="archive-from" type="date" name="from" value="{{ selected_from }}"{% if date_error %} aria-invalid="true" aria-describedby="archive-date-error"{% endif %}></label>
+  <label class="fld"><span>{{ t('web.archive.to_label') }}</span><input class="inp inp-date" id="archive-to" type="date" name="to" value="{{ selected_to }}"{% if date_error %} aria-invalid="true" aria-describedby="archive-date-error"{% endif %}></label>
   {% if is_admin %}
   <label class="fld"><span>{{ t('web.archive.read_state_label') }}</span>
     <select class="inp" id="archive-state" name="read_state">
@@ -27,6 +27,7 @@
     </select></label>
   {% endif %}
   <div class="fld-act"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button><a class="lnk" href="/archive">{{ t('web.archive.clear_filters') }}</a></div>
+  {% if date_error %}<p class="field-error filter-error" id="archive-date-error" role="alert">{{ date_error }}</p>{% endif %}
 </form>
 
 <div id="archive-list" data-refocus-slot>
@@ -41,7 +42,7 @@
   {% else %}
   {% if pagination.page > 1 and pagination.total %}
   {{ rd.past_end() }}
-  {% else %}
+  {% elif not date_error %}
   <div class="empty" tabindex="-1" data-refocus-fallback><b>{{ t('web.archive.empty_heading') }}</b>{{ t('web.archive.empty_body') }}</div>
   {% endif %}
   {% endfor %}

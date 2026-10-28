@@ -12,4 +12,4 @@
           data-feedback-message="{{ t('web.tracker.watch_removed_feedback' if item.is_watched else 'web.tracker.watch_added_feedback') }}">{{ t('web.tracker.watching' if item.is_watched else 'web.tracker.watch') }}</button>
 </form>
 {% endif %}
-{% if update_watch_nav %}{% import "_reading_macros.html" as rd with context %}{{ rd.watchlist_link(oob=True) }}{% endif %}
+{% if update_watch_nav %}{% import "_reading_macros.html" as rd with context %}{{ rd.watchlist_link(oob=True) }}{% include "_reading_action_notice.html" %}{% endif %}

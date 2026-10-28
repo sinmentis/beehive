@@ -1,6 +1,7 @@
 """The home page's channel desk: what each kind of Channel shows, in what order, for whom, and
 that none of it builds a whole Channel page."""
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -118,6 +119,53 @@ def _section(response, channel_id):
     return next(section for section in response.context["desk"] if section.channel_id == channel_id)
 
 
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("uncollected", "No content has been collected"),
+        ("window", "outside the current featured window"),
+        ("unranked", "no completed ranking"),
+        ("criteria", "score and relevance criteria"),
+    ],
+)
+def test_empty_editorial_desk_explains_the_actual_exclusion(conn, authed_client, state, expected):
+    _, c = conn
+    channel_id = create_channel(c, "Empty state", "evidence", minimum_score=80)
+    source_id = create_source(c, channel_id, "rss_feed", {"feed_url": "https://example.com/feed"})
+    if state == "unranked":
+        insert_new(c, source_id, RawItem(external_id="pending", title="Pending", url="https://example.com/pending"))
+    elif state != "uncollected":
+        _story(c, source_id, "example", 40 if state == "criteria" else 95)
+        if state == "window":
+            c.execute(
+                "UPDATE items SET created_at = ? WHERE source_id = ?",
+                ((datetime.now(timezone.utc) - timedelta(days=10)).isoformat(), source_id),
+            )
+            c.commit()
+    response = authed_client.get("/")
+    section = _section(response, channel_id)
+    assert not section.stories
+    assert expected in section.empty_message
+    if state == "uncollected":
+        assert section.empty_href == f"/admin/channels/{channel_id}/edit?section=sources"
+        destination = authed_client.get(section.empty_href)
+        assert destination.status_code == 200
+        assert destination.context["section"] == "sources"
+    else:
+        assert section.empty_href == f"/archive?channel={channel_id}"
+
+
+def test_empty_monitor_distinguishes_low_scores_from_missing_stock(conn, authed_client, client):
+    _, c = conn
+    channel_id = create_channel(c, "Store", "gear", kind="monitor", minimum_score=80)
+    source_id = create_source(c, channel_id, "shopify_collection", {"collection_url": "https://example.com/sale"})
+    _listing(c, source_id, "cheap", 40, available=True)
+    section = _section(authed_client.get("/"), channel_id)
+    assert "score and relevance criteria" in section.empty_message
+    assert section.empty_href == f"/channels/{channel_id}?show_below=1"
+    assert _section(client.get("/"), channel_id).empty_href == f"/channels/{channel_id}"
+
+
 def test_owner_desk_puts_unread_stories_first_and_readers_see_the_best(conn, client, authed_client):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
@@ -207,9 +255,9 @@ def test_monitor_section_lists_the_best_live_listings_like_the_channel_page(conn
     )
     assert section.listing_total == page.pagination.total
     assert '<span class="desk-state nw">3 live listings</span>' in response.text
-    assert '<span class="price-off">−33%</span>' in response.text
+    assert '<span class="price-off">33% off</span>' in response.text
     assert '<s class="price-was">299</s>' in response.text
-    assert '<small class="chg">Price drop</small>' in response.text
+    assert '<small class="chg">Observed price drop · 249 → 199</small>' in response.text
 
 
 def test_tracker_section_shows_open_good_lots_soonest_first(conn, client, authed_client):
@@ -344,9 +392,8 @@ def test_empty_sections_say_what_is_missing(conn, client):
 
     response = client.get("/")
 
-    assert "Nothing from this channel is featured right now." in response.text
-    assert "No live listings right now." in response.text
-    assert "No open lots at 80 or above right now." in response.text
+    assert response.text.count("No content has been collected for this channel yet.") == 3
+    assert all(section.empty_href == section.href for section in response.context["desk"])
 
 
 def test_home_never_builds_a_whole_channel_page(conn, client, monkeypatch):
@@ -399,9 +446,9 @@ def test_read_toggle_re_renders_its_block_in_place(conn, authed_client):
         f'hx-post="/items/{item_id}/read-state" hx-target="#desk-{channel_id}" '
         f'hx-select="#desk-{channel_id}" hx-swap="outerHTML"'
     ) in desk.text
-    assert 'hx-select-oob="#home-meta,#toc-count-featured"' in desk.text
+    assert 'hx-select-oob="#home-meta,#toc-count-featured,#reading-action-notice"' in desk.text
     assert 'hx-target="#home-list" hx-select="#home-list"' in listed.text
-    assert 'hx-select-oob="#home-meta,#home-seg,#toc-count-featured"' in listed.text
+    assert 'hx-select-oob="#home-meta,#home-seg,#toc-count-featured,#reading-action-notice"' in listed.text
     assert "/static/htmx.min.js" in desk.text
 
     marked = authed_client.post(
@@ -409,7 +456,8 @@ def test_read_toggle_re_renders_its_block_in_place(conn, authed_client):
         data={"csrf_token": "csrf1", "is_read": "1", "next_url": "/"},
     )
     assert marked.status_code == 303
-    assert marked.headers["location"] == "/"
+    assert urlsplit(marked.headers["location"]).path == "/"
+    assert parse_qs(urlsplit(marked.headers["location"]).query)["reading_action"]
     assert c.execute("SELECT is_read FROM items WHERE id = ?", (item_id,)).fetchone()[0] == 1
 
 

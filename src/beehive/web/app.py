@@ -20,6 +20,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from beehive.db.connection import connect, init_schema
+from beehive.db.reading_actions import ReadingAction, get_reading_action
 from beehive.db.research_sessions import count_unread_completed_research_sessions
 from beehive.db.tracker_watches import count_failed_tracker_reminders
 from beehive.localization import load_localizer
@@ -100,16 +101,23 @@ def _localization_context(request: Request) -> dict:
     is_owner = getattr(request.state, "is_owner", False)
     research_unread_count = 0
     watch_failure_count = 0
+    reading_action = None
     if is_owner:
         with _request_db(request) as conn:
             research_unread_count = count_unread_completed_research_sessions(conn)
             watch_failure_count = count_failed_tracker_reminders(conn)
+            action_token = getattr(request.state, "reading_action_token", None) or request.query_params.get("reading_action")
+            reading_action = get_reading_action(conn, action_token, datetime.now(timezone.utc))
+            result = request.query_params.get("reading_result")
+            if reading_action is None and result in {"restored", "unavailable"}:
+                reading_action = ReadingAction("", result, False)
     return {
         "t": localizer.text, "localizer": localizer, "locale": localizer.code,
         "is_owner": is_owner,
         "global_csrf_token": getattr(request.state, "csrf_token", None),
         "research_unread_count": research_unread_count,
         "watch_failure_count": watch_failure_count,
+        "reading_action": reading_action,
         "public_origin": _public_origin(request),
     }
 

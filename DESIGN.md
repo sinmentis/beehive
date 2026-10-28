@@ -366,6 +366,14 @@ components:
   read-toggle:
     rounded: "{rounded.control}"
     size: "22px"
+  reading-touch-target:
+    size: "44px"
+  reading-action-notice:
+    backgroundColor: "{colors.sheet}"
+    borderColor: "{colors.link}"
+    textColor: "{colors.ink}"
+    padding: "10px 14px"
+    width: "42rem"
   read-toggle-hover:
     backgroundColor: "{colors.band}"
   unread-mark:
@@ -640,7 +648,7 @@ A research session's conclusion page is a notebook. The reading column is fluid,
 
 The home page's head holds the h1 精选 and its counts on the left, and search on the right with 全部标记为已读 beside it for the Owner. The channel desk follows as sections 1.1 on, one per Channel in the rail's order, each a heading over a short banded table of 4 stories, 5 listings or 5 lots. The sections are numbered under chapter 1 but not listed in the rail, since the rail already gives every Channel its own chapter. The ranked list replaces the desk under the same head, with its segmented filter 18px below the head, then the table and the pager. A page-level empty state sits 24px below the head, and the keyboard hint closes the page 28px below the last table.
 
-A channel page opens with the same head and, for the Owner, a 说明 note with the Channel's match criteria 18px below. A news channel follows with its segmented filter and its two parts in `.cols`: N.1 重点内容, the top stories on the first page, and N.2 其余内容, the rest a page at a time. A store monitor and an auction tracker put their view and page-size choices at the head's right and a filter bar under the head. A monitor lists N.1 当前可购买 a page at a time, as a gallery unless the Owner picked the list, and keeps N.2 暂不可购买与历史 closed under a history disclosure. A tracker sets its 已关注, 24 小时内截止 and 即将到来 lots side by side in `.cols` and keeps 永久历史 closed the same way, leaving out any of them that holds nothing. Every channel page numbers the parts it shows in order.
+A channel opens with its name, count and freshness. Channel details holds source/fetch facts and scoring explanations. A news channel follows with its read-state filter and two `.cols` sections. A catalog keeps its view switch at the head and primary search/sort or status under it; Filters and details holds secondary choices and page size. Monitors retain current listings and history. Trackers retain watched lots, deadlines within 24 hours, later/undated active lots and history. Every page numbers the sections it actually shows.
 
 The archive puts its filter bar under the head, then one section per Auckland day on the page (9.1 2026-09-29 星期二), then the pager. Search puts one field and a primary 搜索 under the head, then the page's hits as one section per Channel in `.cols.lanes`, then the pager. A deep-read brief is the notebook, 24px under its head, with the brief's text in the reading column and its figures and source in the side column. A brief that isn't finished is one numbered section, at most 72ch wide, 24px under the head.
 
@@ -648,7 +656,7 @@ Error and 404 pages skip the shell. One sheet, at most 560px wide, sits centred 
 
 Shared shell, reading and research breakpoints are container queries. Most read the `adm` container (the body), and lanes read each reading table's own box (`ledger`) or a section group's (`cols`). The admin extension also has viewport and pointer media queries.
 - **Mid (1180px and below):** the desk margin drops to 8px and the sheet inset to 14px 18px 32px. Table cells take 8px at the sides, no-wrap cells relax, and operation columns wrap. Parameter columns become 120–160px, fluid and 180–240px, with an 18px gutter. The notebook drops to one column. The side column follows the transcript as a static block 28px below it, and its citation box hides, because a citation opens its source in a new tab at this width. On the reading pages a story's summary column drops its minimum width from 20em to 14em, and the channel column from 7em to 5em.
-- **Narrow (880px and below):** the rail becomes a wrapping top bar, with chapters in a row, sub-sections hidden and footer links at the right. The shell's rows become `auto 1fr`, so a short page starts right under the bar. The sheet runs edge to edge without a border at 14px 14px 28px. Parameter rows stack label, control and note, and the head row hides. Banded tables become labelled stacked rows, and notes move their tag above the body. Transcript turns stack, and the label column becomes a wrapping line above the words. A lot photo keeps its 80px square, a gallery sets its plates at 10rem or more (two to a row on a phone), the lot cell leaves 28px on the right for the row checkbox, and the filter form takes a full line under the segments. A research session lists its four pages as a 2×2 tab grid under the page head, and the watch list's select-all moves into the section tools, because the table head is hidden. The reading rail keeps its chapters on one line that scrolls sideways inside the bar. The home page's search takes a full line, its field flexing beside the button, and the keyboard hint hides. Story tables become headline rows rather than labelled rows (see Story Row), while listing and lot tables stack as labelled rows, with the Owner's toggles in a row at the bottom. A filter bar's free-text field takes a full line, and a multiselect's summary drops its maximum width.
+- **Narrow (880px and below):** the rail becomes a top bar and the sheet runs edge to edge with 14px side insets. The reading strip reveals its active channel; Watch List and Research remain direct links, with Admin and Sign out in More. The mobile popup requires a shrinkable rail (`min-width:0`) despite visible overflow. Parameter and table rows stack, research keeps its 2x2 page tabs, and watch-list select-all moves into the section tools. Catalog secondary controls start closed, and gallery titles/prices precede their square photos. Coarse-pointer targets are 44px without enlarging their small state marks; the read-row lead and watch-checkbox space grow accordingly. Multiselect panels remain bounded by their fields. Existing wide-screen lanes are unaffected.
 - **Wide (1800px and above):** parameter columns become 160–220px, up to 960px and at least 290px, so a field stops at a comfortable width and the note takes the rest. The notebook's reading column stops at 960px with a 300–440px side column beside it, both held to the left.
 - **Lanes (a table box of 115.5rem, 1848px, and more, in a window at least 40rem tall):** on a reading page every table wrapper is its own size container (`ledger`), so a long story, listing or lot list splits into two lanes when its own box reaches 115.5rem, exactly the width of two 56rem lanes and their 3.5rem gutter, whatever the window. Narrower boxes keep the table, so a table in a section beside another stays a table. A section group (`.cols.lanes`) whose box reaches 123rem, room for two 60rem sections and their gap, makes each of its sections a lane. A shorter window, and print, keep the plain page.
 - **Admin records (viewport 1100px and below):** admin stacking tables become label/value records before the shared narrow breakpoint. Labels are 86px wide inside a 94px indent; rows have 14px vertical padding and operations follow the values.
@@ -813,6 +821,7 @@ The watch list's banded table holds a checkbox, the lot, 截止与提醒, 出价
 - **Closed rows:** text drops to secondary ink and the photo to grayscale at 65% opacity.
 - **Failed reminders first:** 2.1 需要注意 boxes every failed reminder as a 警告 note above the list, whatever the filter, with its deadline, the folded raw error, a small retry button and a link to delivery health. When nothing failed it shows a 完成 note, and a missing reminder address is a 注意 note.
 - **Removing:** row checkboxes belong to a form outside the table. The head checkbox selects all and shows a partial pick as indeterminate, and the section tools show 已选 N 个 beside a small danger button that stays disabled until something is picked. At the narrow rule, where the table head is hidden, a semibold 全选 checkbox joins the section tools before the count, and both select-alls stay in step. Stopping one watch re-renders the list, the head counts and the rail count from the server, moves focus to the next lot's title (else the previous one, else the settings button) and announces the change in a polite live region.
+- **Recovery:** individual removal also offers the shared visible action notice. Undo restores the previous watch, including its sent/error/deadline state, only while the saved action is valid. An in-flight delivery gets an explicit warning without an undo promise. Selection labels retain their small checkbox inside a 44px target; bulk removal and clearing closed watches remain non-undoable.
 
 ### Notebook Transcript
 The conclusion page of a research session (1.1). It is a transcript, not a chat.
@@ -849,17 +858,18 @@ On a desktop window wider than 1180px the side column sits beside the transcript
 - **Outcome:** up to three lines, each on its own and each shown only when it applies. The failure reason comes first as a red sentence at the data size. The snapshot the run sealed (快照 N：X 条证据) and the conclusion it wrote (结论第 N 版 · sufficiency) follow in ink at the data size, 4px below a reason. A failed run that sealed evidence shows both its reason and its snapshot, and a conclusion is credited to the run that wrote it, including a retry that only rewrote the conclusion. The stored technical detail folds under 原始错误 after the lines, in mono on the field fill. A run with none of these shows a faint in-progress or no-outcome note.
 
 ### Running Work
+- **Session vocabulary:** Open/Unarchived describes a session that can accept work; Running describes a run actually executing. A completed session is not labelled as running.
 - **Status note:** while a run is queued or running, a 说明 note heads every session page with the run and its state in bold, the phase, a hint and three skeleton lines. It refreshes every three seconds. A failed run leaves a 警告 note with the reason and the folded raw error. The control beside the title is a cancel button while a run is going and the primary 刷新研究 otherwise.
 - **Skeleton lines:** three 10px bars in the band tone at full, 75% and 50% width, 8px apart, pulsing to 45% opacity over 1.6s. They hold still under reduced motion. There is never a spinner.
 
 ### Reading Page Head
 Every reading page opens the same way: the h1 and a meta line on the left, search and page actions on the right.
 - **Counts:** on the home page, under the h1 精选, the meta line gives the window (最近 3 天, or 今天) in plain text, then the story count, the Owner's unread count and the count at 90 or above, split by middots. On the desk each count is a quiet link into the ranked list. In the ranked list they are plain text, because the filter does that job.
-- **Channel heads:** the h1 is the Channel's name. The meta line gives its kind (资讯, 监控 or 追踪), the count that matters (the Owner's unread stories, live listings or open lots), the fetch time with the exact time in its tooltip, and the last fetch's numbers. A 13px line under it lists the Channel's sources (信源：…) and wraps in full.
+- **Channel heads:** the h1 is the Channel's name. The meta line gives its kind, the relevant count and freshness with an exact-time tooltip. During search, the count describes matches. Detailed fetch statistics and source names move into Channel details, or the catalog's Filters and details, where they still wrap in full.
 - **Other heads:** the archive and search give their result count and a lede. A brief's h1 is the story's AI summary, and its meta line gives the source, the age and 阅读原文 as a link.
 - **Search (`.head-search`):** on the home page and a news channel, a 260px search field at 32px and a secondary 搜索 button, 8px apart, on the right. The home page searches through `/search`, and a news channel searches itself. Monitor and tracker pages, the archive and search put their fields in a filter bar under the head instead.
 - **Page actions:** for the Owner, and only while something is unread, a secondary 全部标记为已读 follows the search. It is a plain form post that reloads the page. On a news channel it sits in a swap slot (`.swap-slot`, `display:contents`), so a read toggle can update it without touching the search field. A tracker's head offers the Owner 关注列表, and a brief's head the primary 深度阅读 while one can be started, or a secondary 重新生成 once it is ready.
-- **Criteria note:** for the Owner, a channel page puts a 说明 note 18px under the head. It says how many items were collected and how many match, with the AI score floor beneath, then a small button to show what falls under the floor (or apply the floor again) and an 编辑条件 link.
+- **Channel details:** a native disclosure carries source/fetch facts and a plain-language explanation of relevance scores. The Owner also sees match counts, the score floor, the below-threshold toggle and 编辑条件. Editorial pages place it below the head. Catalogs include it inside Filters and details, avoiding two stacked phone disclosures.
 - At the narrow rule the search takes a full line and 全部标记为已读 wraps below it.
 
 ### Channel Desk
@@ -870,29 +880,29 @@ The home page's default view: one numbered section per Channel (`.desk-sec`), it
 - **Monitor rows:** its 5 best live listings in a banded table of 商品 | 价格 | 折扣 | 分数. The listing cell is the watched lot's cell (`.lot`): the photo well, the title opening the listing in a new tab, and the vendor as the faint line under it. Prices follow (see Prices), and the score closes the row.
 - **Tracker rows:** 5 open lots at the floor, soonest deadline first, in 拍品 | 截止 | 出价 | 分数, reusing the watched lot's cells (`.lot`, `.kv`). The auction line wraps in full, the relative deadline sits over its exact time, 已关注 follows under a hairline when the Owner watches the lot, and the price facts lead with the current bid.
 - **Reminder failures:** for the Owner, a failed reminder replaces the desk row's reassuring watched mark with a red recovery link. The Tracker heading counts all its failed watches, not just the short list. Channel/list/gallery watch controls carry the same failure link; unwatch updates that control and the reading footer count together. Diagnostics and retry remain in the Watch List. Long labels and existing gallery controls wrap inside their cells; recovery links have at least 44px height for coarse pointers.
-- **Empty sections:** a section with nothing to show keeps its head and says so in one dashed empty-state line in secondary ink, per kind: no featured stories, no live listings, or no open lots at the floor. With no Channels at all, the desk is one empty state 24px under the head, with its bold line, the explanation and, for the Owner, the primary 新建频道.
+- **Empty sections:** keep the numbered heading and use the dashed empty-state treatment. Actual inventory/window/ranking counts distinguish missing collection, older content, incomplete ranking and score/relevance exclusion. Links open collection settings for the Owner, channel history for Editorial content, or broader channel content. With no Channels at all, retain the primary 新建频道 empty state.
 - Listing and lot tables stack as labelled rows at the narrow rule. Story tables become headline rows (see Story Row).
 - **Wide sheets:** the sections flow into `.cols`, one per row at 1440, two at 2560 and three at 3840. Sections side by side stay narrower than 115.5rem, so they keep their tables.
 
 ### Story Row
 One story, wherever stories are listed: a desk section, the ranked list, a news channel, the archive and search (`.tbl-feed`, built by `rd.story_row`).
 - **Columns:** the read toggle (Owner only), the score, the summary, the channel (where rows mix Channels, in the ranked list and the archive), the source, the age and the last cell for the deep read and relevance. The toggle and last columns have no visible head.
-- **Read toggle (`.rd`):** a 22px button with 2px corners and no border. An unread story shows an 8px solid blue square, which turns pale blue over a band fill on hover. A read story keeps an empty square in the same place, outlined 1.5px in the control stroke, so the toggle never moves and stays visible. Hover strengthens that outline to secondary ink. The tooltip and accessible name say the action (标为已读 or 标为未读, with the story's title). While the request runs the toggle shows a wait cursor at 60% opacity.
+- **Read toggle (`.rd`):** a 22px pointer control, expanded to a 44px square for coarse pointers, with 2px corners and no border. Its visual unread mark stays an 8px blue square. A read story keeps the outlined square in the same place. Hover, focus, accessible action names and pending opacity remain unchanged.
 - **Score (`.score`):** a bare numeral, right-aligned in a narrow column, in tabular figures at 88% width. 90 and above is ink at 700 (`.is-high`), under 60 is faint ink at 400 (`.is-low`), and the rest are secondary ink at 600. An unranked story shows a faint dash.
 - **Summary (`.c-sum`):** at least 20em wide, breaking anywhere. The AI summary is the link, in ink at 600, and the original title follows under it as a caption line in secondary ink (`<small>`). A read story's summary drops to secondary ink at 500. A story without a summary shows its title as the link.
 - **Byline and age:** the source cell (`.c-src`, at least 6.5em) joins the byline's parts with middots (HN · 热门 · 299分 94评论). The age (`.c-age`, 1 天前) never wraps and carries the exact time in its tooltip, or shows a faint dash. In the archive, where the day is in the section heading, it gives the time of day (06:15) instead.
 - **Reason line (`small.why`):** among a news channel's top stories and in search, the AI's reason for the score follows the original title as a 13px line in secondary ink at 1.55, 4px below.
 - **Relevance (Owner):** on channel pages, the ranked list, the archive and search, the last cell holds 相关 and 不相关 as two-state toggles, 6px under the deep read. Judging a story 不相关 also reads it. The row stays in place for that render, read, with the reason field open under its summary, and leaves an unread list at the next load. Taking the judgement back, by clearing it or switching to 相关, makes the story unread again. A 相关 vote leaves the read state alone.
 - **Best comment (`.cmt`):** when a story has one, a 热评 disclosure sits 6px under the summary in 12.5px blue with the native marker. Open, the comment reads in secondary ink at 1.6, up to 72ch.
-- **Phones:** at the narrow rule the row becomes a headline row with no head and no labels. The toggle (22px) and the score (a 2.1rem column) hang in a lead on the left, 12px apart and 12px before the text, with the score level with the summary's first line. The summary takes the full width beside them, and the channel, source, age and deep read follow beneath in caption type, 12px apart, in secondary ink. When that line wraps, it wraps inside the same indent, so nothing starts left of the summary.
+- **Phones:** the headline row has no table head or repeated labels. The toggle and score hang in the lead, with the lead widened for the 44px coarse-pointer target so their hit areas do not overlap. The summary, byline and actions wrap inside that indent.
 - An anonymous reader gets the same row without the toggle, without read state and without the relevance toggles. A vote the Owner cast shows as a state mark (see State Marks).
 
 ### Prices
 A listing's price, as the Monitor rows show it on the desk, on a channel page and in search.
 - **Current price (`.price-now`):** ink at 600 in tabular figures, in a cell at least 6.5em wide that never wraps.
-- **Former price (`.price-was`):** struck through in faint ink with tabular figures, as a caption line under the current price. Screen readers hear it as 原价.
-- **Discount (`.price-off`):** the percentage off with a true minus sign (−39%), in ink at 600 with tabular figures, in its own column. No discount is a faint dash.
-- **Change (`small.chg`):** the listing's latest change, 降价 or 重新有货, as a blue caption line at 600, 4px under the price. On a channel page and in search it also names 新增, and a drop gives the old and new price (降价 · 1,299.99 → 719.99).
+- **Reference price (`.price-was`):** struck through in faint ink with a visible Merchant reference label. It is not presented as a verified previous selling price.
+- **Discount (`.price-off`):** the calculated percentage uses the locale's `web.monitor.discount` string, with its merchant-reference basis explicit. No discount is a faint dash. Calculation and sorting stay unchanged; advertised percentages in collected offer text are not rewritten.
+- **Change (`small.chg`):** the separately observed change in blue. An observed price drop names its own recorded old/new values wherever available, including the home desk. It never borrows the merchant reference price as historical evidence.
 - A discount or a drop takes no green or red. The change line is the only colour in a price, because it is news.
 - Lot prices on the desk are the watched lot's price facts. The first fact leads in ink at 600 and the rest follow as caption lines.
 
@@ -906,11 +916,12 @@ Every featured story in the window, ranked by score, a page at a time (`/?view=`
 A Channel's own page (`/channels/{id}`), under its rail chapter. The head, the criteria note and the order of the parts are under Reading Page Head and Layout.
 - **News (`channel_editorial.html`):** N.1 重点内容 holds the top stories with their reason lines, and N.2 其余内容 the rest, a page at a time with its own pager. Both are story rows with relevance, and each heading counts its stories. A read toggle re-renders both parts together, with the head's meta, the mark-all slot, the segmented filter and the rail tally.
 - **Store monitor (`channel_monitor.html`):** N.1 当前可购买 lists the live listings a page at a time, as gallery plates or listing rows, and its heading counts them (在售 3,767 件). N.2 暂不可购买与历史 keeps listings that are out of stock or gone under a history disclosure, in the same view.
-- **Auction tracker (`channel_tracker.html`):** 已关注, 24 小时内截止 and 即将到来 each hold lot rows (or plates) under a one-line lede and their own pager, side by side as lanes in `.cols.lanes` on a wide sheet. 永久历史 stays under a history disclosure. With no open lots at all, the page is one empty state 24px under the filter bar.
+- **Auction tracker (`channel_tracker.html`):** Watched, Ending within 24 hours, and Closes later or has no deadline describe the actual groups. Their rows/plates and pagers still form wide-screen lanes. History opens when requested or matched by a search; a matching history section is not preceded by a false no-results claim.
 
 ### Archive
 Every story on file, 30 to a page, filed by Auckland day.
 - **Filter bar:** a keyword, the Channel (Owner), a from and a to date and the read state (Owner), then 应用筛选 and 清除. The dates are Auckland days.
+- **Date errors:** invalid or reversed bounds retain the date inputs, mark them invalid and place recovery text beside the form. Do not render a normal empty-result message for an invalid range.
 - **Days:** one numbered section per Auckland day on the page, headed by the date and its weekday (9.1 2026-09-29 星期二), with that day's total across all pages on the right (184 条). Its stories are story rows with the channel column and relevance.
 - A read toggle re-renders the whole list with the head's count and the rail tally.
 
@@ -918,6 +929,7 @@ Every story on file, 30 to a page, filed by Auckland day.
 - **Field:** one free-text field and a primary 搜索 in a filter bar under the head.
 - **Sections:** the page's hits, 30 to a page, sort into one numbered section per Channel in rail order, under chapter 1 (1.1, 1.2 …). Each heading gives the Channel's total hits across all pages and 打开频道, which opens the Channel filtered by the query. Each Channel's hits use its own rows: story rows with their reason lines and relevance, listing rows or lot rows.
 - The sections flow into `.cols.lanes`, so on a wide sheet each Channel's hits scroll in a lane of their own, and a lone section's list splits into two lanes.
+- Opening a Channel preserves the query, read-item scope and below-threshold matches. Channel counts describe matching results while searching, and stored body text remains searchable.
 
 ### Listing and Lot Rows
 The shared rows for a Monitor listing and a Tracker lot (`rd.listing_row`, `rd.lot_row`) on channel pages and in search. Both are `.tbl-stack` tables. The desk keeps its own shorter rows (see Channel Desk).
@@ -931,7 +943,7 @@ The Owner's relevance and watch controls (`.tg`): a word with a square that fill
 - **States:** hover moves the border to secondary ink and the word to ink. Pressed (`aria-pressed="true"`) takes a secondary-ink border, the band and ink, and fills the square. The negative choice (`.is-neg`, 不相关) takes the danger stroke and red once pressed. While its request runs it shows a wait cursor at 60% opacity. Focus is the global blue outline.
 - **Uses:** 相关 and 不相关 on stories, listings and lots, as a group named for screen readers, and 关注 or 已关注 on an open lot, whose accessible name says which lot.
 - Each toggle is a submit button in a real form, so it works without script.
-- On a touch screen (`pointer: coarse`) a toggle grows to 40px tall with 12px sides, and toggles stand 10px apart, so a tap on 相关 never lands on 不相关.
+- On a touch screen (`pointer: coarse`) a toggle grows to 44px tall with 12px sides, and toggles stand 10px apart, so a tap on 相关 never lands on 不相关.
 
 ### Reason Field
 Under a story the Owner voted 不相关, 8px below the summary and at most 44rem wide. A 12.5px secondary-ink label (AI 排序哪里判断错了？（可选）) sits 4px over a 30px one-line input at 14px with a small 保存备注 button beside it. Saving posts the vote again with the reason and re-renders the row.
@@ -941,16 +953,26 @@ The filters of a monitor or tracker channel, the archive and search (`.fields`).
 - **Style:** a row of labelled fields between two hairlines, 18px under the head (or the criteria note), with 12px above and 14px below inside. Fields sit 10px 12px apart, wrap as needed and line up at the bottom.
 - **Fields (`.fld`):** a label in label type and secondary ink, 4px over its control, and each control 32px at least. The free-text field (`.fld-grow`) flexes from 16rem to 40rem. A select stops at 20rem, since an auction category is a whole sale title. Number fields keep 96px, date fields start at 10.5rem (`.inp-date`), and a checkbox option sits at control height (`.fld-check`).
 - **Actions (`.fld-act`):** a secondary 应用筛选 and a 清除 link, 8px 14px apart. Search uses a primary 搜索 instead.
-- At the narrow rule the free-text field takes a full line.
+- Catalogs keep search and sort/status in the primary row, with the applied-filter count on Filters and details. Secondary filters, page-size links and channel facts are open on desktop and closed by default on narrow screens. The phone search action sits beside its field; sort/status follows on its own row. An Apply action also closes the expanded control area. Clear appears when there is a selection to reset.
+- At 360px and below, the search field takes its own row and Apply follows the fields, keeping the localized search hint readable.
+- The Watch List keeps status/search visible and folds its reminder filter on phones. Archive date controls remain explicit. Coarse inputs, selects, segmented links, clear actions and native summaries have 44px targets; text inputs use 16px type. Unsupported gender choices are not displayed as a useless default filter.
 
 ### Multiselect
 A filter that takes several values (`.ms`), such as a monitor's 信源, 品牌 and 性别.
 - **Closed:** a disclosure whose summary reads like a select, with the field well, the control stroke and the chevron, 10rem to 22rem wide. It names the choice (全部品牌, or the picked values, wrapping in full).
 - **Open:** the summary's border turns blue, and a checklist opens 4px below it over the rows beneath. It is at least as wide as the summary and at most 28rem (or 90% of the window), at most 340px tall and scrolls inside, with 8px padding, a rule-stroke border, 2px corners, the sheet tone and the checklist lift. Options are 14px checkbox labels with 4px 6px padding and 2px corners that take the hover wash. Opening one multiselect closes the others in the bar.
-- At the narrow rule the summary drops its maximum width.
+- At the narrow rule the summary drops its maximum width and the open checklist is bounded by its field, not allowed to overflow the viewport.
 
 ### History Disclosure
 A part kept for reference (`.more`), such as a monitor's 暂不可购买与历史 or a tracker's 永久历史. Its heading keeps its number and count, and the list sits closed under a summary set as a blue link (展开 564 条) at 14px, with a 40% underline and the native marker. Open, a faint hint explains the list, then come the table and its pager. It opens by itself on any page after the first.
+Search matches and an explicit History status also open it.
+
+### Individual Action Recovery
+A square, sheet-tone notice near the viewport's bottom-right, bounded by the viewport and a 42rem measure. It uses a 1.5px blue rule, 14px text, a small Undo button and a dismiss link. The unavailable state uses the danger rule. It is Owner-only and dismissible; without JavaScript, ordinary forms and links remain usable. A valid latest individual read/unread or unwatch operation can be undone for ten minutes. Undo refreshes the relevant main pane and counts while retaining applied query context. In-flight reminders never promise undo.
+
+### Digest Email
+Keep the existing light, 600px, single-column email document and inline styles. A configured website address supplies the site action, per-channel navigation and links to saved briefs. Multiple channels get a compact linked contents list. The title is 22px, channel headings 20px and item links 16px. Block item links have no underline; secondary navigation retains it. Event type and deadline/price details sit together below the item title at 13px, never as an eyebrow above it. Caps are not reduced. Deadlines use an absolute local date/time and the group's zone abbreviation. Preview permits user-activated no-opener windows, but not scripts or same-origin privileges.
+Email-local exceptions retain the native/system sans stack (including Roboto as a fallback), white and `#f4f4f5` surfaces, `#18181b` ink, `#71717a` metadata, `#4f46e5` links, the existing kind/warning accents, and 6px/8px email corners. These are compatibility choices for the existing email document, not additions to the web datasheet's tokens.
 
 ### Lanes
 On a wide sheet a list never makes the reader scroll back up (see The Lane Rule).
@@ -963,6 +985,7 @@ On a wide sheet a list never makes the reader scroll back up (see The Lane Rule)
 - **Listing and lot entries:** the photo and title block spans the entry. Beneath the title, indented to it, the facts follow on one line that wraps, each led by its column name in faint caption type (价格, 折扣, 分数, 截止, 出价), with the Owner's toggles at the right.
 
 ### Gallery
+The desktop photo-first specimen remains the base. On narrow screens the title, price and deadline/change facts precede the photo, so decision-making content appears before the square image. Shared subgrid tracks align the fact blocks and photos across a row where supported, with the content-first flex layout as the fallback. Photos remain whole and uncropped.
 A store's or auction's listings as catalogue plates (`rd.listing_plates`, `rd.lot_plates`), for when the photo decides. A store opens as a gallery and an auction as a list.
 - **Grid:** a ruled grid (`.plates`) of as many plates to a row as fit at 15rem or more (10rem at the narrow rule, two to a row on a phone), under the ink rule, split by hairlines. No shadow, no corner and no gap: the rules make the grid.
 - **Plate:** 10px 12px padding, then the photo, square and whole (`object-fit: contain`) on the field fill inside a hairline edge. The name leads, at 15px in semibold ink. A store plate follows with its price line (current price at 15px, the struck former price and the discount on one line), the blue change line, and the vendor and store in faint caption type. A lot plate follows with its price facts, then its closing line as a quiet caption (the relative deadline in secondary ink and its exact time in faint ink), then its auction line. The foot, level across every plate in the row, holds the score after a faint 分数 label on the left and the Owner's watch and relevance toggles on the right.
@@ -973,7 +996,7 @@ A store's or auction's listings as catalogue plates (`rd.listing_plates`, `rd.lo
 A store's or auction's head carries two segmented groups of plain links at its right, 8px apart (`rd.view_controls()`): 列表 | 画廊, and a faint 每页 label before 24 | 48 | 96. The current choice takes the band, as in any segmented filter. A choice is a query parameter (`?view=`, `?per_page=`) that the page remembers in a cookie, the view for each Channel and the page size for every store and auction, so the Channel opens the same way next time. Changing the page size starts every list on the page over. A page's own links carry a choice that isn't the default, so it holds without the cookie.
 
 ### Hidden Sections
-Where sections sit side by side (`.cols.lanes`: a news channel's 重点内容 and 其余内容, a tracker's 已关注, 24 小时内截止 and 即将到来, and search's Channels), the reader can hide one so the rest take the width.
+Where sections sit side by side, including news sections, open-lot deadline groups and search channels, the reader can hide one so the rest take the width.
 - **Switch (`rd.lane_toggle`):** a small secondary 隐藏 button at the end of each section heading's tools, named for its section to screen readers. The last section shown has none, so a page never hides everything. It is a plain link (`?hide=`), so it works without script.
 - **Hidden section (`rd.lane_stub`):** its numbered heading alone, above the sections still shown: the number in faint ink, the name in secondary ink, its state on the right and a small 显示 button, over a hairline, 18px below the filters and 6px apart when there are several. It keeps its id, so the rail still leads to it.
 - **The rest:** a lone section left takes the full width, and on a wide sheet its list splits into two lanes. Two or more stay side by side as lanes.
@@ -1016,7 +1039,7 @@ The datasheet's callouts.
 - **Tones:** 说明 Note (secondary ink), 注意 Caution (amber), 警告 Warning (red) and 完成 Done (ink rule). Confirmations after an action use Done. Failures use Warning and are announced as alerts.
 - Notes stack 8px apart. At the narrow rule the tag becomes a strip above the body.
 - Notes also sit inside the reading column (the model-knowledge 说明 note, 22px below the text) and in a session's status region (a running or failed run).
-- On the reading pages a channel's match criteria are a 说明 note, shown only when its score floor is above 0, a brief's warning is a 注意 note above its text and its limits a 说明 note after it, a failed brief is a 警告 note, and a 完成 note offers to undo a mark-all-read.
+- On the reading pages, source and scoring information uses Channel details or the catalog's expanded controls. Brief warnings, limits and failures retain their boxed notes, and bulk mark-read retains its counted completion note. Individual action recovery uses its own viewport-visible notice.
 
 ### Danger Row and Removal Popover
 - **Danger row:** a Warning note built on a disclosure. Closed, it shows the bold title, what will go with its counts, an undo hint and a small danger button. Open, the button becomes 取消 and a confirmation panel unfolds below on the field fill, under a rule-stroke line. A deletion is typed. In the admin the hint is the 7-day undo, and the panel reads "输入“name”以确认。" with a growing input and a danger submit. Deleting a research session can't be undone, so its hint says 不能撤销。 and its panel asks for the word 删除 (delete in each locale) the same way. A list cleanup that keeps the records behind it, such as clearing closed watches (the lots and their history stay), also says 不能撤销。 but asks once. Its panel states what goes in one sentence above the danger submit, with no typed field.
@@ -1028,7 +1051,7 @@ The datasheet's callouts.
 - **Empty state:** a dashed rule-stroke box with 18px 14px padding, a bold ink first line over secondary-ink text, and the primary action below.
 - **Plain-text preview:** 13px mono at 1.75 on the field fill with a rule-stroke border, at most 560px tall and scrolling inside.
 - **Pager:** 10px below a table, small previous and next buttons (a disabled one takes the hairline border and faint ink), the page count in 13px secondary ink, and on long lists a page field with a small jump button. Screen readers hear each pager named for the list it pages, such as 精选分页 on the ranked list and 其余内容分页 on a news channel. Every reading list but the ranked list uses one pager macro (`rd.pager`), shown when there is more than one page or the page is past the end (see Past the End). Paging a section returns to it only when it starts below the middle of the window (see Lanes).
-- **Empty states** also sit inside a turn and under each session section. Only an empty research list offers the primary action (a new session) in the workspace. An empty watch list offers a secondary button to all lots or back to the site. On the reading pages, an empty desk offers the Owner the primary 新建频道, while an empty desk section or ranked view says so in one line with no action. A monitor whose filters match nothing offers a secondary 清除.
+- **Empty states** also sit inside a turn and under each session section. An empty research list offers a new session and an empty watch list a route to lots. An empty desk offers the Owner 新建频道; empty channel sections explain their actual exclusion and link to collection settings or broader content. A filtered catalog offers Clear, and invalid archive dates use field feedback rather than a no-results state.
 
 ### Error Sheet
 Error and 404 pages (`error.html`, `not_found.html`) run without the route's data, so they skip the rail.
@@ -1056,6 +1079,16 @@ The mark and the share images are drawn from the datasheet's own tokens, with no
 **The Saved-Result Rule.** A replacement attempt never removes the last successful brief. Keep its content and provenance visible through queueing and failure, and replace them only when the new result succeeds.
 
 **The Reminder Visibility Rule.** For the Owner, show reminder failure where a watched lot is read, and link to the Watch List for recovery. A watch selection is not evidence of delivery; anonymous readers see neither private watch state nor its failure counts.
+
+**The Mobile Disclosure Rule.** Keep search, sort/status and applied-filter counts in view. Put secondary catalog filters, page size and channel facts in one disclosure on narrow screens; keep the current channel visible and preserve 44px coarse-pointer targets without enlarging state marks.
+
+**The Individual Recovery Rule.** Show individual read/unread and unwatch feedback in a visible, dismissible notice. Offer only a valid ten-minute undo for the latest individual action, preserve reminder delivery state, and never promise to recall an in-flight reminder.
+
+**The Search Continuity Rule.** A search result remains reachable when opening its channel, including read and below-threshold matches. Counts describe the current scope; invalid date ranges retain values and explain the error instead of pretending there are no results.
+
+**The Price Evidence Rule.** Label merchant reference prices separately from observed price changes. A relevance score is neither discount size nor verification of price, availability or facts; never invent a historical-low baseline.
+
+**The Email Return Path Rule.** Email links use the explicitly configured website address and preserve channel context. Keep all selected entries within the configured cap, format deadlines in the group's time zone, and link only to saved briefs rather than implying generation.
 
 **The In-Place Confirmation Rule.** A destructive action opens in place (or, for a source, in a popover) into a confirmation that names what goes, gives the counts and says whether it can be undone. Deleting data is typed. Admin removals, which can be undone for 7 days, ask for the name, and deleting a research session, which can't, asks for the word 删除. A list cleanup that keeps the records behind it, such as clearing closed watches, asks once, in words.
 

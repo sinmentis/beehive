@@ -43,7 +43,6 @@ from beehive.db.tracker_watches import (
     add_tracker_watch,
     get_watched_item_ids,
     remove_closed_tracker_watches,
-    remove_tracker_watch,
     remove_tracker_watches,
 )
 from beehive.email_routing import resolve_default_email
@@ -69,6 +68,12 @@ from beehive.db.items import (
     mark_unread,
 )
 from beehive.db.read_batches import get_read_batch, record_read_batch, undo_read_batch
+from beehive.db.reading_actions import (
+    change_read_state,
+    discard_reading_action,
+    remove_watch_with_undo,
+    undo_reading_action,
+)
 from beehive.db.sources import get_source, list_by_channel as list_sources
 from beehive.db.votes import delete_vote, get_vote, upsert_vote
 from beehive.featured import featured_utc_bounds, load_featured_window_days
@@ -144,7 +149,9 @@ def _require_editorial_item(item: dict) -> None:
 # Query parameters that act once or belong to one render: a story kept in place after a vote,
 # the batch a "mark all as read" can take back, and a section hidden or shown. Links and forms a
 # page builds never carry them on.
-_ONE_RENDER_KEYS = frozenset({"keep", "read_batch", "hide", "show"})
+_ONE_RENDER_KEYS = frozenset({
+    "keep", "read_batch", "reading_action", "reading_result", "hide", "show",
+})
 # SQLite stores integers in 64 bits; a larger id could never match and would not bind.
 _MAX_SQL_INTEGER = 2**63 - 1
 
@@ -343,6 +350,20 @@ def _local_day_bounds(
         return start.replace(tzinfo=None).isoformat(timespec="seconds")
 
     return start_of(date_from, 0), start_of(date_to, 1)
+
+
+def _archive_date_error(date_from: str | None, date_to: str | None, t: Localizer) -> str | None:
+    try:
+        start = date.fromisoformat(date_from) if date_from else None
+        end = date.fromisoformat(date_to) if date_to else None
+    except ValueError:
+        return t.text("web.archive.invalid_date")
+    if start and end and start > end:
+        return t.text("web.archive.reversed_dates")
+    start_bound, end_bound = _local_day_bounds(date_from, date_to)
+    if (start and start_bound is None) or (end and end_bound is None):
+        return t.text("web.archive.invalid_date")
+    return None
 
 
 _WEEKDAY_KEYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
@@ -639,6 +660,7 @@ def open_item(
     if session is not None:
         mark_item_opened(conn, item_id)
         if item["channel_kind"] == "editorial":
+            discard_reading_action(conn, item_id)
             mark_read(conn, item_id)
     return RedirectResponse(safe_external_href(item["url"]), status_code=302)
 
@@ -705,7 +727,7 @@ def channel_drilldown(
         is_owner=is_admin,
         csrf_token=csrf_token,
         show_read=bool(show_read) if is_admin else True,
-        show_below_score=is_admin and show_below,
+        show_below_score=show_below and (is_admin or bool(q and q.strip())),
         # A story just marked not relevant stays in place until the next load, so its reason
         # field is still there to fill in.
         editorial_query=EditorialQuery(
@@ -795,6 +817,9 @@ def channel_drilldown(
         )
         context["editorial_clear_search_url"] = _editorial_clear_search_url(page)
     if isinstance(page, MonitorPage):
+        context["active_filter_count"] = (
+            len(page.sources) + len(page.vendors) + len(page.genders) + int(page.on_sale_only)
+        )
         sections.append(("available", t.text("web.monitor.available_heading"), "#available"))
         if page.history_pagination.total:
             sections.append(("history", t.text("web.monitor.unavailable_heading"), "#history"))
@@ -835,6 +860,10 @@ def channel_drilldown(
                 display=display,
             )
     if isinstance(page, TrackerPage):
+        context["active_filter_count"] = sum((
+            bool(page.source), bool(page.category), page.deadline is not TrackerDeadline.ALL,
+            page.minimum_score is not None, page.maximum_price is not None,
+        ))
         if page.watched:
             sections.append(("watched", t.text("web.tracker.watched_heading"), "#watched"))
         if page.ending_pagination.total:
@@ -944,6 +973,8 @@ def watchlist(
         params["page"] = str(target_page)
         params.pop("retry", None)
         params.pop("removed", None)
+        params.pop("reading_action", None)
+        params.pop("reading_result", None)
         return f"/watchlist?{urlencode(params)}"
 
     def status_url(target_status: str) -> str:
@@ -952,6 +983,8 @@ def watchlist(
         params.pop("page", None)
         params.pop("retry", None)
         params.pop("removed", None)
+        params.pop("reading_action", None)
+        params.pop("reading_result", None)
         return f"/watchlist?{urlencode(params)}"
 
     return render_workspace(
@@ -977,10 +1010,8 @@ def watchlist(
                 if watchlist_page.pagination.has_next
                 else None
             ),
-            "watchlist_return_url": str(
-                request.url.path
-                if not request.url.query
-                else f"{request.url.path}?{request.url.query}"
+            "watchlist_return_url": _url_without(
+                request, _ONE_RENDER_KEYS | {"retry", "removed"},
             ),
             "watchlist_active_url": status_url("active"),
             "watchlist_closed_url": status_url("closed"),
@@ -1075,19 +1106,25 @@ def toggle_tracker_watch(
         raise HTTPException(status_code=404, detail="Item not found")
 
     removed = item_id in get_watched_item_ids(conn, [item_id])
+    action = None
     if removed:
-        remove_tracker_watch(conn, item_id)
+        action = remove_watch_with_undo(conn, item_id, datetime.now(timezone.utc))
+        request.state.reading_action_token = action.token
     else:
         try:
             add_tracker_watch(conn, item_id, datetime.now(timezone.utc))
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        discard_reading_action(conn, item_id)
 
     actual_channel_id = _item_channel_id(conn, item)
     if origin == "watchlist":
         # The Watch List reloads the same view. htmx follows the redirect and swaps the list,
         # counts and warnings from the fresh page, so nothing on it describes a removed lot.
-        return RedirectResponse(_safe_return_url(next_url, "/watchlist"), status_code=303)
+        target = _safe_return_url(next_url, "/watchlist")
+        if action is not None:
+            target = _url_with_param(target, "reading_action", action.token)
+        return RedirectResponse(target, status_code=303)
     channel_url = f"/channels/{actual_channel_id}" if actual_channel_id is not None else "/"
     if request.headers.get("HX-Request") == "true":
         item_view = build_tracker_item_view(
@@ -1109,13 +1146,18 @@ def toggle_tracker_watch(
                 "watch_swap": "outerHTML",
                 "watch_remove_mode": False,
                 "update_watch_nav": True,
+                "action_notice_oob": True,
             },
         )
 
     # Without JavaScript the post returns to the page it came from, filters and all.
     if origin in {"channel", "folded"}:
-        return RedirectResponse(_safe_return_url(next_url, channel_url), status_code=303)
-    return RedirectResponse("/", status_code=303)
+        target = _safe_return_url(next_url, channel_url)
+    else:
+        target = "/"
+    if action is not None:
+        target = _url_with_param(target, "reading_action", action.token)
+    return RedirectResponse(target, status_code=303)
 
 
 @router.post("/items/{item_id}/vote")
@@ -1142,6 +1184,7 @@ def vote_on_item(
         raise HTTPException(status_code=404, detail="Item not found")
     _require_editorial_item(item)
 
+    discard_reading_action(conn, item_id)
     existing = get_vote(conn, item_id)
     clearing = reason is None and existing is not None and existing["value"] == value
     if clearing:
@@ -1242,11 +1285,28 @@ def set_item_read_state(
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
     _require_editorial_item(item)
-    if is_read:
-        mark_read(conn, item_id)
-    else:
-        mark_unread(conn, item_id)
-    return RedirectResponse(_safe_return_url(next_url, "/"), status_code=303)
+    try:
+        action = change_read_state(conn, item_id, is_read, datetime.now(timezone.utc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Item not found") from exc
+    target = _url_with_param(_safe_return_url(next_url, "/"), "reading_action", action.token)
+    return RedirectResponse(target, status_code=303)
+
+
+@router.post("/reading-actions/undo")
+def undo_reading_action_route(
+    csrf_token: str = Form(...),
+    token: str = Form(..., max_length=64),
+    next_url: str | None = Form(None),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    verify_csrf(session, csrf_token)
+    restored = undo_reading_action(conn, token, datetime.now(timezone.utc))
+    target = _url_with_param(
+        _safe_return_url(next_url, "/"), "reading_result", "restored" if restored else "unavailable",
+    )
+    return RedirectResponse(target, status_code=303)
 
 
 @router.post("/dashboard/mark-all-read")
@@ -1279,6 +1339,7 @@ def _redirect_after_read_batch(
 ) -> RedirectResponse:
     """Back to the page, which offers to undo the batch for a few minutes."""
     batch = record_read_batch(conn, marked, now)
+    discard_reading_action(conn)
     if batch is not None:
         target = _url_with_param(target, "read_batch", batch.token)
     return RedirectResponse(target, status_code=303)
@@ -1293,6 +1354,7 @@ def undo_read_batch_route(
     conn: sqlite3.Connection = Depends(get_db),
 ):
     verify_csrf(session, csrf_token)
+    discard_reading_action(conn)
     undo_read_batch(conn, token, datetime.now(timezone.utc))
     return RedirectResponse(_safe_return_url(next_url, "/"), status_code=303)
 
@@ -1368,6 +1430,9 @@ def search(
             rows = build_monitor_item_views(conn, hits, t=t)
         else:
             rows = build_tracker_item_views(conn, hits, t=t, now=now, is_owner=is_admin)
+        channel_query = {"q": q.strip(), "show_below": 1}
+        if channel["kind"] == "editorial":
+            channel_query["show_read"] = 1
         sections.append(
             {
                 "anchor": f"channel-{channel['id']}",
@@ -1375,7 +1440,7 @@ def search(
                 "kind": channel["kind"],
                 "rows": rows,
                 "total": totals.get(channel["id"], len(hits)),
-                "href": f"/channels/{channel['id']}?{urlencode({'q': q.strip()})}",
+                "href": f"/channels/{channel['id']}?{urlencode(channel_query)}",
             }
         )
     toc_sections, section_numbers = number_sections(
@@ -1444,8 +1509,9 @@ def archive(
     to = to or None
     is_admin = session is not None
     effective_read_state = read_state if is_admin else None
+    date_error = _archive_date_error(from_, to, t)
     fetched_from, fetched_before = _local_day_bounds(from_, to)
-    items, total = list_archive(
+    items, total = ([], 0) if date_error else list_archive(
         conn,
         channel_id=channel_id,
         fetched_from=fetched_from,
@@ -1515,6 +1581,7 @@ def archive(
             "selected_to": to or "",
             "selected_read_state": effective_read_state or "",
             "selected_search": q or "",
+            "date_error": date_error,
             "is_admin": is_admin,
             "csrf_token": csrf_token,
             "return_url": page_url(page),

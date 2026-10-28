@@ -487,7 +487,7 @@ def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(
     assert byline is not None
     assert byline.group(1) == "Arc&#39;teryx · Jackets · example.com"
     assert '<s class="price-was">299</s>' in resp.text
-    assert '<span class="price-off">−33%</span>' in resp.text  # round((299-199)/299*100)
+    assert '<span class="price-off">33% off</span>' in resp.text  # round((299-199)/299*100)
 
 
 def test_channel_drilldown_shopify_item_not_on_sale_shows_vendor(conn, client):
@@ -571,7 +571,7 @@ def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(
     assert byline.group(1).startswith("Teva · ")
     assert byline.group(1).endswith("land-sea.co.nz")
     assert '<s class="price-was">189</s>' in resp.text
-    assert '<span class="price-off">−20%</span>' in resp.text  # round((189-152)/189*100)
+    assert '<span class="price-off">20% off</span>' in resp.text  # round((189-152)/189*100)
 
 
 def test_channel_drilldown_land_sea_collection_item_not_on_sale_shows_vendor(
@@ -1000,7 +1000,10 @@ def test_editorial_page_emptied_by_a_read_keeps_its_section_and_pager(conn, auth
         f"/items/{_item_id(c, 't25')}/read-state",
         data={"csrf_token": "csrf1", "is_read": "1", "next_url": page_two},
     )
-    assert marked.headers["location"] == page_two
+    target = urlsplit(marked.headers["location"])
+    assert target.path == f"/channels/{channel_id}"
+    assert parse_qs(target.query)["page"] == ["2"]
+    assert parse_qs(target.query)["reading_action"]
     response = authed_client.get(page_two)
 
     assert response.status_code == 200
@@ -2027,7 +2030,8 @@ def test_owner_can_mark_editorial_item_read_and_unread(conn, authed_client, db_p
         },
     )
     assert marked.status_code == 303
-    assert marked.headers["location"] == f"/channels/{channel_id}"
+    assert urlsplit(marked.headers["location"]).path == f"/channels/{channel_id}"
+    assert parse_qs(urlsplit(marked.headers["location"]).query)["reading_action"]
 
     unmarked = authed_client.post(
         f"/items/{item_id}/read-state",
@@ -2038,7 +2042,8 @@ def test_owner_can_mark_editorial_item_read_and_unread(conn, authed_client, db_p
         },
     )
     assert unmarked.status_code == 303
-    assert unmarked.headers["location"] == "/archive"
+    assert urlsplit(unmarked.headers["location"]).path == "/archive"
+    assert parse_qs(urlsplit(unmarked.headers["location"]).query)["reading_action"]
 
     conn2 = connect(db_path)
     assert conn2.execute(
@@ -2356,9 +2361,10 @@ def test_search_sorts_hits_into_numbered_channel_sections_in_rail_order(conn, cl
         starts.append(html.index(section))
         assert f'<span class="no">{number}</span><span>{name}</span>' in section
         assert f'<span class="desk-state nw">{count}</span>' in section
-        assert (
-            f'<a class="btn btn-sm" href="/channels/{channel_id}?q=camera">Open channel' in section
-        )
+        scope = "?q=camera&amp;show_below=1"
+        if channel_id == hits.news:
+            scope += "&amp;show_read=1"
+        assert f'<a class="btn btn-sm" href="/channels/{channel_id}{scope}">Open channel' in section
         assert (
             f'<a href="#channel-{channel_id}">'
             f'<span class="no">{number}</span><span>{name}</span></a>'
@@ -2674,15 +2680,14 @@ def test_a_page_number_beyond_the_database_integers_is_just_past_the_end(conn, c
 
 
 @pytest.mark.parametrize(
-    ("query", "shown", "hidden"),
+    "query",
     [
-        # The day after 9999-12-31 does not exist, so "to" is ignored and "from" still applies.
-        ("from=2026-07-03&to=9999-12-31", "Late story", "Early story"),
-        # Nor does the UTC moment Auckland's 0001-01-01 begins, so "from" is ignored.
-        ("from=0001-01-01&to=2026-07-03", "Early story", "Late story"),
+        "from=2026-07-03&to=9999-12-31",
+        "from=0001-01-01&to=2026-07-03",
+        "from=2026-02-31&to=2026-07-03",
     ],
 )
-def test_archive_ignores_a_date_bound_outside_the_calendar(conn, client, query, shown, hidden):
+def test_archive_reports_a_date_bound_outside_the_calendar(conn, client, query):
     _, c = conn
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
@@ -2692,8 +2697,9 @@ def test_archive_ignores_a_date_bound_outside_the_calendar(conn, client, query, 
     response = client.get(f"/archive?{query}")
 
     assert response.status_code == 200
-    assert shown in response.text
-    assert hidden not in response.text
+    assert "Enter valid dates within the supported calendar range." in response.text
+    assert "No matching content" not in response.text
+    assert not response.context["days"]
 
 
 def test_dashboard_header_links_to_archive_and_admin_login(conn, client):
@@ -2852,7 +2858,7 @@ def test_home_desk_lists_a_channels_top_stories(conn, authed_client):
         f'<tr class="kb-row" id="story-{item_id}" tabindex="-1" data-channel="NZ Finance">'
         in resp.text
     )
-    assert '<span class="score is-high">95</span>' in resp.text
+    assert re.search(r'<span class="score is-high"[^>]*>95</span>', resp.text)
     assert (
         f'<a href="/items/{item_id}/open" target="_blank" rel="noopener noreferrer" '
         "data-kb-open>RBNZ 大幅降息"

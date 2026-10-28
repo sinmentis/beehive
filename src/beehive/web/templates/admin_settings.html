@@ -4,7 +4,7 @@
 {% set current_chapter = active_tab %}
 {% set toc_sections = {
   "channels": [("1.1", t('web.admin.channels.attention_heading'), "#attention"), ("1.2", t('web.admin.channels.list_heading'), "#channel-list")],
-  "groups": [("2.1", t('web.admin.groups.default_heading'), "#default-recipient"), ("2.2", t('web.admin.groups.list_heading'), "#group-list")],
+  "groups": [("2.1", t('web.admin.groups.default_heading'), "#default-recipient"), ("2.2", t('web.admin.groups.list_heading'), "#group-list"), ("2.3", t('web.admin.site_url.heading'), "#site-address")],
   "settings": [("3.1", t('web.admin.global.interface_heading'), "#interface-ai"), ("3.2", t('web.admin.global.home_heading'), "#home-page"), ("3.3", t('web.admin.global.reading_heading'), "#reading-access")],
   "system": [("4.1", t('web.admin.health.heading'), "#health"), ("4.2", t('web.admin.activity.heading'), "#activity")],
 }[active_tab] %}
@@ -115,6 +115,7 @@
   <div class="adm-actions"><a class="btn btn-primary" href="/admin/email-groups/new">{{ t('web.admin.groups.new') }}</a></div>
 </div>
 {% if saved %}{{ ui.flash(t('web.admin.settings.email_saved')) }}{% endif %}
+{% if site_url_saved %}{{ ui.flash(t('web.admin.site_url.saved')) }}{% endif %}
 {% for group in email_groups %}
 {% if group.last_error %}
 <div class="adm-flash">{% call ui.note('danger', 'alert') %}
@@ -175,6 +176,18 @@
 {% if ungrouped_channels %}
 {% call ui.note('info') %}<div class="note-body">{{ t('web.admin.groups.ungrouped', channels=ungrouped_channels|map(attribute='name')|join(t('web.admin.list_separator'))) }}</div>{% endcall %}
 {% endif %}
+
+<h2 id="site-address"><span class="no">2.3</span><span>{{ t('web.admin.site_url.heading') }}</span></h2>
+<form method="post" action="/admin/site-url">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="params">
+    {% set site_note %}<p>{{ t('web.admin.site_url.hint') }}</p>{% if site_url_error %}<p class="field-error" role="alert">{{ site_url_error }}</p>{% endif %}{% endset %}
+    {% call ui.param(t('web.admin.site_url.label'), for_id="site-url", note=site_note, track=False) %}
+    <div class="row">{{ ui.line_field("site-url", "site_url", site_url or '', placeholder="https://beehive.example", inputmode="url", literal=True, invalid=site_url_error, extra_class="inp-grow") }}
+      <button class="btn" type="submit">{{ t('web.admin.site_url.save') }}</button></div>
+    {% endcall %}
+  </div>
+</form>
 
 {% elif active_tab == "settings" %}
 <div class="adm-head"><div><h1>{{ t('web.admin.chapter.settings') }}</h1><p class="adm-meta">{{ t('web.admin.global.meta') }}</p></div></div>

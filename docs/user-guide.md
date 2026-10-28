@@ -101,13 +101,31 @@ you can filter to unread, read, or a score of 90 and above.
   when it scores new stories. **Not relevant** also marks the story read and opens a field for an
   optional reason.
 - **Mark all as read** can be undone for 10 minutes from the note it leaves at the top of the page.
+- Individual read/unread changes also offer **Undo** in a visible notice near the bottom of the
+  screen. The latest individual action is recoverable for 10 minutes, unless a newer action
+  replaces it or the item's state changes.
 - Press `j` and `k` to move between stories, listings and lots, `o` to open one and `/` to search.
   When you're signed in, `m` marks a story read or unread, `+` and `-` rate it, and `w` watches a
   lot.
 - A store channel opens as a gallery of photos, and an auction channel as a list. Switch between
-  **List** and **Gallery** at the top right, and pick 24, 48 or 96 items a page. Beehive remembers
-  both choices.
-- The archive keeps every story, day by day. Search covers stories, listings and lots.
+  **List** and **Gallery** at the top right. **Filters and details** contains the other filters,
+  the 24/48/96 page-size choice, source information and scoring rules. Beehive remembers the
+  display and page-size choices.
+- On a phone, search and sort/status stay visible while the secondary controls start closed.
+  Applied filters are counted, the selected channel stays visible in the navigation strip, and
+  gallery entries put the title and price before the photo. **More** holds Admin and Sign out.
+- The archive keeps every story, day by day. Invalid or reversed dates show an error beside the
+  retained inputs instead of looking like an empty search. Search covers stories, listings and
+  lots; opening a channel from its results includes read items and below-threshold matches.
+
+An empty Featured section explains whether nothing has been collected, the content is outside
+the current window, ranking is incomplete, or the selection fails the score/relevance rules.
+Its recovery link opens collection settings or broader channel/history content as appropriate.
+
+**Merchant reference** is the shop's supplied comparison price, not a demonstrated previous
+selling price. **Observed price drop** separately shows a change recorded by Beehive. Relevance
+scores measure fit to channel rules, not discount size or verification of prices and stock.
+These display changes do not rewrite advertised offer percentages.
 
 On a wide screen, channel sections sit side by side, and a long list splits into two columns. Each
 column scrolls on its own, so you never scroll back up to reach the next one. Where sections sit
@@ -140,6 +158,11 @@ When a reminder fails, the reading navigation shows an attention count, the home
 affected Tracker channel, and the watched lot links to the Watch List's recovery section. These
 signals are Owner-only. Being watched does not mean the reminder was delivered successfully.
 
+Stopping one watch offers the same short-lived **Undo** notice. Undo restores its existing
+reminder state, including a previous successful delivery, rather than starting a fresh watch.
+No undo is offered when a reminder is already in flight; that delivery may still arrive.
+Bulk removal and clearing closed watches remain separate, non-undoable operations.
+
 ## Set up email digests
 
 Sending email needs the email settings in [Configuration](configuration.md#environment-variables).
@@ -155,6 +178,15 @@ Without them, Beehive prints each email in the terminal instead.
 4. **Send test email** sends immediately to the displayed recipient. It uses the current digest
    when one exists, otherwise a diagnostic message. Preview and test sends neither consume pending
    content nor move the regular delivery checkpoint. With log-only delivery, no email is sent.
+
+Under **Email groups > Website links**, save the site's base HTTP(S) address, not a settings-page
+URL. This adds site, channel and saved-brief entry points to both email formats and their preview.
+Leaving it blank omits those links; no hostname is guessed. Preview links open in a separate
+window without enabling scripts or same-origin privileges inside the preview.
+
+Digests keep the configured content caps, including a 50-item channel. Channel grouping and
+return links help navigate long emails without cutting their contents. Auction deadlines use
+readable absolute dates in the email group's time zone, including the zone abbreviation.
 
 A group only sends when it has something new. A story that was already emailed isn't sent again,
 even when its feed republishes it under a new link. Email goes to the group's own recipient if it
@@ -184,6 +216,8 @@ with numbered sources.
 - Beehive emails you when a run finishes, if email is set up.
 - Archive a session to stop new runs and messages until you unarchive it. Delete it to remove it
   and everything it collected.
+
+**Open** means the session is not archived. It does not mean a research run is currently running.
 
 Research only uses those news sources: it can't browse any website you name. Only you can see
 research sessions, after you sign in. [How it works](how-it-works.md#research-sessions) explains its

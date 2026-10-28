@@ -83,6 +83,7 @@ from beehive.web.formatting import (
     short_time_label,
 )
 from beehive.source_labels import source_display_name
+from beehive.site_links import load_site_url, save_site_url
 from beehive.web.admin.common import (
     _ADMIN_CHAPTERS,
     _CLEAR_DEFAULT_WITHOUT_ENV_ERROR,
@@ -378,6 +379,9 @@ def _render_admin_home_page(
     featured_error: str | None = None,
     submitted_featured_window_days: int | None = None,
     reading_saved: bool = False,
+    site_url_saved: bool = False,
+    site_url_error: str | None = None,
+    submitted_site_url: str | None = None,
     active_tab: str = "channels",
     triggered_count: int | None = None,
     bulk_error: str | None = None,
@@ -438,6 +442,9 @@ def _render_admin_home_page(
             "featured_error": featured_error,
             "reading_private": reading_is_private(conn),
             "reading_saved": reading_saved,
+            "site_url": load_site_url(conn) if submitted_site_url is None else submitted_site_url,
+            "site_url_saved": site_url_saved,
+            "site_url_error": site_url_error,
             "active_tab": chapter,
             "triggered_count": triggered_count,
             "bulk_error": bulk_error,
@@ -464,6 +471,7 @@ def admin_settings(
     model_refreshed: int | None = None,
     featured_saved: int | None = None,
     reading_saved: int | None = None,
+    site_url_saved: int | None = None,
     action: int | None = None,
     undone: int | None = None,
     session: dict = Depends(require_admin_session),
@@ -483,6 +491,7 @@ def admin_settings(
         model_refreshed=model_refreshed == 1,
         featured_saved=featured_saved == 1,
         reading_saved=reading_saved == 1,
+        site_url_saved=site_url_saved == 1,
         action_id=action,
         undone=undone == 1,
         active_tab=tab,
@@ -528,6 +537,30 @@ def admin_settings_submit(
         target_label=t.text("web.admin.tabs.delivery"),
     )
     return RedirectResponse("/admin/?tab=groups&saved=1", status_code=303)
+
+
+@router.post("/site-url", response_class=HTMLResponse)
+def save_site_url_submit(
+    request: Request,
+    site_url: str = Form(""),
+    csrf_token: str = Form(...),
+    session: dict = Depends(require_admin_session),
+    conn: sqlite3.Connection = Depends(get_db),
+    t: Localizer = Depends(get_localizer),
+):
+    verify_csrf(session, csrf_token)
+    try:
+        save_site_url(conn, site_url)
+    except ValueError:
+        return _render_admin_home_page(
+            request, conn, session, t, active_tab="groups", status_code=400,
+            submitted_site_url=site_url, site_url_error=t.text("web.admin.site_url.invalid"),
+        )
+    record_admin_action(
+        conn, action_type="delivery_settings_updated", target_type="settings", target_id=None,
+        target_label=t.text("web.admin.site_url.heading"),
+    )
+    return RedirectResponse("/admin/?tab=groups&site_url_saved=1#site-address", status_code=303)
 
 
 @router.post("/actions/{action_id}/undo")

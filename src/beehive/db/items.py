@@ -909,6 +909,32 @@ def count_dashboard_signals_by_channel(
     }
 
 
+def count_desk_inventory(
+    conn: sqlite3.Connection, channel_ids: list[int], published_from: str, published_to: str,
+) -> dict[int, dict[str, int]]:
+    """Explain empty desk sections without building their complete channel views."""
+    if not channel_ids:
+        return {}
+    recent = (
+        "COALESCE(datetime(items.created_at), datetime(items.fetched_at)) >= datetime(?) "
+        "AND COALESCE(datetime(items.created_at), datetime(items.fetched_at)) < datetime(?)"
+    )
+    placeholders = ",".join("?" for _ in channel_ids)
+    rows = conn.execute(
+        "SELECT sources.channel_id, COUNT(*) AS total, "
+        f"SUM(CASE WHEN {recent} THEN 1 ELSE 0 END) AS recent, "
+        f"SUM(CASE WHEN {recent} AND (items.ai_score IS NULL OR items.ai_summary IS NULL) "
+        "THEN 1 ELSE 0 END) AS unranked_recent, "
+        "SUM(CASE WHEN items.inactive_at IS NULL AND json_valid(items.raw_metadata) "
+        "AND json_extract(items.raw_metadata, '$.available') = 1 THEN 1 ELSE 0 END) AS available "
+        "FROM items JOIN sources ON sources.id = items.source_id "
+        f"WHERE sources.channel_id IN ({placeholders}) AND items.superseded_at IS NULL "
+        "GROUP BY sources.channel_id",
+        [published_from, published_to, published_from, published_to, *channel_ids],
+    ).fetchall()
+    return {row["channel_id"]: dict(row) for row in rows}
+
+
 # A score as the channel pages show, sort and filter it: Python's round(), half to even, of the
 # non-negative raw score (channels/views.py `_opt_score`). CAST truncates, which is floor here.
 # SQLite's own ROUND() rounds halves away from zero, so it would not match.

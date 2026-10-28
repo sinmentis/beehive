@@ -185,9 +185,9 @@ def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client
     assert "Beta Jacket" in response.text
     assert "Trail Shoe" not in response.text
     jacket = _row(_section(response.text, "available"), f"listing-{jacket_id}")
-    assert '<small class="chg">Price drop · 100 → 80</small>' in jacket
+    assert '<small class="chg">Observed price drop · 100 → 80</small>' in jacket
     assert '<s class="price-was">100</s>' in jacket
-    assert '<span class="price-off">−20%</span>' in jacket
+    assert '<span class="price-off">20% off</span>' in jacket
     assert (
         '<span class="lot-where">Arc&#39;teryx · Footwear · example.com</span>'
         in jacket
@@ -241,7 +241,7 @@ def test_monitor_listing_change_tags_name_what_changed(conn, client):
     dropped_row = _row(available, f"listing-{dropped}")
     assert re.search(
         r'<td class="c-price-now" data-label="Price"><span class="price-now">80</span>.*?'
-        r'<small class="chg">Price drop · 100 → 80</small></td>',
+        r'<small class="chg">Observed price drop · 100 → 80</small></td>',
         dropped_row,
         re.DOTALL,
     )
@@ -531,7 +531,7 @@ def test_tracker_panel_groups_watched_deadlines_and_history_without_duplicates(
     for number, key, heading in (
         ("2.1", "watched", "Watched"),
         ("2.2", "ending", "Ending within 24 hours"),
-        ("2.3", "upcoming", "Upcoming"),
+        ("2.3", "upcoming", "Closes later or has no deadline"),
         ("2.4", "history", "Permanent history"),
     ):
         assert (

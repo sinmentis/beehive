@@ -16,29 +16,37 @@
 <div class="adm-head">
   <div>
     <h1>{{ page.channel_name }}</h1>
-    <p class="adm-meta"><span class="nw">{{ t('web.channel.tracker_label') }}</span> · <span class="nw">{{ t('web.reading.channel.open_lots', count=open_total, number=open_total|count(locale)) }}</span> · <span class="nw" title="{{ freshness_exact }}">{{ freshness }}</span>
-      {%- if fetch_stats %} · <span>{{ fetch_stats }}</span>{% endif %}</p>
-    <p class="adm-meta chan-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
+    <p class="adm-meta"><span class="nw">{{ t('web.channel.tracker_label') }}</span> · <span class="nw">{% if page.search %}{{ t('web.reading.results', count=open_total + page.history_pagination.total, number=(open_total + page.history_pagination.total)|count(locale)) }}{% else %}{{ t('web.reading.channel.open_lots', count=open_total, number=open_total|count(locale)) }}{% endif %}</span> · <span class="nw" title="{{ freshness_exact }}">{{ freshness }}</span>
+    </p>
   </div>
   <div class="adm-actions">{{ rd.view_controls() }}{% if is_admin %}<a class="btn" href="/watchlist">{{ t('web.nav.watchlist') }}</a>{% endif %}</div>
 </div>
-{{ rd.criteria(page, criteria_toggle_url) }}
-
-<form class="fields" method="get" action="/channels/{{ page.channel_id }}" role="search" aria-label="{{ t('web.reading.filters_aria') }}">
+<form class="fields filter-bar" method="get" action="/channels/{{ page.channel_id }}" role="search" aria-label="{{ t('web.reading.filters_aria') }}">
   {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
+  <div class="filter-primary">
   <label class="fld fld-grow"><span>{{ t('web.monitor.search_label') }}</span><input class="inp" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}" aria-keyshortcuts="/" data-kb-search></label>
+  <label class="fld"><span>{{ t('web.tracker.filter_status_label') }}</span>
+    <select class="inp" name="status">{% for value in ('all', 'watched', 'active', 'ending', 'upcoming', 'history') %}<option value="{{ value }}"{% if page.status.value == value %} selected{% endif %}>{{ t('web.tracker.filter_status_' ~ value) }}</option>{% endfor %}</select></label>
+  <div class="fld-act"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button>{% if page.search or active_filter_count or page.status.value != 'all' or page.criteria.showing_below_threshold %}<a class="lnk" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a>{% endif %}</div>
+  </div>
+  <details class="filter-more" data-responsive-disclosure open>
+    <summary>{{ t('web.reading.catalog_controls') }}{% if active_filter_count %} <span class="filter-count">{{ t('web.reading.applied_filters', count=active_filter_count) }}</span>{% endif %}</summary>
+    <div class="filter-options">
   <label class="fld"><span>{{ t('web.tracker.source_label') }}</span>
     <select class="inp" name="source"><option value="">{{ t('web.tracker.all_sources') }}</option>{% for option in page.source_options %}<option value="{{ option }}"{% if page.source == option %} selected{% endif %}>{{ option }}</option>{% endfor %}</select></label>
   <label class="fld"><span>{{ t('web.tracker.category_label') }}</span>
     <select class="inp" name="category"><option value="">{{ t('web.tracker.all_categories') }}</option>{% for option in page.category_options %}<option value="{{ option }}"{% if page.category == option %} selected{% endif %}>{{ option }}</option>{% endfor %}</select></label>
-  <label class="fld"><span>{{ t('web.tracker.filter_status_label') }}</span>
-    <select class="inp" name="status">{% for value in ('all', 'watched', 'active', 'ending', 'upcoming', 'history') %}<option value="{{ value }}"{% if page.status.value == value %} selected{% endif %}>{{ t('web.tracker.filter_status_' ~ value) }}</option>{% endfor %}</select></label>
   <label class="fld"><span>{{ t('web.tracker.deadline_filter_label') }}</span>
     <select class="inp" name="deadline">{% for value in ('all', 'day', 'week', 'none') %}<option value="{{ value }}"{% if page.deadline.value == value %} selected{% endif %}>{{ t('web.tracker.deadline_filter_' ~ value) }}</option>{% endfor %}</select></label>
   <label class="fld"><span>{{ t('web.tracker.minimum_score_label') }}</span><input class="inp inp-num" type="number" name="min_score" min="0" max="100" inputmode="numeric" value="{{ page.minimum_score if page.minimum_score is not none else '' }}"></label>
   <label class="fld"><span>{{ t('web.tracker.maximum_price_label') }}</span><input class="inp inp-num" type="number" name="max_price" min="0" step="0.01" inputmode="decimal" value="{{ page.maximum_price if page.maximum_price is not none else '' }}"></label>
-  <div class="fld-act"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button><a class="lnk" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a></div>
+      {{ rd.page_size_controls() }}
+    </div>
+    {{ rd.criteria(page, criteria_toggle_url, disclosure=false) }}
+    <div class="filter-apply-secondary"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button></div>
+  </details>
 </form>
+{% if page.search and page.criteria.showing_below_threshold %}<p class="hint">{{ t('web.reading.search_scope') }}</p>{% endif %}
 
 {% if sec.watched or sec.ending or sec.upcoming %}
 {% if sec.watched and 'watched' in lanes.hidden %}{{ rd.lane_stub('watched', t('web.tracker.watched_heading'), t('web.channel.folded_count', count=page.watched|length)) }}{% endif %}
@@ -49,14 +57,14 @@
   {% if sec.ending and 'ending' not in lanes.hidden %}{{ lot_section('ending', t('web.tracker.ending_heading'), t('web.tracker.ending_body'), page.ending_soon, page.ending_pagination.total, page.ending_pagination, tracker_ending_previous_url, tracker_ending_next_url) }}{% endif %}
   {% if sec.upcoming and 'upcoming' not in lanes.hidden %}{{ lot_section('upcoming', t('web.tracker.upcoming_heading'), t('web.tracker.upcoming_body'), page.upcoming, page.upcoming_pagination.total, page.upcoming_pagination, tracker_upcoming_previous_url, tracker_upcoming_next_url) }}{% endif %}
 </div>
-{% else %}
-<div class="empty chan-empty"><b>{{ t('web.tracker.empty_heading') }}</b>{{ t('web.tracker.empty_body') }}</div>
+{% elif not sec.history or not (page.search or page.status.value == 'history') %}
+<div class="empty chan-empty">{% if page.search or active_filter_count or page.status.value != 'all' %}<b>{{ t('web.archive.empty_heading') }}</b>{{ t('web.reading.search_empty') }}{% else %}<b>{{ t('web.tracker.empty_heading') }}</b>{{ t('web.tracker.empty_body') }}{% endif %}</div>
 {% endif %}
 
 {% if sec.history %}
 <section class="chan-sec" id="history" aria-labelledby="history-h">
   <h2 id="history-h"><span class="no">{{ sec.history }}</span><span>{{ t('web.tracker.history_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.history_pagination.total) }}</span></span></h2>
-  <details class="more"{% if page.history_pagination.page > 1 %} open{% endif %}>
+  <details class="more"{% if page.search or page.status.value == 'history' or page.history_pagination.page > 1 %} open{% endif %}>
     <summary>{{ t('web.reading.channel.show_history', count=page.history_pagination.total, number=page.history_pagination.total|count(locale)) }}</summary>
     <p class="hint">{{ t('web.tracker.history_body') }}</p>
     {% if not page.history %}{{ rd.past_end() }}{% elif listing_view == 'gallery' %}{{ rd.lot_plates(page.history, page.channel_name) }}{% else %}{{ rd.lot_table(page.history, page.channel_name) }}{% endif %}

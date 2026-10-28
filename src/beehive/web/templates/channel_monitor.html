@@ -25,29 +25,37 @@
 <div class="adm-head">
   <div>
     <h1>{{ page.channel_name }}</h1>
-    <p class="adm-meta"><span class="nw">{{ t('web.channel.monitor_label') }}</span> · <span class="nw">{{ t('web.reading.desk.listings', count=page.pagination.total, number=page.pagination.total|count(locale)) }}</span> · <span class="nw" title="{{ freshness_exact }}">{{ freshness }}</span>
-      {%- if fetch_stats %} · <span>{{ fetch_stats }}</span>{% endif %}</p>
-    <p class="adm-meta chan-sources">{{ t('web.channel.sources_label', sources=source_summary) }}</p>
+    <p class="adm-meta"><span class="nw">{{ t('web.channel.monitor_label') }}</span> · <span class="nw">{% if page.search %}{{ t('web.reading.results', count=page.pagination.total + page.history_pagination.total, number=(page.pagination.total + page.history_pagination.total)|count(locale)) }}{% else %}{{ t('web.reading.desk.listings', count=page.pagination.total, number=page.pagination.total|count(locale)) }}{% endif %}</span> · <span class="nw" title="{{ freshness_exact }}">{{ freshness }}</span>
+    </p>
   </div>
   <div class="adm-actions">{{ rd.view_controls() }}</div>
 </div>
-{{ rd.criteria(page, criteria_toggle_url) }}
-
-<form class="fields" method="get" action="/channels/{{ page.channel_id }}" role="search" aria-label="{{ t('web.reading.filters_aria') }}">
+<form class="fields filter-bar" method="get" action="/channels/{{ page.channel_id }}" role="search" aria-label="{{ t('web.reading.filters_aria') }}">
   {% if page.criteria.showing_below_threshold %}<input type="hidden" name="show_below" value="1">{% endif %}
+  <div class="filter-primary">
   <label class="fld fld-grow"><span>{{ t('web.monitor.search_label') }}</span><input class="inp" type="search" name="q" value="{{ page.search or '' }}" placeholder="{{ t('web.monitor.search_placeholder') }}" aria-keyshortcuts="/" data-kb-search></label>
-  {{ multiselect('source', t('web.monitor.source_label'), source_choices, t('web.monitor.all_sources')) }}
-  {{ multiselect('vendor', t('web.monitor.vendor_label'), vendor_choices, t('web.monitor.all_vendors')) }}
-  {{ multiselect('gender', t('web.monitor.gender_label'), gender_choices, t('web.monitor.all_genders')) }}
   <label class="fld"><span>{{ t('web.monitor.sort_label') }}</span>
     <select class="inp" name="sort">
       {% for value, key in [('score', 'sort_score'), ('newest', 'sort_newest'), ('discount', 'sort_discount'), ('price_asc', 'sort_price_low'), ('price_desc', 'sort_price_high')] %}
       <option value="{{ value }}"{% if page.sort.value == value %} selected{% endif %}>{{ t('web.monitor.' ~ key) }}</option>
       {% endfor %}
     </select></label>
-  <label class="opt fld-check"><input type="checkbox" name="on_sale" value="true"{% if page.on_sale_only %} checked{% endif %}><span>{{ t('web.monitor.on_sale_only') }}</span></label>
-  <div class="fld-act"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button><a class="lnk" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a></div>
+  <div class="fld-act"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button>{% if page.search or active_filter_count or page.sort.value != 'score' or page.criteria.showing_below_threshold %}<a class="lnk" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a>{% endif %}</div>
+  </div>
+  <details class="filter-more" data-responsive-disclosure open>
+    <summary>{{ t('web.reading.catalog_controls') }}{% if active_filter_count %} <span class="filter-count">{{ t('web.reading.applied_filters', count=active_filter_count) }}</span>{% endif %}</summary>
+    <div class="filter-options">
+      {{ multiselect('source', t('web.monitor.source_label'), source_choices, t('web.monitor.all_sources')) }}
+      {{ multiselect('vendor', t('web.monitor.vendor_label'), vendor_choices, t('web.monitor.all_vendors')) }}
+      {% if gender_choices %}{{ multiselect('gender', t('web.monitor.gender_label'), gender_choices, t('web.monitor.all_genders')) }}{% endif %}
+      <label class="opt fld-check"><input type="checkbox" name="on_sale" value="true"{% if page.on_sale_only %} checked{% endif %}><span>{{ t('web.monitor.on_sale_only') }}</span></label>
+      {{ rd.page_size_controls() }}
+    </div>
+    {{ rd.criteria(page, criteria_toggle_url, disclosure=false) }}
+    <div class="filter-apply-secondary"><button class="btn" type="submit">{{ t('web.archive.apply_filters') }}</button></div>
+  </details>
 </form>
+{% if page.search and page.criteria.showing_below_threshold %}<p class="hint">{{ t('web.reading.search_scope') }}</p>{% endif %}
 
 <section class="chan-sec" id="available" aria-labelledby="available-h">
   <h2 id="available-h"><span class="no">{{ sec.available }}</span><span>{{ t('web.monitor.available_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.reading.desk.listings', count=page.pagination.total, number=page.pagination.total|count(locale)) }}</span></span></h2>
@@ -57,6 +65,8 @@
   {% elif page.pagination.page > 1 and page.pagination.total %}
   {{ rd.past_end() }}
   {{ rd.pager(page.pagination, monitor_previous_url, monitor_next_url, t('web.monitor.pagination_aria')) }}
+  {% elif page.search and page.history_pagination.total %}
+  <p class="hint">{{ t('web.reading.history_matches') }}</p>
   {% elif page.search or page.sources or page.vendors or page.genders or page.on_sale_only %}
   <div class="empty"><b>{{ t('web.monitor.empty_filtered_heading') }}</b>{{ t('web.monitor.empty_filtered_body') }}<div><a class="btn" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a></div></div>
   {% else %}
@@ -67,7 +77,7 @@
 {% if sec.history %}
 <section class="chan-sec" id="history" aria-labelledby="history-h">
   <h2 id="history-h"><span class="no">{{ sec.history }}</span><span>{{ t('web.monitor.unavailable_heading') }}</span><span class="tools"><span class="desk-state nw">{{ t('web.channel.folded_count', count=page.history_pagination.total) }}</span></span></h2>
-  <details class="more"{% if page.history_pagination.page > 1 %} open{% endif %}>
+  <details class="more"{% if page.search or page.history_pagination.page > 1 %} open{% endif %}>
     <summary>{{ t('web.reading.channel.show_history', count=page.history_pagination.total, number=page.history_pagination.total|count(locale)) }}</summary>
     <p class="hint">{{ t('web.monitor.unavailable_body') }}</p>
     {% if not page.history %}{{ rd.past_end() }}{% elif listing_view == 'gallery' %}{{ rd.listing_plates(page.history, page.channel_name) }}{% else %}{{ rd.listing_table(page.history, page.channel_name) }}{% endif %}

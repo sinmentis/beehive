@@ -381,6 +381,9 @@ class EditorialPage:
     search: str | None
     folded_pagination: Pagination
     criteria: ChannelCriteriaView
+    matching_count: int = 0
+    matching_unread_count: int = 0
+    matching_read_count: int = 0
 
 
 def _editorial_item(
@@ -487,21 +490,22 @@ def _build_editorial_page(
 ) -> EditorialPage:
     unread_count = sum(1 for item in items if not bool(_req_int(item, "is_read")))
     read_count = len(items) - unread_count
-    visible_rows = items if show_read else [
+    matching_rows = [
         item
         for item in items
-        if not bool(_req_int(item, "is_read")) or _req_int(item, "id") == query.keep_item_id
-    ]
-    filtered_rows = [
-        item
-        for item in visible_rows
         if _matches_search(
             query.search,
             _req_str(item, "title"),
             _opt_str(item, "ai_summary"),
             _opt_str(item, "ai_rationale"),
+            _opt_str(item, "body"),
             _source_label(item, t),
         )
+    ]
+    matching_unread = sum(not bool(_req_int(item, "is_read")) for item in matching_rows)
+    filtered_rows = matching_rows if show_read else [
+        item for item in matching_rows
+        if not bool(_req_int(item, "is_read")) or _req_int(item, "id") == query.keep_item_id
     ]
     highlighted_rows = filtered_rows[:highlight_count] if query.page == 1 else []
     folded_rows = filtered_rows[highlight_count:]
@@ -543,6 +547,9 @@ def _build_editorial_page(
         search=query.search,
         folded_pagination=folded_pagination,
         criteria=criteria,
+        matching_count=len(filtered_rows),
+        matching_unread_count=matching_unread,
+        matching_read_count=len(matching_rows) - matching_unread,
     )
 
 
@@ -654,6 +661,7 @@ class MonitorItemView:
     genders: frozenset[MonitorGender]
     change: MonitorChangeMarker | None
     feedback_value: int | None
+    search_body: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -773,6 +781,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
         genders=_monitor_genders(title, metadata),
         change=_monitor_change_marker(event, currency_code),
         feedback_value=_feedback_value(item),
+        search_body=_opt_str(item, "body") or "",
     )
 
 
@@ -856,6 +865,7 @@ def _passes_monitor_filters(
         view.vendor,
         view.product_type,
         view.source_label,
+        view.search_body,
     )
 
 
@@ -905,6 +915,10 @@ def _build_monitor_page(
         gender: t.text(f"web.monitor.gender_{gender.value}")
         for gender in MonitorGender
     }
+    available_genders = frozenset(gender for view in option_views for gender in view.genders)
+    useful_genders = available_genders | genders
+    if available_genders <= {MonitorGender.UNISEX} and not genders:
+        useful_genders = frozenset()
     gender_options = tuple(
         MonitorGenderOption(
             value=gender.value,
@@ -912,6 +926,7 @@ def _build_monitor_page(
             selected=gender in genders,
         )
         for gender in MonitorGender
+        if gender in useful_genders
     )
 
     sort_key = _monitor_sort_key(query.sort)
@@ -1007,6 +1022,7 @@ class TrackerItemView:
     is_watchable: bool
     feedback_value: int | None
     reminder_failed: bool = False
+    search_body: str = ""
 
 
 class TrackerStatus(str, Enum):
@@ -1156,6 +1172,7 @@ def _tracker_item(
         is_watched=is_watched,
         is_watchable=watchable,
         feedback_value=_feedback_value(item),
+        search_body=_opt_str(item, "body") or "",
     )
 
 
@@ -1172,6 +1189,7 @@ def _passes_tracker_filters(
         view.context,
         view.status,
         view.source_label,
+        view.search_body,
         *view.pricing_facts,
     ):
         return False

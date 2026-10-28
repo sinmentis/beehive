@@ -15,13 +15,17 @@ caller (an email group's own, already-formatted subject_template) rather than de
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
 
 from beehive.auction import format_auction_amount
 from beehive.localization import Localizer
+from beehive.scheduling import DEFAULT_SCHEDULE_TIMEZONE
+from beehive.site_links import normalize_site_url
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
@@ -70,6 +74,7 @@ class EventView:
     detail: str
     kind: str
     event_type: str
+    brief_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -84,9 +89,24 @@ class ChannelDigest:
     status: str = ""
     # "…and N more not shown" when eligible events were left for a later email by the cap.
     remaining_note: str = ""
+    site_url: str | None = None
+    channel_url: str | None = None
 
 
-def build_event_view(event: dict, localizer: Localizer) -> EventView:
+def _deadline_label(value: object, timezone_name: str) -> str | None:
+    try:
+        moment = datetime.fromisoformat(str(value))
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return moment.astimezone(ZoneInfo(timezone_name)).strftime("%Y-%m-%d %H:%M %Z")
+    except (ValueError, OverflowError):
+        return None
+
+
+def build_event_view(
+    event: dict, localizer: Localizer, *,
+    timezone_name: str = DEFAULT_SCHEDULE_TIMEZONE, brief_url: str | None = None,
+) -> EventView:
     """Turn one raw deliverable event row (from db.item_events.list_ready_events_for_channels)
     into a localized EventView. This is the ONE place the (Channel kind, event type) matrix is
     resolved into a label/detail, so neither send.py nor the templates branch on kind."""
@@ -114,10 +134,12 @@ def build_event_view(event: dict, localizer: Localizer) -> EventView:
     elif event_type == "discovered":
         if kind == "tracker":
             label = localizer.text("background.digest_event_tracked_new")
-            closing_at = (event.get("item_raw_metadata") or {}).get("closing_at")
+            closing_at = _deadline_label(
+                (event.get("item_raw_metadata") or {}).get("closing_at"), timezone_name,
+            )
             if closing_at:
                 detail = localizer.text(
-                    "background.digest_event_closing", time=str(closing_at)
+                    "background.digest_event_closing", time=closing_at,
                 )
         elif kind == "monitor":
             label = localizer.text("background.digest_event_new")
@@ -130,6 +152,7 @@ def build_event_view(event: dict, localizer: Localizer) -> EventView:
         detail=detail,
         kind=kind,
         event_type=event_type,
+        brief_url=brief_url,
     )
 
 
@@ -142,11 +165,27 @@ def compose_channel_digest(
     *,
     status: str = "",
     remaining_count: int = 0,
+    channel_id: int | None = None,
+    site_url: str | None = None,
+    saved_brief_ids: frozenset[int] = frozenset(),
+    timezone_name: str = DEFAULT_SCHEDULE_TIMEZONE,
 ) -> ChannelDigest:
     """Build one Channel's section from its already-capped, already-ordered deliverable events.
     The caller (send.py) owns the highlight_count cap because it must mark exactly the included
     event ids delivered; this function renders whatever it is given, in order."""
-    views = [build_event_view(event, localizer) for event in events]
+    website = normalize_site_url(site_url)
+    views = [
+        build_event_view(
+            event, localizer, timezone_name=timezone_name,
+            brief_url=(
+                f"{website}/items/{event['item_id']}/brief"
+                + (f"?origin=channel&channel_id={channel_id}" if channel_id is not None else "")
+                if website and channel_kind == "editorial" and event.get("item_id") in saved_brief_ids
+                else None
+            ),
+        )
+        for event in events
+    ]
     remaining_note = (
         localizer.text("background.digest_more_events", count=remaining_count)
         if remaining_count
@@ -160,6 +199,11 @@ def compose_channel_digest(
         accent=_accent_for_kind(channel_kind),
         status=status,
         remaining_note=remaining_note,
+        site_url=website,
+        channel_url=(
+            f"{website}/channels/{channel_id}" + ("?show_read=1" if channel_kind == "editorial" else "")
+            if website and channel_id is not None else None
+        ),
     )
 
 
@@ -175,17 +219,29 @@ def _event_meta_prefix(event: EventView) -> str:
 def render_digest_email(channel_digests: list[ChannelDigest], today_iso: str,
                         localizer: Localizer, subject: str) -> tuple[str, str]:
     lines = []
+    website = next((digest.site_url for digest in channel_digests if digest.site_url), None)
+    if website:
+        lines.extend([
+            f"{localizer.text('background.digest_open_site', product=localizer.text('common.product_name'))}: {website}",
+            "",
+        ])
     for cd in channel_digests:
         lines.append(f"== {cd.channel_name} ==")
+        if cd.channel_url:
+            lines.append(f"{localizer.text('background.digest_open_channel')}: {cd.channel_url}")
         if cd.status:
             lines.append(cd.status)
         for warning in cd.source_warnings:
             lines.append(f"! {warning}")
         for event in cd.events:
             lines.append(f"- {_event_meta_prefix(event)}{event.headline} ({event.url})")
+            if event.brief_url:
+                lines.append(f"  {localizer.text('background.digest_open_brief')}: {event.brief_url}")
         if cd.remaining_note:
             lines.append(cd.remaining_note)
         lines.append("")
+    if channel_digests:
+        lines.append(localizer.text("background.digest_snapshot_note"))
     return subject, "\n".join(lines).rstrip()
 
 
@@ -199,4 +255,13 @@ def render_digest_email_html(channel_digests: list[ChannelDigest], today_iso: st
         lang=localizer.html_lang,
         page_title=subject,
         header_text=localizer.text("background.digest_header", product=product),
+        site_url=next((digest.site_url for digest in channel_digests if digest.site_url), None),
+        site_link_label=localizer.text("background.digest_open_site", product=product),
+        channel_link_label=localizer.text("background.digest_open_channel"),
+        brief_link_label=localizer.text("background.digest_open_brief"),
+        contents_label=localizer.text(
+            "background.digest_contents",
+            channels=len(channel_digests), count=sum(len(digest.events) for digest in channel_digests),
+        ),
+        snapshot_note=localizer.text("background.digest_snapshot_note"),
     )

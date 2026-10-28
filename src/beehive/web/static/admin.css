@@ -62,6 +62,8 @@ body.adm{min-height:100vh;margin:0}
 .foot-count{min-width:18px;height:18px;padding:0 4px;border:1px solid var(--link);border-radius:2px;color:var(--link);
  font-size:.72rem;font-weight:700;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
 .foot-count.is-caution{color:var(--caution);border-color:var(--caution)}
+.reading-owner-menu>summary{display:none}
+.reading-owner-links{display:grid;gap:2px}
 .adm-main{min-width:0;padding:16px}
 /* The sheet fills the screen, however wide. What sits on it keeps a readable shape: prose holds
    its measure, form fields their width, independent sections flow into columns (.cols) and a
@@ -489,7 +491,10 @@ details[open] .when-closed,details:not([open]) .when-open{display:none}
 .tbl .c-price-now{min-width:6.5em;white-space:nowrap}
 .price-now{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 .price-was{color:var(--ink-3);font-variant-numeric:tabular-nums}
-.price-off{font-weight:600;font-variant-numeric:tabular-nums}
+.price-off{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.price-reference,.price-baseline{display:block;color:var(--ink-2);font-size:.78rem;font-weight:400;white-space:normal}
+.price-reference .price-was{white-space:nowrap}
+.plate-price .price-reference{flex-basis:100%}
 small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-weight:600}
 .cmt{margin-top:6px;font-size:.78rem}
 .cmt>summary{width:max-content;max-width:100%;color:var(--link);cursor:pointer}
@@ -516,6 +521,13 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 /* Channel pages, the archive and search: the same sheet, head and rows as the home page. */
 .chan-sources{margin-top:2px;font-size:.8125rem}
 .chan-criteria{margin-top:18px}
+.criteria-disclosure>summary{width:fit-content;max-width:100%;padding:5px 0;color:var(--ink-2);font-size:.8125rem;cursor:pointer}
+.channel-details-body{display:flex;flex-wrap:wrap;gap:12px 24px;padding-top:8px}
+.channel-facts{flex:1 1 14rem;min-width:0}
+.criteria-content{flex:2 1 24rem;max-width:72ch;min-width:0}
+.criteria-content h3{margin:0 0 4px;font-size:.8125rem;font-weight:600;color:var(--ink-2)}
+.criteria-content .note-act{justify-content:flex-start;padding:8px 0 0}
+.catalog-details{margin-top:12px;border-top:1px solid var(--rule)}
 .adm-head+.filters,.chan-criteria+.filters{margin-top:18px}
 .chan-sec>.adm-lede{margin-top:0}
 /* A section the reader hid: its numbered heading alone, in secondary ink over a hairline, above
@@ -546,6 +558,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  border-top:1.5px solid var(--rule-ink);border-left:1px solid var(--rule)}
 .plate{display:flex;flex-direction:column;gap:4px;min-width:0;padding:10px 12px 12px;border-right:1px solid var(--rule);
  border-bottom:1px solid var(--rule);transition:background-color .15s ease-out}
+.plate-facts,.plate-context{display:flex;flex-direction:column;gap:4px;min-width:0}
 .plate:hover{background:var(--hover)}
 .plate-photo{display:block;margin-bottom:6px}
 .plate-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:contain;border:1px solid var(--rule);background:var(--field)}
@@ -600,6 +613,29 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 .fld-grow{flex:1 1 16rem;max-width:40rem}
 .fld-check{min-height:32px}
 .fld-act{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;min-height:32px}
+.filter-bar,.filters form.filter-bar{display:block}
+.filters form.filter-bar{flex:1 1 30rem}
+.filter-primary,.filter-options{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 12px}
+.filter-primary>input[type=search]{flex:1 1 14rem;min-width:0}
+.filter-primary>.fld{max-width:100%}
+.filter-primary .fld select.inp{max-width:min(20rem,100%)}
+.filter-more{margin-top:10px}
+.filter-more>summary{width:fit-content;max-width:100%;padding:5px 0;color:var(--link);font-size:.875rem;cursor:pointer}
+.filter-more[open]>.filter-options{margin-top:10px}
+.filter-apply-secondary{display:none}
+.filter-count{margin-left:8px;color:var(--ink-2);font-size:.8125rem;font-variant-numeric:tabular-nums}
+.filter-options .fld{max-width:100%}
+.filter-options .inp{max-width:100%}
+.filter-error{flex-basis:100%;margin:0}
+.page-workspace .checkbox-target{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer}
+.reading-action-slot{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:20;
+ width:max-content;max-width:calc(100vw - 28px);pointer-events:none}
+.reading-action{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;max-width:42rem;padding:10px 14px;
+ border:1.5px solid var(--link);background:var(--sheet);color:var(--ink);font-size:.875rem;pointer-events:auto}
+.reading-action p{flex:1 1 14rem;margin:0;max-width:60ch}
+.reading-action form{margin:0}
+.reading-action .lnk{display:inline-flex;align-items:center;min-height:32px}
+.reading-action.is-error{border-color:var(--danger)}
 .inp-date{width:auto;min-width:10.5rem}
 /* A multi-choice filter: the summary reads like a select and opens a checklist below it. */
 .ms{position:relative}
@@ -745,8 +781,16 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .toc .sub{display:none}
  .toc a{grid-template-columns:auto auto auto;white-space:nowrap}
  .adm-toc-foot{display:flex;margin:0 0 0 auto;padding:0;border:0}
- .page-reading .adm-toc-foot{flex-wrap:wrap;max-width:100%}
+ /* The popup can escape the rail without widening the grid to the whole channel strip. */
+ .page-reading .adm-toc{min-width:0;overflow:visible}
+ .page-reading .adm-toc-foot{flex-wrap:nowrap;align-items:center;gap:4px;max-width:100%}
  .adm-toc-foot a,.adm-toc-foot button{width:auto;white-space:nowrap}
+ .page-reading .adm-toc-foot>a{min-width:0;white-space:normal;overflow-wrap:anywhere;padding-inline:4px}
+ .reading-owner-menu{position:relative;flex:none}
+ .reading-owner-menu>summary{display:list-item;padding:6px 8px;color:var(--ink-2);font-size:.8125rem;cursor:pointer}
+ .reading-owner-menu[open]>.reading-owner-links{position:absolute;right:0;top:calc(100% + 4px);z-index:10;
+  min-width:10rem;padding:8px;border:1px solid var(--rule-2);background:var(--sheet);box-shadow:0 14px 32px -10px rgba(0,0,0,.7)}
+ .reading-owner-links a,.reading-owner-links button{width:100%}
  .adm-main{padding:0}
  .adm-page{padding:14px 14px 28px;border:0}
  .params-head{display:none}
@@ -776,6 +820,18 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .lot{grid-template-columns:80px minmax(0,1fr)}
  .plates{grid-template-columns:repeat(auto-fill,minmax(min(10rem,100%),1fr))}
  .plate{padding:8px 8px 10px}
+ .plate-facts{order:0}
+ .plate-photo{order:1;margin:6px 0 4px}
+ .plate-context{order:2}
+ .plate-foot{order:3}
+ @supports (grid-template-rows:subgrid){
+  /* Shared fact, photo, context and action tracks align each phone gallery row. */
+  .plate{display:grid;grid-template-rows:subgrid;grid-row:span 4}
+  .plate-facts{grid-row:1}
+  .plate-photo{grid-row:2}
+  .plate-context{grid-row:3}
+  .plate-foot{grid-row:4}
+ }
  .tbl-stack td.c-lot{padding-right:28px}
  .filters form{flex-basis:100%}
  .session-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:14px 0 0;border:1px solid var(--ctl);border-radius:2px}
@@ -811,15 +867,51 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .ops-stack .watch-has-error{align-items:flex-start}
  .fields{gap:10px}
  .fld-grow{flex-basis:100%;max-width:none}
+ .filter-bar{margin-top:12px;padding-top:8px;padding-bottom:8px}
+ .filter-primary{gap:8px 10px}
+ .filter-primary>.fld-grow{flex:1 1 8rem;order:0}
+ .filter-primary>.fld-grow>span{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ .filter-primary>.fld-act{order:1}
+ .filter-primary>.fld:not(.fld-grow){display:flex;align-items:center;flex:1 0 100%;gap:8px;order:2}
+ .filter-primary>.fld:not(.fld-grow)>span{flex:none}
+ .filter-primary .fld select.inp{flex:1;min-width:0;max-width:100%}
+ .filter-primary>input[type=search]{flex-basis:8rem}
+ .filter-more{margin-top:4px}
+ .filter-apply-secondary{display:flex;flex-basis:100%;padding-top:12px}
+ .filter-options>.fld{flex:1 1 12rem}
+ .filter-options .ms-panel{width:100%;min-width:0;max-width:100%}
+ .page-reading .chan-sec>h2{margin-top:24px}
  .ms>summary{max-width:none}
+}
+@container adm (max-width:360px){
+ .filter-primary>.fld-grow,.filter-primary>input[type=search]{flex-basis:100%}
+ .filter-primary>.fld-act{order:3}
+ .page-reading .adm-toc-foot{flex-wrap:wrap;justify-content:flex-end}
+ .page-reading .adm-toc-foot>a{flex:none;white-space:nowrap}
 }
 /* Touch screens: two-state toggles grow to a thumb's size and stand further apart, so a tap on
    相关 never lands on 不相关. */
 @media (pointer:coarse){
- .tg{min-height:40px;padding:0 12px}
+ .tg{min-height:44px;padding:0 12px}
+ .rd{width:44px;height:44px}
+ :is(.page-reading,.page-workspace) :is(.btn,.seg>a,.opt,summary,.adm-brand){min-height:44px}
+ :is(.page-reading,.page-workspace) .inp{min-height:44px;font-size:1rem}
+ :is(.page-reading,.page-workspace) .fld select.inp{min-height:44px}
+ :is(.page-reading,.page-workspace) :is(.c-ops .lnk,button.lnk),.adm .deep-read-chip{display:inline-flex;align-items:center;min-width:44px;min-height:44px}
+ :is(.page-reading,.page-workspace) .adm-toc-foot :is(a,button){display:inline-flex;align-items:center;min-height:44px}
+ :is(.page-reading,.page-workspace) :is(.fld-act>.lnk,.filter-primary>.lnk){display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px}
+ .page-reading .toc>li>a{min-height:44px}
+ :is(.page-reading,.page-workspace) .seg>a,.page-reading .adm-toc-foot>a{min-width:44px}
+ .reading-action .lnk{min-height:44px}
  .watch-failure{min-height:44px}
  .vote,.watch{gap:10px}
  .ops-stack,.plate-foot .ops-stack{gap:10px}
+}
+@media (pointer:coarse) and (max-width:880px){
+ .tbl-feed tr:has(.c-rd){--lead:calc(44px + 2.1rem + 24px)}
+ .tbl-feed .c-rd{top:0;width:44px}
+ .tbl-feed .c-rd+.c-score{left:56px}
+ .page-workspace .tbl-stack td.c-lot{padding-right:52px}
 }
 
 /* Admin tasks keep the shared dark identity without inheriting reading-page density. */

@@ -71,6 +71,25 @@ Email selection reapplies the current channel score cutoff to pending events. Th
 delivery diagnostics and actual send use the same selection policy. Preview and test send are
 non-consuming; an empty test sends a diagnostic message instead of pretending there is a digest.
 
+Email return links use the explicitly validated `site_url` setting in `app_state`, shared by
+preview and delivery. Saved-brief links include their channel context and can point to a retained
+result while its replacement is pending. Closing times are converted to the group's time zone.
+These presentation changes do not alter selection, caps, scheduling or delivery watermarks.
+
+## Reading recovery and context
+
+The latest individual read/unread or unwatch operation stores a ten-minute recovery record in
+`app_state`, separately from bulk read undo. The mutation and recovery record commit together.
+Read undo checks the expected read/open/vote state; later explicit opens, votes and bulk read
+operations invalidate the individual offer. Unwatch undo restores the saved reminder metadata
+only if no later watch exists. An in-flight reminder cannot safely be replayed, so it gets an
+explicit warning without an undo promise.
+
+Global-search channel links carry the read/score scope, and channel matching includes stored
+body text. Matching counts are separate from channel inventory counts. Archive date validation
+runs before the query, retains the supplied dates and renders field feedback. Empty desk
+sections use one bounded aggregate query over only the empty channels, not full channel views.
+
 ## Deep reads
 
 A deep-read request is stored in SQLite before anything else happens, so the web request never

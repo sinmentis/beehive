@@ -99,13 +99,62 @@ def test_tracker_discovered_includes_its_closing_time_when_present():
         _EN,
     )
     assert view.label == "New tracked item"
-    assert view.detail == "Closes: 2026-08-01T10:00:00"
+    assert view.detail == "Closes: 2026-08-01 22:00 NZST"
 
 
 def test_tracker_discovered_without_a_closing_time_has_no_detail():
     view = build_event_view(_event(channel_kind="tracker", event_type="discovered"), _EN)
     assert view.label == "New tracked item"
     assert view.detail == ""
+
+
+def test_tracker_deadline_uses_the_group_timezone_without_machine_precision():
+    view = build_event_view(
+        _event(channel_kind="tracker", item_raw_metadata={"closing_at": "2026-03-08T07:30:45.123456+00:00"}),
+        _EN, timezone_name="America/New_York",
+    )
+    assert view.detail == "Closes: 2026-03-08 03:30 EDT"
+    invalid = build_event_view(
+        _event(channel_kind="tracker", item_raw_metadata={"closing_at": "not-a-date"}), _EN,
+    )
+    assert invalid.detail == ""
+
+
+def test_configured_navigation_keeps_all_fifty_entries_and_only_links_saved_briefs():
+    events = [
+        _event(
+            id=index, item_id=index, item_url=f"https://shop.example/{index}",
+            item_ai_summary=f"Offer {index}: 30% off, or 40% off the other option",
+        )
+        for index in range(1, 51)
+    ]
+    digest = compose_channel_digest(
+        "Deals", "editorial", events, [], _EN, channel_id=9,
+        site_url="https://news.example/beehive/", saved_brief_ids=frozenset({1, 3}),
+    )
+    markup = render_digest_email_html([digest], "2026-10-29", _EN, _SUBJECT)
+    _, plain = render_digest_email([digest], "2026-10-29", _EN, _SUBJECT)
+    assert markup.count('href="https://shop.example/') == 50
+    assert len(digest.events) == 50
+    assert "Offer 50: 30% off, or 40% off the other option" in markup
+    assert 'href="https://news.example/beehive/channels/9?show_read=1"' in markup
+    assert "https://news.example/beehive/items/1/brief?origin=channel" in markup
+    assert "https://news.example/beehive/items/3/brief?origin=channel" in markup
+    assert "https://news.example/beehive/items/2/brief" not in markup
+    assert "Open Beehive: https://news.example/beehive" in plain
+    assert "Open saved brief: https://news.example/beehive/items/1/brief" in plain
+    assert 'target="_blank" rel="noopener noreferrer"' in markup
+
+
+def test_unconfigured_website_does_not_invent_internal_links():
+    digest = compose_channel_digest(
+        "Deals", "editorial", [_event(item_id=1)], [], _EN,
+        channel_id=9, saved_brief_ids=frozenset({1}),
+    )
+    markup = render_digest_email_html([digest], "2026-10-29", _EN, _SUBJECT)
+    assert "Open channel" not in markup
+    assert "Open saved brief" not in markup
+    assert "/items/1/brief" not in markup
 
 
 def test_headline_falls_back_to_title_when_summary_is_missing():
@@ -194,6 +243,7 @@ def test_html_wraps_headline_in_a_link_and_shows_the_label_badge():
     assert '<a href="https://x/3"' in html
     assert "Cheap tent</a>" in html
     assert ">New</span>" in html
+    assert html.index("Cheap tent</a>") < html.index(">New</span>")
 
 
 def test_html_shows_price_detail_line():

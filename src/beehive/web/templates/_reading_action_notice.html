@@ -1,0 +1,17 @@
+<div id="reading-action-notice" class="reading-action-slot"{% if action_notice_oob %} hx-swap-oob="outerHTML"{% endif %}>
+{% if is_owner and reading_action %}
+{% set action_return_url = return_url or watchlist_return_url or request.url.path %}
+<div class="reading-action{{ ' is-error' if reading_action.kind == 'unavailable' }}" role="status" aria-live="polite">
+  <p>{{ t('web.reading.action.' ~ reading_action.kind) }}</p>
+  {% if reading_action.can_undo %}
+  <form method="post" action="/reading-actions/undo" hx-post="/reading-actions/undo" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-select-oob="#reading-action-notice,#toc-count-featured,#toc-count-watchlist,#reading-watchlist-link">
+    <input type="hidden" name="csrf_token" value="{{ global_csrf_token }}">
+    <input type="hidden" name="token" value="{{ reading_action.token }}">
+    <input type="hidden" name="next_url" value="{{ action_return_url }}">
+    <button class="btn btn-sm" type="submit">{{ t('web.admin.activity.undo') }}</button>
+  </form>
+  {% endif %}
+  <a class="lnk" href="{{ action_return_url }}" data-dismiss-reading-action>{{ t('web.reading.action.dismiss') }}</a>
+</div>
+{% endif %}
+</div>

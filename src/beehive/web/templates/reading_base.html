@@ -1,6 +1,7 @@
 {% extends "datasheet_base.html" %}
 {% import "_reading_macros.html" as rd with context %}
 {% block body_class %}page-reading{% endblock %}
+{% block feedback %}{% include "_reading_action_notice.html" %}{% endblock %}
 {% block head %}
 {#- Share metadata for link previews. The pages stay out of search results (noindex, see
     datasheet_base.html); a page can override its description and its og:type. -#}
@@ -29,11 +30,16 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       {% if is_owner %}
       {{ rd.watchlist_link() }}
       <a href="/research">{{ t('web.nav.research') }}{% if research_unread_count %}<span class="foot-count"><span aria-hidden="true">{{ research_unread_count }}</span><span class="sr-only">{{ t('web.research.unread_count', count=research_unread_count) }}</span></span>{% endif %}</a>
-      <a href="/admin/">{{ t('web.nav.admin') }}</a>
-      <form method="post" action="/admin/logout">
-        <input type="hidden" name="csrf_token" value="{{ global_csrf_token }}">
-        <button type="submit">{{ t('web.nav.logout') }}</button>
-      </form>
+      <details class="reading-owner-menu" data-responsive-disclosure open>
+        <summary>{{ t('web.reading.owner_menu') }}</summary>
+        <div class="reading-owner-links">
+          <a href="/admin/">{{ t('web.nav.admin') }}</a>
+          <form method="post" action="/admin/logout">
+            <input type="hidden" name="csrf_token" value="{{ global_csrf_token }}">
+            <button type="submit">{{ t('web.nav.logout') }}</button>
+          </form>
+        </div>
+      </details>
       {% else %}
       <a href="/admin/login">{{ t('web.reading.shell.login') }}</a>
       {% endif %}

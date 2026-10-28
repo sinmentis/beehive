@@ -8,7 +8,7 @@ pages' own view builders, so the home page never builds a whole Channel page."""
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from beehive.channels import get_definition, require_channel_kind
@@ -22,6 +22,7 @@ from beehive.channels.views import (
 )
 from beehive.db.items import (
     count_active_monitor_listings_by_channel,
+    count_desk_inventory,
     list_active_monitor_listings,
     list_dashboard_highlights,
     list_listed_lots_scoring,
@@ -68,6 +69,9 @@ class DeskSection:
     lot_minimum_score: int = 0
     watched_total: int | None = None
     failed_reminder_count: int = 0
+    empty_message: str = ""
+    empty_href: str = ""
+    empty_link_label: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +205,42 @@ def build_channel_desk(
                     ),
                 )
             )
+    empty_ids = [
+        section.channel_id for section in sections
+        if not (section.stories or section.listings or section.lots)
+    ]
+    inventory = count_desk_inventory(conn, empty_ids, published_from, published_to)
+    for index, section in enumerate(sections):
+        if section.channel_id not in empty_ids:
+            continue
+        counts = inventory.get(section.channel_id, {})
+        target = f"{section.href}?show_below=1" if is_owner else section.href
+        label = t.text("web.reading.desk.browse_all" if is_owner else "web.reading.desk.open_channel")
+        if not counts.get("total"):
+            message = t.text("web.reading.desk.empty_uncollected")
+            if is_owner:
+                target = f"/admin/channels/{section.channel_id}/edit?section=sources"
+                label = t.text("web.reading.desk.check_collection")
+        elif section.kind == "editorial":
+            if not counts["recent"]:
+                reason = "window"
+            elif counts["unranked_recent"] == counts["recent"]:
+                reason = "unranked"
+            else:
+                reason = "criteria"
+            message = t.text(f"web.reading.desk.empty_{reason}")
+            target = f"/archive?channel={section.channel_id}"
+            label = t.text("web.reading.desk.browse_history")
+        elif section.kind == "monitor":
+            message = t.text(
+                "web.reading.desk.empty_criteria" if counts["available"]
+                else "web.reading.desk.no_listings"
+            )
+        else:
+            message = t.text("web.reading.desk.no_lots", score=section.lot_minimum_score)
+        sections[index] = replace(
+            section, empty_message=message, empty_href=target, empty_link_label=label,
+        )
     return tuple(sections)
 
 

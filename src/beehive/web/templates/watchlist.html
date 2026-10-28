@@ -46,18 +46,25 @@
     <a href="{{ watchlist_closed_url }}"{% if page.query.status == 'closed' %} aria-current="page"{% endif %}>{{ t('web.watchlist.closed') }} <span class="n">{{ page.closed_count }}</span></a>
     <a href="{{ watchlist_all_url }}"{% if page.query.status == 'all' %} aria-current="page"{% endif %}>{{ t('web.watchlist.all') }} <span class="n">{{ page.total_count }}</span></a>
   </nav>
-  <form method="get" action="/watchlist" role="search">
+  <form class="filter-bar" method="get" action="/watchlist" role="search">
     <input type="hidden" name="status" value="{{ page.query.status }}">
+    <div class="filter-primary">
     <label class="sr-only" for="watch-search">{{ t('web.watchlist.search_label') }}</label>
     <input class="inp" id="watch-search" type="search" name="q" value="{{ page.query.search }}" placeholder="{{ t('web.watchlist.search_placeholder') }}">
-    <label class="sr-only" for="watch-reminder">{{ t('web.watchlist.reminder_filter') }}</label>
-    <select class="inp" id="watch-reminder" name="reminder">
+    <button class="btn" type="submit">{{ t('web.watchlist.apply_filters') }}</button>
+    {% if page.query.search or page.query.reminder != 'all' %}<a class="lnk" href="/watchlist?status={{ page.query.status }}">{{ t('web.watchlist.clear_filters') }}</a>{% endif %}
+    </div>
+    <details class="filter-more" data-responsive-disclosure open>
+      <summary>{{ t('web.reading.more_filters') }}{% if page.query.reminder != 'all' %} <span class="filter-count">{{ t('web.reading.applied_filters', count=1) }}</span>{% endif %}</summary>
+      <div class="filter-options"><label class="fld"><span>{{ t('web.watchlist.reminder_filter') }}</span>
+      <select class="inp" id="watch-reminder" name="reminder">
       {% for value in ['all', 'scheduled', 'due', 'sent', 'error', 'inactive'] %}
       <option value="{{ value }}"{% if page.query.reminder == value %} selected{% endif %}>{{ t('web.watchlist.reminder_filter_' ~ value) }}</option>
       {% endfor %}
-    </select>
-    <button class="btn" type="submit">{{ t('web.watchlist.apply_filters') }}</button>
-    {% if page.query.search or page.query.reminder != 'all' %}<a class="lnk" href="/watchlist?status={{ page.query.status }}">{{ t('web.watchlist.clear_filters') }}</a>{% endif %}
+      </select></label>
+      <div class="filter-apply-secondary"><button class="btn" type="submit">{{ t('web.watchlist.apply_filters') }}</button></div>
+      </div>
+    </details>
   </form>
 </div>
 
@@ -68,14 +75,14 @@
 </form>
 <div class="tbl-wrap"><table class="tbl tbl-stack">
   <thead><tr>
-    <th class="c-check"><input type="checkbox" data-bulk-all="watchlist-bulk-form" aria-label="{{ t('web.workspace.watch.select_all') }}"></th>
+    <th class="c-check"><label class="checkbox-target"><input type="checkbox" data-bulk-all="watchlist-bulk-form" aria-label="{{ t('web.workspace.watch.select_all') }}"></label></th>
     <th>{{ t('web.workspace.watch.col_lot') }}</th><th>{{ t('web.workspace.watch.col_when') }}</th><th>{{ t('web.workspace.watch.col_price') }}</th>
     <th><span class="sr-only">{{ t('web.admin.form.actions') }}</span></th>
   </tr></thead>
   <tbody>
     {% for item in page.items %}
     <tr class="watchlist-item{{ ' is-closed' if item.is_closed or not item.is_active }}" id="watchlist-item-{{ item.id }}">
-      <td class="c-check"><input type="checkbox" name="item_ids" value="{{ item.id }}" form="watchlist-bulk-form" aria-label="{{ t('web.watchlist.select_item', title=item.title) }}"></td>
+      <td class="c-check"><label class="checkbox-target"><input type="checkbox" name="item_ids" value="{{ item.id }}" form="watchlist-bulk-form" aria-label="{{ t('web.watchlist.select_item', title=item.title) }}"></label></td>
       <td class="c-lot c-wide"><div class="lot">
         {% if item.image_url %}<img class="lot-img" src="{{ item.image_url|sized(240) }}" alt="" width="80" height="80" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<span class="lot-img" aria-hidden="true"></span>{% endif %}
         <a class="lot-title" href="{{ item.open_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
@@ -114,7 +121,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="origin" value="watchlist">
           <input type="hidden" name="next_url" value="{{ watchlist_return_url }}">
-          <button type="submit" class="lnk" hx-post="/items/{{ item.id }}/watch" hx-target="#watch-body" hx-select="#watch-body" hx-swap="outerHTML" hx-select-oob="#watch-meta,#toc-count-watchlist" data-focus-key="watch-{{ item.id }}" data-feedback-message="{{ t('web.tracker.watch_removed_feedback') }}">{{ t('web.workspace.watch.unwatch') }}<span class="sr-only"> {{ item.title }}</span></button>
+          <button type="submit" class="lnk" hx-post="/items/{{ item.id }}/watch" hx-target="#watch-body" hx-select="#watch-body" hx-swap="outerHTML" hx-select-oob="#watch-meta,#toc-count-watchlist,#reading-action-notice" data-focus-key="watch-{{ item.id }}" data-feedback-message="{{ t('web.tracker.watch_removed_feedback') }}">{{ t('web.workspace.watch.unwatch') }}<span class="sr-only"> {{ item.title }}</span></button>
         </form>
       </td>
     </tr>

@@ -4,6 +4,13 @@ plural messages use the same one/other shape as English."""
 from __future__ import annotations
 
 _EN = {
+    "web.admin.site_url.heading": "Website links",
+    "web.admin.site_url.label": "Website address",
+    "web.admin.site_url.hint": "Use the site's base HTTP(S) address, not a settings-page URL. Adds site, channel and saved-brief links to emails and previews. Leave blank to omit these links.",
+    "web.admin.site_url.invalid": "Enter an HTTP(S) website address without login details, query parameters or fragments.",
+    "web.admin.site_url.save": "Save website address",
+    "web.admin.site_url.saved": "Website address saved.",
+    "web.admin.site_url.missing": "Website links are off. Set the website address to add them to emails.",
     "web.admin.activity.batch_fetch_requested": "Requested fetches for {target} Channels",
     "web.admin.activity.channel_created": "Created Channel {target}",
     "web.admin.activity.channel_data_cleared": "Cleared data for {target}",
@@ -617,6 +624,13 @@ _EN = {
 }
 
 _ZH = {
+    "web.admin.site_url.heading": "邮件中的网站链接",
+    "web.admin.site_url.label": "网站地址",
+    "web.admin.site_url.hint": "填写网站的 HTTP(S) 基础地址，不要填写设置页面的网址。邮件和预览中会加入网站、频道及已生成简报的链接。留空则不加入这些链接。",
+    "web.admin.site_url.invalid": "请输入 HTTP(S) 网站地址，不要包含登录信息、查询参数或页面锚点。",
+    "web.admin.site_url.save": "保存网站地址",
+    "web.admin.site_url.saved": "网站地址已保存。",
+    "web.admin.site_url.missing": "尚未启用网站链接。设置网站地址后，邮件中会加入这些入口。",
     "web.admin.activity.batch_fetch_requested": "请求抓取 {target} 个频道",
     "web.admin.activity.channel_created": "创建了频道 {target}",
     "web.admin.activity.channel_data_cleared": "清除了 {target} 的数据",
@@ -1230,6 +1244,13 @@ _ZH = {
 }
 
 _JA = {
+    "web.admin.site_url.heading": "メール内のサイトリンク",
+    "web.admin.site_url.label": "サイトのアドレス",
+    "web.admin.site_url.hint": "設定ページではなく、サイトの HTTP(S) ベースアドレスを入力してください。メールとプレビューにサイト、チャンネル、保存済みブリーフへのリンクを追加します。空欄なら追加しません。",
+    "web.admin.site_url.invalid": "ログイン情報、クエリ、フラグメントを含まない HTTP(S) アドレスを入力してください。",
+    "web.admin.site_url.save": "サイトのアドレスを保存",
+    "web.admin.site_url.saved": "サイトのアドレスを保存しました。",
+    "web.admin.site_url.missing": "サイトリンクは無効です。アドレスを設定するとメールに追加されます。",
     "web.admin.activity.batch_fetch_requested": "{target} 件のチャンネルの取得をリクエスト",
     "web.admin.activity.channel_created": "チャンネル {target} を作成",
     "web.admin.activity.channel_data_cleared": "{target} のデータを消去",
@@ -1843,6 +1864,13 @@ _JA = {
 }
 
 _KO = {
+    "web.admin.site_url.heading": "이메일의 웹사이트 링크",
+    "web.admin.site_url.label": "웹사이트 주소",
+    "web.admin.site_url.hint": "설정 페이지가 아닌 사이트의 HTTP(S) 기본 주소를 입력하세요. 이메일과 미리보기에 사이트, 채널, 저장된 브리핑 링크를 추가합니다. 비워 두면 추가하지 않습니다.",
+    "web.admin.site_url.invalid": "로그인 정보, 쿼리 매개변수, 앵커가 없는 HTTP(S) 웹사이트 주소를 입력하세요.",
+    "web.admin.site_url.save": "웹사이트 주소 저장",
+    "web.admin.site_url.saved": "웹사이트 주소를 저장했습니다.",
+    "web.admin.site_url.missing": "웹사이트 링크가 꺼져 있습니다. 주소를 설정하면 이메일에 링크가 추가됩니다.",
     "web.admin.activity.batch_fetch_requested": "채널 {target}개에 대한 수집 요청함",
     "web.admin.activity.channel_created": "채널 {target} 생성됨",
     "web.admin.activity.channel_data_cleared": "{target}의 데이터 지움",
@@ -2456,6 +2484,13 @@ _KO = {
 }
 
 _ES = {
+    "web.admin.site_url.heading": "Enlaces al sitio web",
+    "web.admin.site_url.label": "Dirección del sitio web",
+    "web.admin.site_url.hint": "Usa la dirección HTTP(S) base del sitio, no la página de configuración. Añade enlaces al sitio, canales y resúmenes guardados en correos y vistas previas. Déjala vacía para omitirlos.",
+    "web.admin.site_url.invalid": "Introduce una dirección HTTP(S) sin datos de acceso, parámetros de consulta ni fragmentos.",
+    "web.admin.site_url.save": "Guardar dirección web",
+    "web.admin.site_url.saved": "Dirección web guardada.",
+    "web.admin.site_url.missing": "Los enlaces web están desactivados. Configura la dirección para añadirlos a los correos.",
     "web.admin.activity.batch_fetch_requested": "Se solicitaron obtenciones para {target} canales",
     "web.admin.activity.channel_created": "Canal {target} creado",
     "web.admin.activity.channel_data_cleared": "Datos de {target} borrados",
@@ -3069,6 +3104,13 @@ _ES = {
 }
 
 _FR = {
+    "web.admin.site_url.heading": "Liens vers le site",
+    "web.admin.site_url.label": "Adresse du site",
+    "web.admin.site_url.hint": "Utilisez l'adresse HTTP(S) de base du site, pas celle des paramètres. Ajoute des liens vers le site, les canaux et les résumés enregistrés dans les e-mails et aperçus. Laissez vide pour les omettre.",
+    "web.admin.site_url.invalid": "Saisissez une adresse HTTP(S) sans identifiants, paramètres de requête ni fragment.",
+    "web.admin.site_url.save": "Enregistrer l'adresse du site",
+    "web.admin.site_url.saved": "Adresse du site enregistrée.",
+    "web.admin.site_url.missing": "Les liens vers le site sont désactivés. Définissez son adresse pour les ajouter aux e-mails.",
     "web.admin.activity.batch_fetch_requested": "Récupérations demandées pour {target} canaux",
     "web.admin.activity.channel_created": "Canal {target} créé",
     "web.admin.activity.channel_data_cleared": "Données effacées pour {target}",
@@ -3682,6 +3724,13 @@ _FR = {
 }
 
 _DE = {
+    "web.admin.site_url.heading": "Website-Links",
+    "web.admin.site_url.label": "Website-Adresse",
+    "web.admin.site_url.hint": "Die HTTP(S)-Basisadresse der Website verwenden, nicht die Einstellungsseite. Fügt Website-, Kanal- und gespeicherte Berichtslinks in E-Mails und Vorschauen ein. Leer lassen, um sie wegzulassen.",
+    "web.admin.site_url.invalid": "Eine HTTP(S)-Website-Adresse ohne Anmeldedaten, Abfrageparameter oder Fragment eingeben.",
+    "web.admin.site_url.save": "Website-Adresse speichern",
+    "web.admin.site_url.saved": "Website-Adresse gespeichert.",
+    "web.admin.site_url.missing": "Website-Links sind deaktiviert. Die Website-Adresse festlegen, um sie in E-Mails einzufügen.",
     "web.admin.activity.batch_fetch_requested": "Abrufe für {target} Kanäle angefordert",
     "web.admin.activity.channel_created": "Kanal {target} erstellt",
     "web.admin.activity.channel_data_cleared": "Daten für {target} gelöscht",

@@ -3,8 +3,10 @@ Channel's list or gallery and its page size, remembered between visits; long lis
 two lanes; a story judged not relevant is read and stays in place for its reason; "mark all as
 read" can be taken back."""
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,9 +15,12 @@ from beehive.auth.tokens import sign_session_id
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
+from beehive.db.item_events import record_or_coalesce_event
 from beehive.db.items import insert_new, update_ai_ranking
 from beehive.db.sessions import create_session
 from beehive.db.sources import create_source
+from beehive.db.tracker_watches import add_tracker_watch
+from beehive.localization import SUPPORTED_LANGUAGES, localizer_for, save_language
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
 
@@ -203,14 +208,147 @@ def test_photos_are_asked_for_at_the_size_they_show(conn):
     assert 'width="80" height="80"' in listing
 
 
-def test_the_criteria_note_shows_only_when_a_threshold_hides_rows(conn):
+def test_score_help_is_public_but_threshold_controls_remain_owner_only(conn):
     path, connection = conn
     open_id, _ = _store(connection, "Gear")
     strict_id, _ = _store(connection, "Boots", minimum_score=50)
     owner = _client(path, owner=True)
 
-    assert "chan-criteria" not in owner.get(f"/channels/{open_id}").text
-    assert "chan-criteria" in owner.get(f"/channels/{strict_id}").text
+    assert "How relevance scores work" in owner.get(f"/channels/{open_id}").text
+    assert f'href="/admin/channels/{open_id}/edit?section=rules"' not in owner.get(f"/channels/{open_id}").text
+    rules_url = f"/admin/channels/{strict_id}/edit?section=rules"
+    assert f'href="{rules_url}"' in owner.get(f"/channels/{strict_id}").text
+    destination = owner.get(rules_url)
+    assert destination.status_code == 200
+    assert destination.context["section"] == "rules"
+    public = _client(path).get(f"/channels/{strict_id}").text
+    assert "not discount size" in public
+    assert f'href="{rules_url}"' not in public
+
+
+@pytest.mark.parametrize("owner", [False, True])
+def test_search_channel_link_preserves_body_matches_below_threshold_and_read_state(conn, owner):
+    path, connection = conn
+    channel_id = create_channel(connection, "Storage", "storage", minimum_score=80)
+    source_id = create_source(connection, channel_id, "rss_feed", {"feed_url": "https://example.com/feed"})
+    wanted = _add(connection, source_id, "wanted", "Storage details", score=40)
+    _add(connection, source_id, "other", "Other content", score=95)
+    connection.execute(
+        "UPDATE items SET is_read = 1, body = 'Distinctive endurance evidence' WHERE id = ?",
+        (wanted,),
+    )
+    connection.commit()
+    client = _client(path, owner=owner)
+    result = client.get("/search", params={"q": "endurance"})
+    response = client.get(result.context["sections"][0]["href"])
+    page = response.context["page"]
+    assert [item.id for item in page.highlighted] == [wanted]
+    assert (page.matching_count, page.matching_unread_count, page.matching_read_count) == (1, 0, 1)
+    assert page.criteria.showing_below_threshold
+    assert "No matching content" not in response.text
+
+
+def test_monitor_filters_omit_inferred_gender_but_keep_an_explicit_selection(conn):
+    path, connection = conn
+    channel_id, (item_id,) = _store(connection)
+    connection.execute("UPDATE items SET body = 'Endurance evidence' WHERE id = ?", (item_id,))
+    connection.commit()
+    client = _client(path)
+    result = client.get(f"/channels/{channel_id}", params={"q": "endurance"})
+    assert [item.id for item in result.context["page"].items] == [item_id]
+    assert 'name="gender"' not in result.text
+    selected = client.get(f"/channels/{channel_id}", params={"gender": "men"})
+    assert 'name="gender" value="men" checked' in selected.text
+    assert selected.context["active_filter_count"] == 1
+
+
+@pytest.mark.parametrize("language", [language.code for language in SUPPORTED_LANGUAGES])
+def test_price_reference_and_observed_drop_remain_distinct_in_both_views(conn, language):
+    path, connection = conn
+    channel_id, (item_id,) = _store(connection)
+    metadata = {**_listing(69), "compare_at_price": 129, "on_sale": True, "currency_code": "NZD"}
+    connection.execute("UPDATE items SET raw_metadata = ? WHERE id = ?", (json.dumps(metadata), item_id))
+    connection.commit()
+    record_or_coalesce_event(
+        connection, item_id, "price_drop", {"old_price": 99, "new_price": 69, "currency_code": "NZD"},
+        datetime.now(timezone.utc).isoformat(),
+    )
+    save_language(connection, language)
+    localizer = localizer_for(language)
+    client = _client(path)
+    for view in ("list", "gallery"):
+        page = client.get(f"/channels/{channel_id}", params={"view": view})
+        assert localizer.text("web.reading.merchant_reference") in page.text
+        assert localizer.text("web.monitor.discount", percent=47) in page.text
+        assert localizer.text("web.reading.observed_price_change") in page.text
+        assert "NZD 99" in page.text
+        assert "historical low" not in page.text.lower()
+
+
+def test_archive_reversed_dates_keep_the_inputs_and_do_not_claim_no_results(conn):
+    path, _ = conn
+    response = _client(path).get("/archive", params={"from": "2026-10-29", "to": "2026-10-20"})
+    assert response.status_code == 200
+    assert "Start date must be on or before end date." in response.text
+    assert 'value="2026-10-29" aria-invalid="true"' in response.text
+    assert 'value="2026-10-20" aria-invalid="true"' in response.text
+    assert "No matching content" not in response.text
+
+
+def test_single_read_has_visible_undo_and_keeps_search_context(conn):
+    path, connection = conn
+    channel_id = create_channel(connection, "News", "news")
+    source_id = create_source(connection, channel_id, "rss_feed", {"feed_url": "https://example.com/feed"})
+    item_id = _add(connection, source_id, "story", "Storage evidence")
+    owner = _client(path, owner=True)
+    target = f"/channels/{channel_id}?q=storage"
+    changed = owner.post(
+        f"/items/{item_id}/read-state",
+        data={"csrf_token": "csrf1", "is_read": "1", "next_url": target},
+    )
+    notice = owner.get(changed.headers["location"])
+    action = notice.context["reading_action"]
+    assert action.can_undo
+    assert "Marked as read." in notice.text
+    assert 'action="/reading-actions/undo"' in notice.text
+    assert "Marked as read." not in _client(path).get(changed.headers["location"]).text
+    restored = owner.post(
+        "/reading-actions/undo",
+        data={"csrf_token": "csrf1", "token": action.token, "next_url": target},
+    )
+    assert parse_qs(urlsplit(restored.headers["location"]).query)["q"] == ["storage"]
+    page = owner.get(restored.headers["location"])
+    assert "Previous state restored." in page.text
+    assert [item.id for item in page.context["page"].highlighted] == [item_id]
+    assert connection.execute("SELECT is_read FROM items WHERE id = ?", (item_id,)).fetchone()[0] == 0
+
+
+def test_unwatch_undo_restores_the_watchlist_and_owner_only_feedback(conn):
+    path, connection = conn
+    _, item_id = _auctions(connection)
+    add_tracker_watch(connection, item_id, datetime.now(timezone.utc))
+    owner = _client(path, owner=True)
+    changed = owner.post(
+        f"/items/{item_id}/watch",
+        data={"csrf_token": "csrf1", "origin": "watchlist", "next_url": "/watchlist?status=all&q=drill"},
+    )
+    page = owner.get(changed.headers["location"])
+    action = page.context["reading_action"]
+    assert "Stopped watching this lot." in page.text
+    assert action.can_undo
+    assert page.context["page"].total_count == 0
+    rejected = owner.post(
+        "/reading-actions/undo", data={"csrf_token": "wrong", "token": action.token},
+    )
+    assert rejected.status_code == 403
+    restored = owner.post(
+        "/reading-actions/undo",
+        data={"csrf_token": "csrf1", "token": action.token, "next_url": page.context["watchlist_return_url"]},
+    )
+    result = owner.get(restored.headers["location"])
+    assert result.context["page"].total_count == 1
+    assert result.context["page"].query.search == "drill"
+    assert "Previous state restored." in result.text
 
 
 def test_a_store_collection_reads_as_its_store_and_an_owner_name_wins(conn):

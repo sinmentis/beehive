@@ -3,6 +3,66 @@
   let feedbackMessage = "";
   let fallbackFocusSelector = "";
   let refocusSlot = null;
+  let noticeReturnFocus = null;
+  let readingWidth = document.body.clientWidth;
+  const narrowReading = () => readingWidth <= 880;
+  const preparedDisclosures = new WeakSet();
+
+  const revealCurrentChapter = () => {
+    const rail = document.querySelector(".page-reading .toc");
+    const current = rail?.querySelector(":scope > li > a[aria-current]");
+    if (!narrowReading() || !rail || !current) return;
+    const bounds = rail.getBoundingClientRect();
+    const active = current.getBoundingClientRect();
+    if (active.left < bounds.left || active.right > bounds.right) {
+      rail.scrollLeft += active.left - bounds.left - Math.max(0, (bounds.width - active.width) / 2);
+    }
+  };
+
+  const prepareReadingControls = () => {
+    document.querySelectorAll("details[data-responsive-disclosure]").forEach((details) => {
+      if (preparedDisclosures.has(details)) return;
+      preparedDisclosures.add(details);
+      details.open = !narrowReading();
+    });
+    revealCurrentChapter();
+  };
+  prepareReadingControls();
+  new ResizeObserver(() => {
+    const width = document.body.clientWidth;
+    if (width === readingWidth) return;
+    const wasNarrow = narrowReading();
+    readingWidth = width;
+    if (wasNarrow !== narrowReading()) {
+      document.querySelectorAll("details[data-responsive-disclosure]").forEach((details) => {
+        details.open = !narrowReading();
+        if (!details.open && details.contains(document.activeElement)) {
+          details.querySelector("summary")?.focus({ preventScroll: true });
+        }
+      });
+    }
+    revealCurrentChapter();
+  }).observe(document.body);
+  window.addEventListener("pageshow", revealCurrentChapter);
+  document.fonts?.ready.then(revealCurrentChapter);
+  document.addEventListener("click", (event) => {
+    const menu = document.querySelector(".reading-owner-menu[open]");
+    if (narrowReading() && menu && !menu.contains(event.target)) menu.open = false;
+    const dismiss = event.target.closest("[data-dismiss-reading-action]");
+    if (!dismiss) return;
+    event.preventDefault();
+    document.getElementById("reading-action-notice")?.replaceChildren();
+    if (noticeReturnFocus?.isConnected) noticeReturnFocus.focus({ preventScroll: true });
+  });
+  document.addEventListener("keydown", (event) => {
+    const menu = document.querySelector(".reading-owner-menu[open]");
+    if (event.key === "Escape" && narrowReading() && menu) {
+      menu.open = false;
+      menu.querySelector("summary")?.focus({ preventScroll: true });
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  });
 
   document.addEventListener("htmx:beforeRequest", (event) => {
     // A form posted by htmx is triggered by the form, but the focus key and the announcement
@@ -42,6 +102,7 @@
   };
 
   document.addEventListener("htmx:afterSwap", () => {
+    prepareReadingControls();
     if (refocusSlot) {
       const region = document.getElementById(refocusSlot.region);
       const rows = region ? [...region.querySelectorAll("tr.kb-row")] : [];
@@ -68,6 +129,10 @@
       }
     }
     announce(feedbackMessage);
+    if (document.activeElement instanceof HTMLElement
+        && !document.activeElement.closest("#reading-action-notice")) {
+      noticeReturnFocus = document.activeElement;
+    }
 
     focusKey = "";
     feedbackMessage = "";

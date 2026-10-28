@@ -555,6 +555,9 @@ def test_preview_and_test_send_do_not_consume_pending_events(
     preview = authed_client.get(f"/admin/email-groups/{group_id}/preview")
     assert preview.status_code == 200
     assert "The central bank held rates." in preview.text
+    assert "Website links are off." in preview.text
+    assert 'href="/admin/?tab=groups#site-address"' in preview.text
+    assert 'sandbox="allow-popups allow-popups-to-escape-sandbox"' in preview.text
 
     notifier = MagicMock()
     monkeypatch.setattr(

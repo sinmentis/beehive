@@ -3,6 +3,11 @@ from __future__ import annotations
 CATALOGS = {
     "en": {
         "background.digest_header": "{product} Daily Digest",
+        "background.digest_open_site": "Open {product}",
+        "background.digest_open_channel": "Open channel",
+        "background.digest_open_brief": "Open saved brief",
+        "background.digest_contents": "Channels: {channels} · Items: {count}",
+        "background.digest_snapshot_note": "Content reflects when it was collected. Prices, availability and deadlines can change.",
         "background.digest_empty_state": "No new items today \u2014 already checked.",
         "background.source_fetch_warning": "{source_type} source fetch failed: {error}",
         "background.source_failure_streak": {
@@ -52,6 +57,11 @@ CATALOGS = {
     },
     "zh-CN": {
         "background.digest_header": "{product}每日摘要",
+        "background.digest_open_site": "打开{product}",
+        "background.digest_open_channel": "打开频道",
+        "background.digest_open_brief": "打开已生成的简报",
+        "background.digest_contents": "{channels} 个频道 · {count} 条内容",
+        "background.digest_snapshot_note": "内容反映采集时的信息。价格、库存和截止时间可能变化。",
         "background.digest_empty_state": "今天没有新内容，已确认检查过。",
         "background.source_fetch_warning": "{source_type} 信源抓取失败：{error}",
         "background.source_failure_streak": {
@@ -101,6 +111,11 @@ CATALOGS = {
     },
     "ja": {
         "background.digest_header": "{product}デイリーダイジェスト",
+        "background.digest_open_site": "{product}を開く",
+        "background.digest_open_channel": "チャンネルを開く",
+        "background.digest_open_brief": "保存済みブリーフを開く",
+        "background.digest_contents": "{channels} チャンネル · {count} 件",
+        "background.digest_snapshot_note": "内容は収集時点の情報です。価格、在庫、締切は変わる場合があります。",
         "background.digest_empty_state": "本日新着はありません。確認済みです。",
         "background.source_fetch_warning": "{source_type} ソースの取得に失敗しました：{error}",
         "background.source_failure_streak": {
@@ -151,6 +166,11 @@ CATALOGS = {
     },
     "ko": {
         "background.digest_header": "{product} 일일 다이제스트",
+        "background.digest_open_site": "{product} 열기",
+        "background.digest_open_channel": "채널 열기",
+        "background.digest_open_brief": "저장된 브리핑 열기",
+        "background.digest_contents": "채널 {channels}개 · 항목 {count}개",
+        "background.digest_snapshot_note": "내용은 수집 당시의 정보입니다. 가격, 재고, 마감 시간은 바뀔 수 있습니다.",
         "background.digest_empty_state": "오늘은 새로운 항목이 없습니다. 이미 확인했습니다.",
         "background.source_fetch_warning": "{source_type} 소스 수집 실패: {error}",
         "background.source_failure_streak": {
@@ -200,6 +220,11 @@ CATALOGS = {
     },
     "es": {
         "background.digest_header": "Resumen diario de {product}",
+        "background.digest_open_site": "Abrir {product}",
+        "background.digest_open_channel": "Abrir canal",
+        "background.digest_open_brief": "Abrir resumen guardado",
+        "background.digest_contents": "Canales: {channels} · Contenidos: {count}",
+        "background.digest_snapshot_note": "El contenido refleja el momento de la recopilación. Los precios, la disponibilidad y los plazos pueden cambiar.",
         "background.digest_empty_state": "Hoy no hay contenido nuevo, ya se ha comprobado.",
         "background.source_fetch_warning": "Error al obtener la fuente {source_type}: {error}",
         "background.source_failure_streak": {
@@ -252,6 +277,11 @@ CATALOGS = {
     },
     "fr": {
         "background.digest_header": "R\u00e9sum\u00e9 quotidien {product}",
+        "background.digest_open_site": "Ouvrir {product}",
+        "background.digest_open_channel": "Ouvrir le canal",
+        "background.digest_open_brief": "Ouvrir le résumé enregistré",
+        "background.digest_contents": "Canaux : {channels} · Contenus : {count}",
+        "background.digest_snapshot_note": "Le contenu reflète le moment de sa collecte. Les prix, la disponibilité et les échéances peuvent changer.",
         "background.digest_empty_state": (
             "Rien de nouveau aujourd'hui, d\u00e9j\u00e0 v\u00e9rifi\u00e9."
         ),
@@ -308,6 +338,11 @@ CATALOGS = {
     },
     "de": {
         "background.digest_header": "{product} Tages\u00fcberblick",
+        "background.digest_open_site": "{product} öffnen",
+        "background.digest_open_channel": "Kanal öffnen",
+        "background.digest_open_brief": "Gespeicherten Bericht öffnen",
+        "background.digest_contents": "Kanäle: {channels} · Einträge: {count}",
+        "background.digest_snapshot_note": "Die Inhalte entsprechen dem Stand bei der Erfassung. Preise, Verfügbarkeit und Fristen können sich ändern.",
         "background.digest_empty_state": "Heute keine neuen Inhalte, bereits gepr\u00fcft.",
         "background.source_fetch_warning": (
             "Abruf der Quelle {source_type} fehlgeschlagen: {error}"

@@ -14,6 +14,10 @@
 {%- if list_view %}<span class="nw">{{ text }}</span>{% else %}<a class="meta-link nw" href="{{ href }}">{{ text }}</a>{% endif -%}
 {%- endmacro %}
 
+{% macro desk_empty(section) -%}
+<div class="empty"><p>{{ section.empty_message }}</p><a class="lnk" href="{{ section.empty_href }}">{{ section.empty_link_label }}</a></div>
+{%- endmacro %}
+
 {% block content %}
 <div class="adm-head">
   <div>
@@ -104,7 +108,7 @@
     </tbody>
   </table></div>
   {% else %}
-  <p class="empty">{{ t('web.reading.desk.no_stories') }}</p>
+  {{ desk_empty(section) }}
   {% endif %}
   {% elif section.kind == 'monitor' %}
   {% if section.listings %}
@@ -120,18 +124,17 @@
         </div></td>
         <td class="c-price-now" data-label="{{ t('web.reading.col_price') }}">
           {%- if listing.price_label %}<span class="price-now">{{ listing.price_label }}</span>{% else %}<span class="muted">—</span>{% endif %}
-          {%- if listing.discount_percent and listing.compare_at_price_label %}<small><span class="sr-only">{{ t('web.reading.was_price') }} </span><s class="price-was">{{ listing.compare_at_price_label }}</s></small>{% endif %}
-          {%- if listing.change and listing.change.event_type == 'price_drop' %}<small class="chg">{{ t('background.digest_event_price_drop') }}</small>
-          {%- elif listing.change and listing.change.event_type == 'back_in_stock' %}<small class="chg">{{ t('background.digest_event_back_in_stock') }}</small>{% endif -%}
+          {{- rd.reference_price(listing) }}
+          {{- rd.change_line(listing) }}
         </td>
-        <td class="c-nw" data-label="{{ t('web.reading.col_discount') }}">{% if listing.discount_percent %}<span class="price-off">−{{ listing.discount_percent }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="c-discount" data-label="{{ t('web.reading.col_discount') }}">{{ rd.reference_discount(listing.discount_percent) }}</td>
         <td class="c-score" data-label="{{ t('web.dashboard.column_score') }}">{{ rd.score(listing.ai_score) }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table></div>
   {% else %}
-  <p class="empty">{{ t('web.reading.desk.no_listings') }}</p>
+  {{ desk_empty(section) }}
   {% endif %}
   {% else %}
   {% if section.lots %}
@@ -156,7 +159,7 @@
     </tbody>
   </table></div>
   {% else %}
-  <p class="empty">{{ t('web.reading.desk.no_lots', score=section.lot_minimum_score) }}</p>
+  {{ desk_empty(section) }}
   {% endif %}
   {% endif %}
 </section>

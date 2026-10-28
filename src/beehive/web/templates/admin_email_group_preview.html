@@ -29,7 +29,10 @@
   <div><dt>{{ t('web.admin.email_group.preview_warnings') }}</dt><dd>{{ preview.warning_count }}</dd></div>
 </dl>
 <h2 id="body"><span class="no">2.2</span><span>{{ t('web.admin.task.email_format') }}</span></h2>
-<iframe class="mail-preview" sandbox referrerpolicy="no-referrer" title="{{ t('web.admin.task.email_format') }}" srcdoc="{{ preview.html }}"></iframe>
+{% if not preview.site_url_configured %}
+{% call ui.note('info') %}<div class="note-body">{{ t('web.admin.site_url.missing') }}</div><div class="note-act"><a class="lnk" href="/admin/?tab=groups#site-address">{{ t('web.admin.site_url.heading') }}</a></div>{% endcall %}
+{% endif %}
+<iframe class="mail-preview" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="{{ t('web.admin.task.email_format') }}" srcdoc="{{ preview.html }}"></iframe>
 <details class="requested-rules"><summary>{{ t('web.admin.task.plain_text') }}</summary><pre class="plain">{{ preview.plain_text }}</pre></details>
 {% else %}
 <div class="empty"><b>{{ t('web.admin.email_group.preview_empty_heading') }}</b>{{ t('web.admin.email_group.preview_empty_body') }}</div>

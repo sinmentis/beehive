@@ -3,6 +3,7 @@ unsuppressed, undelivered item_events -- never from an item's fetched_at waterma
 deployment can never backfill historical rows into an email. Each due group sends at most one
 email covering every member Channel with something to say, marks exactly the included event ids
 delivered, and advances its checkpoints; an empty evaluation advances only last_checked_at."""
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
@@ -11,6 +12,7 @@ import pytest
 from beehive.connectors.base import RawItem
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
+from beehive.db.deep_reads import claim_deep_read, complete_deep_read_success, request_deep_read
 from beehive.db.email_groups import assign_channel, create_email_group, get_email_group, mark_sent
 from beehive.db.item_events import (
     mark_events_delivered,
@@ -33,6 +35,7 @@ from beehive.digest.send import (
 )
 from beehive.email_routing import ResolvedRecipient
 from beehive.localization import localizer_for
+from beehive.site_links import save_site_url
 
 DEFAULT_RECIPIENT = ResolvedRecipient("default@example.com", "database")
 RUN_TIME = datetime(2026, 7, 13, 20, 0, tzinfo=timezone.utc)
@@ -116,6 +119,43 @@ def test_a_changed_cutoff_filters_ready_mail_consistently_in_preview_and_deliver
     assert notifier.send.call_args.args[1] == preview.plain_text
     assert _delivered_at(conn, high) == _SENT_AT
     assert _delivered_at(conn, low) is None
+
+
+def test_configured_links_and_fifty_item_cap_match_preview_and_actual_delivery(conn):
+    channel_id = create_channel(conn, "Deals", "deals", highlight_count=50)
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    items_and_events = [
+        _stage_event(
+            conn, source_id, f"offer-{index}", title=f"Offer {index}",
+            url=f"https://shop.example/{index}", summary=f"Offer {index}: 30% off",
+        )
+        for index in range(50)
+    ]
+    group_id = _make_group(conn, channel_id)
+    save_site_url(conn, "https://news.example/portal")
+    item_id = items_and_events[0][0]
+    request_deep_read(conn, item_id, RUN_TIME)
+    claim = claim_deep_read(conn, item_id, RUN_TIME, lease_seconds=600)
+    complete_deep_read_success(
+        conn, item_id, claim.request_version, claim.claim_token,
+        json.dumps({
+            "item_id": str(item_id), "bottom_line": "A saved result", "key_findings": ["Evidence"],
+            "important_figures": [], "why_it_matters": "Useful", "limitations": "Synthetic",
+        }),
+        "en", RUN_TIME,
+    )
+    request_deep_read(conn, item_id, RUN_TIME, regenerate=True)
+    before = [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")]
+    preview = build_email_group_digest_preview(conn, get_email_group(conn, group_id), _EN, now=RUN_TIME)
+    assert preview.event_count == 50
+    assert preview.site_url_configured
+    assert preview.html.count('href="https://shop.example/') == 50
+    assert f"/items/{item_id}/brief?origin=channel&amp;channel_id={channel_id}" in preview.html
+    assert [tuple(row) for row in conn.execute("SELECT * FROM item_events ORDER BY id")] == before
+    notifier = MagicMock()
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+    assert notifier.send.call_args.args[1:] == (preview.plain_text, preview.html)
+    assert all(_delivered_at(conn, event_id) == _SENT_AT for _, event_id in items_and_events)
 
 
 def test_all_ready_mail_below_the_current_cutoff_sends_nothing(conn):
@@ -330,7 +370,7 @@ def test_mixed_editorial_monitor_tracker_group_renders_in_one_email(conn):
     assert "[Price drop \u00b7 200 \u2192 150] Cheap jacket" in plain_text
     assert "[Back in stock] Restocked boots" in plain_text
     # Tracker discovery carries its localized label and closing time.
-    assert "[New tracked item \u00b7 Closes: 2026-08-01T10:00:00] Rare coin lot" in plain_text
+    assert "[New tracked item \u00b7 Closes: 2026-08-01 22:00 NZST] Rare coin lot" in plain_text
     # HTML shows the same semantics, still no raw JSON payload.
     assert "Price drop" in html
     assert "200 \u2192 150" in html

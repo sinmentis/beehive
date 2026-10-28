@@ -5,6 +5,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -301,7 +302,7 @@ def test_stopping_a_watch_refreshes_the_list_counts_and_warnings_together(conn, 
     assert 'name="next_url" value="/watchlist?status=all&amp;q=Lot"' in row
     # The whole list region, the head counts and the rail count come from the fresh page.
     assert 'hx-target="#watch-body" hx-select="#watch-body" hx-swap="outerHTML"' in row
-    assert 'hx-select-oob="#watch-meta,#toc-count-watchlist"' in row
+    assert 'hx-select-oob="#watch-meta,#toc-count-watchlist,#reading-action-notice"' in row
     assert 'form="watchlist-bulk-form"' in row
 
     for headers in ({"HX-Request": "true"}, {}):
@@ -314,7 +315,11 @@ def test_stopping_a_watch_refreshes_the_list_counts_and_warnings_together(conn, 
             "csrf_token": "csrf1", "origin": "watchlist",
             "next_url": "/watchlist?status=all&q=Lot"})
         assert resp.status_code == 303
-        assert resp.headers["location"] == "/watchlist?status=all&q=Lot"
+        target = urlsplit(resp.headers["location"])
+        assert target.path == "/watchlist" and not target.netloc
+        query = parse_qs(target.query)
+        assert query["status"] == ["all"] and query["q"] == ["Lot"]
+        assert query["reading_action"]
 
     fresh = authed_client.get("/watchlist?status=all&q=Lot").text
     assert f"watchlist-item-{failing}" not in fresh
@@ -328,7 +333,8 @@ def test_stopping_a_watch_never_redirects_off_site(conn, authed_client):
     item_id = _lot(c, "lot")
     resp = authed_client.post(f"/items/{item_id}/watch", data={
         "csrf_token": "csrf1", "origin": "watchlist", "next_url": "https://example.com/"})
-    assert resp.headers["location"] == "/watchlist"
+    target = urlsplit(resp.headers["location"])
+    assert target.path == "/watchlist" and not target.netloc and not target.scheme
 
 
 def test_watchlist_ignores_an_unknown_retry_result(conn, authed_client):
