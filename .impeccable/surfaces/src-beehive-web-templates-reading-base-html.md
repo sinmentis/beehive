@@ -15,8 +15,9 @@ The Owner, on desktop screens from laptop to 4K, and anonymous readers. The Owne
 
 ## Structure
 
-The brand shows the product name and short build revision, without a redundant Reading label.
-The full revision is available on hover; an unversioned development build shows `dev`.
+The brand shows the product name and numeric package version, such as `v1.0.0`, without a
+redundant Reading label. The tooltip uses the same numeric version. Commit IDs stay in
+diagnostic metadata rather than replacing the version, including on development installs.
 
 The rail lists Featured, one chapter per Channel and the Archive. Numbered section headings carry state or counts; search groups hits by Channel and preserves their read/score scope when opening it. Every page opens with its h1, useful counts and freshness. Channel source/fetch facts and scoring rules live in Channel details; catalogs place those facts, secondary filters and page-size choices in Filters and details. Primary search and sort/status remain outside it. Shared banded story/listing/lot rows and ruled gallery plates retain their workflows and wide-screen lanes. Brief warnings and failures remain boxed notes. Individual read/unwatch recovery uses a visible action notice. History is closed unless requested, paged or matched by search. A brief remains a reading column with figures and source beside it, and an exhausted page keeps a useful pager.
 

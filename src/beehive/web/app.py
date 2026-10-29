@@ -8,6 +8,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from importlib.metadata import version as package_version
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -177,7 +178,8 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     finally:
         conn.close()
 
-    app = FastAPI()
+    app_version = package_version("beehive")
+    app = FastAPI(version=app_version)
     app.add_middleware(_SecurityHeadersMiddleware)
     app.state.db_path = db_path
     app.state.session_secret = _resolve_session_secret(session_secret)
@@ -190,7 +192,7 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
     app.state.templates.env.globals.update(
         asset_version=_static_asset_version(),
         build_revision=revision,
-        build_version=revision[:7],
+        app_version=app_version,
     )
     app.state.templates.env.filters["count"] = format_count
     app.state.templates.env.filters["short_time"] = _short_time_filter

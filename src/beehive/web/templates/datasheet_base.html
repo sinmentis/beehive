@@ -23,8 +23,8 @@
 {% set current = shell_nav.chapters|selectattr('key', 'equalto', current_chapter)|first %}
 <div class="adm-shell">
   <aside class="adm-toc">
-    <a class="adm-brand" href="{{ shell_nav.home_href }}" aria-label="{{ shell_nav.home_aria }} ({{ t('common.version', version=build_version) }})">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span class="brand-version" title="{{ t('common.version', version=build_revision) }}">{{ build_version }}</span>{% if shell_nav.label %}<span>{{ shell_nav.label }}</span>{% endif %}
+    <a class="adm-brand" href="{{ shell_nav.home_href }}" aria-label="{{ shell_nav.home_aria }} ({{ t('common.version', version=app_version) }})">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span class="brand-version" title="{{ t('common.version', version=app_version) }}" data-build-revision="{{ build_revision }}">v{{ app_version }}</span>{% if shell_nav.label %}<span>{{ shell_nav.label }}</span>{% endif %}
     </a>
     <nav aria-label="{{ shell_nav.toc_aria }}">
       <ol class="toc">

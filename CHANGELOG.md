@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-29
+
 ### Added
 
+- Numeric releases from the canonical Python package version, immutable Git release tags,
+  version-reuse and regression checks in CI, and version-labelled container images.
+- Task-centered channel administration and clearer mobile reading, search recovery, single-item
+  undo, price references and email return links.
 - PartyMap Civic automation: Owner-approved Civic Watches gather New Zealand official, party and
   licensed media sources daily, generate and independently verify four-locale entries, and seal
   them into Civic Batches delivered through a local two-phase spool. Civic runs on two
@@ -138,6 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The brand displays the numeric application version instead of a commit hash. Commit IDs
+  remain diagnostic metadata, and the redundant Reading label is removed.
 - Certificates that chain to the compromised eMudhra intermediate CAs are rejected. The shared
   image upgrades `ca-certificates` when it is built, and the Civic image pins patched Python and
   uv images and certifi 2026.10.19.
@@ -168,7 +176,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they run on a worker thread. A server that trickled its response one byte at a time could hold
   them far longer.
 
-## [0.1.0] - 2026-07-14
+## 0.1.0 - 2026-07-14
 
 Initial public alpha release.
 
@@ -189,4 +197,5 @@ Initial public alpha release.
   - New Zealand Government official RSS
   - Federal Reserve official RSS
 
-[0.1.0]: https://github.com/sinmentis/beehive/releases/tag/v0.1.0
+[Unreleased]: https://github.com/sinmentis/beehive/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/sinmentis/beehive/releases/tag/v1.0.0

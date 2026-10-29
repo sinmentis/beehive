@@ -6,7 +6,7 @@
 {% block shell %}
 <main id="main-content" class="adm-login err-page">
   <section class="adm-page" aria-labelledby="err-title">
-    <div class="adm-run"><a class="adm-brand" href="/" aria-label="{{ t('web.nav.brand_aria', product=t('common.product_name')) }} ({{ t('common.version', version=build_version) }})"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span class="brand-version" title="{{ t('common.version', version=build_revision) }}">{{ build_version }}</span></a><span class="err-code">{{ status_code }}</span></div>
+    <div class="adm-run"><a class="adm-brand" href="/" aria-label="{{ t('web.nav.brand_aria', product=t('common.product_name')) }} ({{ t('common.version', version=app_version) }})"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span class="brand-version" title="{{ t('common.version', version=app_version) }}" data-build-revision="{{ build_revision }}">v{{ app_version }}</span></a><span class="err-code">{{ status_code }}</span></div>
     <h1 id="err-title">{{ error_title }}</h1>
     <p class="adm-meta">{{ error_message }}</p>
     <div class="err-act"><a class="btn btn-primary" href="/">{{ t('web.error.back_home') }}</a></div>

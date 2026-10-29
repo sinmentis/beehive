@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Release Beehive from a clean commit, in the order the schema versioning needs:
 #
-#   deploy/release.sh build            build localhost/beehive:<sha> from HEAD (clean tree only)
+#   deploy/release.sh version          check and print the numeric package version
+#   deploy/release.sh build            build numeric and SHA image tags from a clean commit
 #   deploy/release.sh migrate <tag>    back up, then run that image's `--mode migrate` once
 #   deploy/release.sh promote <tag>    keep the old image as :rollback, point :latest at <tag>,
 #                                      restart the always-on units, wait for /readyz, and check
 #                                      that every unit stays up
-#   deploy/release.sh prune            drop SHA-tagged images other than :latest and :rollback
+#   deploy/release.sh prune            drop release images other than :latest and :rollback
 #
 # Every unit is always on (the web app and two workers, ADR-0012), so promote restarts them all.
 # Roll back with `deploy/release.sh promote rollback`, which swaps :latest and :rollback. That
@@ -43,16 +44,23 @@ require_tag() {
   "$PODMAN" image exists "$IMAGE:$1" || die "no image $IMAGE:$1"
 }
 
+cmd_version() {
+  python3 "$REPO/scripts/release_version.py"
+}
+
 cmd_build() {
   cd "$REPO"
   [[ -z "$(git status --porcelain)" ]] || die "working tree is dirty; release only committed code"
-  local sha short
+  local sha short version
   sha="$(git rev-parse HEAD)"
   short="$(git rev-parse --short=7 HEAD)"
+  version="$(cmd_version)"
   "$PODMAN" build --build-arg "BEEHIVE_REVISION=$sha" \
-    --label "org.opencontainers.image.revision=$sha" -t "$IMAGE:$short" \
+    --label "org.opencontainers.image.revision=$sha" \
+    --label "org.opencontainers.image.version=$version" \
+    -t "$IMAGE:$version" -t "$IMAGE:$short" \
     -f Containerfile . >&2
-  echo "$short"
+  echo "$version"
 }
 
 cmd_migrate() {
@@ -114,7 +122,7 @@ cmd_prune() {
     fi
   done
   while read -r ref id; do
-    [[ "${ref##*:}" =~ ^[0-9a-f]{7}$ ]] || continue
+    [[ "${ref##*:}" =~ ^([0-9a-f]{7}|[0-9]+\.[0-9]+\.[0-9]+)$ ]] || continue
     [[ " ${keep[*]} " == *" $id "* ]] && continue
     "$PODMAN" untag "$ref"
     removed+=("$id")
@@ -128,9 +136,10 @@ cmd_prune() {
 }
 
 case "${1:-}" in
+  version) cmd_version ;;
   build) cmd_build ;;
   migrate) cmd_migrate "${2:-}" ;;
   promote) cmd_promote "${2:-}" ;;
   prune) cmd_prune ;;
-  *) die "usage: $0 build | migrate <tag> | promote <tag> | prune" ;;
+  *) die "usage: $0 version | build | migrate <tag> | promote <tag> | prune" ;;
 esac

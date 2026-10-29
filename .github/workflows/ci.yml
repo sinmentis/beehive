@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       # setup-uv publishes only full version tags, so pin the release commit.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -27,6 +29,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev --extra ai --extra email
+
+      - name: Check release version
+        run: uv run --frozen python -m scripts.release_version
 
       - name: Lint
         run: uv run --frozen ruff check .

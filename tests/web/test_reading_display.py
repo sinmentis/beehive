@@ -114,10 +114,11 @@ def _cookie(response, name):
     ("/admin/login", 200),
     ("/missing-page", 404),
 ])
-def test_brand_shows_the_release_revision_across_shells(conn, monkeypatch, route, status):
+def test_brand_shows_the_numeric_package_version_across_shells(conn, monkeypatch, route, status):
     path, _ = conn
     revision = "a1b2c3d4" * 5
     monkeypatch.setenv("BEEHIVE_REVISION", revision)
+    monkeypatch.setattr("beehive.web.app.package_version", lambda _: "1.2.3")
 
     response = _client(path, owner=route != "/admin/login").get(
         route, headers={"Accept": "text/html"},
@@ -125,15 +126,17 @@ def test_brand_shows_the_release_revision_across_shells(conn, monkeypatch, route
 
     assert response.status_code == status
     version = re.search(
-        r'<span class="brand-version" title="([^"]+)">([^<]+)</span>', response.text,
+        r'<span class="brand-version" title="([^"]+)"[^>]*>([^<]+)</span>', response.text,
     )
     assert version is not None
-    assert version.groups() == (f"Version {revision}", revision[:7])
+    assert version.groups() == ("Version 1.2.3", "v1.2.3")
+    assert f'data-build-revision="{revision}"' in response.text
 
 
 @pytest.mark.parametrize("revision", [None, "", "  "])
-def test_brand_identifies_unversioned_builds_as_development(conn, monkeypatch, revision):
+def test_brand_keeps_the_package_version_without_commit_metadata(conn, monkeypatch, revision):
     path, _ = conn
+    monkeypatch.setattr("beehive.web.app.package_version", lambda _: "1.2.3")
     if revision is None:
         monkeypatch.delenv("BEEHIVE_REVISION", raising=False)
     else:
@@ -141,7 +144,16 @@ def test_brand_identifies_unversioned_builds_as_development(conn, monkeypatch, r
 
     response = _client(path).get("/")
 
-    assert '<span class="brand-version" title="Version dev">dev</span>' in response.text
+    assert 'title="Version 1.2.3" data-build-revision="dev">v1.2.3</span>' in response.text
+
+
+def test_openapi_uses_the_same_numeric_package_version(conn, monkeypatch):
+    path, _ = conn
+    monkeypatch.setattr("beehive.web.app.package_version", lambda _: "1.2.3")
+
+    response = _client(path).get("/openapi.json")
+
+    assert response.json()["info"]["version"] == "1.2.3"
 
 
 @pytest.mark.parametrize("language", [language.code for language in SUPPORTED_LANGUAGES])

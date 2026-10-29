@@ -98,19 +98,42 @@ Restore:
 
 ## Releases
 
-Release only committed code, identified by its git SHA. `latest` is just a pointer that the
-Quadlet units follow; the image a unit ran is always traceable through its
-`org.opencontainers.image.revision` label.
+`pyproject.toml`'s `project.version` is the single source for the application version. Releases
+use numeric `MAJOR.MINOR.PATCH` versions: patch for fixes, minor for compatible features, and
+major for breaking changes. The header displays the installed package version as `v1.0.0`,
+including on a local install. This is separate from the database schema version.
 
-The same SHA is baked into `BEEHIVE_REVISION`. The brand line displays its first seven characters;
-hovering shows the full revision. Builds without release metadata display `dev`.
+Before committing a release, bump the version and update `CHANGELOG.md`:
 
 ```bash
-TAG=$(deploy/release.sh build)       # refuses a dirty working tree; tags localhost/beehive:<sha>
-deploy/release.sh migrate "$TAG"     # takes a backup, then migrates the schema exactly once
-deploy/release.sh promote "$TAG"     # old image becomes :rollback, :latest -> $TAG, waits for /readyz
-deploy/release.sh prune              # keep only :latest and :rollback among SHA-tagged images
+uv version --bump patch --no-sync   # use minor or major when appropriate; updates uv.lock too
+uv sync --frozen --extra dev --extra ai --extra email
+deploy/release.sh version          # validates and prints the numeric version
 ```
+
+Commit and push the changes, then wait for CI. CI and the build reject a version that was
+already released from another commit, or one older than the latest published version.
+Rebuilding the exact commit of an existing release is allowed. Published `vMAJOR.MINOR.PATCH`
+tags are immutable; a later fix gets a new version instead of moving a tag.
+
+Build only from a clean committed checkout. The image receives both a numeric tag and a short-SHA
+alias, plus `org.opencontainers.image.version` and `org.opencontainers.image.revision` labels.
+`BEEHIVE_REVISION` and the header's diagnostic data attribute retain the commit for tracing;
+the hash is never the displayed application version. `latest` is just the pointer followed by
+the Quadlet units.
+
+```bash
+TAG=$(deploy/release.sh build)       # prints the numeric image tag, such as 1.0.0
+deploy/release.sh migrate "$TAG"     # takes a backup, then migrates the schema exactly once
+git tag -a "v$TAG" HEAD -m "v$TAG"
+git push origin "refs/tags/v$TAG"
+deploy/release.sh promote "$TAG"     # old image becomes :rollback, :latest -> $TAG, waits for /readyz
+deploy/release.sh prune              # keep only the current and rollback release images
+```
+
+After the healthy deployment, publish the matching GitHub Release with a short summary from
+`CHANGELOG.md`. Release tags and GitHub Releases form the permanent version history. Fetch tags
+before preparing a release; CI checks out the full history for the same validation.
 
 The schema carries a version (`PRAGMA user_version`) and the oldest compatible code version, so
 the order matters: migrate first, then promote. Every process still runs the version-gated
@@ -124,7 +147,7 @@ back is just a swap of `:latest` and `:rollback` (it restarts the always-on unit
 deploy/release.sh promote rollback
 ```
 
-`prune` only untags and removes Beehive's own SHA-tagged images; it never runs a host-wide
+`prune` only untags and removes Beehive's own numeric and SHA-tagged release images; it never runs a host-wide
 `podman image prune`, because other projects share the image store.
 
 ## One-time upgrade tasks

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -111,15 +112,17 @@ def harness(tmp_path):
     return setup, run, tags, images, calls
 
 
-def test_build_passes_the_same_commit_to_runtime_and_image_metadata(harness):
+def test_build_tags_the_package_version_and_keeps_commit_provenance(harness):
     setup, run, _, _, calls = harness
     setup({})
     revision = "abc1234" + "0" * 33
     git = calls.parent / "bin" / "git"
     git.write_text(
         "#!/bin/sh\n"
+        'if [ "$1" = "-C" ]; then shift 2; fi\n'
         'case "$*" in\n'
         '  "status --porcelain") exit 0;;\n'
+        '  "tag --list v*") exit 0;;\n'
         f'  "rev-parse HEAD") echo "{revision}";;\n'
         f'  "rev-parse --short=7 HEAD") echo "{revision[:7]}";;\n'
         "  *) exit 1;;\n"
@@ -130,10 +133,14 @@ def test_build_passes_the_same_commit_to_runtime_and_image_metadata(harness):
     result = run("build")
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == revision[:7]
+    version = tomllib.loads((_SCRIPT.parent.parent / "pyproject.toml").read_text())["project"]["version"]
+    assert result.stdout.strip() == version
     args = json.loads((calls.parent / "podman.json").read_text())["build_args"]
     assert args[args.index("--build-arg") + 1] == f"BEEHIVE_REVISION={revision}"
     assert args[args.index("--label") + 1] == f"org.opencontainers.image.revision={revision}"
+    assert f"org.opencontainers.image.version={version}" in args
+    assert f"{_IMAGE}:{version}" in args
+    assert f"{_IMAGE}:{revision[:7]}" in args
 
 
 def test_promote_keeps_the_previous_image_as_rollback(harness):
@@ -159,7 +166,7 @@ def test_promote_rollback_swaps_back_to_the_previous_image(harness):
     assert tags() == {"latest": "good", "rollback": "bad"}
 
 
-def test_prune_removes_only_unused_sha_tagged_images(harness):
+def test_prune_removes_only_unused_release_images(harness):
     setup, run, tags, images, _ = harness
     setup({
         "latest": "new",
@@ -167,6 +174,9 @@ def test_prune_removes_only_unused_sha_tagged_images(harness):
         "5f324c5": "new",
         "bf4553a": "old",
         "1234567": "stale",
+        "1.2.0": "new",
+        "1.1.0": "old",
+        "1.0.0": "stale",
         "civic-projection": "civic",
     })
 
@@ -174,7 +184,10 @@ def test_prune_removes_only_unused_sha_tagged_images(harness):
 
     assert result.returncode == 0, result.stderr
     assert "1234567" not in tags()
-    assert {"latest", "rollback", "5f324c5", "bf4553a", "civic-projection"} <= set(tags())
+    assert "1.0.0" not in tags()
+    assert {
+        "latest", "rollback", "5f324c5", "bf4553a", "1.2.0", "1.1.0", "civic-projection",
+    } <= set(tags())
     assert "stale" not in images()
     # Images the script did not untag, including untagged ones from other work, stay put.
     assert {"new", "old", "civic", "orphan"} <= set(images())
