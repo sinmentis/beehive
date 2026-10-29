@@ -41,9 +41,10 @@ body.adm{min-height:100vh;margin:0}
 .adm-shell{display:grid;grid-template-columns:216px minmax(0,1fr);min-height:100vh}
 .adm-toc{position:sticky;top:0;align-self:start;display:flex;flex-direction:column;gap:18px;
  height:100vh;height:100dvh;overflow:auto;padding:18px 12px 16px;background:var(--sheet);border-right:1px solid var(--rule)}
-.adm-brand{display:flex;align-items:center;gap:8px;padding:0 8px;font-weight:700;font-size:1rem}
+.adm-brand{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 8px;font-weight:700;font-size:1rem}
 .adm-brand svg{flex:none;width:18px;height:18px;fill:none;stroke:var(--ink);stroke-width:2.6;stroke-linejoin:round}
 .adm-brand span{font-weight:500;color:var(--ink-2)}
+.adm-brand .brand-version{font:400 .8125rem/1.75 var(--mono);white-space:nowrap}
 .toc{display:grid;gap:1px}
 .toc a{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:4px;min-height:32px;
  padding:4px 8px;border-radius:2px;color:var(--ink-2);transition:background-color .15s ease-out,color .15s ease-out}

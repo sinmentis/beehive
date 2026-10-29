@@ -107,6 +107,57 @@ def _cookie(response, name):
     return match.group(1) if match else None
 
 
+@pytest.mark.parametrize("route,status", [
+    ("/", 200),
+    ("/admin/", 200),
+    ("/watchlist", 200),
+    ("/admin/login", 200),
+    ("/missing-page", 404),
+])
+def test_brand_shows_the_release_revision_across_shells(conn, monkeypatch, route, status):
+    path, _ = conn
+    revision = "a1b2c3d4" * 5
+    monkeypatch.setenv("BEEHIVE_REVISION", revision)
+
+    response = _client(path, owner=route != "/admin/login").get(
+        route, headers={"Accept": "text/html"},
+    )
+
+    assert response.status_code == status
+    version = re.search(
+        r'<span class="brand-version" title="([^"]+)">([^<]+)</span>', response.text,
+    )
+    assert version is not None
+    assert version.groups() == (f"Version {revision}", revision[:7])
+
+
+@pytest.mark.parametrize("revision", [None, "", "  "])
+def test_brand_identifies_unversioned_builds_as_development(conn, monkeypatch, revision):
+    path, _ = conn
+    if revision is None:
+        monkeypatch.delenv("BEEHIVE_REVISION", raising=False)
+    else:
+        monkeypatch.setenv("BEEHIVE_REVISION", revision)
+
+    response = _client(path).get("/")
+
+    assert '<span class="brand-version" title="Version dev">dev</span>' in response.text
+
+
+@pytest.mark.parametrize("language", [language.code for language in SUPPORTED_LANGUAGES])
+def test_reading_brand_has_no_redundant_mode_label(conn, language):
+    path, connection = conn
+    save_language(connection, language)
+
+    response = _client(path).get("/")
+
+    assert response.context["shell_nav"]["label"] == ""
+    brand = re.search(r'<a class="adm-brand"[^>]*>(.*?)</a>', response.text, re.S)
+    assert brand is not None
+    assert brand.group(1).count("<span") == 1
+    assert 'class="brand-version"' in brand.group(1)
+
+
 def test_a_store_opens_as_a_gallery_and_an_auction_as_a_list(conn):
     path, connection = conn
     store_id, (listing_id,) = _store(connection)

@@ -186,7 +186,12 @@ def create_app(db_path: str, session_secret: str | None = None) -> FastAPI:
         directory=str(_TEMPLATES_DIR),
         context_processors=[_localization_context],
     )
-    app.state.templates.env.globals["asset_version"] = _static_asset_version()
+    revision = os.environ.get("BEEHIVE_REVISION", "").strip() or "dev"
+    app.state.templates.env.globals.update(
+        asset_version=_static_asset_version(),
+        build_revision=revision,
+        build_version=revision[:7],
+    )
     app.state.templates.env.filters["count"] = format_count
     app.state.templates.env.filters["short_time"] = _short_time_filter
     app.state.templates.env.filters["sized"] = sized_image_url

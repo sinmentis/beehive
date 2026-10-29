@@ -33,9 +33,12 @@ _FAKE_PODMAN = textwrap.dedent(
         with open(state_path, "w") as handle:
             json.dump(state, handle)
 
-    if args[:2] == ["image", "exists"]:
+    if args[0] == "build":
+        state["build_args"] = args[1:]
+        save()
+    elif args[:2] == ["image", "exists"]:
         sys.exit(0 if resolve(args[2]) else 1)
-    if args[:2] == ["image", "inspect"]:
+    elif args[:2] == ["image", "inspect"]:
         image_id = resolve(args[2])
         if image_id is None:
             sys.exit(125)
@@ -106,6 +109,31 @@ def harness(tmp_path):
         return json.loads(state.read_text())["images"]
 
     return setup, run, tags, images, calls
+
+
+def test_build_passes_the_same_commit_to_runtime_and_image_metadata(harness):
+    setup, run, _, _, calls = harness
+    setup({})
+    revision = "abc1234" + "0" * 33
+    git = calls.parent / "bin" / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  "status --porcelain") exit 0;;\n'
+        f'  "rev-parse HEAD") echo "{revision}";;\n'
+        f'  "rev-parse --short=7 HEAD") echo "{revision[:7]}";;\n'
+        "  *) exit 1;;\n"
+        "esac\n"
+    )
+    git.chmod(0o755)
+
+    result = run("build")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == revision[:7]
+    args = json.loads((calls.parent / "podman.json").read_text())["build_args"]
+    assert args[args.index("--build-arg") + 1] == f"BEEHIVE_REVISION={revision}"
+    assert args[args.index("--label") + 1] == f"org.opencontainers.image.revision={revision}"
 
 
 def test_promote_keeps_the_previous_image_as_rollback(harness):

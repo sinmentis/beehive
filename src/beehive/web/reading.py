@@ -56,7 +56,7 @@ def reading_nav(t: Localizer, *, channels: list[dict], featured_unread: int | No
     )
     return {
         "home_href": "/",
-        "label": t.text("web.reading.shell.label"),
+        "label": "",
         "home_aria": t.text("web.nav.brand_aria", product=t.text("common.product_name")),
         "toc_aria": t.text("web.reading.shell.toc_aria"),
         "chapters": chapters,

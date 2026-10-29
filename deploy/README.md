@@ -102,6 +102,9 @@ Release only committed code, identified by its git SHA. `latest` is just a point
 Quadlet units follow; the image a unit ran is always traceable through its
 `org.opencontainers.image.revision` label.
 
+The same SHA is baked into `BEEHIVE_REVISION`. The brand line displays its first seven characters;
+hovering shows the full revision. Builds without release metadata display `dev`.
+
 ```bash
 TAG=$(deploy/release.sh build)       # refuses a dirty working tree; tags localhost/beehive:<sha>
 deploy/release.sh migrate "$TAG"     # takes a backup, then migrates the schema exactly once

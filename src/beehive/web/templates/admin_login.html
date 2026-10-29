@@ -5,7 +5,7 @@
 {% block shell %}
 <main id="main-content" class="adm-login">
   <section class="adm-page" aria-labelledby="login-title">
-    <div class="adm-run"><span class="adm-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span>{{ t('web.nav.admin') }}</span></span></div>
+    <div class="adm-run"><span class="adm-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 20.2 7.4v9.2L12 21.2 3.8 16.6V7.4Z"/></svg>{{ t('common.product_name') }}<span class="brand-version" title="{{ t('common.version', version=build_revision) }}">{{ build_version }}</span><span>{{ t('web.nav.admin') }}</span></span></div>
     <h1 id="login-title">{{ t('web.admin.login.heading') }}</h1>
     <p class="adm-meta">{{ t('web.admin.login.lede') }}</p>
     {% if expired %}{{ ui.flash(t('web.admin.login.expired'), 'info') }}{% elif reading_private and for_reading %}{{ ui.flash(t('web.admin.login.private_reading'), 'info') }}{% endif %}

@@ -2801,7 +2801,10 @@ def test_archive_filters_by_search_query_param(conn, client):
 
 def test_dashboard_logo_links_to_home(client):
     resp = client.get("/")
-    assert re.search(r'<a class="adm-brand" href="/" aria-label="[^"]+ home">', resp.text)
+    assert re.search(
+        r'<a class="adm-brand" href="/" aria-label="[^"]+ home \(Version [^"]+\)">',
+        resp.text,
+    )
     assert (
         '<a href="/" aria-current="page"><span class="no">1</span><span>Featured</span>'
         in resp.text

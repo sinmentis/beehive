@@ -49,7 +49,8 @@ cmd_build() {
   local sha short
   sha="$(git rev-parse HEAD)"
   short="$(git rev-parse --short=7 HEAD)"
-  "$PODMAN" build --label "org.opencontainers.image.revision=$sha" -t "$IMAGE:$short" \
+  "$PODMAN" build --build-arg "BEEHIVE_REVISION=$sha" \
+    --label "org.opencontainers.image.revision=$sha" -t "$IMAGE:$short" \
     -f Containerfile . >&2
   echo "$short"
 }
