@@ -199,12 +199,14 @@ def test_reading_site_typography_is_readable_at_default_zoom():
 def test_editorial_channel_keeps_compact_readability_contract():
     css = (_STATIC_DIR / "admin.css").read_text()
     template = (_TEMPLATES_DIR / "channel_editorial.html").read_text()
+    macros = (_TEMPLATES_DIR / "_reading_macros.html").read_text()
 
     # The page is the datasheet's head over numbered sections of shared story rows.
     assert '{% extends "reading_base.html" %}' in template
     assert '{% import "_reading_macros.html" as rd with context %}' in template
     assert '<p class="adm-meta" id="chan-meta">' in template
-    assert '<p class="adm-meta chan-sources">' in template
+    assert "{{ rd.criteria(page, criteria_toggle_url) }}" in template
+    assert '<p class="adm-meta chan-sources">' in macros
     # Both sections sit in the region a read toggle re-renders, side by side on a wide sheet.
     assert (
         template.index('<div id="chan-stories" data-refocus-slot>')
