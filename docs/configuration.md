@@ -34,8 +34,10 @@ Keep credentials out of the repository. The server setup passes them in as Podma
 - **LLM model**: the model for future scores, summaries and deep reads. The default is
   `claude-haiku-4.5`. **Refresh list** loads the models your Copilot account offers. The research
   worker does the loading, so it has to be running. Old work isn't redone with the new model.
-- **Featured window**: how many days of stories the home page shows, 1 to 30. The default is 3.
-  Days follow Auckland time, and a story without a publish time counts from when it was fetched.
+- **News time window**: 1 to 30 rolling days for Featured news and default news-channel lists.
+  The default is 1 day, meaning the last 24 hours even across daylight-saving changes.
+  A story without a publication time counts from its first collection. Explicit searches and
+  the archive retain history; live store and auction listings are not age-limited by this setting.
 - **Who can read**: **Anyone with the link** (the default) or **Only you, after signing in**. It
   covers the home page, channels, the archive, search and deep reads. Links in emails still work;
   they open after you sign in.

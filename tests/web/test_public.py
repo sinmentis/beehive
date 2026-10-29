@@ -281,7 +281,7 @@ def test_home_desk_gives_each_channel_a_section_with_its_state(conn, authed_clie
     assert resp.status_code == 200
     assert f'<section class="desk-sec" id="desk-{channel_id}"' in resp.text
     assert '<span class="no">1.1</span><span>NZ Finance</span>' in resp.text
-    assert '<span class="desk-state nw">1 in 3 days</span>' in resp.text
+    assert '<span class="desk-state nw">1 in 24 hours</span>' in resp.text
     assert '<span class="desk-state nw">1 unread</span>' in resp.text
     assert (
         f'<a class="btn btn-sm" href="/channels/{channel_id}">Open channel'
@@ -1019,7 +1019,10 @@ def test_editorial_page_past_the_end_links_back_to_the_last_page_with_stories(co
     channel_id = create_channel(c, "NZ Finance", "economic news", highlight_count=1)
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     # One highlight, then 25 folded stories: 24 on page 1 and the last one on page 2.
-    _stories(c, source_id, 26, title="Rates")
+    _stories(
+        c, source_id, 26, title="Rates",
+        fetched_at=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+    )
 
     response = client.get(f"/channels/{channel_id}?page=5")
 
@@ -2901,7 +2904,7 @@ def test_home_rail_lists_featured_each_channel_and_the_archive(conn, client):
     assert 'class="channel-shelf"' not in response.text
 
 
-def test_dashboard_default_featured_window_includes_three_calendar_days(
+def test_dashboard_default_featured_window_is_the_last_24_hours(
     conn,
     client,
     monkeypatch,
@@ -2917,8 +2920,8 @@ def test_dashboard_default_featured_window_includes_three_calendar_days(
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     for external_id, fetched_at in (
-        ("outside", "2026-07-12T11:59:59"),
-        ("first-day", "2026-07-12T12:00:00"),
+        ("outside", "2026-07-14T08:59:59"),
+        ("first-day", "2026-07-14T09:00:00"),
         ("today", "2026-07-15T08:00:00"),
     ):
         insert_new(
@@ -2960,12 +2963,12 @@ def test_dashboard_uses_configured_featured_window(conn, client, monkeypatch):
 
     monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
     _, c = conn
-    app_state.set(c, "featured_window_days", "1")
+    app_state.set(c, "featured_window_days", "3")
     channel_id = create_channel(c, "NZ Finance", "economic news")
     source_id = create_source(c, channel_id, "reddit_subreddit", {"subreddit": "x"})
     for external_id, fetched_at in (
-        ("previous-day", "2026-07-14T11:59:59"),
-        ("today", "2026-07-14T12:00:00"),
+        ("previous-day", "2026-07-12T08:59:59"),
+        ("today", "2026-07-12T09:00:00"),
     ):
         insert_new(
             c,
@@ -3180,7 +3183,7 @@ def test_dashboard_channel_tab_count_excludes_subthreshold_items(conn, authed_cl
 
     response = authed_client.get("/")
 
-    assert '<span class="desk-state nw">1 in 3 days</span>' in response.text
+    assert '<span class="desk-state nw">1 in 24 hours</span>' in response.text
     assert '<span class="desk-state nw">1 unread</span>' in response.text
     assert "visible summary" in response.text
     assert "hidden summary" not in response.text
@@ -3461,7 +3464,7 @@ def test_dashboard_teaser_carries_an_exact_time_tooltip(conn, client, monkeypatc
     class FixedDatetime(datetime):
         @classmethod
         def now(cls, tz=None):
-            value = datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc)
+            value = datetime(2026, 7, 9, 9, 0, tzinfo=timezone.utc)
             return value if tz is None else value.astimezone(tz)
 
     monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)

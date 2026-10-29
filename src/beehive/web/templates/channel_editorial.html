@@ -7,6 +7,7 @@
   <div>
     <h1>{{ page.channel_name }}</h1>
     <p class="adm-meta" id="chan-meta"><span class="nw">{{ t('web.channel.editorial_label') }}</span>
+      · <span class="nw" title="{{ t('web.reading.news_time_help') }}">{{ t('web.reading.meta.window', count=page.window_days) if page.window_days is not none else t('web.reading.history_scope') }}</span>
       {%- if page.search %} · <span class="nw">{{ t('web.reading.results', count=page.matching_count, number=page.matching_count|count(locale)) }}</span>{% elif is_admin %} · <span class="nw">{{ t('web.reading.desk.unread', count=page.unread_count, number=page.unread_count|count(locale)) }}</span>{% endif %} · <span class="nw" title="{{ freshness_exact }}">{{ freshness }}</span>
     </p>
   </div>
@@ -24,6 +25,7 @@
     <form method="post" action="/channels/{{ page.channel_id }}/mark-all-read">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="next_url" value="{{ return_url }}">
+      {% if page.window_days is none %}<input type="hidden" name="include_history" value="true">{% endif %}
       <button class="btn" type="submit">{{ t('web.channel.mark_all_read') }}</button>
     </form>
     {%- endif %}</div>
@@ -56,7 +58,7 @@
       {% call(story) rd.lane_rows(page.highlighted) %}{{ rd.story_row(story, 'chan-stories', oob, page.channel_name, why=true, votes=true) }}{% endcall %}
     </table></div>
     {% else %}
-    <div class="empty" tabindex="-1" data-refocus-fallback>{% if page.search %}<b>{{ t('web.archive.empty_heading') }}</b>{{ t('web.reading.search_empty') }}{% else %}<b>{{ t('web.channel.empty_priority_heading') }}</b>{{ t('web.channel.empty_priority_body') }}{% endif %}</div>
+    <div class="empty" tabindex="-1" data-refocus-fallback>{% if page.search %}<b>{{ t('web.archive.empty_heading') }}</b>{{ t('web.reading.search_empty') }}{% elif page.criteria.total_count == 0 %}<b>{{ t('web.channel.empty_priority_heading') }}</b>{{ t('web.reading.channel.empty_window') }} <a class="lnk" href="/archive?channel={{ page.channel_id }}">{{ t('web.reading.desk.browse_history') }}</a>{% else %}<b>{{ t('web.channel.empty_priority_heading') }}</b>{{ t('web.channel.empty_priority_body') }}{% endif %}</div>
     {% endif %}
   </section>
   {% endif %}

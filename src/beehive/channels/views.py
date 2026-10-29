@@ -31,6 +31,11 @@ from beehive.db.item_events import latest_actionable_events_for_items
 from beehive.db.items import list_by_channel
 from beehive.db.tracker_watches import get_tracker_watch_states, list_tracker_watches
 from beehive.domain.channels import ChannelKind
+from beehive.featured import (
+    DEFAULT_FEATURED_WINDOW_DAYS,
+    featured_utc_bounds,
+    load_featured_window_days,
+)
 from beehive.localization import Localizer
 from beehive.scheduling import HOST_TZ
 from beehive.url_safety import is_safe_external_href, safe_external_href
@@ -384,6 +389,7 @@ class EditorialPage:
     matching_count: int = 0
     matching_unread_count: int = 0
     matching_read_count: int = 0
+    window_days: int | None = DEFAULT_FEATURED_WINDOW_DAYS
 
 
 def _editorial_item(
@@ -487,6 +493,7 @@ def _build_editorial_page(
     show_read: bool,
     query: EditorialQuery,
     criteria: ChannelCriteriaView,
+    window_days: int | None,
 ) -> EditorialPage:
     unread_count = sum(1 for item in items if not bool(_req_int(item, "is_read")))
     read_count = len(items) - unread_count
@@ -550,6 +557,7 @@ def _build_editorial_page(
         matching_count=len(filtered_rows),
         matching_unread_count=matching_unread,
         matching_read_count=len(matching_rows) - matching_unread,
+        window_days=window_days,
     )
 
 
@@ -1692,7 +1700,14 @@ def build_channel_page(
     channel_name = _req_str(channel, "name")
     minimum_score = _req_int(channel, "minimum_score")
 
-    all_items: list[Row] = list_by_channel(conn, channel_id)
+    selected_editorial_query = editorial_query if editorial_query is not None else EditorialQuery()
+    window_days = None
+    publication_bounds = {}
+    if definition.kind is ChannelKind.EDITORIAL and not (selected_editorial_query.search or "").strip():
+        window_days = load_featured_window_days(conn)
+        published_from, published_to = featured_utc_bounds(now, window_days)
+        publication_bounds = {"published_from": published_from, "published_to": published_to}
+    all_items: list[Row] = list_by_channel(conn, channel_id, **publication_bounds)
     matched_items: list[Row] = [
         item
         for item in all_items
@@ -1723,8 +1738,9 @@ def build_channel_page(
             is_owner=is_owner,
             csrf_token=csrf_token,
             show_read=show_read,
-            query=editorial_query if editorial_query is not None else EditorialQuery(),
+            query=selected_editorial_query,
             criteria=criteria,
+            window_days=window_days,
         )
     if definition.kind is ChannelKind.MONITOR:
         return _build_monitor_page(

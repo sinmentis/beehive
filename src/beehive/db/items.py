@@ -499,13 +499,31 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     return d
 
 
+def _publication_time_filters(
+    published_from: str | None, published_to: str | None,
+) -> tuple[list[str], list]:
+    publication_time = "COALESCE(datetime(items.created_at), datetime(items.fetched_at))"
+    where, params = [], []
+    if published_from is not None:
+        where.append(f"{publication_time} >= datetime(?)")
+        params.append(published_from)
+    if published_to is not None:
+        where.append(f"{publication_time} < datetime(?)")
+        params.append(published_to)
+    return where, params
+
+
 def list_by_channel(
-    conn: sqlite3.Connection, channel_id: int, *, include_superseded: bool = False
+    conn: sqlite3.Connection, channel_id: int, *, include_superseded: bool = False,
+    published_from: str | None = None, published_to: str | None = None,
 ) -> list[dict]:
     """Every item in the Channel, highest AI score first. Superseded history rows (older mutable
     duplicates collapsed by the stable-id compaction) are hidden by default; include_superseded is
-    the explicit opt-in used by migration/audit callers that need to see the collapsed rows."""
+    the explicit opt-in used by migration/audit callers that need to see the collapsed rows.
+    Optional bounds use publication time, falling back to the first collection time."""
     superseded_filter = "" if include_superseded else "AND items.superseded_at IS NULL "
+    window_where, window_params = _publication_time_filters(published_from, published_to)
+    window_filter = " AND " + " AND ".join(window_where) if window_where else ""
     rows = conn.execute(
         "SELECT items.*, sources.type AS source_type, sources.config AS source_config, "
         "channels.kind AS channel_kind, "
@@ -513,9 +531,9 @@ def list_by_channel(
         "FROM items JOIN sources ON sources.id = items.source_id "
         "JOIN channels ON channels.id = sources.channel_id "
         "LEFT JOIN votes ON votes.item_id = items.id "
-        f"WHERE sources.channel_id = ? {superseded_filter}"
+        f"WHERE sources.channel_id = ? {superseded_filter}{window_filter} "
         "ORDER BY items.ai_score DESC, items.id ASC",
-        (channel_id,),
+        [channel_id, *window_params],
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -600,13 +618,17 @@ def mark_unread(conn: sqlite3.Connection, item_id: int) -> None:
     conn.commit()
 
 
-def mark_channel_read(conn: sqlite3.Connection, channel_id: int) -> list[int]:
-    """Marks every unread item in the Channel read and returns their ids, so the batch can be
-    taken back (db/read_batches.py)."""
+def mark_channel_read(
+    conn: sqlite3.Connection, channel_id: int, *,
+    published_from: str | None = None, published_to: str | None = None,
+) -> list[int]:
+    """Marks unread items in the selected window, returning ids for batch recovery."""
+    window_where, window_params = _publication_time_filters(published_from, published_to)
+    window_filter = " AND " + " AND ".join(window_where) if window_where else ""
     rows = conn.execute(
         "UPDATE items SET is_read = 1 WHERE is_read = 0 AND source_id IN "
-        "(SELECT id FROM sources WHERE channel_id = ?) RETURNING id",
-        (channel_id,),
+        f"(SELECT id FROM sources WHERE channel_id = ?){window_filter} RETURNING id",
+        [channel_id, *window_params],
     ).fetchall()
     conn.commit()
     return [row[0] for row in rows]
@@ -1098,15 +1120,9 @@ def _dashboard_signal_filters(
     if minimum_score is not None:
         where.append("items.ai_score >= ?")
         params.append(minimum_score)
-    publication_time = (
-        "COALESCE(datetime(items.created_at), datetime(items.fetched_at))"
-    )
-    if published_from is not None:
-        where.append(f"{publication_time} >= datetime(?)")
-        params.append(published_from)
-    if published_to is not None:
-        where.append(f"{publication_time} < datetime(?)")
-        params.append(published_to)
+    window_where, window_params = _publication_time_filters(published_from, published_to)
+    where.extend(window_where)
+    params.extend(window_params)
     # What the Owner has dealt with drops out: a story judged not relevant, and a read or unread
     # one outside the chosen state. A kept story stays for the render right after the Owner
     # judged it, so it does not vanish from under its reason field.

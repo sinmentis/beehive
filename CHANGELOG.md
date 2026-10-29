@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-29
+
+### Fixed
+
+- Current news channels no longer rank months of history as current content. They share
+  Featured's rolling time window, defaulting to 24 hours, using publication time or first
+  collection when unavailable.
+- News-window labels and bulk read actions now match that scope. Explicit searches and the
+  archive keep historical content, and live product and auction listings remain unaffected.
+
 ## [1.0.0] - 2026-10-29
 
 ### Added
@@ -197,5 +207,6 @@ Initial public alpha release.
   - New Zealand Government official RSS
   - Federal Reserve official RSS
 
-[Unreleased]: https://github.com/sinmentis/beehive/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sinmentis/beehive/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/sinmentis/beehive/releases/tag/v1.0.1
 [1.0.0]: https://github.com/sinmentis/beehive/releases/tag/v1.0.0

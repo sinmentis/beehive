@@ -91,16 +91,19 @@ does not resend delivered emails or restore deliveries previously excluded.
 
 The home page, **Featured**, gives every channel a section: the top stories of each news channel,
 the best live listings of each store monitor, and the good lots still open in each auction
-tracker. It shows stories from the last three days. To change that, go to **Global settings** and
-set the **Featured window**. The counts at the top open a ranked list of every featured story, which
-you can filter to unread, read, or a score of 90 and above.
+tracker. Featured stories and default news-channel lists share a rolling time window, initially
+the last **24 hours**. To change it, set **News time window** in **Global settings**; each day means
+24 elapsed hours, not a calendar day. Publication time is used when supplied, otherwise the first
+collection time. The counts at the top open a ranked list of every featured story, which you can
+filter to unread, read, or a score of 90 and above.
 
 - A blue square marks a story you haven't read. Select the square to mark it read. Opening a
   story marks it read too.
 - **Relevant** and **Not relevant** tell the AI what you like. It takes your votes into account
   when it scores new stories. **Not relevant** also marks the story read and opens a field for an
   optional reason.
-- **Mark all as read** can be undone for 10 minutes from the note it leaves at the top of the page.
+- **Mark all as read** follows the current news window and can be undone for 10 minutes. Older
+  archived stories are not marked by this action unless you explicitly enter a history search.
 - Individual read/unread changes also offer **Undo** in a visible notice near the bottom of the
   screen. The latest individual action is recoverable for 10 minutes, unless a newer action
   replaces it or the item's state changes.
@@ -117,6 +120,8 @@ you can filter to unread, read, or a score of 90 and above.
 - The archive keeps every story, day by day. Invalid or reversed dates show an error beside the
   retained inputs instead of looking like an empty search. Search covers stories, listings and
   lots; opening a channel from its results includes read items and below-threshold matches.
+  A news-channel search is labelled **All stored history** and is not limited to the current
+  news window. Clear the search to return to recent news.
 
 An empty Featured section explains whether nothing has been collected, the content is outside
 the current window, ranking is incomplete, or the selection fails the score/relevance rules.

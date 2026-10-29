@@ -45,7 +45,9 @@ def authed_client(conn):
     return client
 
 
-def _add_ranked_item(connection, source_id, external_id, title, metadata, *, score=90):
+def _add_ranked_item(
+    connection, source_id, external_id, title, metadata, *, score=90, created_at=None,
+):
     insert_new(
         connection,
         source_id,
@@ -53,6 +55,7 @@ def _add_ranked_item(connection, source_id, external_id, title, metadata, *, sco
             external_id=external_id,
             title=title,
             url=f"https://example.com/items/{external_id}",
+            created_at=created_at,
             raw_metadata=metadata,
         ),
     )
@@ -115,6 +118,155 @@ def _row(html, row_id):
     match = re.search(rf'<(tr|li)\b[^>]*\bid="{row_id}"[^>]*>.*?</\1>', html, re.DOTALL)
     assert match is not None, row_id
     return match.group(0)
+
+
+@pytest.mark.parametrize("owner", [False, True])
+def test_editorial_panel_only_shows_last_24_hours(conn, request, owner):
+    _, connection = conn
+    client = request.getfixturevalue("authed_client" if owner else "client")
+    channel_id = create_channel(connection, "News", "current news", kind="editorial")
+    source_id = create_source(
+        connection, channel_id, "reddit_subreddit", {"subreddit": "news"},
+    )
+    now = datetime.now(timezone.utc)
+    old_id = _add_ranked_item(
+        connection, source_id, "old", "Old high-scoring news", {}, score=99,
+        created_at=now - timedelta(days=30),
+    )
+    recent_id = _add_ranked_item(
+        connection, source_id, "recent", "Recent news", {}, score=90,
+        created_at=now - timedelta(hours=1),
+    )
+
+    response = client.get(f"/channels/{channel_id}")
+
+    assert response.status_code == 200
+    assert f'id="story-{recent_id}"' in response.text
+    assert f'id="story-{old_id}"' not in response.text
+
+
+def test_current_news_window_handles_boundaries_and_missing_publication_dates(
+    conn, client, monkeypatch,
+):
+    now = datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz is None else now.astimezone(tz)
+
+    monkeypatch.setattr("beehive.web.public.datetime", FixedDatetime)
+    _, connection = conn
+    channel_id = create_channel(connection, "Boundary news", "news", kind="editorial")
+    source_id = create_source(
+        connection, channel_id, "reddit_subreddit", {"subreddit": "news"},
+    )
+    expected = {}
+    for key, published, fetched, included in (
+        ("cutoff", now - timedelta(hours=24), now, True),
+        ("too-old", now - timedelta(hours=24, seconds=1), now, False),
+        ("now", now, now, True),
+        ("future", now + timedelta(seconds=1), now, False),
+        ("undated-recent", None, now - timedelta(hours=2), True),
+        ("undated-old", None, now - timedelta(days=2), False),
+    ):
+        item_id = _add_ranked_item(
+            connection, source_id, key, key, {}, created_at=published,
+        )
+        connection.execute(
+            "UPDATE items SET fetched_at = ? WHERE id = ?", (fetched.isoformat(), item_id),
+        )
+        expected[item_id] = included
+    connection.commit()
+
+    for route in ("/", f"/channels/{channel_id}"):
+        response = client.get(route)
+        assert response.status_code == 200
+        for item_id, included in expected.items():
+            assert (f'id="story-{item_id}"' in response.text) is included
+
+
+def test_historical_news_remains_available_through_explicit_search_and_archive(conn, client):
+    _, connection = conn
+    channel_id = create_channel(connection, "History", "news", kind="editorial")
+    source_id = create_source(
+        connection, channel_id, "reddit_subreddit", {"subreddit": "news"},
+    )
+    item_id = _add_ranked_item(
+        connection, source_id, "history", "Historical evidence", {},
+        created_at=datetime.now(timezone.utc) - timedelta(days=30),
+    )
+
+    current = client.get(f"/channels/{channel_id}")
+    assert f'id="story-{item_id}"' not in current.text
+    for route in (
+        f"/channels/{channel_id}?q=Historical",
+        f"/archive?channel={channel_id}&q=Historical",
+        "/search?q=Historical",
+    ):
+        response = client.get(route)
+        assert response.status_code == 200
+        assert f'id="story-{item_id}"' in response.text
+    assert "All stored history" in client.get(f"/channels/{channel_id}?q=Historical").text
+
+
+def test_channel_bulk_read_uses_the_current_window_unless_history_is_explicit(
+    conn, authed_client,
+):
+    _, connection = conn
+    channel_id = create_channel(connection, "Read scope", "news", kind="editorial")
+    source_id = create_source(
+        connection, channel_id, "reddit_subreddit", {"subreddit": "news"},
+    )
+    now = datetime.now(timezone.utc)
+    old_id = _add_ranked_item(
+        connection, source_id, "old", "Historical news", {},
+        created_at=now - timedelta(days=30),
+    )
+    recent_id = _add_ranked_item(
+        connection, source_id, "recent", "Recent news", {},
+        created_at=now - timedelta(hours=1),
+    )
+
+    response = authed_client.post(
+        f"/channels/{channel_id}/mark-all-read", data={"csrf_token": "csrf1"},
+    )
+    assert response.status_code == 303
+    states = dict(connection.execute("SELECT id, is_read FROM items"))
+    assert states[old_id] == 0
+    assert states[recent_id] == 1
+
+    history = authed_client.get(f"/channels/{channel_id}?q=Historical")
+    assert 'name="include_history" value="true"' in history.text
+    response = authed_client.post(
+        f"/channels/{channel_id}/mark-all-read",
+        data={"csrf_token": "csrf1", "include_history": "true"},
+    )
+    assert response.status_code == 303
+    assert connection.execute("SELECT is_read FROM items WHERE id = ?", (old_id,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("kind", ["monitor", "tracker"])
+def test_current_catalogs_are_not_limited_by_the_news_window(conn, client, kind):
+    _, connection = conn
+    channel_id = create_channel(connection, "Live inventory", "listings", kind=kind)
+    source_id = create_source(
+        connection, channel_id,
+        "shopify_collection" if kind == "monitor" else "all_about_auctions",
+        {"collection_url": "https://example.com/sale"} if kind == "monitor"
+        else {"auction_url": "https://www.allaboutauctions.co.nz/auction/1"},
+    )
+    item_id = _add_ranked_item(
+        connection, source_id, "active", "Still active",
+        _monitor_metadata(price=100) if kind == "monitor" else _tracker_metadata(12),
+        created_at=datetime.now(timezone.utc) - timedelta(days=30),
+    )
+
+    response = client.get(f"/channels/{channel_id}")
+
+    assert response.status_code == 200
+    prefix = "listing" if kind == "monitor" else "lot"
+    assert f'id="{prefix}-{item_id}"' in response.text
 
 
 def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client):

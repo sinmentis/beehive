@@ -146,8 +146,8 @@ def test_system_tab_shows_default_featured_window(authed_client):
     response = authed_client.get("/admin/?tab=settings")
 
     assert response.status_code == 200
-    assert "Featured window" in response.text
-    assert re.search(r'name="featured_window_days"\s+value="3"', response.text)
+    assert "News time window" in response.text
+    assert re.search(r'name="featured_window_days"\s+value="1"', response.text)
 
 
 def test_save_featured_window_persists_and_redirects(authed_client, db_path):

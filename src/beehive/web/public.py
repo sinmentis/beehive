@@ -1364,6 +1364,7 @@ def mark_all_read_route(
     channel_id: int,
     csrf_token: str = Form(...),
     next_url: str | None = Form(None),
+    include_history: bool = Form(False),
     session: dict = Depends(require_admin_session),
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -1377,12 +1378,17 @@ def mark_all_read_route(
             status_code=422,
             detail="This Channel does not use read state",
         )
-    marked = mark_channel_read(conn, channel_id)
+    now = datetime.now(timezone.utc)
+    publication_bounds = {}
+    if not include_history:
+        published_from, published_to = featured_utc_bounds(now, load_featured_window_days(conn))
+        publication_bounds = {"published_from": published_from, "published_to": published_to}
+    marked = mark_channel_read(conn, channel_id, **publication_bounds)
     return _redirect_after_read_batch(
         conn,
         marked,
         _safe_return_url(next_url, f"/channels/{channel_id}"),
-        datetime.now(timezone.utc),
+        now,
     )
 
 

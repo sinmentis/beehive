@@ -31,6 +31,11 @@ On a wide screen the sheet fills the window. Independent sections flow side by s
 
 ## Constraints
 
+Featured news and default Editorial lists share a rolling window, initially 24 hours, applied
+before score ordering and pagination. Publication time is preferred, with first collection as
+the fallback. Current-window bulk read actions preserve older archived read state. Explicit
+news searches are labelled as all stored history; archive access and live catalogues remain intact.
+
 The phone catalog is content-first: search and sort/status remain visible, while secondary filters, page size, source/fetch facts and scoring rules share Filters and details. It starts closed on narrow screens, retains applied-filter counts and has an Apply action at its end. Unsupported gender filters are omitted. Gallery titles and prices precede photos on phones without changing the square, uncropped image. The active channel is revealed in the horizontal rail. Watch List and Research remain direct footer links; Admin and Sign out use a phone-only More disclosure. Coarse-pointer controls have 44px targets.
 
 A regenerating or failed replacement keeps the last successful brief, its generation time and limitations visible; only successful replacement swaps it. Initial generation still uses a labelled status/skeleton. Owner-only reminder failures appear in the reading footer, Tracker desk heading and affected watch controls, linking to the Watch List. Counts include failed watches beyond the home shortlist and update when a watch is removed. Individual read/unread and unwatch actions add a visible, dismissible recovery notice. Its ten-minute undo preserves prior reminder state and is not offered for an in-flight delivery.

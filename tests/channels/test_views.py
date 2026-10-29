@@ -92,6 +92,10 @@ def _add_item(
         "SELECT id FROM items WHERE source_id = ? AND external_id = ?",
         (source_id, external_id),
     ).fetchone()["id"]
+    # Keep undated fixtures on the same clock as the page builder.
+    conn.execute(
+        "UPDATE items SET fetched_at = ? WHERE id = ?", (_NOW.isoformat(), item_id),
+    )
     if is_read:
         conn.execute("UPDATE items SET is_read = 1 WHERE id = ?", (item_id,))
     if inactive_at is not None:
