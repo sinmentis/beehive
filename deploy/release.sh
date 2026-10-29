@@ -115,7 +115,7 @@ cmd_promote() {
 }
 
 cmd_prune() {
-  local keep=() removed=() ref id tag
+  local keep=() removed=() ref id tag tag_count
   for tag in latest rollback; do
     if "$PODMAN" image exists "$IMAGE:$tag"; then
       keep+=("$(image_id "$IMAGE:$tag")")
@@ -124,13 +124,15 @@ cmd_prune() {
   while read -r ref id; do
     [[ "${ref##*:}" =~ ^([0-9a-f]{7}|[0-9]+\.[0-9]+\.[0-9]+)$ ]] || continue
     [[ " ${keep[*]} " == *" $id "* ]] && continue
-    "$PODMAN" untag "$ref"
+    "$PODMAN" untag "$id" "$ref"
     removed+=("$id")
   done < <("$PODMAN" images "$IMAGE" --format '{{.Repository}}:{{.Tag}} {{.ID}}' --no-trunc \
     | sed 's/ sha256:/ /')
   # Delete only the Beehive images just untagged, and only once no other tag or container still
   # uses them. A host-wide `podman image prune` would also reach other projects' images.
   for id in "${removed[@]}"; do
+    tag_count="$("$PODMAN" image inspect "$id" --format '{{len .RepoTags}}' 2>/dev/null)" || continue
+    [[ "$tag_count" == "0" ]] || continue
     "$PODMAN" image rm "$id" >/dev/null 2>&1 || true
   done
 }

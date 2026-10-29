@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-29
+
+### Fixed
+
+- Release cleanup removes numeric and commit-based image aliases individually. Images with
+  other tags are retained, and obsolete untagged release images are removed.
+
 ## [1.0.2] - 2026-10-29
 
 ### Fixed
@@ -218,7 +225,8 @@ Initial public alpha release.
   - New Zealand Government official RSS
   - Federal Reserve official RSS
 
-[Unreleased]: https://github.com/sinmentis/beehive/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/sinmentis/beehive/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/sinmentis/beehive/releases/tag/v1.0.3
 [1.0.2]: https://github.com/sinmentis/beehive/releases/tag/v1.0.2
 [1.0.1]: https://github.com/sinmentis/beehive/releases/tag/v1.0.1
 [1.0.0]: https://github.com/sinmentis/beehive/releases/tag/v1.0.0

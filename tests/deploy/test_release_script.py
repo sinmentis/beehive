@@ -43,21 +43,39 @@ _FAKE_PODMAN = textwrap.dedent(
         image_id = resolve(args[2])
         if image_id is None:
             sys.exit(125)
-        print(image_id)
+        if args[3:] == ["--format", "{{.Id}}"]:
+            print(image_id)
+        elif args[3:] == ["--format", "{{len .RepoTags}}"]:
+            print(sum(value == image_id for value in tags.values()))
+        else:
+            sys.exit(f"unexpected inspect format: {args}")
     elif args[0] == "tag":
         tags[args[2]] = resolve(args[1])
         save()
     elif args[0] == "untag":
-        del tags[args[1]]
+        image_id = resolve(args[1])
+        if image_id is None:
+            sys.exit(125)
+        refs = args[2:] or [ref for ref, value in tags.items() if value == image_id]
+        for ref in refs:
+            if tags.get(ref) != image_id:
+                sys.exit(125)
+            del tags[ref]
         save()
     elif args[0] == "images":
         for ref, image_id in sorted(tags.items()):
             if ref.startswith(args[1] + ":"):
                 print(f"{ref} sha256:{image_id}")
     elif args[:2] == ["image", "rm"]:
-        if args[2] in tags.values():
+        image_id = resolve(args[2])
+        if image_id is None:
+            sys.exit(125)
+        refs = [ref for ref, value in tags.items() if value == image_id]
+        if len(refs) > 1:
             sys.exit(2)
-        images.remove(args[2])
+        for ref in refs:
+            del tags[ref]
+        images.remove(image_id)
         save()
     else:
         sys.exit(f"unexpected podman call: {args}")
@@ -191,6 +209,23 @@ def test_prune_removes_only_unused_release_images(harness):
     assert "stale" not in images()
     # Images the script did not untag, including untagged ones from other work, stay put.
     assert {"new", "old", "civic", "orphan"} <= set(images())
+
+
+def test_prune_preserves_non_release_aliases_of_a_shared_image(harness):
+    setup, run, tags, images, _ = harness
+    setup({
+        "latest": "new",
+        "rollback": "old",
+        "1234567": "shared",
+        "1.0.0": "shared",
+        "civic-projection": "shared",
+    })
+
+    result = run("prune")
+
+    assert result.returncode == 0, result.stderr
+    assert tags() == {"latest": "new", "rollback": "old", "civic-projection": "shared"}
+    assert "shared" in images()
 
 
 def test_promote_fails_when_a_worker_keeps_restarting_on_the_new_image(harness):
