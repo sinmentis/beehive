@@ -393,7 +393,8 @@ def _admin_nav(request: Request, t: Localizer) -> dict:
         ),
         "settings": int(choose_model(conn).unavailable is not None),
         "system": sum(
-            row["status"] != "ok" for row in health if row["key"] in {"reminders", "research"}
+            row["status"] != "ok"
+            for row in health if row["key"] in {"reminders", "research", "research_chat"}
         ),
     }
     return {
@@ -444,6 +445,7 @@ def _build_system_health_rows(
     t: Localizer,
     default_recipient: ResolvedRecipient,
 ) -> list[dict]:
+    now = datetime.now(timezone.utc)
     source_counts = dict(
         conn.execute(
             """
@@ -458,7 +460,7 @@ def _build_system_health_rows(
             """
         ).fetchone()
     )
-    manual_states = fetch_request_states(conn, datetime.now(timezone.utc))
+    manual_states = fetch_request_states(conn, now)
     stale_fetches = sum(state == "stale" for state in manual_states.values())
     active_fetches = sum(
         state in {"queued", "running"} for state in manual_states.values()
@@ -485,22 +487,6 @@ def _build_system_health_rows(
             """
         ).fetchone()
     )
-    research_counts = dict(
-        conn.execute(
-            """
-            SELECT
-                SUM(CASE WHEN status IN ('pending', 'processing') THEN 1 ELSE 0 END)
-                    AS active,
-                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
-                SUM(CASE
-                    WHEN status = 'processing' AND lease_expires_at <= ? THEN 1
-                    ELSE 0
-                END) AS stale
-            FROM research_runs
-            """,
-            (datetime.now(timezone.utc).isoformat(),),
-        ).fetchone()
-    )
 
     def row(
         key: str,
@@ -520,7 +506,47 @@ def _build_system_health_rows(
             "action_label": t.text(f"web.admin.health.{key}_action"),
         }
 
-    now = datetime.now(timezone.utc)
+    research_health = []
+    for key, table, destination in (
+        ("research", "research_runs", "?tab=history"),
+        ("research_chat", "research_chat_requests", "#research-conversation"),
+    ):
+        latest_work = conn.execute(
+            f"""
+            SELECT work.session_id, work.status,
+                CASE
+                    WHEN work.status = 'processing'
+                        AND (work.lease_expires_at IS NULL
+                            OR julianday(work.lease_expires_at) <= julianday(?))
+                    THEN 1 ELSE 0
+                END AS stale
+            FROM research_sessions AS session
+            JOIN {table} AS work ON work.id = (
+                SELECT MAX(id) FROM {table} WHERE session_id = session.id
+            )
+            WHERE session.status = 'active'
+            ORDER BY stale DESC, work.id
+            """,
+            (now.isoformat(),),
+        ).fetchall()
+        active = sum(work["status"] in {"pending", "processing"} for work in latest_work)
+        failed = sum(work["status"] == "failed" for work in latest_work)
+        stale = sum(work["stale"] for work in latest_work)
+        attention = next(
+            (work for work in latest_work if work["stale"] or work["status"] == "failed"), None)
+        research_health.append(
+            row(
+                key,
+                status="error" if stale else "warning" if failed else "ok",
+                detail=t.text(
+                    "web.admin.health.research_detail", active=active, failed=failed, stale=stale),
+                href=(
+                    f"/research/{attention['session_id']}{destination}"
+                    if attention is not None else "/research"
+                ),
+            )
+        )
+
     jobs = load_status(conn)
     queued_fetches = sum(state == "queued" for state in manual_states.values())
     waiting_reads = conn.execute(
@@ -555,9 +581,6 @@ def _build_system_health_rows(
     )
     reminder_failed = int(reminder_counts["failed"] or 0)
     reminder_status = "error" if reminder_failed else "ok"
-    research_failed = int(research_counts["failed"] or 0)
-    research_stale = int(research_counts["stale"] or 0)
-    research_status = "error" if research_stale else "warning" if research_failed else "ok"
     return [
         row(
             "jobs",
@@ -600,17 +623,7 @@ def _build_system_health_rows(
             ),
             href="/watchlist",
         ),
-        row(
-            "research",
-            status=research_status,
-            detail=t.text(
-                "web.admin.health.research_detail",
-                active=int(research_counts["active"] or 0),
-                failed=research_failed,
-                stale=research_stale,
-            ),
-            href="/research",
-        ),
+        *research_health,
     ]
 
 

@@ -3,6 +3,7 @@ list, how a Source is confirmed for removal and named in the activity log, and w
 resuming a Source returns to."""
 import html
 import re
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,25 @@ from beehive.db.admin_actions import record_admin_action
 from beehive.db.channels import create_channel
 from beehive.db.connection import connect, init_schema
 from beehive.db.email_groups import assign_channel, create_email_group
+from beehive.db.evidence_items import upsert_evidence_item
+from beehive.db.evidence_state import create_evidence_state_revision
+from beehive.db.research_chat_requests import (
+    claim_chat_request,
+    complete_chat_request_with_reply,
+    fail_chat_request,
+    get_chat_request,
+    submit_chat_request,
+)
+from beehive.db.research_runs import (
+    claim_research_run,
+    complete_research_run,
+    enqueue_research_run,
+    get_research_run,
+)
+from beehive.db.research_sessions import archive_research_session, create_research_session
+from beehive.db.research_snapshots import create_snapshot, seal_snapshot
+from beehive.db.research_sources import create_research_source
+from beehive.db.research_syntheses import create_synthesis
 from beehive.db.sessions import create_session
 from beehive.db.sources import (
     create_source,
@@ -19,6 +39,16 @@ from beehive.db.sources import (
     record_fetch_error,
     record_fetch_success,
     set_source_paused,
+)
+from beehive.domain.research import (
+    ClaimProvenance,
+    EvidenceCitation,
+    EvidenceQuality,
+    ResearchRunStatus,
+    ResearchSourceOrigin,
+    SufficiencyState,
+    SynthesisClaim,
+    SynthesisSection,
 )
 from beehive.web.app import create_app
 from beehive.web.deps import SESSION_COOKIE_NAME
@@ -51,6 +81,170 @@ def client(db_path):
 
 def _shop(conn, channel_id, url=BIVOUAC, name=None):
     return create_source(conn, channel_id, "shopify_collection", {"collection_url": url}, name=name)
+
+
+def _claimed_run(conn, session_id, now):
+    run = enqueue_research_run(conn, session_id, now)
+    return claim_research_run(
+        conn, run.id, now, lease_seconds=60, deadline_seconds=3600,
+    ).run
+
+
+@pytest.fixture
+def research_state(db_path):
+    conn = connect(db_path)
+    now = datetime.now(timezone.utc) - timedelta(hours=1)
+    session_id = create_research_session(conn, "Compare storage options", now).id
+    source = create_research_source(
+        conn, session_id, "web_search", {}, ResearchSourceOrigin.OWNER, now)
+    run = _claimed_run(conn, session_id, now)
+    snapshot = create_snapshot(conn, session_id, run.id, now)
+    item = upsert_evidence_item(
+        conn, session_id, source.id, "e1", "Storage report", "https://example.invalid/report",
+        EvidenceQuality.REPORTING, now)
+    seal_snapshot(conn, snapshot.id, now)
+    revision = create_evidence_state_revision(conn, session_id, snapshot.id, [item.id], now)
+    claim = SynthesisClaim(
+        text="Compare the listed specifications.", section=SynthesisSection.BOTTOM_LINE,
+        provenance=ClaimProvenance.EVIDENCE,
+        citations=(EvidenceCitation(item.id, item.citation_number),))
+    create_synthesis(
+        conn, session_id, revision.id, SufficiencyState.PARTIAL, (claim,), "fixture", "en", now)
+    complete_research_run(conn, run.id, run.claim_token, ResearchRunStatus.COMPLETED, now)
+    yield conn, session_id, now
+    conn.close()
+
+
+def _system_health(client):
+    response = client.get("/admin/?tab=system")
+    assert response.status_code == 200
+    health = {row["key"]: row for row in response.context["system_health"]}
+    chapter = next(
+        entry for entry in response.context["shell_nav"]["chapters"] if entry["key"] == "system")
+    return health, chapter["attention"]
+
+
+@pytest.mark.parametrize("recovery", ["completed", "cancelled", "pending", "archived"])
+def test_research_health_does_not_flag_historical_failures(client, research_state, recovery):
+    conn, session_id, now = research_state
+    failed = _claimed_run(conn, session_id, now)
+    complete_research_run(
+        conn, failed.id, failed.claim_token, ResearchRunStatus.FAILED, now, error_code="provider")
+    if recovery == "archived":
+        archive_research_session(conn, session_id, now)
+    elif recovery == "pending":
+        enqueue_research_run(conn, session_id, now)
+    else:
+        latest = _claimed_run(conn, session_id, now)
+        complete_research_run(
+            conn, latest.id, latest.claim_token, ResearchRunStatus(recovery), now)
+
+    health, attention = _system_health(client)
+
+    assert health["research"]["status"] == "ok"
+    assert health["research"]["detail"] == (
+        f"{int(recovery == 'pending')} active · 0 failed · 0 lease expired")
+    assert attention == 0
+    assert get_research_run(conn, failed.id).status is ResearchRunStatus.FAILED
+
+
+def test_research_health_prioritizes_stalled_runs_and_links_to_their_history(
+    client, research_state,
+):
+    conn, session_id, now = research_state
+    failed = _claimed_run(conn, session_id, now)
+    complete_research_run(
+        conn, failed.id, failed.claim_token, ResearchRunStatus.FAILED, now, error_code="provider")
+    stalled_session = create_research_session(conn, "Another comparison", now)
+    _claimed_run(conn, stalled_session.id, now)
+
+    health, attention = _system_health(client)
+
+    assert health["research"]["status"] == "error"
+    assert health["research"]["detail"] == "1 active · 1 failed · 1 lease expired"
+    assert health["research"]["href"] == f"/research/{stalled_session.id}?tab=history"
+    assert attention == 1
+    destination = client.get(health["research"]["href"])
+    assert destination.status_code == 200
+    assert destination.context["active_tab"] == "history"
+    assert destination.context["session_id"] == stalled_session.id
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_status", "expected_detail", "expected_attention"),
+    [
+        ("pending", "ok", "1 active · 0 failed · 0 lease expired", 0),
+        ("processing", "ok", "1 active · 0 failed · 0 lease expired", 0),
+        ("stalled", "error", "1 active · 0 failed · 1 lease expired", 1),
+        ("failed", "warning", "0 active · 1 failed · 0 lease expired", 1),
+    ],
+)
+def test_research_chat_health_tracks_current_work(
+    client, research_state, state, expected_status, expected_detail, expected_attention,
+):
+    conn, session_id, now = research_state
+    _, request = submit_chat_request(conn, session_id, "Which specification matters?", now)
+    if state != "pending":
+        claim_at = datetime.now(timezone.utc) if state == "processing" else now
+        claimed = claim_chat_request(conn, request.id, claim_at, lease_seconds=600)
+        if state == "failed":
+            fail_chat_request(conn, request.id, claimed.claim_token, "provider", None, now)
+
+    health, attention = _system_health(client)
+
+    assert health["research"]["status"] == "ok"
+    assert health["research_chat"]["status"] == expected_status
+    assert health["research_chat"]["detail"] == expected_detail
+    assert attention == expected_attention
+    if expected_attention:
+        assert health["research_chat"]["href"] == f"/research/{session_id}#research-conversation"
+        destination = client.get(health["research_chat"]["href"])
+        assert destination.status_code == 200
+        assert destination.context["session_id"] == session_id
+        assert 'id="research-conversation"' in destination.text
+
+
+@pytest.mark.parametrize("recovery", ["completed", "pending", "archived"])
+def test_research_chat_health_preserves_but_does_not_flag_old_failures(
+    client, research_state, recovery,
+):
+    conn, session_id, now = research_state
+    _, failed = submit_chat_request(conn, session_id, "First question", now)
+    claimed = claim_chat_request(conn, failed.id, now, lease_seconds=60)
+    fail_chat_request(conn, failed.id, claimed.claim_token, "provider", None, now)
+    if recovery == "archived":
+        archive_research_session(conn, session_id, now)
+    else:
+        message, request = submit_chat_request(conn, session_id, "Follow-up question", now)
+        if recovery == "completed":
+            claimed = claim_chat_request(conn, request.id, now, lease_seconds=60)
+            complete_chat_request_with_reply(
+                conn, request.id, claimed.claim_token, session_id, message.id,
+                "Review the listed specifications.", (), "Answered", None, now)
+
+    health, attention = _system_health(client)
+
+    assert health["research_chat"]["status"] == "ok"
+    assert health["research_chat"]["detail"] == (
+        f"{int(recovery == 'pending')} active · 0 failed · 0 lease expired")
+    assert attention == 0
+    assert get_chat_request(conn, failed.id).status.value == "failed"
+
+
+def test_system_navigation_counts_current_run_and_reply_problems(client, research_state):
+    conn, session_id, now = research_state
+    run = _claimed_run(conn, session_id, now)
+    complete_research_run(
+        conn, run.id, run.claim_token, ResearchRunStatus.FAILED, now, error_code="provider")
+    _, request = submit_chat_request(conn, session_id, "Follow-up question", now)
+    claimed = claim_chat_request(conn, request.id, now, lease_seconds=60)
+    fail_chat_request(conn, request.id, claimed.claim_token, "provider", None, now)
+
+    health, attention = _system_health(client)
+
+    assert health["research"]["status"] == "warning"
+    assert health["research_chat"]["status"] == "warning"
+    assert attention == 2
 
 
 def _outdoor_with_problems(db_path):

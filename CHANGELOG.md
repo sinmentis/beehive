@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-29
+
+### Fixed
+
+- Admin navigation wraps on narrow screens, keeping every action visible in longer languages.
+  Global navigation uses 44px touch targets without enlarging pointer-based desktop controls.
+- Research health checks the latest run and reply request in each unarchived session. Recovered
+  and archived failures remain in history without raising current warnings.
+- Research replies now have their own health row, including queued work and expired leases.
+  System attention counts cover both queues, with links to the affected history or conversation.
+
 ## [1.0.1] - 2026-10-29
 
 ### Fixed
@@ -207,6 +218,7 @@ Initial public alpha release.
   - New Zealand Government official RSS
   - Federal Reserve official RSS
 
-[Unreleased]: https://github.com/sinmentis/beehive/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/sinmentis/beehive/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/sinmentis/beehive/releases/tag/v1.0.2
 [1.0.1]: https://github.com/sinmentis/beehive/releases/tag/v1.0.1
 [1.0.0]: https://github.com/sinmentis/beehive/releases/tag/v1.0.0

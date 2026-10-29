@@ -25,6 +25,7 @@ The compact rail retains four chapters: Channels, Email groups, Global settings 
 - **Reprocessing:** a separate disclosure and explicit confirmation apply saved rules to unread Editorial items/current listings. Unsaved-rule notice and disabled action synchronize, including after polling. Cancellation retains applied results; history and delivery exclusions remain.
 - **Recovery:** section-local saves preserve unrelated settings. Session-local drafts restore on normal navigation when the baseline matches; conflicts offer restore/discard. Modified rows/counts, before-unload protection and input clearance above sticky footers remain.
 - **Email:** website-only, existing shared group or contextual new daily email. Shared-group scope is stated. Live first/next-due forecasts repeat in the save bar. Real HTML preview is sandboxed and non-consuming, with plain text, explicit test-send and delivery diagnostics.
+- **System health:** separate Research run and reply rows inspect the latest work in each unarchived session. Older and archived failures stay in history without raising attention. Expired leases outrank current failures; each recovery link opens the affected run history or conversation. Both rows contribute to the System chapter's attention count.
 
 ## Direction
 
@@ -67,3 +68,9 @@ This records built local source, not a live release. No production access, migra
 ## Open decisions
 
 None for this record. No boundary blocker.
+
+## Admin reliability patch, 2026-10-29
+
+Scoped finish verdict: **ship** for the four admin audit findings. The footer wraps at the existing narrow breakpoint, and brand, chapter and footer controls have at least 44px width and height on coarse pointers. Fine-pointer desktop density and the reading shell's More menu are unchanged. Research health now distinguishes current run/reply problems from retained history.
+
+The synthetic captures in `.impeccable/review/admin-fixes/` were opened and inspected. Component-level bounds cover German at 320px and 390px, English at 320px, Chinese at 390px, German landscape at 844px and desktop at 1440px, including fine/coarse pointer comparisons. All nine global actions remain visible without rail scrolling, keyboard focus reaches Sign out, and all five Channel tasks and Add source remain visible in the 320px German workspace. The expired-chat capture shows a healthy recovered run alongside an expired reply and its conversation link. The initial measurement also counted intentionally hidden section anchors; confirmation excluded only those anchors, not hidden global actions. No broader redesign or full-device compatibility claim is made.

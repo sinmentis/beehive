@@ -782,6 +782,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .toc .sub{display:none}
  .toc a{grid-template-columns:auto auto auto;white-space:nowrap}
  .adm-toc-foot{display:flex;margin:0 0 0 auto;padding:0;border:0}
+ .page-admin .adm-toc-foot{flex-wrap:wrap;min-width:0;max-width:100%}
  /* The popup can escape the rail without widening the grid to the whole channel strip. */
  .page-reading .adm-toc{min-width:0;overflow:visible}
  .page-reading .adm-toc-foot{flex-wrap:nowrap;align-items:center;gap:4px;max-width:100%}
@@ -1039,6 +1040,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 }
 @media(pointer:coarse){
  .page-admin .btn,.page-admin .btn-sm,.page-admin .c-ops .lnk,.page-admin .opt{min-height:44px}
+ .page-admin .adm-brand,.page-admin .toc a,.page-admin .adm-toc-foot a,.page-admin .adm-toc-foot button{min-width:44px;min-height:44px}
  .page-admin .c-ops .lnk{padding-inline:8px}
  .page-admin input[type=checkbox],.page-admin input[type=radio]{width:20px;height:20px}
 }
