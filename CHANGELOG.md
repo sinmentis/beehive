@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-30
+
+### Changed
+
+- Digest emails use compact dark entry blocks with prominent prices and deadlines,
+  source links, and saved-brief links. The admin preview uses the same template.
+
+### Fixed
+
+- Long email links wrap on narrow screens, and English and Chinese digest punctuation
+  clearly separates labels, details, and channel navigation.
+
 ## [1.0.3] - 2026-10-29
 
 ### Fixed

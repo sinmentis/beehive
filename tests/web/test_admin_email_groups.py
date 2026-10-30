@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from lxml.html import fromstring
 
 from beehive.auth.tokens import sign_session_id
 from beehive.connectors.base import RawItem
@@ -558,6 +559,12 @@ def test_preview_and_test_send_do_not_consume_pending_events(
     assert "Website links are off." in preview.text
     assert 'href="/admin/?tab=groups#site-address"' in preview.text
     assert 'sandbox="allow-popups allow-popups-to-escape-sandbox"' in preview.text
+    email = fromstring(fromstring(preview.text).xpath("string(//iframe/@srcdoc)"))
+    block, = email.xpath('//td[@class="entry-block"]')
+    assert block.xpath('string(p[@class="summary"])') == "The central bank held rates."
+    assert block.xpath('string(p[@class="references"]/a)') == "example.com"
+    assert email.xpath('string(//meta[@name="color-scheme"]/@content)') == "dark"
+    assert not email.xpath("//h1 | //h2")
 
     notifier = MagicMock()
     monkeypatch.setattr(

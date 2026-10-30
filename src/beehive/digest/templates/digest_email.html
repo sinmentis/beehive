@@ -1,58 +1,64 @@
+{% macro link(url, label, extra="") -%}
+<a href="{{ url | safe_href }}" target="_blank" rel="noopener noreferrer" style="color:#a9ceff;text-decoration:underline;text-underline-offset:2px;display:inline-block;box-sizing:border-box;max-width:100%;font-size:14px;line-height:24px;word-wrap:break-word;{{ extra }}">{{ label }}</a>
+{%- endmacro -%}
 <!DOCTYPE html>
 <html lang="{{ lang }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
 <title>{{ page_title }}</title>
+<style>a:focus-visible{outline:2px solid #a9ceff;outline-offset:2px;}</style>
 </head>
-<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;">
-<tr><td align="center" style="padding:16px 12px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
-<tr><td style="padding:18px;border-bottom:1px solid #e5e7eb;">
-  <h1 style="margin:0;font-size:22px;line-height:1.35;font-weight:600;color:#18181b;">{{ header_text }}</h1>
-  <div style="font-size:13px;line-height:1.5;color:#71717a;margin-top:4px;">{{ today_iso }}{% if channel_digests %} · {{ contents_label }}{% endif %}</div>
-  {% if site_url %}<a href="{{ site_url | safe_href }}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:12px;padding:12px 16px;border:1px solid #4f46e5;border-radius:2px;font-size:14px;font-weight:600;line-height:1.4;color:#4f46e5;text-decoration:none;">{{ site_link_label }}</a>{% endif %}
-</td></tr>
-{% if site_url and channel_digests|length > 1 %}
-<tr><td style="padding:8px 18px;border-bottom:1px solid #e5e7eb;">
-  {% for cd in channel_digests %}
-  {% if cd.channel_url %}
-  <a href="{{ cd.channel_url | safe_href }}" target="_blank" rel="noopener noreferrer" style="display:block;padding:12px 0;font-size:14px;line-height:1.5;color:#4f46e5;text-decoration:underline;overflow-wrap:anywhere;">{{ cd.channel_name }} · {{ cd.events|length }}</a>
-  {% endif %}
-  {% endfor %}
-</td></tr>
+<body style="margin:0;padding:0;background-color:#10151c;color:#e7eaed;color-scheme:dark;-webkit-text-size-adjust:100%;">
+<!--
+THESIS: One complete event per visible block, not a continuous newsletter.
+OWN-WORLD: Dark slate, soft white text, blue underlined links, outlined entry surfaces.
+STORY: Read the summary, inspect the price or deadline, open the source or saved brief.
+FIRST VIEWPORT: Content begins immediately. A fluid 640px column, 8px gutters and gaps,
+10px by 12px block padding, 16px/24px body, and 14px/24px references. No masthead or rules.
+FORM: User-approved dark entry blocks, evolved from editorial direction 1, seed 0f190027.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+<div aria-hidden="true" style="display:none;max-height:0;overflow:hidden;mso-hide:all;">{{ header_text }} · {{ today_iso }} · {{ contents_label }}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#10151c" style="width:100%;border-collapse:collapse;background-color:#10151c;">
+<tr><td align="center">
+<!--[if mso]><table role="presentation" width="640" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
+<table class="email" role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#10151c" style="width:100%;max-width:640px;table-layout:fixed;border-collapse:collapse;background-color:#10151c;">
+<tr><td style="padding:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,'PingFang SC','Microsoft YaHei',sans-serif;word-wrap:break-word;">
+{% if not channel_digests %}
+<p style="margin:0;padding:4px;font-size:16px;line-height:24px;color:#e7eaed;">{{ empty_state }}</p>
 {% endif %}
 {% for cd in channel_digests %}
-<tr><td style="padding:20px 18px 8px;">
-  <h2 style="margin:0;padding:0 0 8px;border-bottom:1px solid {{ cd.accent }};font-size:20px;line-height:1.4;font-weight:600;color:#18181b;overflow-wrap:anywhere;">{{ cd.channel_name }}</h2>
-  {% if cd.status %}<div style="font-size:13px;line-height:1.5;color:#71717a;margin-top:6px;">{{ cd.status }}</div>{% endif %}
-  {% if cd.channel_url %}<a href="{{ cd.channel_url | safe_href }}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 0;font-size:14px;line-height:1.5;color:#4f46e5;text-decoration:underline;">{{ channel_link_label }}</a>{% endif %}
-</td></tr>
+<table class="channel" role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;border-collapse:collapse;">
 {% for warning in cd.source_warnings %}
-<tr><td style="padding:0 18px 8px;">
-  <div style="background-color:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;font-size:13px;color:#92400e;">{{ warning }}</div>
-</td></tr>
+<tr><td style="padding:0 4px 8px;"><p class="source-warning" style="margin:0;font-size:14px;line-height:21px;color:#f0b44c;"><strong>{{ cd.channel_name }}{{ field_separator }}</strong>{{ warning }}</p></td></tr>
 {% endfor %}
 {% for ev in cd.events %}
-<tr><td style="padding:4px 18px 8px;border-bottom:1px solid #e5e7eb;">
-  <a href="{{ ev.url | safe_href }}" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px 0;font-size:16px;color:#4f46e5;text-decoration:none;line-height:1.55;overflow-wrap:anywhere;word-break:break-word;">{{ ev.headline }}</a>
-  {% if ev.label or ev.detail %}<div style="font-size:13px;line-height:1.5;color:#71717a;">{% if ev.label %}<span style="font-weight:600;color:{{ cd.accent }};">{{ ev.label }}</span>{% endif %}{% if ev.label and ev.detail %} · {% endif %}{{ ev.detail }}</div>{% endif %}
-  {% if ev.brief_url %}<a href="{{ ev.brief_url | safe_href }}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 0;font-size:14px;line-height:1.5;color:#4f46e5;text-decoration:underline;">{{ brief_link_label }}</a>{% endif %}
+<tr><td style="padding:0 0 8px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;">
+<tr><td class="entry-block" bgcolor="#19232f" style="padding:10px 12px;background-color:#19232f;border:1px solid #62768c;border-radius:5px;word-wrap:break-word;">
+<p class="summary" style="margin:0;font-size:16px;line-height:24px;color:#e7eaed;">{{ ev.headline }}</p>
+{% if ev.detail or (ev.label and not ev.label_in_metadata) %}
+<p class="decision" style="margin:5px 0 0;font-size:16px;line-height:24px;color:#e7eaed;">{% if ev.label_in_metadata %}<strong>{{ ev.detail_html or ev.detail }}</strong>{% elif ev.detail %}{% if ev.label %}{{ ev.label }}{{ field_separator }}{% endif %}{{ ev.detail_html or ev.detail }}{% else %}<strong>{{ ev.label }}</strong>{% endif %}</p>
+{% endif %}
+<p class="references" style="margin:5px 0 0;font-size:14px;line-height:24px;color:#a7b8cc;">{% if ev.label_in_metadata %}{{ ev.label }} · {% endif %}{{ link(ev.url, (ev.url | source_domain) or source_link_label) }}{% if ev.brief_url %} {{ link(ev.brief_url, brief_link_label, "padding-left:10px;") }}{% endif %}</p>
+</td></tr></table>
 </td></tr>
 {% endfor %}
-{% if cd.remaining_note %}
-<tr><td style="padding:12px 18px;font-size:13px;line-height:1.5;color:#71717a;">{{ cd.remaining_note }}{% if cd.channel_url %} <a href="{{ cd.channel_url | safe_href }}" target="_blank" rel="noopener noreferrer" style="color:#4f46e5;">{{ channel_link_label }}</a>{% endif %}</td></tr>
-{% endif %}
+<tr><td style="padding:0 4px 12px;"><p class="channel-return" style="margin:0;font-size:14px;line-height:24px;color:#a7afb7;">{% if cd.remaining_note %}{{ cd.remaining_note }} {% endif %}{% if cd.channel_url %}{{ link(cd.channel_url, channel_link_label(cd.channel_name)) }}{% else %}{{ cd.channel_name }}{% endif %}</p></td></tr>
+</table>
 {% endfor %}
 {% if channel_digests %}
-<tr><td style="padding:16px 18px;font-size:13px;line-height:1.5;color:#71717a;">
-  {{ snapshot_note }}
-  {% if site_url %}<div><a href="{{ site_url | safe_href }}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 0;font-size:14px;line-height:1.5;color:#4f46e5;text-decoration:underline;">{{ site_link_label }}</a></div>{% endif %}
-</td></tr>
+<div class="notes" style="padding:4px;font-size:13px;line-height:20px;color:#a7afb7;">
+{% for cd in channel_digests %}{% if cd.status %}<p style="margin:0 0 3px;">{{ cd.channel_name }}{{ field_separator }}{{ cd.status }}</p>{% endif %}{% endfor %}
+<p style="margin:8px 0 2px;">{{ snapshot_note }}</p>
+{% if site_url %}{{ link(site_url, site_link_label) }}{% endif %}
+</div>
 {% endif %}
-</table>
-</td></tr>
-</table>
+</td></tr></table>
+<!--[if mso]></td></tr></table><![endif]-->
+</td></tr></table>
 </body>
 </html>

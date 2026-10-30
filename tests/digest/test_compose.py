@@ -3,6 +3,9 @@
 list of ChannelDigest sections into plain text / HTML. Content selection, capping and delivery
 marking live in digest/send.py (see tests/digest/test_send.py); these tests only pin how one
 already-selected event looks."""
+import pytest
+from lxml.html import fromstring
+
 from beehive.digest.compose import (
     ChannelDigest,
     EventView,
@@ -144,6 +147,8 @@ def test_configured_navigation_keeps_all_fifty_entries_and_only_links_saved_brie
     assert "Open Beehive: https://news.example/beehive" in plain
     assert "Open saved brief: https://news.example/beehive/items/1/brief" in plain
     assert 'target="_blank" rel="noopener noreferrer"' in markup
+    assert len(fromstring(markup).xpath('//td[@class="entry-block"]')) == 50
+    assert len(markup.encode("utf-8")) < 102_400
 
 
 def test_unconfigured_website_does_not_invent_internal_links():
@@ -169,7 +174,7 @@ def test_event_labels_are_localized():
 
 # --- compose_channel_digest -------------------------------------------------------------------
 
-def test_compose_channel_digest_builds_views_and_kind_accent():
+def test_compose_channel_digest_builds_kind_aware_views():
     cd = compose_channel_digest(
         "Arc'teryx Outlet",
         "monitor",
@@ -178,7 +183,6 @@ def test_compose_channel_digest_builds_views_and_kind_accent():
         _EN,
     )
     assert cd.channel_kind == "monitor"
-    assert cd.accent == "#0f766e"
     assert [type(e) for e in cd.events] == [EventView]
     assert cd.events[0].label == "New"
 
@@ -224,26 +228,29 @@ def test_plain_text_returns_the_given_subject_verbatim():
 
 # --- HTML -------------------------------------------------------------------------------------
 
-def test_html_includes_channel_name_and_kind_accent():
+def test_html_keeps_channel_context_without_visible_headings():
     cd = compose_channel_digest(
         "Watchlist", "tracker",
         [_event(channel_kind="tracker", event_type="discovered")], [], _EN)
     html = render_digest_email_html([cd], "2026-07-09", _EN, _SUBJECT)
     assert "Watchlist" in html
-    assert "#b45309" in html  # tracker accent applied to the section rule
+    assert not fromstring(html).xpath("//h1 | //h2 | //hr")
 
 
-def test_html_wraps_headline_in_a_link_and_shows_the_label_badge():
+def test_html_groups_summary_event_label_and_source_in_one_block():
     cd = compose_channel_digest(
         "Clearance", "monitor",
         [_event(channel_kind="monitor", event_type="discovered",
                 item_ai_summary="Cheap tent", item_url="https://x/3")],
         [], _EN)
     html = render_digest_email_html([cd], "2026-07-09", _EN, _SUBJECT)
-    assert '<a href="https://x/3"' in html
-    assert "Cheap tent</a>" in html
-    assert ">New</span>" in html
-    assert html.index("Cheap tent</a>") < html.index(">New</span>")
+    block, = fromstring(html).xpath('//td[@class="entry-block"]')
+    assert block.xpath('string(p[@class="summary"])') == "Cheap tent"
+    assert block.xpath('string(p[@class="decision"]/strong)') == "New"
+    source, = block.xpath('p[@class="references"]/a')
+    assert source.get("href") == "https://x/3"
+    assert source.text == "x"
+    assert "Cheap tent" not in source.text_content()
 
 
 def test_html_shows_price_detail_line():
@@ -253,7 +260,9 @@ def test_html_shows_price_detail_line():
                 payload={"old_price": 50.0, "new_price": 40.0})],
         [], _EN)
     html = render_digest_email_html([cd], "2026-07-09", _EN, _SUBJECT)
-    assert "50 \u2192 40" in html
+    decision, = fromstring(html).xpath('//p[@class="decision"]')
+    assert decision.text_content() == "Price drop: 50 \u2192 40"
+    assert decision.xpath("string(strong)") == "40"
 
 
 def test_html_shows_warning_in_a_distinct_block():
@@ -275,13 +284,13 @@ def test_html_lang_attribute_reflects_the_selected_language():
     assert '<html lang="de">' in render_digest_email_html([], "2026-07-09", _DE, _SUBJECT)
 
 
-def test_html_localizes_the_header_and_event_labels():
+def test_html_localizes_the_preheader_and_event_labels():
     cd = compose_channel_digest(
         "Clearance", "monitor",
         [_event(channel_kind="monitor", event_type="discovered")], [], _DE)
     html = render_digest_email_html([cd], "2026-07-09", _DE, _SUBJECT)
-    assert "Tages\u00fcberblick" in html  # localized header
-    assert ">Neu</span>" in html  # localized "New" badge
+    assert "Tages\u00fcberblick" in html
+    assert ">Neu</strong>" in html
 
 
 def test_plain_text_empty_state_is_localized_header_only_for_warning_sections():
@@ -321,3 +330,107 @@ def test_html_escapes_untrusted_text():
     assert "&lt;script&gt;" in html
     assert "<b>boom</b>" not in html
     assert "&lt;b&gt;boom&lt;/b&gt;" in html
+
+
+@pytest.mark.parametrize("url,label,href", [
+    ("https://www.news.example:8443/story?query=1", "news.example",
+     "https://www.news.example:8443/story?query=1"),
+    ("javascript:alert(1)", "Open source", "#"),
+    ("https://[invalid", "Open source", "#"),
+    ("", "Open source", "#"),
+])
+def test_source_reference_uses_the_host_or_a_safe_localized_fallback(url, label, href):
+    digest = compose_channel_digest("News", "editorial", [_event(item_url=url)], [], _EN)
+    document = fromstring(render_digest_email_html([digest], "2026-10-30", _EN, _SUBJECT))
+    source, = document.xpath('//p[@class="references"]/a')
+    assert source.text == label
+    assert source.get("href") == href
+
+
+def test_tracker_deadline_is_primary_and_its_label_stays_with_the_source():
+    digest = compose_channel_digest(
+        "Auctions", "tracker",
+        [_event(channel_kind="tracker", item_raw_metadata={"closing_at": "2026-10-31T06:30:00Z"})],
+        [], _EN, timezone_name="Pacific/Auckland",
+    )
+    document = fromstring(render_digest_email_html([digest], "2026-10-30", _EN, _SUBJECT))
+    block, = document.xpath('//td[@class="entry-block"]')
+    assert block.xpath('string(p[@class="decision"])') == "Closes: 2026-10-31 19:30 NZDT"
+    assert block.xpath('p[@class="decision"]/strong')
+    assert "19:30 NZDT" in block.xpath('p[@class="decision"]/strong/span/text()')
+    assert block.xpath('string(p[@class="references"])').startswith("New tracked item")
+    _, plain = render_digest_email([digest], "2026-10-30", _EN, _SUBJECT)
+    assert "[New tracked item \u00b7 Closes: 2026-10-31 19:30 NZDT]" in plain
+
+
+def test_formatted_prices_do_not_allow_html_from_malformed_payload_values():
+    digest = compose_channel_digest(
+        "Deals", "monitor",
+        [_event(channel_kind="monitor", event_type="price_drop",
+                payload={"old_price": "<img src=x>", "new_price": "<script>alert(1)</script>"})],
+        [], _EN,
+    )
+    markup = render_digest_email_html([digest], "2026-10-30", _EN, _SUBJECT)
+    document = fromstring(markup)
+    assert not document.xpath("//img | //script")
+    assert document.xpath('string(//p[@class="decision"]/strong)') == "<script>alert(1)</script>"
+    assert "&lt;img" in markup
+
+
+def test_warning_precedes_affected_entries_and_quiet_channel_status_is_retained():
+    digests = [
+        compose_channel_digest(
+            "Deals", "monitor", [_event(channel_kind="monitor")],
+            ["One source timed out."], _EN, status="2/3 sources OK", remaining_count=4,
+            channel_id=2, site_url="https://beehive.example",
+        ),
+        compose_channel_digest(
+            "Quiet channel", "editorial", [], [], _EN,
+            status="No changes since the last email",
+        ),
+    ]
+    markup = render_digest_email_html(digests, "2026-10-30", _EN, _SUBJECT)
+    document = fromstring(markup)
+    assert markup.index("One source timed out.") < markup.index('class="entry-block"')
+    assert "Deals: One source timed out." in document.text_content()
+    assert len(document.xpath('//td[@class="entry-block"]')) == 1
+    assert "Quiet channel: No changes since the last email" in document.xpath('string(//div[@class="notes"])')
+    assert document.xpath('string(//p[@class="channel-return"])').startswith(
+        "\u2026and 4 more not shown. View Deals",
+    )
+    assert document.xpath('//p[@class="channel-return"]/a/text()') == ["View Deals"]
+
+
+@pytest.mark.parametrize("language", ["en", "zh-CN", "ja", "ko", "es", "fr", "de"])
+def test_all_locales_render_named_channel_links_and_source_fallback(language):
+    localizer = localizer_for(language)
+    digest = compose_channel_digest(
+        "Channel <one>", "editorial", [_event(item_url="")], [], localizer,
+        channel_id=1, site_url="https://beehive.example",
+    )
+    markup = render_digest_email_html([digest], "2026-10-30", localizer, _SUBJECT)
+    document = fromstring(markup)
+    assert document.xpath('string(//p[@class="channel-return"]/a)') == localizer.text(
+        "background.digest_view_channel", channel="Channel <one>",
+    )
+    assert document.xpath('string(//p[@class="references"]/a)') == localizer.text(
+        "background.digest_open_source",
+    )
+    assert not document.xpath("//one")
+
+
+def test_chinese_email_uses_consistent_punctuation_for_facts_warnings_and_status():
+    digest = compose_channel_digest(
+        "Deals", "monitor",
+        [_event(channel_kind="monitor", event_type="price_drop",
+                payload={"old_price": 50, "new_price": 40})],
+        ["Source timeout"], _ZH, status="2/3 OK", remaining_count=4,
+        channel_id=1, site_url="https://beehive.example",
+    )
+    document = fromstring(render_digest_email_html([digest], "2026-10-30", _ZH, _SUBJECT))
+    assert document.xpath('string(//p[@class="decision"])') == "\u964d\u4ef7\uff1a50 \u2192 40"
+    assert document.xpath('string(//p[@class="source-warning"])') == "Deals\uff1aSource timeout"
+    assert document.xpath('string(//div[@class="notes"]/p[1])') == "Deals\uff1a2/3 OK"
+    assert document.xpath('string(//p[@class="channel-return"])').startswith(
+        "\u53e6\u6709 4 \u6761\u672a\u663e\u793a\u3002 ",
+    )

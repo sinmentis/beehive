@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import Markup, escape
 
 from beehive.auction import format_auction_amount
 from beehive.localization import Localizer
@@ -32,24 +33,20 @@ _env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True
 
 
 def _safe_href(url: str) -> str:
-    return url if urlparse(url).scheme in ("http", "https") else "#"
+    try:
+        return url if urlparse(url).scheme in ("http", "https") else "#"
+    except ValueError:
+        return "#"
+
+
+def _source_domain(url: str) -> str:
+    if _safe_href(url) == "#":
+        return ""
+    return (urlparse(url).hostname or "").removeprefix("www.")
 
 
 _env.filters["safe_href"] = _safe_href
-
-
-# Kind-specific accent (section rule + label badge colour) so an email visibly separates an
-# Editorial signal from a Monitor deal from a Tracker deadline without exposing the raw kind.
-_KIND_ACCENTS: dict[str, str] = {
-    "editorial": "#4f46e5",
-    "monitor": "#0f766e",
-    "tracker": "#b45309",
-}
-_DEFAULT_ACCENT = "#4f46e5"
-
-
-def _accent_for_kind(kind: str) -> str:
-    return _KIND_ACCENTS.get(kind, _DEFAULT_ACCENT)
+_env.filters["source_domain"] = _source_domain
 
 
 def _format_amount(value: object, currency_code: object = None) -> str:
@@ -63,10 +60,9 @@ def _format_amount(value: object, currency_code: object = None) -> str:
 
 @dataclass(frozen=True)
 class EventView:
-    """Presentation-ready view of one deliverable item event. All strings are raw (unescaped):
-    the plain-text renderer needs them raw and the HTML template escapes them via Jinja
-    autoescape. `label` is "" for an editorial discovery (the familiar linked summary carries no
-    badge); `detail` is "" when the event has no secondary line (a price change or closing time)."""
+    """Presentation-ready event. Text stays raw for the plain-text renderer; detail_html
+    contains only localized formatting with escaped values. label_in_metadata keeps a
+    Tracker's event label secondary to its deadline."""
 
     headline: str
     url: str
@@ -75,6 +71,8 @@ class EventView:
     kind: str
     event_type: str
     brief_url: str | None = None
+    detail_html: Markup | None = None
+    label_in_metadata: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,7 +81,6 @@ class ChannelDigest:
     channel_kind: str
     events: list[EventView]
     source_warnings: list[str]
-    accent: str = _DEFAULT_ACCENT
     # One-line health summary ("4/4 sources OK · 1873 listings tracked"), so a quiet Channel
     # reads as "checked, nothing new" rather than looking broken.
     status: str = ""
@@ -117,6 +114,8 @@ def build_event_view(
 
     label = ""
     detail = ""
+    detail_html = None
+    label_in_metadata = False
     if event_type == "price_drop":
         label = localizer.text("background.digest_event_price_drop")
         payload = event.get("payload") or {}
@@ -124,11 +123,13 @@ def build_event_view(
             currency_code = payload.get("currency_code")
             if not currency_code:
                 currency_code = (event.get("item_raw_metadata") or {}).get("currency_code")
-            detail = localizer.text(
+            old = _format_amount(payload["old_price"], currency_code)
+            new = _format_amount(payload["new_price"], currency_code)
+            detail = localizer.text("background.digest_event_price_detail", old=old, new=new)
+            detail_html = Markup(localizer.text(
                 "background.digest_event_price_detail",
-                old=_format_amount(payload["old_price"], currency_code),
-                new=_format_amount(payload["new_price"], currency_code),
-            )
+                old=escape(old), new=Markup("<strong>{}</strong>").format(new),
+            ))
     elif event_type == "back_in_stock":
         label = localizer.text("background.digest_event_back_in_stock")
     elif event_type == "discovered":
@@ -141,6 +142,15 @@ def build_event_view(
                 detail = localizer.text(
                     "background.digest_event_closing", time=closing_at,
                 )
+                date, time = closing_at.split(" ", 1)
+                detail_html = Markup(localizer.text(
+                    "background.digest_event_closing",
+                    time=Markup(
+                        '<span style="display:inline-block;">{}</span> '
+                        '<span style="display:inline-block;">{}</span>'
+                    ).format(date, time),
+                ))
+                label_in_metadata = True
         elif kind == "monitor":
             label = localizer.text("background.digest_event_new")
         # An editorial discovery renders as the familiar linked summary, no badge.
@@ -153,6 +163,8 @@ def build_event_view(
         kind=kind,
         event_type=event_type,
         brief_url=brief_url,
+        detail_html=detail_html,
+        label_in_metadata=label_in_metadata,
     )
 
 
@@ -196,7 +208,6 @@ def compose_channel_digest(
         channel_kind=channel_kind,
         events=views,
         source_warnings=source_warnings,
-        accent=_accent_for_kind(channel_kind),
         status=status,
         remaining_note=remaining_note,
         site_url=website,
@@ -257,11 +268,16 @@ def render_digest_email_html(channel_digests: list[ChannelDigest], today_iso: st
         header_text=localizer.text("background.digest_header", product=product),
         site_url=next((digest.site_url for digest in channel_digests if digest.site_url), None),
         site_link_label=localizer.text("background.digest_open_site", product=product),
-        channel_link_label=localizer.text("background.digest_open_channel"),
+        channel_link_label=lambda channel: localizer.text(
+            "background.digest_view_channel", channel=channel,
+        ),
+        source_link_label=localizer.text("background.digest_open_source"),
+        field_separator=localizer.text("background.digest_field_separator"),
         brief_link_label=localizer.text("background.digest_open_brief"),
         contents_label=localizer.text(
             "background.digest_contents",
             channels=len(channel_digests), count=sum(len(digest.events) for digest in channel_digests),
         ),
         snapshot_note=localizer.text("background.digest_snapshot_note"),
+        empty_state=localizer.text("background.digest_empty_state"),
     )

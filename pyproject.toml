@@ -1,6 +1,6 @@
 [project]
 name = "beehive"
-version = "1.0.3"
+version = "1.0.4"
 description = "A self-hosted app that follows news, online stores and auctions for you, and uses AI to show you only what matters."
 readme = "README.md"
 license = "MIT"

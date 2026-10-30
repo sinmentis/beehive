@@ -373,7 +373,7 @@ def test_mixed_editorial_monitor_tracker_group_renders_in_one_email(conn):
     assert "[New tracked item \u00b7 Closes: 2026-08-01 22:00 NZST] Rare coin lot" in plain_text
     # HTML shows the same semantics, still no raw JSON payload.
     assert "Price drop" in html
-    assert "200 \u2192 150" in html
+    assert "200 \u2192 <strong>150</strong>" in html
     assert "old_price" not in html
 
 
