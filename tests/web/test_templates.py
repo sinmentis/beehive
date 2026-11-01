@@ -251,11 +251,11 @@ def test_monitor_and_tracker_have_dedicated_typed_templates():
     assert 'id="listing-{{ listing.id }}" tabindex="-1"' in macros
     assert "{% macro lot_row(lot, channel_name='') %}" in macros
     assert 'id="lot-{{ lot.id }}" tabindex="-1"' in macros
-    # The same listing or lot as a gallery plate, with the same controls.
+    # The same listing or lot as a gallery plate; a listing plate leaves its controls to the list.
     assert "{% macro listing_plate(listing, channel_name='') %}" in macros
     assert "{% macro lot_plate(lot, channel_name='') %}" in macros
     assert macros.count('{% include "_tracker_watch_control.html" %}') == 2
-    assert macros.count('{% include "_listing_feedback_control.html" %}') == 4
+    assert macros.count('{% include "_listing_feedback_control.html" %}') == 3
     assert "rd.listing_table(page.items, page.channel_name)" in monitor
     assert "rd.listing_plates(page.items, page.channel_name)" in monitor
     assert "rd.lot_table(lots, page.channel_name)" in tracker

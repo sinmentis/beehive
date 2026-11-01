@@ -396,13 +396,15 @@ def test_channel_drilldown_monitor_channel_hides_vote_widget(conn, authed_client
         ),
     )
 
-    resp = authed_client.get(f"/channels/{channel_id}")
+    resp = authed_client.get(f"/channels/{channel_id}", params={"view": "list"})
     assert resp.status_code == 200
     assert "Beta jacket $199" in resp.text
     item_id = _item_id(c, "t1")
     assert f'action="/items/{item_id}/vote"' not in resp.text
-    # The Owner rates a listing with relevance feedback instead.
+    # The Owner rates a listing with relevance feedback instead, in the list view only.
     assert f'<form class="vote" method="post" action="/items/{item_id}/relevance"' in resp.text
+    gallery = authed_client.get(f"/channels/{channel_id}", params={"view": "gallery"}).text
+    assert f'action="/items/{item_id}/relevance"' not in gallery
 
 
 def test_monitor_channel_accepts_newest_fetched_sort(conn, client):
@@ -482,7 +484,7 @@ def test_channel_drilldown_shows_shopify_collection_source_label_and_discount(
     resp = client.get(f"/channels/{channel_id}", params={"view": "list"})
     assert resp.status_code == 200
     # A store's collection reads as the store itself.
-    assert "Sources: example.com</p>" in resp.text
+    assert "Sources: example.com</span>" in resp.text
     byline = re.search(r'<span class="lot-where">([^<]*)</span>', resp.text)
     assert byline is not None
     assert byline.group(1) == "Arc&#39;teryx · Jackets · example.com"
@@ -563,9 +565,9 @@ def test_channel_drilldown_shows_land_sea_collection_source_label_and_discount(
         c, source_id, "1001", score=91, summary="On sale", rationale="r"
     )
 
-    resp = client.get(f"/channels/{channel_id}")
+    resp = client.get(f"/channels/{channel_id}", params={"view": "list"})
     assert resp.status_code == 200
-    assert "land-sea.co.nz</p>" in resp.text
+    assert "land-sea.co.nz</span>" in resp.text
     byline = re.search(r'<span class="lot-where">([^<]*)</span>', resp.text)
     assert byline is not None
     assert byline.group(1).startswith("Teva · ")

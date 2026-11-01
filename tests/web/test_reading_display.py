@@ -178,7 +178,7 @@ def test_a_store_opens_as_a_gallery_and_an_auction_as_a_list(conn):
 
     store = client.get(f"/channels/{store_id}").text
     assert '<ul class="plates" role="list">' in store
-    assert f'<li class="plate kb-row" id="listing-{listing_id}"' in store
+    assert f'<li class="plate plate-listing kb-row" id="listing-{listing_id}"' in store
     assert "tbl-stack" not in store
     assert re.search(r'aria-current="page">Gallery</a>', store)
 
@@ -216,20 +216,20 @@ def test_page_size_is_a_remembered_choice_that_starts_lists_over(conn):
     client = _client(path)
 
     first = client.get(f"/channels/{channel_id}", params={"page": 2})
-    assert first.text.count('class="plate kb-row"') == 6
+    assert first.text.count('class="plate plate-listing kb-row"') == 6
     # Each size is a plain link that keeps the filters and starts the list from its first page.
     assert f'href="/channels/{channel_id}?per_page=48"' in first.text
     assert re.search(r'aria-current="page">24</a>', first.text)
 
     bigger = client.get(f"/channels/{channel_id}", params={"per_page": 48})
-    assert bigger.text.count('class="plate kb-row"') == 30
+    assert bigger.text.count('class="plate plate-listing kb-row"') == 30
     assert _cookie(bigger, "reading_per_page") == "48"
-    assert client.get(f"/channels/{channel_id}").text.count('class="plate kb-row"') == 30
+    assert client.get(f"/channels/{channel_id}").text.count('class="plate plate-listing kb-row"') == 30
 
     # A size that is not offered is ignored.
     odd = client.get(f"/channels/{channel_id}", params={"per_page": 50})
     assert _cookie(odd, "reading_per_page") is None
-    assert odd.text.count('class="plate kb-row"') == 30
+    assert odd.text.count('class="plate plate-listing kb-row"') == 30
 
 
 def test_pager_keeps_a_chosen_view(conn):
@@ -277,14 +277,16 @@ def test_score_help_is_public_but_threshold_controls_remain_owner_only(conn):
     strict_id, _ = _store(connection, "Boots", minimum_score=50)
     owner = _client(path, owner=True)
 
-    assert "How relevance scores work" in owner.get(f"/channels/{open_id}").text
+    # Scores, and so their explanation, show only in the list view.
+    assert "not discount size" in owner.get(f"/channels/{open_id}", params={"view": "list"}).text
+    assert "not discount size" not in owner.get(f"/channels/{open_id}", params={"view": "gallery"}).text
     assert f'href="/admin/channels/{open_id}/edit?section=rules"' not in owner.get(f"/channels/{open_id}").text
     rules_url = f"/admin/channels/{strict_id}/edit?section=rules"
     assert f'href="{rules_url}"' in owner.get(f"/channels/{strict_id}").text
     destination = owner.get(rules_url)
     assert destination.status_code == 200
     assert destination.context["section"] == "rules"
-    public = _client(path).get(f"/channels/{strict_id}").text
+    public = _client(path).get(f"/channels/{strict_id}", params={"view": "list"}).text
     assert "not discount size" in public
     assert f'href="{rules_url}"' not in public
 
@@ -431,7 +433,7 @@ def test_a_store_collection_reads_as_its_store_and_an_owner_name_wins(conn):
 
     page = _client(path).get(f"/channels/{channel_id}").text
 
-    assert "Sources: shop.example, other.example, Named Store</p>" in page
+    assert "Sources: shop.example, other.example, Named Store</span>" in page
 
 
 def _news(connection):
@@ -624,7 +626,7 @@ def test_a_malformed_preference_cookie_falls_back_to_the_defaults(conn):
     )
 
     assert response.status_code == 200
-    assert response.text.count('class="plate kb-row"') == 24
+    assert response.text.count('class="plate plate-listing kb-row"') == 24
 
 
 def test_a_malformed_batch_token_is_ignored(conn):
@@ -734,13 +736,33 @@ def test_a_store_page_has_no_section_switches(conn):
     assert _cookie(page, "reading_hidden") is None
 
 
+def test_a_store_plate_leads_with_the_brand_and_reads_was_now_cut(conn):
+    path, connection = conn
+    store_id, (listing_id,) = _store(connection)
+    metadata = {**_listing(69), "compare_at_price": 129, "on_sale": True}
+    connection.execute(
+        "UPDATE items SET title = ?, raw_metadata = ? WHERE id = ?",
+        ("ARC'TERYX Beta Jacket", json.dumps(metadata), listing_id),
+    )
+    connection.commit()
+
+    page = _client(path, owner=True).get(f"/channels/{store_id}", params={"view": "gallery"}).text
+    plate = re.search(rf'<li class="plate plate-listing kb-row" id="listing-{listing_id}".*?</li>', page, re.DOTALL).group(0)
+    # The brand leads and the name drops the brand it repeats.
+    assert '<b class="plate-brand">Arc&#39;teryx</b> <span class="plate-name">Beta Jacket</span>' in plate
+    assert plate.index('class="price-was"') < plate.index('class="price-now"') < plate.index('class="price-cut"')
+    assert "−47%" in plate
+    # The list keeps the score and the Owner's relevance toggles; the plate shows neither.
+    assert "plate-score" not in plate and 'class="vote"' not in plate
+
+
 def test_a_plate_leads_with_the_name(conn):
     path, connection = conn
     store_id, (listing_id,) = _store(connection)
     auction_id, lot_id = _auctions(connection)
     reader = _client(path)
 
-    plate = re.search(rf'<li class="plate kb-row" id="listing-{listing_id}".*?</li>', reader.get(f"/channels/{store_id}").text, re.DOTALL).group(0)
+    plate = re.search(rf'<li class="plate plate-listing kb-row" id="listing-{listing_id}".*?</li>', reader.get(f"/channels/{store_id}").text, re.DOTALL).group(0)
     assert plate.index('class="lot-title"') < plate.index('class="plate-price"')
     lot = reader.get(f"/channels/{auction_id}", params={"view": "gallery"}).text
     lot_plate = re.search(rf'<li class="plate kb-row" id="lot-{lot_id}".*?</li>', lot, re.DOTALL).group(0)

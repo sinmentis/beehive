@@ -64,6 +64,45 @@
     }
   });
 
+  // A filter bar marked data-auto-apply applies a pick at once: a select or checkbox on change,
+  // a multiselect when its checklist closes with a different choice. Typed search waits for
+  // its button or Enter.
+  document.querySelectorAll("form[data-auto-apply]").forEach((form) => {
+    const apply = () => {
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else form.submit();
+    };
+    const picked = (menu) => [...menu.querySelectorAll("input:checked")].map((box) => box.value).join("\n");
+    form.addEventListener("change", (event) => {
+      const control = event.target;
+      if (!(control instanceof HTMLSelectElement || control instanceof HTMLInputElement)) return;
+      if (control.type === "search" || control.type === "text" || control.closest("details.ms")) return;
+      apply();
+    });
+    form.querySelectorAll("details.ms").forEach((menu) => {
+      let before = picked(menu);
+      menu.addEventListener("toggle", () => {
+        if (menu.open) before = picked(menu);
+        else if (picked(menu) !== before) apply();
+      });
+    });
+  });
+  // An open multiselect closes like a select: on a click outside it, or on Escape.
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll("details.ms[open]").forEach((menu) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !(event.target instanceof Element)) return;
+    const menu = event.target.closest("details.ms[open]");
+    if (!menu) return;
+    menu.open = false;
+    menu.querySelector("summary")?.focus({ preventScroll: true });
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  });
+
   document.addEventListener("htmx:beforeRequest", (event) => {
     // A form posted by htmx is triggered by the form, but the focus key and the announcement
     // belong to the button that submitted it.

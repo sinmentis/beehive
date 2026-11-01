@@ -579,6 +579,20 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 .plate-foot .watch-has-error{align-items:flex-start}
 .plate.is-closed .plate-img{filter:grayscale(1);opacity:.65}
 .plate.is-closed :is(.lot-title,.price-now,.plate-when){color:var(--ink-2)}
+/* A store plate: the brand leads, in ink, and the name follows in secondary ink. The price line
+   reads struck reference price, current price, then the cut as a solid ink mark. The store sits
+   at the plate's foot, level along the row. */
+.plate-listing .lot-title{display:flex;flex-direction:column;gap:2px}
+.plate-brand{color:var(--ink);font-size:.9375rem;font-weight:700;line-height:1.35}
+.plate-name{color:var(--ink-2);font-size:.875rem;font-weight:400;line-height:1.45}
+.plate-listing .lot-title:hover>*{color:var(--link-2)}
+.plate-listing .plate-price{margin-top:4px}
+.plate-listing .price-now{font-size:1.0625rem;font-weight:700}
+.price-cut{display:inline-flex;align-items:center;align-self:center;padding:1px 5px;border-radius:2px;background:var(--ink);
+ color:var(--on-fill);font-size:.8125rem;font-weight:700;line-height:1.35;font-variant-numeric:tabular-nums;white-space:nowrap}
+.plate-listing .plate-context{margin-top:auto;padding-top:6px}
+.plate.is-closed :is(.plate-brand,.plate-name){color:var(--ink-2)}
+.plate.is-closed .price-cut{background:var(--ink-2)}
 
 /* A two-state toggle: a word with a square that fills when it is on. The Owner's relevance and
    watch controls use it; the pressed state is read from aria-pressed, never from colour alone. */
@@ -628,6 +642,17 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 .filter-options .fld{max-width:100%}
 .filter-options .inp{max-width:100%}
 .filter-error{flex-basis:100%;margin:0}
+/* A store's filter bar is one row: search, the filters, sort and the search button. On a wide
+   sheet the filters' disclosure stays open with its summary hidden, so they sit inline. */
+.filter-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 12px}
+.filter-row>.fld-grow{flex:1 1 14rem;max-width:none}
+.filter-row>.filter-more{flex:0 1 auto;min-width:0;margin:0}
+.filter-row>.filter-more[open]>.filter-options{margin-top:0}
+.filter-row .filter-options{gap:10px 12px}
+.filter-row .ms>summary{min-width:8.5rem;max-width:16rem}
+.filter-row .fld select.inp{max-width:14rem}
+.criteria-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px;margin-top:8px}
+.criteria-line .note-act{justify-content:flex-start;padding:0}
 .page-workspace .checkbox-target{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer}
 .reading-action-slot{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:20;
  width:max-content;max-width:calc(100vw - 28px);pointer-events:none}
@@ -756,6 +781,13 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 }
 
 /* Mid widths: let table cells wrap before anything is allowed to overflow. */
+@container adm (min-width:881px){
+ .filter-row>.filter-more>summary{display:none}
+}
+/* Too narrow for one row: search, sort and the button stay together and the filters follow. */
+@container adm (max-width:1080px){
+ .filter-row>.filter-more{flex:1 1 100%;order:3}
+}
 @container adm (max-width:1180px){
  .adm-main{padding:8px}
  .adm-page{padding:14px 18px 32px}
@@ -833,6 +865,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
   .plate-photo{grid-row:2}
   .plate-context{grid-row:3}
   .plate-foot{grid-row:4}
+  .plate-listing{grid-row:span 3}
  }
  .tbl-stack td.c-lot{padding-right:28px}
  .filters form{flex-basis:100%}
@@ -871,14 +904,15 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .fld-grow{flex-basis:100%;max-width:none}
  .filter-bar{margin-top:12px;padding-top:8px;padding-bottom:8px}
  .filter-primary{gap:8px 10px}
- .filter-primary>.fld-grow{flex:1 1 8rem;order:0}
- .filter-primary>.fld-grow>span{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
- .filter-primary>.fld-act{order:1}
- .filter-primary>.fld:not(.fld-grow){display:flex;align-items:center;flex:1 0 100%;gap:8px;order:2}
- .filter-primary>.fld:not(.fld-grow)>span{flex:none}
- .filter-primary .fld select.inp{flex:1;min-width:0;max-width:100%}
+ :is(.filter-primary,.filter-row)>.fld-grow{flex:1 1 8rem;order:0}
+ :is(.filter-primary,.filter-row)>.fld-grow>span{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ :is(.filter-primary,.filter-row)>.fld-act{order:1}
+ :is(.filter-primary,.filter-row)>.fld:not(.fld-grow){display:flex;align-items:center;flex:1 0 100%;gap:8px;order:2}
+ :is(.filter-primary,.filter-row)>.fld:not(.fld-grow)>span{flex:none}
+ :is(.filter-primary,.filter-row) .fld select.inp{flex:1;min-width:0;max-width:100%}
  .filter-primary>input[type=search]{flex-basis:8rem}
  .filter-more{margin-top:4px}
+ .filter-row .ms>summary{max-width:none}
  .filter-apply-secondary{display:flex;flex-basis:100%;padding-top:12px}
  .filter-options>.fld{flex:1 1 12rem}
  .filter-options .ms-panel{width:100%;min-width:0;max-width:100%}
@@ -886,7 +920,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .ms>summary{max-width:none}
 }
 @container adm (max-width:360px){
- .filter-primary>.fld-grow,.filter-primary>input[type=search]{flex-basis:100%}
+ .filter-primary>.fld-grow,.filter-primary>input[type=search],.filter-row>.fld-grow{flex-basis:100%}
  .filter-primary>.fld-act{order:3}
  .page-reading .adm-toc-foot{flex-wrap:wrap;justify-content:flex-end}
  .page-reading .adm-toc-foot>a{flex:none;white-space:nowrap}

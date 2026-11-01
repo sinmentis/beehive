@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-02
+
+### Changed
+
+- Store channels put search, filters and sort on one row. Filters and sort apply as soon as
+  they are picked; the button only runs a typed search.
+- Store channel headers show the last fetch and the sources on the meta line, and the page-size
+  switch sits next to the list/gallery switch.
+- Gallery cards lead with the brand and show the struck reference price, the current price and
+  the discount. Scores and relevance buttons stay in the list view.
+
 ## [1.0.4] - 2026-10-30
 
 ### Changed

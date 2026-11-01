@@ -218,25 +218,29 @@
 </table></div>
 {% endmacro %}
 
-{#- A Monitor listing as a gallery plate: the whole photo, then its name, its price, what changed
-    and the store, with its score and the Owner's relevance toggles at the foot. -#}
+{#- A Monitor listing as a gallery plate: the whole photo, then the brand leading the name (the
+    name drops a brand it repeats), the struck reference price, the current price and the cut,
+    what changed and the store. No score or relevance toggles: the list view keeps those. -#}
 {% macro listing_plate(listing, channel_name='') %}
 {%- set closed = not (listing.is_present and listing.is_available) %}
-<li class="plate kb-row{{ ' is-closed' if closed }}" id="listing-{{ listing.id }}" tabindex="-1" data-channel="{{ channel_name }}">
+{%- set name = listing.title %}
+{%- if listing.vendor and (listing.title[:listing.vendor|length])|lower == listing.vendor|lower and (listing.title[listing.vendor|length:])|trim %}{% set name = (listing.title[listing.vendor|length:])|trim %}{% endif %}
+<li class="plate plate-listing kb-row{{ ' is-closed' if closed }}" id="listing-{{ listing.id }}" tabindex="-1" data-channel="{{ channel_name }}">
   <a class="plate-photo" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true">{{ plate_img(listing.image_url) }}</a>
   <div class="plate-facts">
-  <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>{{ listing.title }}<span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
+  <a class="lot-title" href="{{ listing.open_url }}" target="_blank" rel="noopener noreferrer" data-kb-open>
+    {%- if listing.vendor %}<b class="plate-brand">{{ listing.vendor }}</b> {% endif %}<span class="plate-name">{{ name }}</span><span class="sr-only">{{ t('web.item.opens_new_window') }}</span></a>
   <p class="plate-price">
+    {%- if listing.discount_percent and listing.compare_at_price_label %}<s class="price-was"><span class="sr-only">{{ t('web.reading.merchant_reference') }} </span>{{ listing.compare_at_price_label }}</s>{% endif %}
     {%- if listing.price_label %}<span class="price-now">{{ listing.price_label }}</span>{% else %}<span class="muted">{{ t('web.monitor.price_unavailable') }}</span>{% endif %}
-    {{- reference_price(listing, with_discount=true) }}
+    {%- if listing.discount_percent %}<span class="price-cut"><span aria-hidden="true">−{{ listing.discount_percent }}%</span><span class="sr-only">{{ t('web.monitor.discount', percent=listing.discount_percent) }}</span></span>{% endif -%}
   </p>
   {{- change_line(listing) }}
   </div>
   <div class="plate-context">
-  <span class="lot-where">{{ [listing.vendor, listing.source_label]|select|join(' · ') }}</span>
+  {%- if listing.source_label %}<span class="lot-where">{{ listing.source_label }}</span>{% endif %}
   {%- if closed %}<span class="lot-state"><span class="st st-never">{{ t('web.monitor.status_out_of_stock') if listing.is_present else t('web.monitor.status_removed') }}</span></span>{% endif %}
   </div>
-  <div class="plate-foot">{{ plate_score(listing.ai_score) }}{% if is_admin %}<div class="ops-stack">{% set item = listing %}{% set feedback_hx = true %}{% include "_listing_feedback_control.html" %}</div>{% endif %}</div>
 </li>
 {% endmacro %}
 
