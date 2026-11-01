@@ -623,6 +623,10 @@ class MonitorQuery:
     vendors: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     genders: tuple[MonitorGender, ...] = ()
+    # Values to leave out, such as kids' wear. A value both kept and left out is left out.
+    exclude_vendors: tuple[str, ...] = ()
+    exclude_sources: tuple[str, ...] = ()
+    exclude_genders: tuple[MonitorGender, ...] = ()
     search: str | None = None
 
 
@@ -677,6 +681,7 @@ class MonitorGenderOption:
     value: str
     label: str
     selected: bool
+    excluded: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -699,6 +704,9 @@ class MonitorPage:
     source_options: tuple[str, ...]
     gender_options: tuple[MonitorGenderOption, ...]
     criteria: ChannelCriteriaView
+    excluded_vendors: tuple[str, ...] = ()
+    excluded_sources: tuple[str, ...] = ()
+    excluded_genders: tuple[MonitorGender, ...] = ()
 
 
 _MONITOR_EVENT_TYPES = frozenset({"discovered", "price_drop", "back_in_stock"})
@@ -856,8 +864,17 @@ def _passes_monitor_filters(
     vendor_keys: frozenset[str],
     source_keys: frozenset[str],
     genders: frozenset[MonitorGender],
+    excluded_vendor_keys: frozenset[str] = frozenset(),
+    excluded_source_keys: frozenset[str] = frozenset(),
+    excluded_genders: frozenset[MonitorGender] = frozenset(),
 ) -> bool:
     if query.on_sale_only and not view.is_on_sale:
+        return False
+    if (view.vendor or "").casefold() in excluded_vendor_keys:
+        return False
+    if view.source_label.casefold() in excluded_source_keys:
+        return False
+    if not view.genders.isdisjoint(excluded_genders):
         return False
     if vendor_keys and (view.vendor or "").casefold() not in vendor_keys:
         return False
@@ -913,25 +930,49 @@ def _build_monitor_page(
             key=str.casefold,
         )
     )
-    selected_vendors = _canonical_filter_values(query.vendors, vendor_options)
-    selected_sources = _canonical_filter_values(query.sources, source_options)
-    selected_genders = _canonical_monitor_genders(query.genders)
+    excluded_vendors = _canonical_filter_values(query.exclude_vendors, vendor_options)
+    excluded_sources = _canonical_filter_values(query.exclude_sources, source_options)
+    excluded_genders = _canonical_monitor_genders(query.exclude_genders)
+    excluded_vendor_keys = frozenset(value.casefold() for value in excluded_vendors)
+    excluded_source_keys = frozenset(value.casefold() for value in excluded_sources)
+    excluded_gender_set = frozenset(excluded_genders)
+    selected_vendors = tuple(
+        value
+        for value in _canonical_filter_values(query.vendors, vendor_options)
+        if value.casefold() not in excluded_vendor_keys
+    )
+    selected_sources = tuple(
+        value
+        for value in _canonical_filter_values(query.sources, source_options)
+        if value.casefold() not in excluded_source_keys
+    )
+    selected_genders = tuple(
+        gender
+        for gender in _canonical_monitor_genders(query.genders)
+        if gender not in excluded_gender_set
+    )
     vendor_keys = frozenset(value.casefold() for value in selected_vendors)
     source_keys = frozenset(value.casefold() for value in selected_sources)
     genders = frozenset(selected_genders)
+    exclusions = {
+        "excluded_vendor_keys": excluded_vendor_keys,
+        "excluded_source_keys": excluded_source_keys,
+        "excluded_genders": excluded_gender_set,
+    }
     gender_labels = {
         gender: t.text(f"web.monitor.gender_{gender.value}")
         for gender in MonitorGender
     }
     available_genders = frozenset(gender for view in option_views for gender in view.genders)
-    useful_genders = available_genders | genders
-    if available_genders <= {MonitorGender.UNISEX} and not genders:
+    useful_genders = available_genders | genders | excluded_gender_set
+    if available_genders <= {MonitorGender.UNISEX} and not (genders or excluded_gender_set):
         useful_genders = frozenset()
     gender_options = tuple(
         MonitorGenderOption(
             value=gender.value,
             label=gender_labels[gender],
             selected=gender in genders,
+            excluded=gender in excluded_gender_set,
         )
         for gender in MonitorGender
         if gender in useful_genders
@@ -950,6 +991,7 @@ def _build_monitor_page(
                 vendor_keys=vendor_keys,
                 source_keys=source_keys,
                 genders=genders,
+                **exclusions,
             )
         ),
         key=sort_key,
@@ -964,6 +1006,7 @@ def _build_monitor_page(
                 vendor_keys=vendor_keys,
                 source_keys=source_keys,
                 genders=genders,
+                **exclusions,
             )
         ),
         key=sort_key,
@@ -1000,6 +1043,9 @@ def _build_monitor_page(
         source_options=source_options,
         gender_options=gender_options,
         criteria=criteria,
+        excluded_vendors=excluded_vendors,
+        excluded_sources=excluded_sources,
+        excluded_genders=excluded_genders,
     )
 
 

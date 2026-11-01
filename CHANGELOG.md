@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-02
+
+### Added
+
+- Store channel filters can leave values out, such as kids' wear, a brand or a store, with a
+  不看 toggle beside each option.
+
+### Changed
+
+- The store channel search field is narrower on wide screens.
+
 ## [1.0.5] - 2026-11-02
 
 ### Changed

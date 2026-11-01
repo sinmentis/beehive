@@ -200,6 +200,9 @@ def _monitor_page_url(
     params.extend(("vendor", vendor) for vendor in page.vendors)
     params.extend(("source", source) for source in page.sources)
     params.extend(("gender", gender.value) for gender in page.genders)
+    params.extend(("not_vendor", vendor) for vendor in page.excluded_vendors)
+    params.extend(("not_source", source) for source in page.excluded_sources)
+    params.extend(("not_gender", gender.value) for gender in page.excluded_genders)
     if page.search:
         params.append(("q", page.search))
     if page.criteria.showing_below_threshold:
@@ -683,6 +686,9 @@ def channel_drilldown(
     vendor: list[str] | None = Query(None),
     source: list[str] | None = Query(None),
     gender: list[MonitorGender] | None = Query(None),
+    not_vendor: list[str] | None = Query(None),
+    not_source: list[str] | None = Query(None),
+    not_gender: list[MonitorGender] | None = Query(None),
     category: str | None = None,
     q: str | None = None,
     show_below: bool = False,
@@ -742,6 +748,9 @@ def channel_drilldown(
             vendors=tuple(vendor or ()),
             sources=tuple(source or ()),
             genders=tuple(gender or ()),
+            exclude_vendors=tuple(not_vendor or ()),
+            exclude_sources=tuple(not_source or ()),
+            exclude_genders=tuple(not_gender or ()),
             search=q,
         ),
         tracker_query=TrackerQuery(
@@ -819,20 +828,36 @@ def channel_drilldown(
     if isinstance(page, MonitorPage):
         context["active_filter_count"] = (
             len(page.sources) + len(page.vendors) + len(page.genders) + int(page.on_sale_only)
+            + len(page.excluded_sources) + len(page.excluded_vendors) + len(page.excluded_genders)
         )
         sections.append(("available", t.text("web.monitor.available_heading"), "#available"))
         if page.history_pagination.total:
             sections.append(("history", t.text("web.monitor.unavailable_heading"), "#history"))
         context["source_choices"] = [
-            {"value": option, "label": option, "selected": option in page.sources}
+            {
+                "value": option,
+                "label": option,
+                "selected": option in page.sources,
+                "excluded": option in page.excluded_sources,
+            }
             for option in page.source_options
         ]
         context["vendor_choices"] = [
-            {"value": option, "label": option, "selected": option in page.vendors}
+            {
+                "value": option,
+                "label": option,
+                "selected": option in page.vendors,
+                "excluded": option in page.excluded_vendors,
+            }
             for option in page.vendor_options
         ]
         context["gender_choices"] = [
-            {"value": option.value, "label": option.label, "selected": option.selected}
+            {
+                "value": option.value,
+                "label": option.label,
+                "selected": option.selected,
+                "excluded": option.excluded,
+            }
             for option in page.gender_options
         ]
         if page.pagination.has_previous:

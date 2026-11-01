@@ -93,6 +93,15 @@
       if (!menu.contains(event.target)) menu.open = false;
     });
   });
+  // A value is kept or left out, never both.
+  document.addEventListener("change", (event) => {
+    const box = event.target;
+    if (!(box instanceof HTMLInputElement) || !box.checked) return;
+    const row = box.closest("details.ms .ms-row");
+    row?.querySelectorAll("input[type=checkbox]").forEach((other) => {
+      if (other !== box) other.checked = false;
+    });
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || !(event.target instanceof Element)) return;
     const menu = event.target.closest("details.ms[open]");

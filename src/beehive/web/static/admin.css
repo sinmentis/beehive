@@ -645,7 +645,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
 /* A store's filter bar is one row: search, the filters, sort and the search button. On a wide
    sheet the filters' disclosure stays open with its summary hidden, so they sit inline. */
 .filter-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 12px}
-.filter-row>.fld-grow{flex:1 1 14rem;max-width:none}
+.filter-row>.fld-grow{flex:1 1 12rem;max-width:20rem}
 .filter-row>.filter-more{flex:0 1 auto;min-width:0;margin:0}
 .filter-row>.filter-more[open]>.filter-options{margin-top:0}
 .filter-row .filter-options{gap:10px 12px}
@@ -674,6 +674,17 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  background:var(--sheet);box-shadow:0 14px 32px -10px rgba(0,0,0,.7)}
 .ms-panel .opt{padding:4px 6px;border-radius:2px;font-size:.875rem;overflow-wrap:anywhere}
 .ms-panel .opt:hover{background:var(--hover)}
+/* A value to keep (its checkbox) or leave out (its 不看 toggle, set like the 不相关 toggle). */
+.ms-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ms-row>.opt{flex:1 1 auto;min-width:0}
+.ms-not{position:relative;flex:none;cursor:pointer}
+.ms-not input{position:absolute;inset:0;margin:0;opacity:0;cursor:pointer}
+.ms-not span{display:inline-flex;align-items:center;min-height:22px;padding:0 7px;border:1px solid var(--rule-2);border-radius:2px;
+ color:var(--ink-3);font:600 .72rem/1.2 var(--sans);white-space:nowrap;transition:border-color .15s ease-out,color .15s ease-out}
+.ms-not:hover span{border-color:var(--ctl);color:var(--ink-2)}
+.ms-not:has(input:focus-visible) span{outline:2px solid var(--link);outline-offset:2px}
+.ms-not:has(input:checked) span{border-color:var(--ctl-danger);color:var(--danger)}
+.ms-row:has(.ms-not input:checked)>.opt span{color:var(--ink-3);text-decoration:line-through}
 
 /* A section kept for reference: closed by default, its rows set back like closed lots. */
 .more>summary{width:max-content;max-width:100%;color:var(--link);font-size:.875rem;cursor:pointer;
@@ -905,6 +916,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
  .filter-bar{margin-top:12px;padding-top:8px;padding-bottom:8px}
  .filter-primary{gap:8px 10px}
  :is(.filter-primary,.filter-row)>.fld-grow{flex:1 1 8rem;order:0}
+ .filter-row>.fld-grow{max-width:none}
  :is(.filter-primary,.filter-row)>.fld-grow>span{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
  :is(.filter-primary,.filter-row)>.fld-act{order:1}
  :is(.filter-primary,.filter-row)>.fld:not(.fld-grow){display:flex;align-items:center;flex:1 0 100%;gap:8px;order:2}
@@ -929,6 +941,7 @@ small.chg{display:block;margin-top:4px;color:var(--link);font-size:.78rem;font-w
    相关 never lands on 不相关. */
 @media (pointer:coarse){
  .tg{min-height:44px;padding:0 12px}
+ .ms-not span{min-height:44px;padding:0 12px}
  .rd{width:44px;height:44px}
  :is(.page-reading,.page-workspace) :is(.btn,.seg>a,.opt,summary,.adm-brand){min-height:44px}
  :is(.page-reading,.page-workspace) .inp{min-height:44px;font-size:1rem}

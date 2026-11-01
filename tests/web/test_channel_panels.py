@@ -480,6 +480,52 @@ def test_monitor_panel_accepts_multiple_vendor_and_source_filters(conn, client):
     assert "Unselected Source Arc Jacket" not in response.text
 
 
+def test_monitor_panel_leaves_out_excluded_values_and_keeps_them_on_every_link(conn, client):
+    _, connection = conn
+    channel_id = create_channel(connection, "Gear", "outdoor gear", kind="monitor")
+    source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://first.example/collections/sale"},
+    )
+    _add_ranked_item(
+        connection, source_id, "adult", "Men's Shell Jacket", _monitor_metadata(price=80)
+    )
+    _add_ranked_item(
+        connection, source_id, "kids", "Kids' Rain Jacket", _monitor_metadata(price=40)
+    )
+    _add_ranked_item(
+        connection,
+        source_id,
+        "patagonia",
+        "Women's Fleece",
+        _monitor_metadata(price=90, vendor="Patagonia"),
+    )
+
+    response = client.get(
+        f"/channels/{channel_id}",
+        params=[
+            ("not_gender", "kids"),
+            ("not_vendor", "Patagonia"),
+            # Kept and left out at once: left out wins.
+            ("vendor", "Patagonia"),
+            ("per_page", "24"),
+        ],
+    )
+
+    assert response.status_code == 200
+    page = response.context["page"]
+    assert [item.title for item in page.items] == ["Men's Shell Jacket"]
+    assert page.vendors == ()
+    assert page.excluded_vendors == ("Patagonia",)
+    assert response.context["active_filter_count"] == 2
+    assert 'name="not_gender" value="kids" checked' in response.text
+    assert 'name="not_vendor" value="Patagonia" checked' in response.text
+    assert 'name="vendor" value="Patagonia" checked' not in response.text
+    assert "Kids&#39; Rain Jacket" not in response.text
+
+
 def test_monitor_panel_separates_out_of_stock_and_removed_history(conn, client):
     _, connection = conn
     channel_id = create_channel(connection, "Gear", "outdoor gear", kind="monitor")

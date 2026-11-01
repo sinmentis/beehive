@@ -78,6 +78,9 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         vendors=("Arc'teryx", "Patagonia"),
         sources=("example.com/outlet", "second.example/sale"),
         genders=(MonitorGender.WOMEN, MonitorGender.KIDS),
+        excluded_vendors=("Teva",),
+        excluded_sources=("third.example",),
+        excluded_genders=(MonitorGender.UNISEX,),
         search="shell jacket",
         criteria=SimpleNamespace(showing_below_threshold=True),
     )
@@ -93,6 +96,9 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         "vendor": ["Arc'teryx", "Patagonia"],
         "source": ["example.com/outlet", "second.example/sale"],
         "gender": ["women", "kids"],
+        "not_vendor": ["Teva"],
+        "not_source": ["third.example"],
+        "not_gender": ["unisex"],
         "q": ["shell jacket"],
         "show_below": ["1"],
     }
