@@ -190,7 +190,8 @@ class JobsWorker:
         digest_runner: Callable[[str], None] = run_digest_job,
         reminder_runner: Callable[..., None] = run_reminder_job,
         exit_process: Callable[[int], None] = os._exit,
-        log: Callable[[str], None] = print,
+        # Flushed, because the stuck-job exit is os._exit, which drops buffered stdout.
+        log: Callable[[str], None] = functools.partial(print, flush=True),
         lock: JobsLock | None = None,
     ) -> None:
         self._config = config

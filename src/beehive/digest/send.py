@@ -31,9 +31,11 @@ from beehive.db.deep_reads import get_deep_reads_for_items
 from beehive.db.email_groups import (
     list_email_groups,
     list_member_channels,
+    mark_abandoned,
     mark_checked,
     mark_error,
     mark_sent,
+    record_send_attempt,
 )
 from beehive.db.item_events import (
     list_delivered_editorial_events_for_channels,
@@ -68,12 +70,30 @@ from beehive.site_links import load_site_url
 
 _LOGGER = logging.getLogger(__name__)
 
+# A due slot gets at most this many send attempts. After that the slot is given up, the error is
+# kept as the group's alert, and the content waits for the next scheduled email, so an email
+# service outage cannot turn every digest run into another copy of the same email.
+MAX_SEND_ATTEMPTS = 3
+
 
 class RecipientDeliveryError(RuntimeError):
-    def __init__(self, recipient: str, error: Exception):
+    def __init__(self, recipient: str, error: Exception, attempt: int = 0):
         super().__init__(f"Digest delivery to {recipient} failed: {error}")
         self.recipient = recipient
         self.error = error
+        self.attempt = attempt
+
+
+def _abandon_slot(conn: sqlite3.Connection, group: dict, localizer: Localizer, *,
+                  attempts: int, last_error: str | None, checkpoint: str) -> None:
+    error = localizer.text(
+        "background.digest_send_abandoned",
+        attempts=attempts,
+        error=last_error or "the send did not finish",
+    )
+    print(f'[digest] ALERT: Email group "{group["name"]}" gave up on this send after '
+          f"{attempts} attempts: {last_error or 'the send did not finish'}", flush=True)
+    mark_abandoned(conn, group["id"], checked_at=checkpoint, error=error)
 
 
 @dataclass(frozen=True)
@@ -416,6 +436,11 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
             # the list -- a silent, ordering-dependent loss of unrelated digests.
             if not email_group_is_due(group, run_time):
                 continue
+            if (group.get("send_attempts") or 0) >= MAX_SEND_ATTEMPTS:
+                # The last attempt never reported back (the worker was stopped mid-send).
+                _abandon_slot(conn, group, localizer, attempts=group["send_attempts"],
+                              last_error=group.get("last_error"), checkpoint=checkpoint)
+                continue
             digest_date = _digest_date(group, run_time)
             _deliver_due_group(
                 conn, group, notifier, default_recipient, localizer,
@@ -431,12 +456,16 @@ def send_email_group_digests(conn: sqlite3.Connection, notifier: Notifier,
             )
             failures.append(exc)
         except RecipientDeliveryError as exc:
-            mark_error(
-                conn,
-                group["id"],
-                error=str(exc.error),
-                failed_at=checkpoint,
-            )
+            if exc.attempt >= MAX_SEND_ATTEMPTS:
+                _abandon_slot(conn, group, localizer, attempts=exc.attempt,
+                              last_error=str(exc.error), checkpoint=checkpoint)
+            else:
+                mark_error(
+                    conn,
+                    group["id"],
+                    error=str(exc.error),
+                    failed_at=checkpoint,
+                )
             failures.append(exc)
         except Exception as exc:  # noqa: BLE001 -- see below
             # Anything else (a rendering bug, a corrupt row, a transient DB error) is still one
@@ -488,10 +517,11 @@ def _deliver_due_group(conn: sqlite3.Connection, group: dict, notifier: Notifier
         content.channel_digests, digest_date, localizer, subject)
     html = render_digest_email_html(
         content.channel_digests, digest_date, localizer, subject)
+    attempt = record_send_attempt(conn, group["id"])
     try:
         notifier.send(subject, plain_text, html, to_addr=recipient.address)
     except Exception as exc:
-        raise RecipientDeliveryError(recipient.address, exc) from exc
+        raise RecipientDeliveryError(recipient.address, exc, attempt) from exc
 
     # Delivered: mark exactly the included event ids (never the capped-out remainder), advance the
     # included Channels' legacy digest watermark, and advance both group checkpoints.

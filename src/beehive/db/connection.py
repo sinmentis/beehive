@@ -25,7 +25,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 # Raise COMPATIBLE_SCHEMA_VERSION to the new version only when older code cannot safely use the
 # new shape (a dropped or renamed column, a changed meaning). Additive changes leave it alone, so
 # rolling back to an older image keeps working.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 COMPATIBLE_SCHEMA_VERSION = 1
 _COMPATIBLE_VERSION_KEY = "schema_compatible_version"
 
@@ -142,6 +142,7 @@ _COLUMNS_TO_ENSURE = [
     ),
     ("email_groups", "last_error", "TEXT"),
     ("email_groups", "last_error_at", "TEXT"),
+    ("email_groups", "send_attempts", "INTEGER NOT NULL DEFAULT 0"),
     ("research_sessions", "last_viewed_at", "TEXT"),
     (
         "research_sources",

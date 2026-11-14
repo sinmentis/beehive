@@ -1081,3 +1081,93 @@ def test_an_editorial_source_that_stopped_fetching_is_reported(conn):
     # Editorial news already fetched is still delivered; only snapshot Channels hold updates.
     assert "still news" in plain_text
     assert "left out of emails" not in plain_text
+
+
+# --- Send attempt cap -------------------------------------------------------------------------
+
+def _send_attempts(conn, group_id):
+    return conn.execute(
+        "SELECT send_attempts FROM email_groups WHERE id = ?", (group_id,)).fetchone()[0]
+
+
+def test_a_slot_is_given_up_after_three_failed_attempts(conn, capsys):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    _, event_id = _stage_event(conn, source_id, "t1", summary="news")
+    group_id = _make_group(conn, channel_id)
+    notifier = MagicMock()
+    notifier.send.side_effect = RuntimeError("acs throttled")
+
+    for run in range(3):
+        with pytest.raises(ExceptionGroup):
+            send_email_group_digests(
+                conn, notifier, DEFAULT_RECIPIENT, _EN,
+                now=RUN_TIME + timedelta(minutes=15 * run))
+    assert notifier.send.call_count == 3
+
+    given_up_at = (RUN_TIME + timedelta(minutes=30)).isoformat()
+    group = _group_row(conn, group_id)
+    assert group["last_sent_at"] is None
+    assert group["last_checked_at"] == given_up_at
+    assert group["last_error"].startswith("Gave up after 3 failed send attempts")
+    assert "acs throttled" in group["last_error"]
+    assert group["last_error_at"] == given_up_at
+    assert _send_attempts(conn, group_id) == 0
+    assert _delivered_at(conn, event_id) is None
+    assert "[digest] ALERT" in capsys.readouterr().out
+
+    # Later runs before the next slot do not try again.
+    send_email_group_digests(
+        conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME + timedelta(hours=2))
+    assert notifier.send.call_count == 3
+
+    # The next slot carries the content that was never delivered.
+    healthy = MagicMock()
+    next_slot = RUN_TIME + timedelta(hours=25)
+    send_email_group_digests(conn, healthy, DEFAULT_RECIPIENT, _EN, now=next_slot)
+    healthy.send.assert_called_once()
+    assert "news" in healthy.send.call_args.args[1]
+    assert _delivered_at(conn, event_id) == next_slot.isoformat()
+    assert _group_row(conn, group_id)["last_error"] is None
+
+
+def test_attempts_cut_short_by_a_worker_restart_still_count(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    _stage_event(conn, source_id, "t1", summary="news")
+    group_id = _make_group(conn, channel_id)
+    # Three attempts were recorded, but the worker was killed before any of them reported back.
+    conn.execute("UPDATE email_groups SET send_attempts = 3 WHERE id = ?", (group_id,))
+    conn.commit()
+    notifier = MagicMock()
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    notifier.send.assert_not_called()
+    group = _group_row(conn, group_id)
+    assert group["last_checked_at"] == _SENT_AT
+    assert group["last_error"].startswith("Gave up after 3 failed send attempts")
+    assert _send_attempts(conn, group_id) == 0
+
+
+def test_an_attempt_is_recorded_before_the_send_and_cleared_by_success(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    source_id = create_source(conn, channel_id, *_REDDIT)
+    _stage_event(conn, source_id, "t1", summary="news")
+    group_id = _make_group(conn, channel_id)
+    seen = []
+    notifier = MagicMock()
+    notifier.send.side_effect = lambda *a, **k: seen.append(_send_attempts(conn, group_id))
+
+    send_email_group_digests(conn, notifier, DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+
+    assert seen == [1]
+    assert _send_attempts(conn, group_id) == 0
+    assert _group_row(conn, group_id)["last_sent_at"] == _SENT_AT
+
+
+def test_a_group_with_nothing_to_send_records_no_attempt(conn):
+    channel_id = create_channel(conn, "NZ Finance", "profile")
+    group_id = _make_group(conn, channel_id)
+    send_email_group_digests(conn, MagicMock(), DEFAULT_RECIPIENT, _EN, now=RUN_TIME)
+    assert _send_attempts(conn, group_id) == 0

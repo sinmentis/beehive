@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-11-14
+
+### Fixed
+
+- An email service outage no longer floods the inbox with copies of the same digest. Each ACS
+  send now has a time limit: throttled status checks no longer park the digest job until the jobs
+  worker restarts and sends the email again. An email ACS has accepted counts as sent.
+- Each scheduled digest gets at most 3 send attempts. After that the send is given up, the
+  failure stays on the Email group as an alert in the admin pages, and the content goes out with
+  the next scheduled email.
+- The jobs worker's message about a stuck job now reaches the journal before the worker restarts.
+
 ## [1.0.7] - 2026-11-14
 
 ### Fixed

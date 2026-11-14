@@ -131,7 +131,8 @@ def mark_sent(conn: sqlite3.Connection, group_id: int, sent_at: str) -> None:
         SET last_sent_at = ?,
             last_checked_at = ?,
             last_error = NULL,
-            last_error_at = NULL
+            last_error_at = NULL,
+            send_attempts = 0
         WHERE id = ?
         """,
         (sent_at, sent_at, group_id),
@@ -145,10 +146,47 @@ def mark_checked(conn: sqlite3.Connection, group_id: int, checked_at: str) -> No
         UPDATE email_groups
         SET last_checked_at = ?,
             last_error = NULL,
-            last_error_at = NULL
+            last_error_at = NULL,
+            send_attempts = 0
         WHERE id = ?
         """,
         (checked_at, group_id),
+    )
+    conn.commit()
+
+
+def record_send_attempt(conn: sqlite3.Connection, group_id: int) -> int:
+    """Count one more send attempt for the due slot and commit it before the send starts, so an
+    attempt the jobs worker kills mid-send is still counted. Returns the new count."""
+    row = conn.execute(
+        "UPDATE email_groups SET send_attempts = send_attempts + 1 WHERE id = ? "
+        "RETURNING send_attempts",
+        (group_id,),
+    ).fetchone()
+    conn.commit()
+    return int(row[0]) if row else 0
+
+
+def mark_abandoned(
+    conn: sqlite3.Connection,
+    group_id: int,
+    *,
+    checked_at: str,
+    error: str,
+) -> None:
+    """Give up on the due slot: advance last_checked_at so the group waits for its next slot, and
+    keep the error so the admin pages show the alert. Undelivered events stay pending for the next
+    email."""
+    conn.execute(
+        """
+        UPDATE email_groups
+        SET last_checked_at = ?,
+            last_error = ?,
+            last_error_at = ?,
+            send_attempts = 0
+        WHERE id = ?
+        """,
+        (checked_at, error, checked_at, group_id),
     )
     conn.commit()
 

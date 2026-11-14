@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS email_groups (
     last_checked_at TEXT,
     last_error TEXT,
     last_error_at TEXT,
+    send_attempts INTEGER NOT NULL DEFAULT 0, -- attempts for the due slot; see record_send_attempt
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
 

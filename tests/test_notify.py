@@ -159,3 +159,54 @@ def test_build_notifier_has_no_hardcoded_personal_recipient():
 def test_log_notifier_prints_explicit_recipient(capsys):
     LogNotifier().send("subject", "body", to_addr="channel@example.com")
     assert "[TO: channel@example.com]" in capsys.readouterr().out
+
+
+def test_acs_send_bounds_the_status_wait_and_retries():
+    from azure.core.polling.base_polling import LROBasePolling
+    notifier = AcsEmailNotifier(
+        connection_string="endpoint=https://x.example.com/;accesskey=y",
+        to_addr="you@example.com", from_addr="beehive@example.com")
+    fake_client = MagicMock()
+    with patch("azure.communication.email.EmailClient.from_connection_string",
+               return_value=fake_client) as factory:
+        notifier.send("subject", "body")
+    kwargs = factory.call_args.kwargs
+    assert kwargs["retry_policy"].total_retries == 3
+    assert kwargs["read_timeout"] > 0 and kwargs["connection_timeout"] > 0
+    polling = fake_client.begin_send.call_args.kwargs["polling"]
+    assert isinstance(polling, LROBasePolling)
+    assert polling._path_format_arguments == {"endpoint": "https://x.example.com"}
+    timeout = fake_client.begin_send.return_value.result.call_args.kwargs["timeout"]
+    assert 0 < timeout < 30 * 60  # always well inside the jobs worker's digest limit
+
+
+def test_bounded_polling_caps_retry_after_and_stops_at_its_deadline():
+    from beehive.notify import EmailStatusWaitExpired, _bounded_status_polling
+    polling = _bounded_status_polling("https://x.example.com", deadline_seconds=60)
+    response = MagicMock()
+    response.http_response.headers = {"Retry-After": "3600"}
+    polling._pipeline_response = response
+    assert polling._extract_delay() == 30.0
+
+    slept = []
+    polling._sleep = slept.append
+    polling._delay()
+    assert slept == [30.0]
+    polling._deadline -= 60
+    with pytest.raises(EmailStatusWaitExpired):
+        polling._delay()
+
+
+def test_bounded_retry_policy_caps_retry_after():
+    from beehive.notify import _bounded_retry_policy
+    policy = _bounded_retry_policy()
+    response = MagicMock()
+    response.http_response.headers = {"Retry-After": "3600"}
+    assert policy.get_retry_after(response) == 30.0
+    response.http_response.headers = {}
+    assert policy.get_retry_after(response) is None
+
+
+def test_acs_send_treats_an_expired_status_wait_as_sent():
+    from beehive.notify import EmailStatusWaitExpired
+    _acs_send_with_poll_error(EmailStatusWaitExpired("delivery status still pending"))

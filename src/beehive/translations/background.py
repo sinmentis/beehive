@@ -45,6 +45,7 @@ CATALOGS = {
             'Channel "{channel}" AI ranking/summary call failed this cycle and was '
             "skipped; other Channels are unaffected.\n\nError: {error}"
         ),
+        "background.digest_send_abandoned": "Gave up after {attempts} failed send attempts. Its content will go out with the next scheduled email. Last error: {error}",
         "background.tracker_reminder.subject": {
             "one": "{product} Tracker reminder · {count} watched item needs attention",
             "other": "{product} Tracker reminder · {count} watched items need attention",
@@ -102,6 +103,7 @@ CATALOGS = {
             "Channel「{channel}」这一轮 AI 排序/摘要调用失败，本轮跳过，"
             "其余 Channel 正常。\n\n错误信息：{error}"
         ),
+        "background.digest_send_abandoned": "连续 {attempts} 次发送失败，已放弃本次发送，内容会并入下一封定时邮件。最后一次错误：{error}",
         "background.tracker_reminder.subject": {
             "one": "{product} 追踪提醒 · {count} 个关注项目需要处理",
             "other": "{product} 追踪提醒 · {count} 个关注项目需要处理",
@@ -160,6 +162,7 @@ CATALOGS = {
             "このサイクルはスキップされました。他のチャンネルには影響ありません。"
             "\n\nエラー：{error}"
         ),
+        "background.digest_send_abandoned": "{attempts} 回連続で送信に失敗したため、今回の送信を中止しました。内容は次回の定期メールに含まれます。最後のエラー：{error}",
         "background.tracker_reminder.subject": {
             "one": "{product} トラッカー通知 · ウォッチ中の{count}件を確認してください",
             "other": "{product} トラッカー通知 · ウォッチ中の{count}件を確認してください",
@@ -217,6 +220,7 @@ CATALOGS = {
             "채널 「{channel}」의 이번 AI 순위 지정/요약 호출이 실패하여 이번 주기는 "
             "건너뜁니다. 다른 채널에는 영향이 없습니다.\n\n오류: {error}"
         ),
+        "background.digest_send_abandoned": "{attempts}회 연속 발송에 실패하여 이번 발송을 포기했습니다. 내용은 다음 예약 이메일에 포함됩니다. 마지막 오류: {error}",
         "background.tracker_reminder.subject": {
             "one": "{product} 추적 알림 · 관심 항목 {count}개를 확인하세요",
             "other": "{product} 추적 알림 · 관심 항목 {count}개를 확인하세요",
@@ -277,6 +281,7 @@ CATALOGS = {
             "de IA en este ciclo y se omiti\u00f3; los dem\u00e1s canales no se ven "
             "afectados.\n\nError: {error}"
         ),
+        "background.digest_send_abandoned": "Se abandonó tras {attempts} intentos de envío fallidos. Su contenido saldrá con el siguiente correo programado. Último error: {error}",
         "background.tracker_reminder.subject": {
             "one": "{product} · recordatorio de seguimiento: {count} elemento requiere atención",
             "other": "{product} · recordatorio de seguimiento: {count} elementos requieren atención",
@@ -341,6 +346,7 @@ CATALOGS = {
             "classement/r\u00e9sum\u00e9 IA et a \u00e9t\u00e9 ignor\u00e9 ; les autres "
             "canaux ne sont pas affect\u00e9s.\n\nErreur : {error}"
         ),
+        "background.digest_send_abandoned": "Abandonné après {attempts} tentatives d'envoi échouées. Son contenu partira avec le prochain e-mail programmé. Dernière erreur : {error}",
         "background.tracker_reminder.subject": {
             "one": "{product} · rappel de suivi : {count} élément nécessite votre attention",
             "other": "{product} · rappel de suivi : {count} éléments nécessitent votre attention",
@@ -403,6 +409,7 @@ CATALOGS = {
             "diesem Zyklus fehlgeschlagen und wurde \u00fcbersprungen; andere Kan\u00e4le "
             "sind nicht betroffen.\n\nFehler: {error}"
         ),
+        "background.digest_send_abandoned": "Nach {attempts} fehlgeschlagenen Sendeversuchen aufgegeben. Der Inhalt geht mit der nächsten geplanten E-Mail raus. Letzter Fehler: {error}",
         "background.tracker_reminder.subject": {
             "one": "{product} · Tracker-Erinnerung: {count} beobachteter Eintrag erfordert Aufmerksamkeit",
             "other": "{product} · Tracker-Erinnerung: {count} beobachtete Einträge erfordern Aufmerksamkeit",
