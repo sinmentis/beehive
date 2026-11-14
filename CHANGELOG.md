@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-14
+
+### Fixed
+
+- Store channel brand filters only list brands with products that are present and in stock.
+  Unavailable product history remains accessible.
+
 ## [1.0.6] - 2026-11-02
 
 ### Added

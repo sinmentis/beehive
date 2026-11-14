@@ -547,14 +547,14 @@ def test_monitor_panel_separates_out_of_stock_and_removed_history(conn, client):
         source_id,
         "oos",
         "Out of Stock Jacket",
-        _monitor_metadata(price=90, available=False),
+        _monitor_metadata(price=90, available=False, vendor="Patagonia"),
     )
     removed_id = _add_ranked_item(
         connection,
         source_id,
         "removed",
         "Removed Jacket",
-        _monitor_metadata(price=80),
+        _monitor_metadata(price=80, vendor="Arc'teryx"),
     )
     connection.execute(
         "UPDATE items SET inactive_at = ? WHERE id = ?",
@@ -571,6 +571,10 @@ def test_monitor_panel_separates_out_of_stock_and_removed_history(conn, client):
     assert "Out of stock" in response.text
     assert "Removed Jacket" in response.text
     assert "Removed" in response.text
+    assert [choice["value"] for choice in response.context["vendor_choices"]] == ["Teva"]
+    assert 'name="vendor" value="Teva"' in response.text
+    assert 'name="vendor" value="Patagonia"' not in response.text
+    assert 'name="vendor" value="Arc&#39;teryx"' not in response.text
 
 
 def test_monitor_pagination_preserves_filters_in_navigation(conn, client):

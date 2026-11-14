@@ -922,7 +922,7 @@ def _build_monitor_page(
 
     option_views = (*active_views, *history_views)
     vendor_options = tuple(
-        sorted({view.vendor for view in option_views if view.vendor}, key=str.casefold)
+        sorted({view.vendor for view in active_views if view.vendor}, key=str.casefold)
     )
     source_options = tuple(
         sorted(

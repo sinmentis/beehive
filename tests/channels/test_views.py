@@ -684,6 +684,41 @@ def test_monitor_search_source_filter_and_options(conn):
     assert page.source_options == ("example.com", "land-sea.example")
 
 
+@pytest.mark.parametrize("available", [True, False])
+def test_monitor_vendor_options_only_include_present_available_stock(conn, available):
+    channel, source_id = _monitor_channel(conn)
+    _add_item(
+        conn, source_id, "stock",
+        raw_metadata=_shopify_metadata(
+            100.0, None, on_sale=False, available=available, vendor="Teva",
+        ),
+        score=80,
+    )
+    _add_item(
+        conn, source_id, "sold-out",
+        raw_metadata=_shopify_metadata(
+            90.0, None, on_sale=False, available=False, vendor="Patagonia",
+        ),
+        score=81,
+    )
+    _add_item(
+        conn, source_id, "removed",
+        raw_metadata=_shopify_metadata(
+            80.0, None, on_sale=False, vendor="Arc'teryx",
+        ),
+        score=82,
+        inactive_at=_NOW.isoformat(),
+    )
+
+    page = build_channel_page(
+        conn, channel, t=_EN, now=_NOW,
+        monitor_query=MonitorQuery(search="no match", per_page=1),
+    )
+
+    assert page.vendor_options == (("Teva",) if available else ())
+    assert page.items == ()
+
+
 def test_monitor_uses_the_retailer_name_for_international_clearance_sources(conn):
     channel, _source_id = _monitor_channel(conn)
     source_id = create_source(
