@@ -15,7 +15,7 @@ or server, for one person, and uses your GitHub Copilot account for the AI.
 
 ## What Beehive does
 
-- **Follow the news you care about.** Pull in stories from any site's RSS or Atom feed, Reddit,
+- **Follow the news you care about.** Pull in stories from any site's RSS or Atom feed,
   Google News searches, Hacker News and the official feeds of the Reserve Bank of New Zealand, the
   NZ Government and the US Federal Reserve.
 - **See the best first.** The AI scores each new story from 0 to 100 against what you told it and

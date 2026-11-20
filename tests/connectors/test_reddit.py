@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from beehive.connectors.base import CommentFetchTarget
+from beehive.connectors.http import ConnectorHttpError, ConnectorHttpErrorKind
 from beehive.connectors.reddit import RedditSubredditConnector
 
 _ATOM_HEADER = (
@@ -219,3 +220,32 @@ def test_fetch_comments_handles_a_comment_entry_with_no_content_element():
 
     comments = connector.fetch_comments(_comment_target("https://www.reddit.com/r/x/comments/t3_op/rates_fall/"))
     assert comments == []
+
+
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [
+        (404, ConnectorHttpErrorKind.NOT_FOUND),
+        (429, ConnectorHttpErrorKind.TRANSIENT),
+        (403, ConnectorHttpErrorKind.ACCESS_DENIED),
+    ],
+)
+def test_fetch_reports_reddit_refusals_as_access_denied(status, kind):
+    def refused(subreddit, limit):
+        raise ConnectorHttpError(kind, f"HTTP {status}", status=status)
+
+    connector = RedditSubredditConnector(fetch_rss=refused)
+    with pytest.raises(ConnectorHttpError) as excinfo:
+        connector.fetch({"subreddit": "newzealand"})
+    assert excinfo.value.kind is ConnectorHttpErrorKind.ACCESS_DENIED
+    assert "Reddit" in str(excinfo.value) and "RSS" in str(excinfo.value)
+
+
+def test_fetch_keeps_network_failures_transient():
+    def offline(subreddit, limit):
+        raise ConnectorHttpError(ConnectorHttpErrorKind.TRANSIENT, "timed out")
+
+    connector = RedditSubredditConnector(fetch_rss=offline)
+    with pytest.raises(ConnectorHttpError) as excinfo:
+        connector.fetch({"subreddit": "newzealand"})
+    assert excinfo.value.kind is ConnectorHttpErrorKind.TRANSIENT

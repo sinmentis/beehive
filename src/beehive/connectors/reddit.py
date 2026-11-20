@@ -7,7 +7,12 @@ client sending a descriptive User-Agent and respecting its rate limit, at the co
 fields the feed doesn't carry: `score` and `num_comments` are simply absent from
 raw_metadata; collector/run_cycle.py already defaults them to 0 via `.get(key, 0)`, so the AI
 ranking prompt's "community engagement" prior just reads 0 for every item instead of
-crashing. Tests inject a fake fetch_rss and never touch the network."""
+crashing. Tests inject a fake fetch_rss and never touch the network.
+
+Reddit retired its RSS feeds in November 2026 and stopped accepting new Data API requests on
+October 31, 2026. Its refusals arrive as 404 ("blocked by network security"), 403 or a 429 with a
+zero quota, so they are reported as access_denied with that explanation instead of as a missing
+subreddit or a rate limit that will clear."""
 from __future__ import annotations
 
 import logging
@@ -17,7 +22,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 
 from beehive.connectors.base import CommentFetchTarget, RawItem, as_utc
-from beehive.connectors.http import fetch_bytes
+from beehive.connectors.http import ConnectorHttpError, ConnectorHttpErrorKind, fetch_bytes
 from beehive.connectors.registry import register
 from beehive.domain.channels import ChannelKind
 
@@ -31,6 +36,11 @@ _LOGGER = logging.getLogger(__name__)
 # is both the SSRF control and a correctness one: appending "/.rss" is only meaningful on a
 # Reddit permalink in the first place.
 _REDDIT_HOSTS = frozenset({"reddit.com"})
+_REFUSAL_STATUSES = frozenset({403, 404, 429})
+_REFUSED_MESSAGE = (
+    "Reddit refused the request. Reddit has retired its public RSS feeds and closed new API "
+    "access, so this Source can no longer be fetched; pause it and use another Source."
+)
 
 
 class _MarkdownBodyExtractor(HTMLParser):
@@ -159,7 +169,14 @@ class RedditSubredditConnector:
 
     def fetch(self, config: dict) -> list[RawItem]:
         subreddit_name = config["subreddit"]
-        raw_xml = self._fetch_rss(subreddit_name, _FETCH_LIMIT)
+        try:
+            raw_xml = self._fetch_rss(subreddit_name, _FETCH_LIMIT)
+        except ConnectorHttpError as exc:
+            if exc.status not in _REFUSAL_STATUSES:
+                raise
+            raise ConnectorHttpError(
+                ConnectorHttpErrorKind.ACCESS_DENIED, f"{_REFUSED_MESSAGE} ({exc})",
+                status=exc.status) from exc
         root = ET.fromstring(raw_xml)  # noqa: S314 (reddit.com-only, size-capped by fetch_bytes)
         items = []
         for entry in root.findall(f"{_ATOM_NS}entry"):

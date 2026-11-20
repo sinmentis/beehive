@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-11-20
+
+### Changed
+
+- Reddit sources now explain that Reddit has retired its public RSS feeds and closed new API
+  access. A refused request is reported as access denied, not as a missing subreddit or a rate
+  limit that will clear. Pause Reddit sources and use an RSS feed or Google News search instead.
+
 ## [1.0.8] - 2026-11-14
 
 ### Fixed

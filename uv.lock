@@ -127,7 +127,7 @@ wheels = [
 
 [[package]]
 name = "beehive"
-version = "1.0.8"
+version = "1.0.9"
 source = { editable = "." }
 dependencies = [
     { name = "argon2-cffi" },

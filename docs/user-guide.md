@@ -45,7 +45,7 @@ Each source works with one channel type, so **Add source** only offers the ones 
 
 | Source | What it reads | Channel type |
 | --- | --- | --- |
-| Reddit | Posts in a subreddit | Editorial |
+| Reddit | Posts in a subreddit. No longer works: Reddit retired its RSS feeds in November 2026 | Editorial |
 | Google News | Results for a search | Editorial |
 | RSS or Atom feed | Posts from any site or blog that publishes a feed | Editorial |
 | Hacker News | Top, best, new, Ask HN or Show HN stories, or a search | Editorial |
