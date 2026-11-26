@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-26
+
+### Added
+
+- Store channels have a minimum discount filter. Pick 20% to 70% off or more to hide listings
+  with a smaller discount or no merchant reference price. The choice stays in the page address,
+  so paging, sorting and bookmarks keep it.
+
 ## [1.0.9] - 2026-11-20
 
 ### Changed
