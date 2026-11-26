@@ -197,6 +197,8 @@ def _monitor_page_url(
         params.append(("history_page", str(history_page)))
     if page.on_sale_only:
         params.append(("on_sale", "1"))
+    if page.min_discount:
+        params.append(("min_discount", str(page.min_discount)))
     params.extend(("vendor", vendor) for vendor in page.vendors)
     params.extend(("source", source) for source in page.sources)
     params.extend(("gender", gender.value) for gender in page.genders)
@@ -683,6 +685,7 @@ def channel_drilldown(
     page_number: int = Query(1, alias="page", ge=1),
     sort: MonitorSort = MonitorSort.SCORE,
     on_sale: bool = False,
+    min_discount: Annotated[_OptionalScoreQuery, Query()] = None,
     vendor: list[str] | None = Query(None),
     source: list[str] | None = Query(None),
     gender: list[MonitorGender] | None = Query(None),
@@ -752,6 +755,7 @@ def channel_drilldown(
             exclude_sources=tuple(not_source or ()),
             exclude_genders=tuple(not_gender or ()),
             search=q,
+            min_discount=min_discount,
         ),
         tracker_query=TrackerQuery(
             ending_page=ending_page,
@@ -828,6 +832,7 @@ def channel_drilldown(
     if isinstance(page, MonitorPage):
         context["active_filter_count"] = (
             len(page.sources) + len(page.vendors) + len(page.genders) + int(page.on_sale_only)
+            + int(bool(page.min_discount))
             + len(page.excluded_sources) + len(page.excluded_vendors) + len(page.excluded_genders)
         )
         sections.append(("available", t.text("web.monitor.available_heading"), "#available"))

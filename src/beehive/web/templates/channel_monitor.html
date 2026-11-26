@@ -49,6 +49,15 @@
       {{ multiselect('vendor', t('web.monitor.vendor_label'), vendor_choices, t('web.monitor.all_vendors')) }}
       {% if gender_choices %}{{ multiselect('gender', t('web.monitor.gender_label'), gender_choices, t('web.monitor.all_genders')) }}{% endif %}
       <label class="opt fld-check"><input type="checkbox" name="on_sale" value="true"{% if page.on_sale_only %} checked{% endif %}><span>{{ t('web.monitor.on_sale_only') }}</span></label>
+      <label class="fld"><span>{{ t('web.monitor.min_discount_label') }}</span>
+        <select class="inp" name="min_discount">
+          <option value=""{% if not page.min_discount %} selected{% endif %}>{{ t('web.monitor.min_discount_any') }}</option>
+          {%- set discount_steps = [20, 30, 40, 50, 60, 70] %}
+          {%- if page.min_discount and page.min_discount not in discount_steps %}{% set discount_steps = (discount_steps + [page.min_discount])|sort %}{% endif %}
+          {% for percent in discount_steps %}
+          <option value="{{ percent }}"{% if page.min_discount == percent %} selected{% endif %}>{{ t('web.monitor.min_discount_option', percent=percent) }}</option>
+          {% endfor %}
+        </select></label>
     </div>
   </details>
   <label class="fld"><span>{{ t('web.monitor.sort_label') }}</span>
@@ -85,7 +94,7 @@
   {{ rd.pager(page.pagination, monitor_previous_url, monitor_next_url, t('web.monitor.pagination_aria')) }}
   {% elif page.search and page.history_pagination.total %}
   <p class="hint">{{ t('web.reading.history_matches') }}</p>
-  {% elif page.search or page.sources or page.vendors or page.genders or page.on_sale_only %}
+  {% elif page.search or page.sources or page.vendors or page.genders or page.on_sale_only or page.min_discount %}
   <div class="empty"><b>{{ t('web.monitor.empty_filtered_heading') }}</b>{{ t('web.monitor.empty_filtered_body') }}<div><a class="btn" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a></div></div>
   {% else %}
   <div class="empty"><b>{{ t('web.monitor.empty_heading') }}</b>{{ t('web.monitor.empty_body') }}</div>

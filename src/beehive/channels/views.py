@@ -628,6 +628,9 @@ class MonitorQuery:
     exclude_sources: tuple[str, ...] = ()
     exclude_genders: tuple[MonitorGender, ...] = ()
     search: str | None = None
+    # Keep only listings at least this many percent below their merchant reference price. A
+    # listing with no reference price has no discount to compare, so any threshold drops it.
+    min_discount: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -707,6 +710,7 @@ class MonitorPage:
     excluded_vendors: tuple[str, ...] = ()
     excluded_sources: tuple[str, ...] = ()
     excluded_genders: tuple[MonitorGender, ...] = ()
+    min_discount: int | None = None
 
 
 _MONITOR_EVENT_TYPES = frozenset({"discovered", "price_drop", "back_in_stock"})
@@ -869,6 +873,10 @@ def _passes_monitor_filters(
     excluded_genders: frozenset[MonitorGender] = frozenset(),
 ) -> bool:
     if query.on_sale_only and not view.is_on_sale:
+        return False
+    if query.min_discount and (
+        view.discount_percent is None or view.discount_percent < query.min_discount
+    ):
         return False
     if (view.vendor or "").casefold() in excluded_vendor_keys:
         return False
@@ -1046,6 +1054,7 @@ def _build_monitor_page(
         excluded_vendors=excluded_vendors,
         excluded_sources=excluded_sources,
         excluded_genders=excluded_genders,
+        min_discount=query.min_discount or None,
     )
 
 

@@ -269,6 +269,51 @@ def test_current_catalogs_are_not_limited_by_the_news_window(conn, client, kind)
     assert f'id="{prefix}-{item_id}"' in response.text
 
 
+def test_monitor_panel_min_discount_keeps_only_deep_enough_discounts(conn, client):
+    _, connection = conn
+    channel_id = create_channel(connection, "Outdoor deals", "discounted gear", kind="monitor")
+    source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/sale"},
+    )
+    _add_ranked_item(
+        connection, source_id, "deep", "Deep Shell",
+        _monitor_metadata(price=50, compare_at_price=100, on_sale=True), score=60,
+    )
+    _add_ranked_item(
+        connection, source_id, "edge", "Edge Fleece",
+        _monitor_metadata(price=70, compare_at_price=100, on_sale=True), score=70,
+    )
+    _add_ranked_item(
+        connection, source_id, "shallow", "Shallow Tee",
+        _monitor_metadata(price=90, compare_at_price=100, on_sale=True), score=90,
+    )
+    _add_ranked_item(
+        connection, source_id, "full", "Full Price Boot",
+        _monitor_metadata(price=120), score=95,
+    )
+
+    response = client.get(
+        f"/channels/{channel_id}", params={"min_discount": "30", "view": "list"}
+    )
+
+    assert response.status_code == 200
+    available = _section(response.text, "available")
+    assert "Deep Shell" in available
+    assert "Edge Fleece" in available
+    assert "Shallow Tee" not in available
+    assert "Full Price Boot" not in available
+    assert '<option value="30" selected>' in response.text
+
+    unfiltered = client.get(f"/channels/{channel_id}", params={"min_discount": "", "view": "list"})
+    assert unfiltered.status_code == 200
+    assert "Shallow Tee" in _section(unfiltered.text, "available")
+
+    assert client.get(f"/channels/{channel_id}", params={"min_discount": "101"}).status_code == 422
+
+
 def test_monitor_panel_filters_sorts_and_renders_safe_change_badges(conn, client):
     _, connection = conn
     channel_id = create_channel(
