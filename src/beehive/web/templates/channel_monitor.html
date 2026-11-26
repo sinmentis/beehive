@@ -47,6 +47,7 @@
     <div class="filter-options">
       {{ multiselect('source', t('web.monitor.source_label'), source_choices, t('web.monitor.all_sources')) }}
       {{ multiselect('vendor', t('web.monitor.vendor_label'), vendor_choices, t('web.monitor.all_vendors')) }}
+      {% if category_choices %}{{ multiselect('type', t('web.monitor.category_label'), category_choices, t('web.monitor.all_categories')) }}{% endif %}
       {% if gender_choices %}{{ multiselect('gender', t('web.monitor.gender_label'), gender_choices, t('web.monitor.all_genders')) }}{% endif %}
       <label class="opt fld-check"><input type="checkbox" name="on_sale" value="true"{% if page.on_sale_only %} checked{% endif %}><span>{{ t('web.monitor.on_sale_only') }}</span></label>
       <label class="fld"><span>{{ t('web.monitor.min_discount_label') }}</span>
@@ -94,7 +95,7 @@
   {{ rd.pager(page.pagination, monitor_previous_url, monitor_next_url, t('web.monitor.pagination_aria')) }}
   {% elif page.search and page.history_pagination.total %}
   <p class="hint">{{ t('web.reading.history_matches') }}</p>
-  {% elif page.search or page.sources or page.vendors or page.genders or page.on_sale_only or page.min_discount %}
+  {% elif page.search or page.sources or page.vendors or page.genders or page.categories or page.on_sale_only or page.min_discount %}
   <div class="empty"><b>{{ t('web.monitor.empty_filtered_heading') }}</b>{{ t('web.monitor.empty_filtered_body') }}<div><a class="btn" href="/channels/{{ page.channel_id }}">{{ t('web.archive.clear_filters') }}</a></div></div>
   {% else %}
   <div class="empty"><b>{{ t('web.monitor.empty_heading') }}</b>{{ t('web.monitor.empty_body') }}</div>

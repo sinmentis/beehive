@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-27
+
+### Added
+
+- Store channels have a type filter: tops, hoodies and fleece, jackets, pants, shorts, dresses,
+  underwear, footwear, socks, accessories, bags and other. Each store names its product types
+  differently, so Beehive maps them onto one shared list, and falls back to the title when a
+  store gives no type. Keep or hide any type, as with brands and genders.
+
 ## [1.1.0] - 2026-11-26
 
 ### Added

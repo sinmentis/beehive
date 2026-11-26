@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from beehive.auth.tokens import sign_session_id
+from beehive.channels.product_category import ProductCategory
 from beehive.channels.views import (
     MonitorGender,
     MonitorSort,
@@ -82,6 +83,8 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         excluded_vendors=("Teva",),
         excluded_sources=("third.example",),
         excluded_genders=(MonitorGender.UNISEX,),
+        categories=(ProductCategory.TOPS, ProductCategory.SHORTS),
+        excluded_categories=(ProductCategory.OTHER,),
         search="shell jacket",
         criteria=SimpleNamespace(showing_below_threshold=True),
     )
@@ -101,6 +104,8 @@ def test_monitor_pagination_url_preserves_monitor_filters():
         "not_vendor": ["Teva"],
         "not_source": ["third.example"],
         "not_gender": ["unisex"],
+        "type": ["tops", "shorts"],
+        "not_type": ["other"],
         "q": ["shell jacket"],
         "show_below": ["1"],
     }

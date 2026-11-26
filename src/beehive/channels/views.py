@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 from beehive import source_labels
 from beehive.auction import format_auction_amount
 from beehive.channels.definitions import ChannelDefinition, get_definition, require_channel_kind
+from beehive.channels.product_category import ProductCategory, classify_product
 from beehive.channels.tracker import adapter_for_source
 from beehive.db.deep_reads import DeepRead, get_deep_reads_for_items
 from beehive.db.item_events import latest_actionable_events_for_items
@@ -627,6 +628,8 @@ class MonitorQuery:
     exclude_vendors: tuple[str, ...] = ()
     exclude_sources: tuple[str, ...] = ()
     exclude_genders: tuple[MonitorGender, ...] = ()
+    categories: tuple[ProductCategory, ...] = ()
+    exclude_categories: tuple[ProductCategory, ...] = ()
     search: str | None = None
     # Keep only listings at least this many percent below their merchant reference price. A
     # listing with no reference price has no discount to compare, so any threshold drops it.
@@ -674,6 +677,7 @@ class MonitorItemView:
     vendor: str | None
     product_type: str | None
     genders: frozenset[MonitorGender]
+    category: ProductCategory
     change: MonitorChangeMarker | None
     feedback_value: int | None
     search_body: str = ""
@@ -681,6 +685,14 @@ class MonitorItemView:
 
 @dataclass(frozen=True, slots=True)
 class MonitorGenderOption:
+    value: str
+    label: str
+    selected: bool
+    excluded: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorCategoryOption:
     value: str
     label: str
     selected: bool
@@ -711,6 +723,9 @@ class MonitorPage:
     excluded_sources: tuple[str, ...] = ()
     excluded_genders: tuple[MonitorGender, ...] = ()
     min_discount: int | None = None
+    categories: tuple[ProductCategory, ...] = ()
+    excluded_categories: tuple[ProductCategory, ...] = ()
+    category_options: tuple[MonitorCategoryOption, ...] = ()
 
 
 _MONITOR_EVENT_TYPES = frozenset({"discovered", "price_drop", "back_in_stock"})
@@ -799,6 +814,7 @@ def _monitor_item(item: Row, t: Localizer, event: Row | None) -> MonitorItemView
         vendor=_clean_text(metadata.get("vendor")),
         product_type=_clean_text(metadata.get("product_type")),
         genders=_monitor_genders(title, metadata),
+        category=classify_product(_clean_text(metadata.get("product_type")), title),
         change=_monitor_change_marker(event, currency_code),
         feedback_value=_feedback_value(item),
         search_body=_opt_str(item, "body") or "",
@@ -861,6 +877,18 @@ def _canonical_monitor_genders(
     return tuple(selected)
 
 
+def _canonical_monitor_categories(
+    values: tuple[ProductCategory, ...],
+) -> tuple[ProductCategory, ...]:
+    selected: list[ProductCategory] = []
+    for value in values:
+        if not isinstance(value, ProductCategory):
+            raise ValueError(f"unknown product category: {value!r}")
+        if value not in selected:
+            selected.append(value)
+    return tuple(selected)
+
+
 def _passes_monitor_filters(
     view: MonitorItemView,
     query: MonitorQuery,
@@ -871,6 +899,8 @@ def _passes_monitor_filters(
     excluded_vendor_keys: frozenset[str] = frozenset(),
     excluded_source_keys: frozenset[str] = frozenset(),
     excluded_genders: frozenset[MonitorGender] = frozenset(),
+    categories: frozenset[ProductCategory] = frozenset(),
+    excluded_categories: frozenset[ProductCategory] = frozenset(),
 ) -> bool:
     if query.on_sale_only and not view.is_on_sale:
         return False
@@ -889,6 +919,10 @@ def _passes_monitor_filters(
     if source_keys and view.source_label.casefold() not in source_keys:
         return False
     if genders and view.genders.isdisjoint(genders):
+        return False
+    if view.category in excluded_categories:
+        return False
+    if categories and view.category not in categories:
         return False
     return _matches_search(
         query.search,
@@ -962,11 +996,39 @@ def _build_monitor_page(
     vendor_keys = frozenset(value.casefold() for value in selected_vendors)
     source_keys = frozenset(value.casefold() for value in selected_sources)
     genders = frozenset(selected_genders)
+    excluded_categories = _canonical_monitor_categories(query.exclude_categories)
+    excluded_category_set = frozenset(excluded_categories)
+    selected_categories = tuple(
+        category
+        for category in _canonical_monitor_categories(query.categories)
+        if category not in excluded_category_set
+    )
+    category_set = frozenset(selected_categories)
     exclusions = {
         "excluded_vendor_keys": excluded_vendor_keys,
         "excluded_source_keys": excluded_source_keys,
         "excluded_genders": excluded_gender_set,
+        "categories": category_set,
+        "excluded_categories": excluded_category_set,
     }
+    # Offer the categories this Channel's listings actually fall into, in the fixed enum order.
+    # A Channel whose listings all land in OTHER has nothing to choose between.
+    available_categories = frozenset(view.category for view in option_views)
+    useful_categories = available_categories | category_set | excluded_category_set
+    if available_categories <= {ProductCategory.OTHER} and not (
+        category_set or excluded_category_set
+    ):
+        useful_categories = frozenset()
+    category_options = tuple(
+        MonitorCategoryOption(
+            value=category.value,
+            label=t.text(f"web.monitor.category_{category.value}"),
+            selected=category in category_set,
+            excluded=category in excluded_category_set,
+        )
+        for category in ProductCategory
+        if category in useful_categories
+    )
     gender_labels = {
         gender: t.text(f"web.monitor.gender_{gender.value}")
         for gender in MonitorGender
@@ -1055,6 +1117,9 @@ def _build_monitor_page(
         excluded_sources=excluded_sources,
         excluded_genders=excluded_genders,
         min_discount=query.min_discount or None,
+        categories=selected_categories,
+        excluded_categories=excluded_categories,
+        category_options=category_options,
     )
 
 

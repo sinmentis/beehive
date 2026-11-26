@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BeforeValidator, Field
 
 from beehive.channels import get_definition, require_channel_kind
+from beehive.channels.product_category import ProductCategory
 from beehive.channels.views import (
     EditorialItemView,
     EditorialPage,
@@ -205,6 +206,8 @@ def _monitor_page_url(
     params.extend(("not_vendor", vendor) for vendor in page.excluded_vendors)
     params.extend(("not_source", source) for source in page.excluded_sources)
     params.extend(("not_gender", gender.value) for gender in page.excluded_genders)
+    params.extend(("type", category.value) for category in page.categories)
+    params.extend(("not_type", category.value) for category in page.excluded_categories)
     if page.search:
         params.append(("q", page.search))
     if page.criteria.showing_below_threshold:
@@ -692,6 +695,8 @@ def channel_drilldown(
     not_vendor: list[str] | None = Query(None),
     not_source: list[str] | None = Query(None),
     not_gender: list[MonitorGender] | None = Query(None),
+    product_type: list[ProductCategory] | None = Query(None, alias="type"),
+    not_product_type: list[ProductCategory] | None = Query(None, alias="not_type"),
     category: str | None = None,
     q: str | None = None,
     show_below: bool = False,
@@ -754,6 +759,8 @@ def channel_drilldown(
             exclude_vendors=tuple(not_vendor or ()),
             exclude_sources=tuple(not_source or ()),
             exclude_genders=tuple(not_gender or ()),
+            categories=tuple(product_type or ()),
+            exclude_categories=tuple(not_product_type or ()),
             search=q,
             min_discount=min_discount,
         ),
@@ -833,6 +840,7 @@ def channel_drilldown(
         context["active_filter_count"] = (
             len(page.sources) + len(page.vendors) + len(page.genders) + int(page.on_sale_only)
             + int(bool(page.min_discount))
+            + len(page.categories) + len(page.excluded_categories)
             + len(page.excluded_sources) + len(page.excluded_vendors) + len(page.excluded_genders)
         )
         sections.append(("available", t.text("web.monitor.available_heading"), "#available"))
@@ -864,6 +872,15 @@ def channel_drilldown(
                 "excluded": option.excluded,
             }
             for option in page.gender_options
+        ]
+        context["category_choices"] = [
+            {
+                "value": option.value,
+                "label": option.label,
+                "selected": option.selected,
+                "excluded": option.excluded,
+            }
+            for option in page.category_options
         ]
         if page.pagination.has_previous:
             context["monitor_previous_url"] = _monitor_page_url(

@@ -269,6 +269,53 @@ def test_current_catalogs_are_not_limited_by_the_news_window(conn, client, kind)
     assert f'id="{prefix}-{item_id}"' in response.text
 
 
+def test_monitor_panel_type_filter_groups_listings_across_store_vocabularies(conn, client):
+    _, connection = conn
+    channel_id = create_channel(connection, "Outdoor deals", "discounted gear", kind="monitor")
+    source_id = create_source(
+        connection,
+        channel_id,
+        "shopify_collection",
+        {"collection_url": "https://example.com/collections/sale"},
+    )
+
+    def add(external_id, title, product_type):
+        metadata = _monitor_metadata(price=50)
+        metadata["product_type"] = product_type
+        _add_ranked_item(connection, source_id, external_id, title, metadata, score=80)
+
+    add("tee-a", "Tech Lite Tee", "Clothing>Tops>Short Sleeved T-Shirts")
+    add("tee-b", "Logo Responsibili-Tee", "Tops - S/S,S/S Pullovers")
+    add("shorts", "Paramount Shorts", "Clothing>Bottoms>Shorts")
+    add("shoe", "Kopec GTX", "Footwear>Shoes")
+    add("map", "Topo50 North Cape", "Gear>Navigation & Guides>Maps")
+
+    tops = client.get(f"/channels/{channel_id}", params={"type": "tops", "view": "list"})
+
+    assert tops.status_code == 200
+    available = _section(tops.text, "available")
+    assert "Tech Lite Tee" in available
+    assert "Logo Responsibili-Tee" in available
+    assert "Paramount Shorts" not in available
+    assert "Kopec GTX" not in available
+    # Only the categories this Channel holds are offered, and the choice is echoed back.
+    assert '<input type="checkbox" name="type" value="tops" checked>' in tops.text
+    assert 'name="type" value="shorts"' in tops.text
+    assert 'name="type" value="other"' in tops.text
+    assert 'name="type" value="dresses"' not in tops.text
+
+    hidden = client.get(
+        f"/channels/{channel_id}",
+        params=[("not_type", "other"), ("not_type", "footwear"), ("view", "list")],
+    )
+    available = _section(hidden.text, "available")
+    assert "Paramount Shorts" in available
+    assert "Topo50 North Cape" not in available
+    assert "Kopec GTX" not in available
+
+    assert client.get(f"/channels/{channel_id}", params={"type": "hats"}).status_code == 422
+
+
 def test_monitor_panel_min_discount_keeps_only_deep_enough_discounts(conn, client):
     _, connection = conn
     channel_id = create_channel(connection, "Outdoor deals", "discounted gear", kind="monitor")
